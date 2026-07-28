@@ -20,7 +20,7 @@
 
 | 패키지 | 정체성 | 설치 위치 | agent-plugin의 소비 지점 |
 |---|---|---|---|
-| `@ait-co/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | `devDependencies` | `inject`(devtools facet), `new-miniapp` 템플릿 |
+| `@ait-co/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | `devDependencies` | `inject`(devtools facet), `new-miniapp` 후처리 배선(+`--local` 템플릿) |
 | `@ait-co/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | `setup-debugger` skill → 프로젝트 `.mcp.json` `mcpServers.ait-devtools`(`npx -y -p @ait-co/debugger debugger`), `debug` §5가 소비 |
 | `@ait-co/debug-console` | on-device attach 런타임(eruda 인앱 콘솔 포함) | **`dependencies`** — 프로덕션 번들에 들어갈 수 있는 유일한 패키지 | `inject`(debug-console facet) |
 
@@ -46,7 +46,7 @@
 
 | Skill | 책임 | command (facet) | 의존 |
 |---|---|---|---|
-| `new-miniapp` | 템플릿 선택·파일 생성·dev-dep 주입 | `/ait:new` | `Write`/`Edit`, `templates/` |
+| `new-miniapp` | `toss/create-ait-app` 비대화형(`--inline`) 호출 wrapper + 후처리(devtools 배선·granite bin 검증·.gitignore). `--local` 폴백은 내장 react-vite 복사 (harness#1 타깃 아키텍처, #6) | `/ait:new` | `Bash`, create-ait-app(dlx), `templates/`(폴백) |
 | `inject` | 기존 프로젝트 빌드 셋업 패치 — **devtools facet**: `@ait-co/devtools` unplugin 주입 · **polyfill facet**: `@ait-co/polyfill` 모드 마이그레이션 · **debug-console facet**: `@ait-co/debug-console`(on-device attach + eruda) `dependencies` 설치 + `/auto` 와이어업 | `/ait:inject-devtools`, `/ait:inject-polyfill`, `/ait:inject-debug-console` | `Edit`, `Bash` |
 | `deploy` | 번들 확인 → `ait build` (번들러) → `ait deploy --profile <name>` (번들 업로드) → 결과 해석 + scheme URL. **Deploy Key facet**: `aitcc keys create --save-profile`로 Deploy Key 발급 + `~/.ait/credentials` 프로파일 저장 (`ait deploy --profile` 인증 전제) | `/ait:deploy`, `/ait:deploy-key` | `Bash`, `@apps-in-toss/web-framework`, console-cli |
 | `setup-bundle` | 기존 프로젝트에 `.ait` 번들 빌드 환경 추가 (`granite.config.ts` + `bundle:ait` 스크립트) | `/ait:setup-bundle` | `Write`/`Edit`, `@apps-in-toss/cli` |
@@ -75,7 +75,7 @@
 
 ### Slash commands & Templates
 
-`commands/*.md`는 얇은 진입점, 실제 절차는 skill이 담는다. `templates/`는 `react-vite/`, `react-vite-polyfill/`, `react-vite-supabase/` (oidc-bridge + Supabase Auth) — `new-miniapp`이 단순 파일 복사 + 변수 치환으로 사용.
+`commands/*.md`는 얇은 진입점, 실제 절차는 skill이 담는다. `templates/`는 `react-vite/` 하나 — scaffold 정본 경로가 create-ait-app으로 전환되면서(harness#6) **`--local` 오프라인 폴백 전용**으로 유지, 단계적 폐기 예정. (react-vite-polyfill·react-vite-supabase 계획은 철회 — 해당 변형은 create-ait-app 옵션/샘플로 upstream 조율.)
 
 ## 디렉토리 구조
 
@@ -168,7 +168,7 @@ Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/{plugin
 - ✅ **작동** (15 skill / 19 command): `docs`, `status`(+logs facet), `new-miniapp`, `inject`(devtools·polyfill·debug-console facet), `auth-setup`, `setup-phone-preview`, `setup-debugger`, `deploy`(+Deploy Key facet), `setup-bundle`, `register`, `debug`, `welcome`, `plan`, `design`, `changeset`
 - ✅ **배선 경로**: `/ait:setup-debugger` → 프로젝트 `.mcp.json`의 `ait-devtools`(`npx -y -p @ait-co/debugger debugger`) → `/ait:debug`가 환경 2·3 attach 경로(`start_attach` QR) 발급. attach 전 bootstrap 도구만, 폰 attach 후 `list_changed`로 동적 등록(devtools #208).
 - 🔜 **남은 검증**: plugin 설치 → `/ait:setup-debugger` 배선 + 세션 서버 승인 → `/mcp`에 `ait-devtools` 노출 + 실기기 QR attach 1회 acceptance (harness#1 추적)
-- 📁 **Templates**: `react-vite/` 사용 가능. `react-vite-polyfill/`, `react-vite-supabase/`는 의존 repo 준비 후 추가
+- 📁 **Templates**: `react-vite/`는 `--local` 폴백 전용 (scaffold 정본 경로는 create-ait-app — harness#6, 단계적 폐기 예정)
 
 ## 공통 스택
 

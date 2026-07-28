@@ -1,14 +1,19 @@
 # templates/
 
-`new-miniapp` skill이 참조할 스캐폴딩 템플릿 디렉토리.
+`new-miniapp` skill의 **`--local` 폴백 전용** 템플릿 디렉토리. scaffold 정본
+경로는 `toss/create-ait-app` 비대화형 호출로 전환됐다(harness#6) — 이
+디렉토리는 오프라인/네트워크 제한 환경 폴백으로만 유지되며, 정본 경로
+안정화 후 단계적으로 폐기한다(폐기 시 `validate-plugin.mjs` A3
+token-contract 검사도 함께 재편).
 
 ## 현재 상태
 
 | 템플릿 | 설명 | 의존 | 상태 |
 |---|---|---|---|
-| `react-vite/` | 기본 React 19 + Vite + `@ait-co/devtools` dev-dep | `devtools` 0.1.x npm | ✅ 사용 가능 |
-| `react-vite-polyfill/` | 위 + `@ait-co/polyfill` 모드 | `polyfill` | 📝 미작성 |
-| `react-vite-supabase/` | 위 + oidc-bridge + Supabase Auth | `oidc-bridge` M1 | 📝 미작성 |
+| `react-vite/` | 기본 React 19 + Vite + `@ait-co/devtools` dev-dep | `devtools` 0.1.x npm | ✅ `--local` 폴백 전용 |
+
+(react-vite-polyfill·react-vite-supabase 계획은 철회 — 해당 변형은
+create-ait-app의 옵션/샘플로 upstream 조율한다.)
 
 ## 원칙
 
