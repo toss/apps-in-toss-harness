@@ -141,10 +141,10 @@ packages:
         optional: true
 
   '@apps-in-toss/ait-format-proto@1.0.0':
-    resolution: {integrity: sha512-N/4XKp5odd0VkqRAfpCgahYyA6GnkRN+r8caGJ6Ov/nOynNmB1e6Cia4iiz97pUv9bry4wXPhWJLY1dRAFbrnA==}
+    resolution: {integrity: sha512-4255jhwHd2NGqckUd7jTbaYE+lajs2v2HbgWqOk7/XRUmxu3HmagEu6qPgbdkW1z04xdcgno8P/h6Gc0+L9o0A==}
 
   '@apps-in-toss/ait-format@1.0.0':
-    resolution: {integrity: sha512-hb6Ahshyqcqdhv4mRDODN7z2SgZ0BGADdaTWaW7ET5HUSfHfNsmT1txp41e1k+yxYU96EzkmfRYjYla6fsDEJg==}
+    resolution: {integrity: sha512-1no0CXOhPEeSCrGduT37KMmCqA6irhowXa0S7AaPHb4RQSHGioR3wvvD7HHBCaUriMYs0EvtqRJfOgYd0ycKlQ==}
     engines: {node: '>=24'}
 
   '@apps-in-toss/web-framework@3.0.0-beta.3051978':
@@ -152,7 +152,7 @@ packages:
     hasBin: true
 
   '@apps-in-toss/webview-bridge@3.0.0-beta.0c56009':
-    resolution: {integrity: sha512-8XmdEA91RB86GxUEbcNVNryJvUQST1fIdB8DrF1/mLELUd+iaGGq+k8p6jwAxlJOwBfzL+lHa5vZCcAGDSf+DQ==}
+    resolution: {integrity: sha512-v4L1yvKSFci06xMXjf2mWA2VNn3ORUpVLyGbj8ybVB4+GnBw08K9sgYBaaBUEjdmWLA1DncGtREZNpQbWWJqEA==}
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
