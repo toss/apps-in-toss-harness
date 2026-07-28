@@ -72,7 +72,8 @@ describe('isForbiddenBashCommand', () => {
 });
 
 // init assert 의 키 매칭. slash-command 키는 command 파일의 basename 이고
-// (`ait-new`), 플러그인으로 얹히면 `ait:ait-new` 가 된다 — 2026-07-27 실측(#226).
+// (`ait-plan`), 플러그인으로 얹히면 `ait:ait-plan` 이 된다 — 2026-07-27 실측(#226).
+// 아래 벡터의 `ait-new` 류 문자열은 prefix/substring 경계 검사를 위한 합성 키다.
 // `"ait new"` 같은 다단어 키는 어느 형상에도 존재하지 않는다.
 describe('exposesKey', () => {
   const PROJECT_FORM = ['changeset', 'ait-auth-setup', 'ait-new', 'ait-setup-bundle'];

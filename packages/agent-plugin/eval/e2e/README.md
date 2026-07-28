@@ -84,16 +84,18 @@ op run --env-file=.env.eval -- pnpm eval:e2e --task timer --model claude-haiku-4
 
 키는 **command 파일의 basename**이다. `"ait new"`(다단어)도 `"ait"`(단일 prefix)도 아니다:
 
-| 형상 | `slash_commands` 키 | 실제로 치는 것 |
+| 형상 | `slash_commands` 키 (예) | 실제로 치는 것 |
 |---|---|---|
-| project `.claude/commands` (이 드라이버) | `ait-new`, `ait-plan`, `changeset` | `/ait-new` |
-| 설치 플러그인 (`/plugin install`) | `ait:ait-new`, `ait:changeset` | `/ait:ait-new` |
+| project `.claude/commands` (이 드라이버) | `new`, `ait-plan`, `changeset` | `/new` |
+| 설치 플러그인 (`/plugin install`) | `ait:new`, `ait:plan`(skill), `ait:ait-plan`(stub 별칭) | `/ait:new` |
 
-`/ait:new`는 **어느 쪽에서도 존재하지 않는 명령**이고 `Unknown command: /ait`로 떨어진다 —
-문서가 안내하는 표면과 실제 이름이 어긋나는 별개 결함으로 issue #286이 추적한다. 이 드라이버는
-측정이 "명령이 없어서" 실패하지 않도록 실제 키(`/ait-new`)를 쓰고, init assert도 그 키를
-정확히 확인한다(`ait-new` 명령 + `new-miniapp` skill 둘 다 노출됐는가). 접두어가 붙는 설치
-형상에서도 통하도록 `:` suffix 매칭을 함께 허용한다.
+skill도 같은 목록에 `ait:<name>` 키로 오르므로, 같은 verb의 stub은 `ait-` 접두
+파일명으로 skill 키를 비켜서 있다(#286 해소 — 충돌 없는 facet stub 6개는 bare
+verb로 개명, 계약은 `A1/cmd-name-shadows-skill`이 강제). 공백 형태 `/ait <verb>`는
+어느 형상에도 없다. 이 드라이버는 측정이 "명령이 없어서" 실패하지 않도록 실제
+키(`/new`)를 쓰고, init assert도 그 키를 정확히 확인한다(`new` 명령 +
+`new-miniapp` skill 둘 다 노출됐는가). 접두어가 붙는 설치 형상에서도 통하도록
+`:` suffix 매칭을 함께 허용한다.
 
 `--log-init`은 형상이 바뀌었을 때(어댑터 추가, SDK 버전 업) 키를 다시 확인하는 용도로 남는다.
 
@@ -112,7 +114,7 @@ op run --env-file=.env.eval -- pnpm eval:e2e \
 
 게이트웨이 경로의 **주의 4가지**(공식 문서 검증 — 미문서·실험적):
 
-1. **슬래시 디스패치+스킬 라우팅은 모델 학습 행동**이지 프로토콜 강제가 아니다 — Qwen에서 `/ait-new`가
+1. **슬래시 디스패치+스킬 라우팅은 모델 학습 행동**이지 프로토콜 강제가 아니다 — Qwen에서 `/new`가
    계약대로 디스패치될지 미문서. 첫 셀은 `--log-init`으로 init 노출을, 결과는 `dispatch-missing`
    비율을 확인한다.
 2. **tool-use 능력이 약하면** 명령은 디스패치돼도 이후 Bash/Write/Edit 툴 루프를 못 돈다(툴을 산문으로
@@ -141,7 +143,7 @@ stdout 요약 예:
 - **완주율 CI가 넓으면** N이 작다는 신호 — `--n`을 키운다.
 - **토큰 CV가 크면** 그 tier가 같은 작업을 들쭉날쭉 푼다는 뜻(가변성). tier 비교의 핵심 축.
 - **도달 분포 / 실패 분류**로 *어디서* 막히는지 본다(scaffold/install/build/timeout/
-  dispatch-missing 등). `dispatch-missing`은 `ait-new` 명령 또는 `new-miniapp` skill이 세션에
+  dispatch-missing 등). `dispatch-missing`은 `new` 명령 또는 `new-miniapp` skill이 세션에
   안 떴다는 뜻 → symlink/플러그인 로드 점검.
 
 | 파일 | git | 내용 |

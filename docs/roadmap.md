@@ -30,11 +30,12 @@ docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 공
 | 8 | design | `/ait:design` | agent-plugin (+ Figma MCP) | 유지 |
 | — | docs (cross-cutting) | `/ait:docs <topic>` → docs MCP | GitBook published-docs MCP (#4) | 커뮤니티 docs 사이트 deep-link에서 GitBook MCP 조회로 전환. skill들의 말미 deep-link 규칙도 함께 재편 |
 
-**표기 규약**: 이 문서의 명령 표기는 **목표 표면**(`/ait:<verb>`)이다. 현재
-command stub 파일명 대부분이 `ait-` 접두를 포함해 설치 형상 키가
-`/ait:ait-<verb>`로 노출되는 정렬 결함이 있다(`new`·`logs`·`deploy-key`만 목표
-표기와 일치) — stub basename 정렬은 #9가 추적하며, 정렬 완료 시 이 표기가 실제
-키와 일치하게 된다.
+**표기 규약**: 이 문서의 `/ait:<verb>` 표기는 실제 설치 표면이다 — skill이
+`ait:<verb>` 키로 직접 노출·호출되고, 같은 verb의 command stub은 `ait-` 접두
+파일명(`ait:ait-<verb>`, 문서화하지 않는 별칭)으로 그 키를 비켜서 있다.
+facet 명령(`new`·`logs`·`deploy-key`·`inject-*`)은 stub 자체가 bare verb다.
+이 명령 표면 계약은 agent-plugin 검증기(`A1/cmd-name-shadows-skill`·A8)가
+commit 시점에 강제한다.
 
 MCP 배치 원칙(#1에서 확정): **manifest 기본 포함은 remote HTTP 2종(docs MCP ·
 console MCP)뿐이고, endpoint가 실재하기 전에는 placeholder로도 넣지 않는다.**
