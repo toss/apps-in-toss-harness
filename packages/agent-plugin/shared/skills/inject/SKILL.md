@@ -131,7 +131,7 @@ API로 자동 변환한다(Grep+Edit). Tier-1 외 API(IAP·Auth·Payments)는 �
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`
 - polyfill facet 상세: `<이 skill의 base directory>/references/polyfill.md`
 - debug-console facet 상세: `<이 skill의 base directory>/references/debug-console.md`
-- 짝 skill: `new-miniapp` (새 프로젝트 생성 — devtools/polyfill 포함 템플릿), `debug` (devtools facet이 깔아둔 panel·CDP relay 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 on-device 디버깅), `setup-phone-preview` (실기기 WebKit 미리보기 병행), `deploy` (설정 완료 후 콘솔 배포).
+- 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 panel·CDP relay 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 on-device 디버깅), `setup-phone-preview` (실기기 WebKit 미리보기 병행), `deploy` (설정 완료 후 콘솔 배포).
 - `@ait-co/devtools`(mock+panel+unplugin, 브라우저 dev 전용): https://github.com/apps-in-toss-community/devtools · live demo: https://devtools.aitc.dev/
 - `@ait-co/polyfill`: https://github.com/apps-in-toss-community/polyfill · 통합 가이드: [`polyfill/INTEGRATION.md`](https://github.com/apps-in-toss-community/polyfill/blob/main/INTEGRATION.md)
 - `@ait-co/debug-console`(on-device attach + eruda) · `@ait-co/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/apps-in-toss-community/debugger

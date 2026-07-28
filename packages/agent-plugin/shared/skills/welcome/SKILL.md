@@ -35,7 +35,7 @@ Apps in Toss Community 플러그인이 설치됐습니다. (커뮤니티 오픈�
   pnpm dev              # 2. 브라우저에서 개발 (devtools mock + panel)
   /ait:debug            # 3. 라이브 상태 디버깅 (회귀 진단)
   /ait:auth-setup       # 4. 토스 로그인 배선 (필요 시)
-  /ait:setup-bundle     # 5a. .ait 번들 빌드 환경 추가
+  /ait:setup-bundle     # 5a. .ait 번들 빌드 환경 추가 (/ait:new 산출물엔 기본 포함 — 없을 때만)
   /ait:design           # 5b. 등록용 이미지 자산 생성
   /ait:register         # 5c. 콘솔에 앱 등록
   /ait:deploy-key       # 5d. Deploy Key 발급 (처음이면 먼저)

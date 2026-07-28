@@ -28,7 +28,9 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   (샘플 코드가 "샌드박스앱/토스앱에서 실행해주세요" alert를 띄우는 구조),
   이 후처리 덕에 토스 앱 없이 브라우저에서 바로 개발할 수 있다(`pnpm dev` 즉시 실행).
 - 번들 설정(granite.config.ts + `build`/`deploy` 스크립트)은 create-ait-app
-  템플릿에 기본 포함돼 있어 **`/ait:setup-bundle`이 필요 없다**.
+  템플릿에 기본 포함돼 있어 **`/ait:setup-bundle`이 필요 없다**. 단 템플릿은
+  `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패하므로,
+  후처리 C가 플레이스홀더 URL로 채운다(실제 아이콘은 `/ait:design` 후 교체).
 - 이건 토스 앱 WebView에서 도는 **웹(DOM) 미니앱**이지 React Native 앱이
   아니다. RN 네이티브 컴포넌트나 `react-native` import를 쓰지 않는다.
   (설치 시 SDK가 RN을 peer로 선언해 뜨는 `unmet peer react-native` 경고는
@@ -36,8 +38,8 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 - 다음 단계(`pnpm dev` → 코드 수정 → `/ait:design` → `/ait:register` →
   `/ait:deploy-key` → `/ait:deploy`)가 명확히 안내된다.
 
-이 skill은 **scaffold 호출 + 후처리(devtools 배선·granite bin 검증·.gitignore)**만
-담당한다. 콘솔 등록(`aitcc app register`), 로그인, 배포는 다른 skill 또는
+이 skill은 **scaffold 호출 + 후처리(granite bin 검증·devtools 배선·brand.icon
+플레이스홀더·.gitignore)**만 담당한다. 콘솔 등록(`aitcc app register`), 로그인, 배포는 다른 skill 또는
 console-cli의 책임 — 여기서 자동 호출하지 않는다.
 
 생성되는 README/UI/주석에서 "공식(official)", "토스가 제공하는", "powered by
@@ -166,7 +168,20 @@ directory>/../inject/references/devtools.md**.
 1. ```bash
    pnpm --dir ./<package_name> add -D @ait-co/devtools
    ```
-2. `vite.config.ts`(react 계열) 또는 `vite.config.js`(js 템플릿)에:
+2. vite.config 파일을 수정한다. **실제 존재하는 파일을 먼저 확인**한다:
+
+   ```bash
+   ls ./<package_name>/vite.config.*
+   ```
+
+   확장자는 템플릿의 **TypeScript 여부**로 갈린다 — `react-ts`·`ts`(+`--tds`) →
+   `vite.config.ts`, `react`·`js` → `vite.config.js`. **존재하지 않는 확장자로
+   새 파일을 만들지 않는다**: Vite는 `.js`를 `.ts`보다 먼저 탐색하므로,
+   `vite.config.js`가 있는 프로젝트에 `vite.config.ts`를 새로 만들면 새 파일이
+   조용히 무시돼 배선이 침묵 실패한다. 둘 다 없으면 중단하고 scaffold 산출물
+   목록을 사용자에게 보고한다.
+
+   확인된 그 파일에:
    - `import aitDevtools from '@ait-co/devtools/unplugin';`
    - `plugins` 배열에 `aitDevtools.vite({ panel: true })` 추가 (배열이 없으면 생성 —
      vanilla `js`/`ts` 템플릿도 Vite이므로 동일하게 적용된다).
@@ -177,9 +192,21 @@ directory>/../inject/references/devtools.md**.
 `--sample`로 넣은 IAP/IAA 예제가 브라우저에서 "샌드박스앱/토스앱에서
 실행해주세요" alert만 띄운다.
 
-### 5. 후처리 C — .gitignore
+### 5. 후처리 C — brand.icon 플레이스홀더 + .gitignore
 
-create-ait-app 템플릿에는 `.gitignore`가 없다. 없으면 생성:
+**brand.icon**: create-ait-app 템플릿의 `granite.config.ts`는 `brand.icon: ""`
+(빈 문자열)로 생성되는데, `brand.icon`은 필수 필드라 이 상태로는 `ait build`가
+`플러그인 옵션이 올바르지 않습니다` 오류로 실패한다(setup-bundle skill과 동일
+근거). `Edit`로 **이 필드만** 커뮤니티 플레이스홀더 URL로 교체한다:
+
+```
+icon: ""  →  icon: "https://aitc.dev/apple-touch-icon.png"
+```
+
+(플레이스홀더임은 Step 6 안내 블록에서 알린다 — 실제 아이콘은 `/ait:design`으로
+생성 후 호스팅된 `https://` URL로 교체. 다른 필드는 건드리지 않는다.)
+
+**.gitignore**: create-ait-app 템플릿에는 `.gitignore`가 없다. 없으면 생성:
 
 ```
 node_modules/
@@ -188,6 +215,10 @@ dist/
 .env.*
 *.local
 .DS_Store
+
+# Apps in Toss bundle artifacts
+.granite/
+*.ait
 ```
 
 (`git init` 자체는 하지 않는다 — 사용자 결정. Out of scope 참조.)
@@ -211,6 +242,9 @@ dist/
   /ait:register      # 앱인토스 콘솔에 앱 등록 (aitcc.yaml 생성 → aitcc app register)
   /ait:deploy-key    # Deploy Key 발급 — 처음 배포면 deploy 전에
   /ait:deploy        # 번들을 콘솔에 업로드 (ait build → ait deploy --profile <name>)
+
+참고: granite.config.ts의 brand.icon은 플레이스홀더 URL입니다 —
+  /ait:design으로 실제 아이콘을 만들고 호스팅된 https:// URL로 교체하세요.
 
 문서: https://docs.aitc.dev/guides/dev-environment
 ```

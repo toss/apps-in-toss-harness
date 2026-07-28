@@ -89,7 +89,29 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 ls granite.config.ts
 ```
 
-파일이 이미 있으면 **즉시 중단**한다. 덮어쓰지 않는다:
+파일이 이미 있으면 먼저 **create-ait-app 산출물인지** 확인한다 — Step 1에서
+읽은 `package.json`의 `scripts["build"]` 값에 `ait build`가 포함되면
+(`/ait:new` 정본 경로 = 공식 create-ait-app 템플릿), 번들 빌드 환경이 이미
+갖춰진 상태다. 새로 설정할 것이 없으므로 안내하고 종료한다:
+
+```
+이 프로젝트는 create-ait-app 산출물로, 번들 빌드 환경이 이미 갖춰져 있습니다
+(granite.config.ts + build/deploy 스크립트 기본 포함). setup-bundle이 할 일이
+없습니다.
+
+번들 빌드: pnpm run build   (= ait build)
+
+다음 단계:
+  /ait:register   # 앱인토스 콘솔에 앱 등록
+  /ait:deploy     # 번들 업로드
+```
+
+이때 `granite.config.ts`의 `brand.icon`이 빈 문자열이면 위 블록에 한 줄
+경고를 덧붙인다: "brand.icon이 비어 있어 ait build가 실패합니다 — 유효한
+https:// URL로 채워주세요 (임시: https://aitc.dev/apple-touch-icon.png,
+실제 자산 생성은 /ait:design)."
+
+그 외의 경우(수동 구성 프로젝트)는 **즉시 중단**한다. 덮어쓰지 않는다:
 
 ```
 granite.config.ts가 이미 존재합니다. 수동 편집된 파일일 수 있으므로
@@ -284,7 +306,7 @@ setup-bundle 완료
 - 짝 skill: `register` (앱인토스 콘솔 앱 등록 — setup-bundle 다음 단계, `aitcc.yaml` 생성).
 - 짝 skill: `deploy` (`bundle:ait` 빌드 후 콘솔에 업로드 — `ait deploy --profile <name>`).
 - 짝 skill: `deploy-key` (Deploy Key 발급 + `~/.ait/credentials` 프로파일 저장).
-- 짝 skill: `new-miniapp` (새 프로젝트 생성 — `granite.config.ts` 없는 상태에서 시작).
+- 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 정본 경로는 번들 설정을 기본 포함해 이 skill이 불필요. `--local` 폴백 산출물만 `granite.config.ts` 없이 시작해 이 skill이 필요).
 - 커뮤니티 docs — ship 흐름에서 번들 빌드(`ait build`)가 놓이는 위치: https://docs.aitc.dev/guides/ship-mini-app
 - sdk-example 구현 사례: https://github.com/apps-in-toss-community/sdk-example
 - `@apps-in-toss/cli` (번들러 바이너리): https://www.npmjs.com/package/@apps-in-toss/cli

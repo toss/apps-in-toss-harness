@@ -26,10 +26,15 @@ deploy facet의 범위는 **빌드 확인 → 업로드 → 결과 해석**이�
 
 ## 의존
 
-- **번들 빌드 환경**: `granite.config.ts`와 `bundle:ait` 스크립트가 있어야 한다.
-  없으면 `/ait:setup-bundle`을 먼저 실행하도록 안내하고 중단.
-- **`ait` CLI**: `@apps-in-toss/cli`가 `devDependencies`에 있어야 한다.
-  `pnpm bundle:ait`가 동작하는 환경이면 이미 갖춰진 상태.
+- **번들 빌드 환경**: `granite.config.ts`와 번들 빌드 스크립트가 있어야 한다.
+  스크립트 레이아웃은 두 가지를 모두 인정한다 — `bundle:ait`(`/ait:setup-bundle`이
+  추가) 또는 `build`(값이 `ait build`인 경우 — create-ait-app 템플릿 산출물,
+  `/ait:new` 정본 경로). 둘 다 없으면 `/ait:setup-bundle`을 먼저 실행하도록
+  안내하고 중단.
+- **`ait` CLI**: `ait` bin이 프로젝트 `node_modules/.bin`에 있어야 한다 —
+  `@apps-in-toss/cli`(devDependency, setup-bundle 경로) 또는
+  `@apps-in-toss/web-framework`(create-ait-app 산출물 — 이 패키지가 `ait` bin을
+  직접 제공) 어느 쪽이든 충족된다.
 - **Deploy Key 프로파일**: `ait deploy --profile <name>` 호출에 필요한 자격증명.
   로컬 개발 환경에서는 `/ait:deploy-key`로 `~/.ait/credentials`에 저장한 프로파일을
   사용한다. CI/env-only 환경에서는 `AITCC_API_KEY` 환경변수로 대체할 수 있다.
@@ -61,11 +66,16 @@ granite.config.ts가 없습니다. 번들 빌드 환경이 설정되지 않았�
 먼저 /ait:setup-bundle을 실행해주세요.
 ```
 
-`package.json`을 `Read`로 읽어 `scripts["bundle:ait"]`가 있는지 확인한다.
-없으면 중단:
+`package.json`을 `Read`로 읽어 번들 빌드 스크립트를 결정한다
+(이후 단계에서 `<bundle-script>`로 사용):
+
+- `scripts["bundle:ait"]`가 있으면 → `<bundle-script>` = `bundle:ait` (setup-bundle 경로)
+- 없고 `scripts["build"]` 값에 `ait build`가 포함되면 → `<bundle-script>` = `build`
+  (create-ait-app 템플릿 산출물 — `/ait:new` 정본 경로)
+- 둘 다 아니면 중단:
 
 ```
-package.json에 bundle:ait 스크립트가 없습니다.
+package.json에 번들 빌드 스크립트(bundle:ait 또는 build = "ait build")가 없습니다.
 먼저 /ait:setup-bundle을 실행해주세요.
 ```
 
@@ -130,13 +140,19 @@ echo "${AITCC_API_KEY:+set}"
 ls *.ait 2>/dev/null
 ```
 
-`.ait` 파일이 없거나 사용자가 재빌드를 원하면 번들을 빌드한다:
+`.ait` 파일이 없거나 사용자가 재빌드를 원하면 번들을 빌드한다
+(Step 1에서 결정한 `<bundle-script>` 사용):
 
 ```bash
-pnpm bundle:ait
+pnpm run <bundle-script>   # bundle:ait 또는 build (= ait build)
 ```
 
 빌드 실패 시 에러를 그대로 보여주고 중단.
+`플러그인 옵션이 올바르지 않습니다`가 보이면 `granite.config.ts`의 `brand`
+블록을 확인한다 — create-ait-app 템플릿은 `brand.icon: ""`(빈 문자열)로
+생성되는데 이 필드는 필수라서 유효한 `https://` URL로 채워야 빌드가 통과한다
+(임시 플레이스홀더: `https://aitc.dev/apple-touch-icon.png`, 실제 자산 생성은
+`/ait:design`).
 `pnpm`이 없으면 `npx ait build`로 fallback 안내.
 
 ### 4. 배포 실행
@@ -200,7 +216,7 @@ stdout / stderr를 그대로 보여주고 진단 힌트를 추가한다.
 | `4037` / `4039` / `4040` / `4099` / `5001` (약관 미체결) | 아래 약관 미체결 복구 시퀀스를 따른다(워크스페이스 단위). |
 | `4046` (REVIEW lock) | 앱이 리뷰 중입니다. 운영팀 처리를 기다린 후 재시도. 새 앱 생성으로 우회 금지. |
 | `5010` (AI 위험 고지·이용약관 미동의) | 계정 단위 AI_RISK_USE 약관 미동의. 아래 5010 복구 경로를 따른다(워크스페이스 약관 시퀀스와 별개). |
-| `bundle not found` / `*.ait 없음` | Step 3 빌드 단계를 건너뛰었거나 빌드가 실패함. `pnpm bundle:ait` 재실행. |
+| `bundle not found` / `*.ait 없음` | Step 3 빌드 단계를 건너뛰었거나 빌드가 실패함. `pnpm run <bundle-script>` 재실행. |
 | 기타 | 에러 메시지를 그대로 보여주고 `aitcc` 로그 / GitHub Issues 안내. |
 
 #### 약관 미체결 복구 시퀀스 (에러 코드 → TYPE 매핑)
@@ -361,7 +377,7 @@ exit 2 실패한다. 따라서 약관을 채팅으로 먼저 제시하고 사용
 
 - 짝 skill: `register` (앱인토스 콘솔 앱 등록 — 이 skill의 전제 조건, `aitcc.yaml` 없으면 선행).
 - Deploy Key facet 상세: `<이 skill의 base directory>/references/deploy-key.md` (발급·저장·복구 절차 전문).
-- 짝 skill: `setup-bundle` (번들 빌드 환경 설정 — 이 skill의 전제 조건).
+- 짝 skill: `setup-bundle` (번들 빌드 환경 설정 — `granite.config.ts` 없는 프로젝트의 전제 조건. create-ait-app 산출물(`/ait:new` 정본 경로)은 기본 포함이라 불필요).
 - 짝 skill: `status` (콘솔 인증 + 앱 상태 확인 — 배포 전 점검).
 - 커뮤니티 docs — 번들 빌드·등록·배포 전 과정(두 상태머신·4046 lock·ait↔aitcc 분담): https://docs.aitc.dev/guides/ship-mini-app
 - console-cli 레퍼런스: https://github.com/apps-in-toss-community/console-cli
