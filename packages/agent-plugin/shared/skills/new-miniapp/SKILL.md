@@ -92,7 +92,10 @@ Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
   https://nodejs.org/en/download/ 안내 후 종료.
 - **pnpm 없음** → `corepack enable`을 먼저 자동 시도, 실패 시
   `npm install -g pnpm` 안내 후 종료.
-- **pnpm 11 미만** → `npm install -g pnpm@latest` 안내 후 종료.
+- **pnpm 11 미만** → `corepack prepare pnpm@latest --activate`를 먼저 시도
+  (Node 24+에선 pnpm이 corepack shim인 경우가 흔하고, 그 환경에서
+  `npm install -g`는 shim과 PATH 우선순위가 충돌할 수 있다), corepack 미사용
+  환경이면 `npm install -g pnpm@latest` 안내 후 종료.
 
 ### 1. 입력 정규화 + 충돌 검사
 
@@ -134,8 +137,16 @@ pnpm dlx create-ait-app@latest <package_name> --inline --pm pnpm --template <tem
   피하고 인자를 그대로 CLI에 넘긴다.
 
 CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니다!`)를 내면 다음으로.
-에러로 끝나면 stderr를 그대로 사용자에게 전하고 중단한다 — 네트워크 문제로
-보이면 `--local` 폴백을 안내한다.
+에러로 끝나면 stderr를 그대로 사용자에게 전하고 중단한다:
+
+- **완전 오프라인**으로 보이면 `--local` 폴백을 안내한다.
+- **온라인인데 특정 transitive dep만 `ERR_PNPM_FETCH_404`로 죽는 경우**
+  (프록시/미러 registry가 일부 버전을 못 주는 환경 — 실측)는 `--local`도 같은
+  vite 툴체인을 설치하다 같은 문제를 밟을 수 있다. 파일 복사는 설치 전에 이미
+  끝나 있으므로, 생성된 디렉토리 루트에 `pnpm-workspace.yaml`을 만들어
+  `overrides`로 문제 패키지를 미러에 존재하는 인접 버전으로 고정한 뒤, CLI가
+  하려던 설치(`pnpm install` → `pnpm add @apps-in-toss/web-framework@latest`)를
+  수동으로 이어가는 회피를 안내한다.
 
 ### 3. 후처리 A — dev 스크립트 무결성 (granite bin 검증)
 
