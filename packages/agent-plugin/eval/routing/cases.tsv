@@ -12,6 +12,7 @@
 05-inject-devtools	+inject	이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어
 06-inject-polyfill	+inject	표준 Web API로 코드를 쓸 수 있게 앱인토스 polyfill 모드로 마이그레이션해줘
 07-phone-preview	+setup-phone-preview	개발 중인 미니앱을 실제 폰에서 미리 보고 싶은데 터널 셋업 해줘
+07b-setup-debugger	+setup-debugger	온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘
 08-debug	+debug	미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어
 09-auth	+auth-setup	앱인토스 로그인을 oidc-bridge로 연결해서 Supabase 인증까지 배선하고 싶어
 10-setup-bundle	+setup-bundle	이 프로젝트에 .ait 네이티브 번들 빌드 환경을 추가해줘 (granite.config.ts 랑 bundle 스크립트)

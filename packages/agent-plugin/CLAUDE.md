@@ -21,7 +21,7 @@
 | 패키지 | 정체성 | 설치 위치 | agent-plugin의 소비 지점 |
 |---|---|---|---|
 | `@ait-co/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | `devDependencies` | `inject`(devtools facet), `new-miniapp` 템플릿 |
-| `@ait-co/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | plugin manifest `mcpServers.ait-devtools` — `npx -y -p @ait-co/debugger debugger` |
+| `@ait-co/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | `setup-debugger` skill → 프로젝트 `.mcp.json` `mcpServers.ait-devtools`(`npx -y -p @ait-co/debugger debugger`), `debug` §5가 소비 |
 | `@ait-co/debug-console` | on-device attach 런타임(eruda 인앱 콘솔 포함) | **`dependencies`** — 프로덕션 번들에 들어갈 수 있는 유일한 패키지 | `inject`(debug-console facet) |
 
 **보안 스코프 축**: "무엇이 앱 번들에 들어갈 수 있는가"는 이 표의 설치 위치 열 — 각 패키지의 `package.json` 한 장으로 답해진다. `@ait-co/devtools`·`@ait-co/debugger`는 devDep/npx 전용이라 프로덕션 번들에 구조적으로 유입되지 않는다. `@ait-co/debug-console`이 설치돼 있지 않으면 attach 코드는 번들에 들어갈 수 없다 — 환경 3(intoss-private candidate)이 production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, on-device attach 표면을 남기려면 이 패키지만 명시적으로 `dependencies`에 설치해야 한다. 이 한 패키지로의 격리가 3-way split의 요점이다.
@@ -36,13 +36,13 @@
 
 이 repo에서 MCP는 기본 tool(`Bash`/`Read`/`Write`/`Edit`/`WebFetch`)로 못 하는 일에만 — 예: live 브라우저 상태 조작(devtools 디버깅 MCP), 관리자 전용 운영 데이터(oidc-bridge 관리자 MCP). CLI wrapping·스캐폴딩·문서 fetch는 전부 skill + Bash로.
 
-**"구현 안 함" vs "등록함" 경계**: plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`에 `ait-devtools`(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)를 **한 줄로 등록(reference)**한다 — `npx -y -p @ait-co/debugger debugger`(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 케이스다(umbrella `CLAUDE.md` §4 "debug가 유일한 정당한 MCP 후보"). plugin은 여전히 MCP를 **자체 구현하지 않고**, 서버는 attach 전 bootstrap 도구만 노출하므로 idle context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). 설계 정본: umbrella `meta/three-environments-fidelity.md` §7.4.
+**"구현 안 함" vs "배선함" 경계**: `ait-devtools` MCP server(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)는 plugin manifest가 아니라 **프로젝트 scope `.mcp.json`에 opt-in으로 배선**된다 — `setup-debugger` skill(`/ait:setup-debugger`)이 `npx -y -p @ait-co/debugger debugger` 항목을 merge한다(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). manifest 상시 등록에서의 전환은 harness#1 타깃 아키텍처 결정이다: 디버깅은 프로젝트 전제 작업이고, 로컬 npx 데몬을 모든 세션에 상시 태우면 idle 비용·공급망 표면이 생긴다. 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 로컬 MCP 케이스다(umbrella `CLAUDE.md` §4 "debug가 유일한 정당한 MCP 후보"). plugin은 여전히 MCP를 **자체 구현하지 않고**, 서버는 attach 전 bootstrap 도구만 노출하므로 로드 시 context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). **기본 포함 예정 remote MCP 2종**(docs GitBook MCP — harness#3 게이트, console MCP GW — harness#4 게이트)은 endpoint가 실제 가용해지기 전까지 manifest에 placeholder로 넣지 않는다. 설계 정본: umbrella `meta/three-environments-fidelity.md` §7.4 + harness#1.
 
 ## 제공물
 
 ### Skills (`/ait:...` 명령이 트리거)
 
-**14개 skill · 18개 command stub** — 겹치는 skill은 병합하되(issue #273 skill 통합 17→14) 사용자 표면(`/ait:<verb>` 명령)은 station 수만큼 유지한다(A1: agent-plugin#280 `/ait:inject-debug-console` facet 신설로 17→18). 병합 4건은 여러 command stub이 한 skill의 서로 다른 **facet**으로 위임한다: `/ait:logs`→`status`, `/ait:deploy-key`→`deploy`, `/ait:inject-devtools`·`/ait:inject-polyfill`·`/ait:inject-debug-console`→`inject`.
+**15개 skill · 19개 command stub** — 겹치는 skill은 병합하되(issue #273 skill 통합 17→14) 사용자 표면(`/ait:<verb>` 명령)은 station 수만큼 유지한다(A1: agent-plugin#280 `/ait:inject-debug-console` facet 신설로 17→18, harness#1 `/ait:setup-debugger` 신설로 18→19). 병합 4건은 여러 command stub이 한 skill의 서로 다른 **facet**으로 위임한다: `/ait:logs`→`status`, `/ait:deploy-key`→`deploy`, `/ait:inject-devtools`·`/ait:inject-polyfill`·`/ait:inject-debug-console`→`inject`.
 
 | Skill | 책임 | command (facet) | 의존 |
 |---|---|---|---|
@@ -54,8 +54,9 @@
 | `status` | 콘솔 상태 조회 (auth·workspace·review·serviceStatus). **logs facet**: 콘솔 런타임 로그 endpoint 부재(확정된 갭) 안내 + 대안 4종 | `/ait:status`, `/ait:logs` | `Bash`, console-cli |
 | `auth-setup` | oidc-bridge 연결 옵션 설정 | `/ait:auth-setup` | `Edit` |
 | `setup-phone-preview` | vite.config tunnel 옵션 + dev:phone script + cloudflared 사전 캐시 — 환경 2(AITC Sandbox App (PWA)) 진입, 실기기 WebKit dev 미리보기 | `/ait:setup-phone-preview` | `Edit`, `Bash` |
+| `setup-debugger` | `ait-devtools` MCP server(`@ait-co/debugger`)를 프로젝트 `.mcp.json`에 opt-in 배선 — `/ait:debug` 환경 2·3의 전제 | `/ait:setup-debugger` | `Read`/`Write`/`Edit` |
 | `docs <topic>` | docs repo에서 주제 경로 리턴, `Read`로 로드 | `/ait:docs` | `Read`/`WebFetch` |
-| `debug` | 환경 3겹 분기 디버깅 안내. 환경 1: 브라우저(devtools panel · `window.__ait` · 브라우저 DevTools). 환경 2: PWA Sandbox(`setup-phone-preview`). 환경 3: `ait-devtools` MCP(`@ait-co/debugger`)의 `start_attach` QR로 on-device CDP relay attach | `/ait:debug` | `Read`, `ait-devtools` MCP |
+| `debug` | 환경 3겹 분기 디버깅 안내. 환경 1: 브라우저(devtools panel · `window.__ait` · 브라우저 DevTools). 환경 2: PWA Sandbox(`setup-phone-preview`). 환경 3: `ait-devtools` MCP(`@ait-co/debugger`)의 `start_attach` QR로 on-device CDP relay attach | `/ait:debug` | `Read`, `ait-devtools` MCP (opt-in — `setup-debugger`가 배선) |
 | `welcome` | harness 진입 안내 — station 0 install 완료 후 station 1(scaffold)로 hand-off | `/ait:welcome` | (없음) |
 | `plan` | 기획 station 7 — 미니앱 기획 지원 | `/ait:plan` | `Read`/`WebFetch` |
 | `design` | 디자인 station 8 — Figma MCP 연동 UI 설계 지원 | `/ait:design` | Figma MCP |
@@ -124,9 +125,9 @@ Phase 2-4 어댑터는 harness roadmap M3 달성 후 착수.
 
 다른 어댑터도 같은 디렉토리를 참조한다(경로 형식은 어댑터 포맷에 따라 조정).
 
-**OPTIONAL — mcpServers (Claude Code-only)**
+**mcpServers — manifest에 넣지 않는다 (프로젝트 opt-in 배선)**
 
-`mcpServers`는 Claude Code manifest 전용이다. `ait-devtools` MCP server는 station 2·3의 live CDP attach를 위해 등록되며, 다른 어댑터는 이를 생략하거나 해당 에이전트의 MCP 등록 메커니즘으로 교체한다:
+plugin manifest는 `mcpServers` 필드를 갖지 않는다(harness#1 타깃 아키텍처). `ait-devtools` MCP server는 station 2·3의 live CDP attach를 위해 **프로젝트 scope `.mcp.json`**에 등록되며, 그 배선은 `setup-debugger` skill(`/ait:setup-debugger`)이 담당한다. 항목의 정본 형태:
 
 ```json
 {
@@ -139,7 +140,7 @@ Phase 2-4 어댑터는 harness roadmap M3 달성 후 착수.
 }
 ```
 
-`mcpServers.ait-devtools`는 Claude Code manifest에만 존재하는 항목이다 — `run_in_background`, `/mcp` auto-start, `notifications/tools/list_changed` 처리가 모두 Claude Code-specific이다. `debug/SKILL.md`의 §5(on-device MCP attach)는 이 메커니즘에 결합돼 있으므로, 다른 타겟 어댑터는 §5를 adapter-specific overlay로 교체해야 한다.
+`.mcp.json` project-scope 등록·`/mcp` 승인·`notifications/tools/list_changed` 처리는 모두 Claude Code-specific이다. `debug/SKILL.md`의 §5(on-device MCP attach)와 `setup-debugger` skill이 이 메커니즘에 결합돼 있으므로, 다른 타겟 어댑터는 둘을 해당 에이전트의 MCP 등록 메커니즘에 맞는 adapter-specific overlay로 교체해야 한다. 기본 포함 예정 remote MCP 2종(docs GitBook MCP — harness#3, console MCP GW — harness#4)은 endpoint 가용 시점에 manifest `mcpServers`로 들어온다 — 그때 이 절을 다시 갱신한다.
 
 **OPTIONAL — install script**
 

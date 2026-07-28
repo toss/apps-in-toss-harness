@@ -436,10 +436,12 @@ const DOCS_DEEPLINK_RE = /docs\.aitc\.dev\/(guides|api)\/[a-zA-Z0-9][a-zA-Z0-9/_
 // shared/commands/ 전수를 열거한다. 변경 시 이 상수도 함께 갱신.
 // ---------------------------------------------------------------------------
 
-// 18개 command stub → 14개 skill 매핑 (issue #273 skill 통합 17→14; agent-plugin#280
+// 19개 command stub → 15개 skill 매핑 (issue #273 skill 통합 17→14; agent-plugin#280
 // 이 inject 에 debug-console facet 을 추가하며 command 표면이 17→18 로 늘었다 — devtools
 // 단일 패키지가 debugger repo 로 분리되며 생긴 실제 갭(온디바이스 attach 설치 안내 부재)을
-// 메우는 신규 facet 이라 병합이 아니라 순수 추가다).
+// 메우는 신규 facet 이라 병합이 아니라 순수 추가다. harness#1 이 setup-debugger 를
+// 추가하며 18→19 — debugger MCP 를 manifest 상시 등록에서 프로젝트 .mcp.json opt-in
+// 배선으로 전환하고, 그 배선을 담당하는 skill 이 신설됐다).
 // 병합 3건은 여러 command 가 한 skill 로 위임한다(command 표면은 무변경):
 //   ait-logs               → status  (status+logs 병합: 같은 read-only 콘솔 조회 계열)
 //   ait-deploy-key         → deploy  (deploy-key 를 deploy 로 흡수: deploy 의 인증 전제)
@@ -467,6 +469,7 @@ const EXPECTED_CMD_TO_SKILL = {
   'ait-plan.md': 'plan',
   'ait-register.md': 'register',
   'ait-setup-bundle.md': 'setup-bundle',
+  'ait-setup-debugger.md': 'setup-debugger',
   'ait-setup-phone-preview.md': 'setup-phone-preview',
   'ait-status.md': 'status',
   'ait-welcome.md': 'welcome',

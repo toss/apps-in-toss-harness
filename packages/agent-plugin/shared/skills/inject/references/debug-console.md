@@ -134,7 +134,7 @@ if (__DEBUG_BUILD__) {
   유일한 패키지다.
 - ❌ 진입점 이외 파일에 자동 import 삽입.
 - ❌ `@ait-co/devtools`·`@ait-co/debugger`와 혼동 — 이 facet은 온디바이스 attach +
-  eruda 전용이다. MCP 데몬 등록은 plugin manifest가 이미 처리(`/ait:debug` 참조),
+  eruda 전용이다. MCP 데몬 등록은 `/ait:setup-debugger`가 처리(`/ait:debug` 참조),
   브라우저 mock/panel은 `inject-devtools` facet.
 - ❌ 생성·수정하는 내용에 "공식(official)", "토스가 제공하는", "powered by Toss" 등
   제휴·후원·인증 암시 표현.

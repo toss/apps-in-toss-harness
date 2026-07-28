@@ -46,9 +46,10 @@ providers:
       # 확인됨: working_dir 키 이름. skill 이 0개로 잡히면 이 키를 확인하라
       # (provider 버전에 따라 cwd / workingDir 일 수 있음).
       working_dir: ./fixture
-      # 14개 skill을 명시적으로 노출 (setting_sources 발견과 병행 — 안전).
+      # 15개 skill을 명시적으로 노출 (setting_sources 발견과 병행 — 안전).
       # skill 통합 17→14 (issue #273): logs→status, deploy-key→deploy,
       # inject-devtools+inject-polyfill→inject. command 표면은 17개 그대로.
+      # harness#1: setup-debugger 신설(debugger MCP를 프로젝트 .mcp.json opt-in 배선으로 전환) — 14→15.
       skills:
         - auth-setup
         - changeset
@@ -61,6 +62,7 @@ providers:
         - plan
         - register
         - setup-bundle
+        - setup-debugger
         - setup-phone-preview
         - status
         - welcome
@@ -145,6 +147,13 @@ tests:
         value: setup-phone-preview
 
   # --- station 3: debug ---
+  - description: 'POS setup-debugger — 디버그 MCP 프로젝트 배선'
+    vars:
+      utterance: '온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘'
+    assert:
+      - type: skill-used
+        value: setup-debugger
+
   - description: 'POS debug — 라이브 상태 디버깅'
     vars:
       utterance: '미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어'

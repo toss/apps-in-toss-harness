@@ -15,9 +15,9 @@
 **attach까지 한 번에 하려면 `start_attach`**, 환경만 전환하고 싶으면 `start_debug`를 쓴다.
 `start_attach`는 `start_debug`의 mode 전환 동작을 흡수해 편의로 제공한다 — 이미 그 모드면 전환을 생략하고 바로 attach 경로를 발급한다. `start_debug`는 attach 없이 환경만 전환하는 단독 용도로 MCP 데몬(`@ait-co/debugger`)에 계속 존재한다.
 
-`ait-devtools` 데몬은 **상시 기동** 상태로, 환경 진입은 **서버 재구동 없이** MCP 도구로
-런타임에 결정한다. plugin manifest가 등록하는 기본
-데몬(`npx -y -p @ait-co/debugger debugger`)은 내부적으로 dual-connection 라우터로
+`ait-devtools` 데몬은 세션에 로드되면 계속 떠 있고, 환경 진입은 **서버 재구동 없이** MCP 도구로
+런타임에 결정한다. 프로젝트 `.mcp.json`이 등록하는 기본
+데몬(`npx -y -p @ait-co/debugger debugger`, `/ait:setup-debugger`가 배선)은 내부적으로 dual-connection 라우터로
 동작하므로, **환경 1·2·3 세 가지 mode 모두 한 데몬에서 warm swap으로 오갈 수 있다**
 (Claude Code 재구동·MCP 재핸드셰이크 불필요). 환경 2(`relay-sandbox`) 진입에 별도
 `--target=mobile` 데몬을 띄울 필요는 없다.
@@ -28,7 +28,7 @@
 환경 2는 Vite dev 서버의 unplugin(`tunnel:{cdp:true}`)이 **먼저 띄운 외부 relay**에
 MCP가 CDP 클라이언트로 붙는 구조다(아키텍처 상수 — 데몬이 이 relay를 스스로 못 만든다).
 
-plugin manifest가 등록하는 기본 데몬(`npx -y -p @ait-co/debugger debugger`)은
+프로젝트 `.mcp.json`이 등록하는 기본 데몬(`npx -y -p @ait-co/debugger debugger`)은
 dual-connection 라우터로 동작하므로, `start_debug({mode:'relay-sandbox', projectRoot})`
 호출 시 이 외부 relay 패밀리를 **런타임에 lazy-boot**해 붙는다. 별도
 `--target=mobile` 데몬을 띄우거나 MCP 서버를 재시작할 필요가 없다.
@@ -47,7 +47,7 @@ env var)가 채워지고, 데몬이 이를 읽어 relay endpoint를 구성한다
 `start_debug({mode:'relay-sandbox'})`가 "이 세션은 단일 연결만 보유합니다" 류 에러를
 돌려준다면, 데몬을 dual-connection으로 재구성한다:
 
-1. `~/.claude/settings.json`을 열거나 `/mcp` → `ait-devtools` 선택 → Edit.
+1. 프로젝트 `.mcp.json`을 열거나 `/mcp` → `ait-devtools` 선택 → Edit.
 2. 해당 서버의 `args` 배열에 `"--target=mobile"`을 추가한다.
 3. Claude Code를 재시작하거나 해당 MCP 서버를 재초기화해 dual-connection 데몬을
    다시 부팅한다.

@@ -10,11 +10,5 @@
   "license": "BSD-3-Clause",
   "keywords": ["apps-in-toss", "toss", "mini-app", "claude-code", "community"],
   "skills": "./shared/skills/",
-  "commands": "./shared/commands/",
-  "mcpServers": {
-    "ait-devtools": {
-      "command": "npx",
-      "args": ["-y", "-p", "@ait-co/debugger", "debugger"]
-    }
-  }
+  "commands": "./shared/commands/"
 }
