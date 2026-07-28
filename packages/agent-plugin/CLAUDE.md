@@ -163,11 +163,11 @@ plugin manifest는 `mcpServers` 필드를 갖지 않는다(harness#1 타깃 아�
 
 ## Status
 
-Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/{plugin.json,marketplace.json}` 존재 — `marketplace.json`이 `/plugin marketplace add apps-in-toss-community/agent-plugin` 설치 경로(harness station 0)를 지탱한다. `plugin.json`의 `mcpServers."ait-devtools"`가 `debugger`를 상시 기동해 station 2·3을 단일 MCP surface로 묶는다(Phase 3 분리 후 데몬 패키지는 `@ait-co/debugger` — server key `ait-devtools`는 개명하지 않는다).
+Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/{plugin.json,marketplace.json}` 존재 — `marketplace.json`이 `/plugin marketplace add apps-in-toss-community/agent-plugin` 설치 경로(harness station 0)를 지탱한다. manifest는 `mcpServers`를 갖지 않는다 — `ait-devtools` MCP(station 2·3 attach surface)는 `setup-debugger` skill이 프로젝트 `.mcp.json`에 opt-in 배선한다(harness#1 전환. Phase 3 분리 후 데몬 패키지는 `@ait-co/debugger` — server key `ait-devtools`는 개명하지 않는다).
 
-- ✅ **작동** (14 skill / 18 command): `docs`, `status`(+logs facet), `new-miniapp`, `inject`(devtools·polyfill·debug-console facet), `auth-setup`, `setup-phone-preview`, `deploy`(+Deploy Key facet), `setup-bundle`, `register`, `debug`, `welcome`, `plan`, `design`, `changeset`
-- ✅ **등록**: `ait-devtools` MCP(`npx -y -p @ait-co/debugger debugger`) — `/ait:debug`가 환경 3 attach 경로(`start_attach` QR) 발급. attach 전 bootstrap 도구만, 폰 attach 후 `list_changed`로 동적 등록(devtools #208).
-- 🔜 **남은 검증**: plugin 설치 → `/mcp`에 `ait-devtools` 노출 + 실기기 QR attach 1회 acceptance (GitHub Project harness roadmap 추적)
+- ✅ **작동** (15 skill / 19 command): `docs`, `status`(+logs facet), `new-miniapp`, `inject`(devtools·polyfill·debug-console facet), `auth-setup`, `setup-phone-preview`, `setup-debugger`, `deploy`(+Deploy Key facet), `setup-bundle`, `register`, `debug`, `welcome`, `plan`, `design`, `changeset`
+- ✅ **배선 경로**: `/ait:setup-debugger` → 프로젝트 `.mcp.json`의 `ait-devtools`(`npx -y -p @ait-co/debugger debugger`) → `/ait:debug`가 환경 2·3 attach 경로(`start_attach` QR) 발급. attach 전 bootstrap 도구만, 폰 attach 후 `list_changed`로 동적 등록(devtools #208).
+- 🔜 **남은 검증**: plugin 설치 → `/ait:setup-debugger` 배선 + 세션 서버 승인 → `/mcp`에 `ait-devtools` 노출 + 실기기 QR attach 1회 acceptance (harness#1 추적)
 - 📁 **Templates**: `react-vite/` 사용 가능. `react-vite-polyfill/`, `react-vite-supabase/`는 의존 repo 준비 후 추가
 
 ## 공통 스택
