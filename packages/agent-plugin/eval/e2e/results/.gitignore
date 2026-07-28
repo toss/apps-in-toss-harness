@@ -1,0 +1,4 @@
+# 런타임 산출물 — 메인테이너 로컬 측정 결과. commit하지 않는다.
+# (의미 있는 측정은 baseline.json 스냅샷으로 승격해 commit.)
+*
+!.gitignore

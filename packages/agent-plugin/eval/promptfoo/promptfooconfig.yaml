@@ -1,0 +1,288 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# ait 플러그인 — skill 트리거링 정합성 eval (promptfoo)
+# ------------------------------------------------------------------
+# 무엇을 검증하나:
+#   각 skill이 "맞는 한국어 발화"에서 트리거되는가(positive),
+#   그리고 "off-topic 발화"에서 잘못 트리거되지 않는가(negative control).
+#
+# 어떻게 검증하나 (deterministic — LLM-judge 아님):
+#   provider 가 anthropic:claude-agent-sdk 라서, 한 턴 동안 어떤 skill 이
+#   로드됐는지가 metadata 로 남는다. assertion 은 그 metadata 만 본다:
+#     - type: skill-used       value: <skill-name>   # 해당 skill 로드됨
+#     - type: not-skill-used   value: <skill-name>   # 해당 skill 로드 안 됨
+#   모델의 산문 출력을 채점하지 않으므로 재현 가능하고 flaky 하지 않다.
+#
+# 실행:
+#   bash eval/promptfoo/setup-fixture.sh        # shared/skills -> fixture/.claude/skills symlink
+#   export ANTHROPIC_API_KEY=...                # (op-env 등으로 주입)
+#   npx promptfoo@latest eval -c eval/promptfoo/promptfooconfig.yaml
+#   npx promptfoo@latest view                   # 결과 브라우저로
+#
+# 주의: setup-fixture.sh 를 먼저 돌리지 않으면 skill 이 0개라 모든 positive 가 실패한다.
+#   claude-agent-sdk provider 는 working_dir 의 .claude/skills/ 를
+#   setting_sources: ['project'] 로 발견한다.
+#
+# 형상 주의 (issue #275): 이 파일은 skill 을 **project skill** 로 얹는다. 실제
+#   사용자는 /plugin install 로 얹으므로 skill 이 `ait:` 네임스페이스에 들어가고
+#   shared/commands/ 17개가 같은 목록에 함께 오른다 — 그 차이가 측정값을 바꾼다
+#   (case 03·09 가 여기선 5/5, 설치 형상에선 0/5·2/5 였다). 여기는 **케이스 정본**
+#   이고, 라우팅 회귀 판정은 eval/routing/ (claude -p --plugin-dir, API 키 불필요)
+#   로 한다. 발화를 고치면 eval/routing/cases.tsv 로 함께 옮긴다.
+
+description: ait 플러그인 skill 트리거링 정합성 (positive + negative control)
+
+# ------------------------------------------------------------------
+# provider: Claude Agent SDK — skill 발견을 위해 fixture working_dir 사용.
+# ------------------------------------------------------------------
+providers:
+  - id: anthropic:claude-agent-sdk
+    config:
+      # 확인됨: 작업 기준선은 stable(web-framework 2.x). eval 모델은
+      # scaffold 흐름과 무관하니 일상 개발 모델을 쓰면 된다.
+      model: claude-sonnet-4-5
+      # working_dir 안의 .claude/skills/ 에서 skill 을 발견한다.
+      setting_sources: ['project']
+      # 확인됨: working_dir 키 이름. skill 이 0개로 잡히면 이 키를 확인하라
+      # (provider 버전에 따라 cwd / workingDir 일 수 있음).
+      working_dir: ./fixture
+      # 14개 skill을 명시적으로 노출 (setting_sources 발견과 병행 — 안전).
+      # skill 통합 17→14 (issue #273): logs→status, deploy-key→deploy,
+      # inject-devtools+inject-polyfill→inject. command 표면은 17개 그대로.
+      skills:
+        - auth-setup
+        - changeset
+        - debug
+        - deploy
+        - design
+        - docs
+        - inject
+        - new-miniapp
+        - plan
+        - register
+        - setup-bundle
+        - setup-phone-preview
+        - status
+        - welcome
+
+# 기본 assertion 은 각 test 에 직접 둔다 (skill 마다 기대 skill 이 다름).
+defaultTest:
+  options:
+    # provider 가 도구를 한 번 호출하면 충분 — 멀티턴 불필요.
+    runSerially: false
+
+# 프롬프트는 사용자 발화를 그대로 넘긴다 (verbatim).
+prompts:
+  - '{{utterance}}'
+
+tests:
+  # ================================================================
+  # POSITIVE — 각 skill을 트리거해야 하는 자연스러운 한국어 발화.
+  #   station 순서대로 (0→8 + 보조 skill).
+  # ================================================================
+
+  # --- station 1: scaffold ---
+  - description: 'POS new-miniapp — 새 미니앱 스캐폴드'
+    vars:
+      utterance: '앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로.'
+    assert:
+      - type: skill-used
+        value: new-miniapp
+
+  - description: 'POS new-miniapp — 빈 프로젝트 시작'
+    vars:
+      utterance: '빈 디렉토리에서 앱인토스 미니앱 프로젝트를 처음부터 스캐폴드하고 싶어'
+    assert:
+      - type: skill-used
+        value: new-miniapp
+
+  # --- station 7: plan (스캐폴드 전 분석) ---
+  - description: 'POS plan — 요구사항 → SDK 도메인/권한 계획'
+    vars:
+      utterance: '위치 기반 쿠폰 미니앱을 만들 건데, 필요한 SDK 도메인이랑 권한이랑 약관을 먼저 정리해줘'
+    assert:
+      - type: skill-used
+        value: plan
+
+  # --- station 8: design ---
+  - description: 'POS design — Figma → 등록 에셋'
+    vars:
+      utterance: 'Figma 디자인을 앱인토스 미니앱 UX 제약에 맞추고 등록용 이미지 에셋 만들어줘'
+    assert:
+      - type: skill-used
+        value: design
+
+  # --- station 2: dev — devtools 주입 (brownfield, inject skill의 devtools facet) ---
+  - description: 'POS inject (devtools facet) — 기존 프로젝트에 devtools 주입'
+    vars:
+      utterance: '이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어'
+    assert:
+      - type: skill-used
+        value: inject
+
+  # --- station 2: dev — polyfill 마이그레이션 (inject skill의 polyfill facet) ---
+  - description: 'POS inject (polyfill facet) — polyfill 모드 전환'
+    vars:
+      utterance: '표준 Web API로 코드를 쓸 수 있게 앱인토스 polyfill 모드로 마이그레이션해줘'
+    assert:
+      - type: skill-used
+        value: inject
+
+  # --- station 2/3: dev/debug — on-device attach 패키지 설치 (inject skill의 debug-console facet, agent-plugin#280) ---
+  - description: 'POS inject (debug-console facet) — 온디바이스 attach 패키지 설치'
+    vars:
+      utterance: '실기기 candidate 빌드에서 디버그 콘솔로 attach할 수 있게 debug-console 패키지 설치해줘'
+    assert:
+      - type: skill-used
+        value: inject
+
+  # --- station 2: dev — 실기기 미리보기 ---
+  - description: 'POS setup-phone-preview — 실폰 미리보기 터널'
+    vars:
+      utterance: '개발 중인 미니앱을 실제 폰에서 미리 보고 싶은데 터널 셋업 해줘'
+    assert:
+      - type: skill-used
+        value: setup-phone-preview
+
+  # --- station 3: debug ---
+  - description: 'POS debug — 라이브 상태 디버깅'
+    vars:
+      utterance: '미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어'
+    assert:
+      - type: skill-used
+        value: debug
+
+  # --- station 4: auth ---
+  - description: 'POS auth-setup — oidc-bridge 로그인 배선'
+    vars:
+      utterance: '앱인토스 로그인을 oidc-bridge로 연결해서 Supabase 인증까지 배선하고 싶어'
+    assert:
+      - type: skill-used
+        value: auth-setup
+
+  # --- station 5: register+ship — 번들 환경 ---
+  - description: 'POS setup-bundle — .ait 번들 빌드 환경 추가'
+    vars:
+      utterance: '이 프로젝트에 .ait 네이티브 번들 빌드 환경을 추가해줘 (granite.config.ts 랑 bundle 스크립트)'
+    assert:
+      - type: skill-used
+        value: setup-bundle
+
+  # --- station 5: register ---
+  - description: 'POS register — 콘솔에 앱 등록'
+    vars:
+      utterance: '이 미니앱을 앱인토스 콘솔에 등록하고 싶어. aitcc.yaml 만들고 register 까지.'
+    assert:
+      - type: skill-used
+        value: register
+
+  # --- station 5: deploy-key (deploy skill의 Deploy Key facet) ---
+  - description: 'POS deploy (Deploy Key facet) — Deploy Key 발급'
+    vars:
+      utterance: '앱인토스 Deploy Key 발급해서 프로파일로 저장해줘'
+    assert:
+      - type: skill-used
+        value: deploy
+
+  # --- station 5: deploy ---
+  - description: 'POS deploy — 번들 배포'
+    vars:
+      utterance: '미니앱 번들을 앱인토스 콘솔에 배포해줘'
+    assert:
+      - type: skill-used
+        value: deploy
+
+  # --- station 6: status ---
+  - description: 'POS status — 콘솔 상태 조회'
+    vars:
+      utterance: '내 앱인토스 콘솔 상태 보여줘. 워크스페이스랑 등록된 미니앱 상태.'
+    assert:
+      - type: skill-used
+        value: status
+
+  # --- station 6: logs (status skill의 logs facet) ---
+  - description: 'POS status (logs facet) — 런타임 로그 조회'
+    vars:
+      utterance: '배포한 미니앱의 런타임 로그를 보고 싶어'
+    assert:
+      - type: skill-used
+        value: status
+
+  # --- cross-cutting: docs ---
+  - description: 'POS docs — 커뮤니티 docs 토픽 로드'
+    vars:
+      utterance: '앱인토스 docs에서 clipboard API 사용법 찾아줘'
+    assert:
+      - type: skill-used
+        value: docs
+
+  # --- harness 외부: changeset (메인테이너 도구) ---
+  - description: 'POS changeset — 버전 changeset 생성'
+    vars:
+      utterance: '이 패키지 changeset 하나 추가해줘. 버전 올려줘.'
+    assert:
+      - type: skill-used
+        value: changeset
+
+  # ================================================================
+  # NEGATIVE CONTROL — off-topic 발화. 어떤 ait skill 도 트리거되면 안 된다.
+  #   가장 잘못 발화하기 쉬운 skill 들을 골라 not-skill-used 로 못박는다.
+  #   (new-miniapp/setup-bundle/inject-* 은 "프로젝트 만들기/빌드/설정"
+  #    같은 일반 개발 발화에 끌려갈 위험이 가장 크다.)
+  # ================================================================
+
+  - description: 'NEG 일반 리팩토링 — 어떤 ait skill 도 아님'
+    vars:
+      utterance: '이 React 컴포넌트 리팩토링해줘. props 너무 많아.'
+    assert:
+      - type: not-skill-used
+        value: new-miniapp
+      - type: not-skill-used
+        value: inject
+      - type: not-skill-used
+        value: design
+
+  - description: 'NEG 커밋 메시지 — changeset 으로 새지 않아야'
+    vars:
+      utterance: '이 변경에 대한 커밋 메시지 하나 써줘.'
+    assert:
+      - type: not-skill-used
+        value: changeset
+      - type: not-skill-used
+        value: deploy
+
+  - description: 'NEG 알고리즘 — 어떤 ait skill 도 아님'
+    vars:
+      utterance: '파이썬으로 피보나치 함수 짜줘.'
+    assert:
+      - type: not-skill-used
+        value: new-miniapp
+      - type: not-skill-used
+        value: plan
+      - type: not-skill-used
+        value: docs
+
+  - description: 'NEG 일반 npm 빌드 — setup-bundle/deploy 로 새지 않아야'
+    vars:
+      utterance: '이 프로젝트 그냥 npm run build 한 번 돌려줘.'
+    assert:
+      - type: not-skill-used
+        value: setup-bundle
+      - type: not-skill-used
+        value: deploy
+      - type: not-skill-used
+        value: new-miniapp
+
+  - description: 'NEG 일반 로그인 코드 — auth-setup 으로 새지 않아야'
+    vars:
+      utterance: '그냥 JWT 검증하는 Express 미들웨어 하나 짜줘.'
+    assert:
+      - type: not-skill-used
+        value: auth-setup
+
+  - description: 'NEG 일반 상태 조회 — status(+logs facet) 로 새지 않아야'
+    vars:
+      utterance: 'git 상태 한 번 보여줘. 뭐가 staged 됐는지.'
+    assert:
+      - type: not-skill-used
+        value: status

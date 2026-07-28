@@ -1,0 +1,14 @@
+{
+  "name": "aitc",
+  "description": "Apps in Toss Community — Claude Code plugin marketplace",
+  "owner": {
+    "name": "apps-in-toss-community"
+  },
+  "plugins": [
+    {
+      "name": "ait",
+      "source": "./",
+      "description": "Community plugin for building Apps in Toss mini-apps from inside AI coding agents."
+    }
+  ]
+}

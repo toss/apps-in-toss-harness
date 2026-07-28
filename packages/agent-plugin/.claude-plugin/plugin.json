@@ -1,0 +1,20 @@
+{
+  "name": "ait",
+  "version": "0.1.21",
+  "description": "Community plugin for building Apps in Toss mini-apps from inside AI coding agents.",
+  "author": {
+    "name": "apps-in-toss-community"
+  },
+  "homepage": "https://aitc.dev/",
+  "repository": "https://github.com/apps-in-toss-community/agent-plugin",
+  "license": "BSD-3-Clause",
+  "keywords": ["apps-in-toss", "toss", "mini-app", "claude-code", "community"],
+  "skills": "./shared/skills/",
+  "commands": "./shared/commands/",
+  "mcpServers": {
+    "ait-devtools": {
+      "command": "npx",
+      "args": ["-y", "-p", "@ait-co/debugger", "debugger"]
+    }
+  }
+}

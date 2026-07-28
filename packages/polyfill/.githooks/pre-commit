@@ -1,0 +1,31 @@
+#!/bin/sh
+# Standard pre-commit hook for apps-in-toss-community sub-repos.
+# Activated per-clone via: git config core.hooksPath .githooks
+#
+# Runs biome on staged files. Fails the commit if lint/format issues exist.
+# CI runs the same `pnpm lint` as the actual enforcement layer; this hook
+# is a fast feedback mechanism so issues are caught before push.
+#
+# NOTE: biome reads from the working tree, not the index. If you stage one
+# version and edit the worktree before commit, the hook checks the worktree
+# version. CI lint catches discrepancies.
+
+set -e
+
+# Detect whether any staged file matches biome's targets (TS/JS/JSON/etc.).
+# Null-delimited so paths with spaces/newlines survive; works with both
+# GNU and BSD xargs (macOS).
+has_match=$(git diff --cached --name-only --diff-filter=ACMR -z \
+  | grep -z -E '\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc)$' \
+  | tr -d '\0' || true)
+
+if [ -z "$has_match" ]; then
+  exit 0
+fi
+
+# Re-stream with NULs preserved for xargs -0. `--no-errors-on-unmatched`
+# lets biome skip files excluded by biome.json `files.includes`
+# (e.g., dist/, node_modules/) without failing the hook.
+git diff --cached --name-only --diff-filter=ACMR -z \
+  | grep -z -E '\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc)$' \
+  | xargs -0 pnpm exec biome check --no-errors-on-unmatched

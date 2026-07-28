@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+coverage/
+.DS_Store
+
+# Claude Code
+.claude/settings.local.json
+.claude/*.lock
+.claude.lock

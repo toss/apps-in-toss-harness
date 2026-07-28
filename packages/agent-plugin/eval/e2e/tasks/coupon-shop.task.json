@@ -1,0 +1,11 @@
+{
+  "id": "coupon-shop",
+  "appName": "coupon-shop",
+  "prompt": "위치 기반 쿠폰 미니앱을 만들어줘. 이름은 coupon-shop.",
+  "expect": {
+    "scaffold": ["coupon-shop/package.json", "coupon-shop/index.html", "coupon-shop/src"],
+    "dep": "@apps-in-toss/web-framework",
+    "bundle": ["coupon-shop/granite.config.ts"]
+  },
+  "endpoint": "build-only"
+}

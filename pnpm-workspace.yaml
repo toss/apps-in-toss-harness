@@ -1,0 +1,14 @@
+packages:
+  - packages/*
+
+# 사내 npm 미러(nexus)가 아직 캐시하지 못한 최신 transitive 버전 회피 — 커뮤니티 lockfile이 검증한 버전으로 고정.
+overrides:
+  baseline-browser-mapping: 2.10.19
+
+# 각 패키지의 단독 repo 시절 pnpm-workspace.yaml(allowBuilds 설정)을 병합한 것.
+allowBuilds:
+  "@sentry/cli": false
+  "@swc/core": false
+  esbuild: true
+  protobufjs: false
+  sharp: false

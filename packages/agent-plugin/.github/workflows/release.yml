@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      # `changeset publish` detects `private: true` and skips npm publish.
+      # It still emits `🦋 New tag:` lines that the action reads to create
+      # git tags and GitHub Releases. Without a `publish:` field the action
+      # exits early ("no publish script found") and no tag/release is created.
+      - uses: changesets/action@v1
+        with:
+          publish: pnpm changeset publish
+          # changesets/action exec's this string directly (no shell), so the
+          # `&& sync` chain lives inside the `release:version` npm script.
+          version: pnpm release:version
+          createGithubReleases: true
+        env:
+          # App token (not GITHUB_TOKEN) so the release/tag chain triggers
+          # downstream workflows. GitHub does not fire `release.published`
+          # for releases created by GITHUB_TOKEN.
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

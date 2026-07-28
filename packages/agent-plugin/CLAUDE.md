@@ -1,0 +1,176 @@
+# CLAUDE.md
+
+## 프로젝트 성격 (중요)
+
+`apps-in-toss-community`는 토스/앱인토스 팀과 제휴 관계가 없는 커뮤니티 프로젝트다. 사용자에게 보여지는 모든 산출물(README, UI 카피, 패키지 설명, 커밋/PR 메시지, 코드 주석 등)에서 "공식(official)", "토스가 제공하는", "powered by Toss" 등 제휴·후원·인증 암시 표현 금지. 대신 "커뮤니티(community)" 같은 자연스러운 표현.
+
+**톤 가이드** (방어적 disclaimer 금지): README 푸터에 한 줄로 1회만 명시 — ko `README.md`는 `커뮤니티 오픈소스 프로젝트입니다.`, en `README.en.md`는 `Community open-source project.`. "제휴 아님" 같은 방어적 표현 대신 "커뮤니티 오픈소스" 정체성만 자연스럽게. 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, 굵은 글씨, `unofficial`/`비공식` 같은 강한 라벨은 쓰지 않는다. 한 파일 안에서 영/한 병기 금지(다중 언어는 ko/en 별도 파일로 분리).
+
+**README i18n**: `README.md`(한국어, GitHub default) + `README.en.md`(영어). 둘 다 상단 상호 link(`[한국어](./README.md)` / `[English](./README.en.md)`), 동등 정본 — 한 쪽 갱신 시 같은 PR에서 반대쪽도 갱신. 자세한 정책은 umbrella `CLAUDE.md` "i18n 정책" 섹션.
+
+## 프로젝트 개요
+
+**agent-plugin** — 여러 AI 코딩 에이전트(Claude Code, Codex, Cursor, Windsurf, Gemini 등)에서 앱인토스 미니앱을 생성·개발·테스트·배포할 수 있게 해주는 커뮤니티 플러그인. **최상위 오케스트레이터**로, 다른 repo들이 제공하는 CLI/MCP/문서를 소비해서 하나의 미니앱 개발 워크플로로 엮는다.
+
+이 repo가 직접 소비하는 것은 `console-cli`(CLI 호출), station 2·3(dev·debug)을 떠받치는 3-패키지(아래 표), `polyfill`(템플릿 옵션), `docs`(skill이 path 가리킴), `oidc-bridge`(auth 옵션). Downstream은 `sdk-example` (dog-fooding 타겟).
+
+`devtools` 단일 패키지에서 MCP 데몬·테스트 러너·on-device attach 표면이 `debugger` repo(`@ait-co/debugger` + `@ait-co/debug-console` 2개 패키지)로 분리됐다(Phase 3). `devtools`는 mock·panel·unplugin(브라우저 dev 필수품)만 남아 계속 devDep 전용으로 쓰인다.
+
+### 3-패키지 경계 (station 2·3)
+
+| 패키지 | 정체성 | 설치 위치 | agent-plugin의 소비 지점 |
+|---|---|---|---|
+| `@ait-co/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | `devDependencies` | `inject`(devtools facet), `new-miniapp` 템플릿 |
+| `@ait-co/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | plugin manifest `mcpServers.ait-devtools` — `npx -y -p @ait-co/debugger debugger` |
+| `@ait-co/debug-console` | on-device attach 런타임(eruda 인앱 콘솔 포함) | **`dependencies`** — 프로덕션 번들에 들어갈 수 있는 유일한 패키지 | `inject`(debug-console facet) |
+
+**보안 스코프 축**: "무엇이 앱 번들에 들어갈 수 있는가"는 이 표의 설치 위치 열 — 각 패키지의 `package.json` 한 장으로 답해진다. `@ait-co/devtools`·`@ait-co/debugger`는 devDep/npx 전용이라 프로덕션 번들에 구조적으로 유입되지 않는다. `@ait-co/debug-console`이 설치돼 있지 않으면 attach 코드는 번들에 들어갈 수 없다 — 환경 3(intoss-private candidate)이 production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, on-device attach 표면을 남기려면 이 패키지만 명시적으로 `dependencies`에 설치해야 한다. 이 한 패키지로의 격리가 3-way split의 요점이다.
+
+## 아키텍처 원칙 (중요, repo-specific)
+
+### agent-plugin은 MCP server를 구현하지 않는다 (등록은 한다)
+
+**순수 skills + slash commands 패키지**. 실행 레이어는 다른 repo(console-cli의 CLI, devtools의 MCP 등)가 담당하고, 이 플러그인은 그것들을 **엮는 지식**만 담는다.
+
+플러그인 특성상 **idle context 비용 0**이 압도적으로 중요. MCP tool은 schema가 항상 로드되지만 skill은 호출될 때만 로드된다. CLI를 MCP로 wrapping하면 얻는 가치 없이 context만 낭비.
+
+이 repo에서 MCP는 기본 tool(`Bash`/`Read`/`Write`/`Edit`/`WebFetch`)로 못 하는 일에만 — 예: live 브라우저 상태 조작(devtools 디버깅 MCP), 관리자 전용 운영 데이터(oidc-bridge 관리자 MCP). CLI wrapping·스캐폴딩·문서 fetch는 전부 skill + Bash로.
+
+**"구현 안 함" vs "등록함" 경계**: plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`에 `ait-devtools`(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)를 **한 줄로 등록(reference)**한다 — `npx -y -p @ait-co/debugger debugger`(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 케이스다(umbrella `CLAUDE.md` §4 "debug가 유일한 정당한 MCP 후보"). plugin은 여전히 MCP를 **자체 구현하지 않고**, 서버는 attach 전 bootstrap 도구만 노출하므로 idle context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). 설계 정본: umbrella `meta/three-environments-fidelity.md` §7.4.
+
+## 제공물
+
+### Skills (`/ait:...` 명령이 트리거)
+
+**14개 skill · 18개 command stub** — 겹치는 skill은 병합하되(issue #273 skill 통합 17→14) 사용자 표면(`/ait:<verb>` 명령)은 station 수만큼 유지한다(A1: agent-plugin#280 `/ait:inject-debug-console` facet 신설로 17→18). 병합 4건은 여러 command stub이 한 skill의 서로 다른 **facet**으로 위임한다: `/ait:logs`→`status`, `/ait:deploy-key`→`deploy`, `/ait:inject-devtools`·`/ait:inject-polyfill`·`/ait:inject-debug-console`→`inject`.
+
+| Skill | 책임 | command (facet) | 의존 |
+|---|---|---|---|
+| `new-miniapp` | 템플릿 선택·파일 생성·dev-dep 주입 | `/ait:new` | `Write`/`Edit`, `templates/` |
+| `inject` | 기존 프로젝트 빌드 셋업 패치 — **devtools facet**: `@ait-co/devtools` unplugin 주입 · **polyfill facet**: `@ait-co/polyfill` 모드 마이그레이션 · **debug-console facet**: `@ait-co/debug-console`(on-device attach + eruda) `dependencies` 설치 + `/auto` 와이어업 | `/ait:inject-devtools`, `/ait:inject-polyfill`, `/ait:inject-debug-console` | `Edit`, `Bash` |
+| `deploy` | 번들 확인 → `ait build` (번들러) → `ait deploy --profile <name>` (번들 업로드) → 결과 해석 + scheme URL. **Deploy Key facet**: `aitcc keys create --save-profile`로 Deploy Key 발급 + `~/.ait/credentials` 프로파일 저장 (`ait deploy --profile` 인증 전제) | `/ait:deploy`, `/ait:deploy-key` | `Bash`, `@apps-in-toss/web-framework`, console-cli |
+| `setup-bundle` | 기존 프로젝트에 `.ait` 번들 빌드 환경 추가 (`granite.config.ts` + `bundle:ait` 스크립트) | `/ait:setup-bundle` | `Write`/`Edit`, `@apps-in-toss/cli` |
+| `register` | `aitcc.yaml` 매니페스트 비대화형 생성 → `aitcc app register` (번들과 배포 사이) | `/ait:register` | `Write`/`Bash`, console-cli |
+| `status` | 콘솔 상태 조회 (auth·workspace·review·serviceStatus). **logs facet**: 콘솔 런타임 로그 endpoint 부재(확정된 갭) 안내 + 대안 4종 | `/ait:status`, `/ait:logs` | `Bash`, console-cli |
+| `auth-setup` | oidc-bridge 연결 옵션 설정 | `/ait:auth-setup` | `Edit` |
+| `setup-phone-preview` | vite.config tunnel 옵션 + dev:phone script + cloudflared 사전 캐시 — 환경 2(AITC Sandbox App (PWA)) 진입, 실기기 WebKit dev 미리보기 | `/ait:setup-phone-preview` | `Edit`, `Bash` |
+| `docs <topic>` | docs repo에서 주제 경로 리턴, `Read`로 로드 | `/ait:docs` | `Read`/`WebFetch` |
+| `debug` | 환경 3겹 분기 디버깅 안내. 환경 1: 브라우저(devtools panel · `window.__ait` · 브라우저 DevTools). 환경 2: PWA Sandbox(`setup-phone-preview`). 환경 3: `ait-devtools` MCP(`@ait-co/debugger`)의 `start_attach` QR로 on-device CDP relay attach | `/ait:debug` | `Read`, `ait-devtools` MCP |
+| `welcome` | harness 진입 안내 — station 0 install 완료 후 station 1(scaffold)로 hand-off | `/ait:welcome` | (없음) |
+| `plan` | 기획 station 7 — 미니앱 기획 지원 | `/ait:plan` | `Read`/`WebFetch` |
+| `design` | 디자인 station 8 — Figma MCP 연동 UI 설계 지원 | `/ait:design` | Figma MCP |
+| `changeset` | npm 릴리즈 워크플로 (Type A/B repo 메인테이너 도구, harness 외부) | `/ait:changeset` | `Bash`, Changesets |
+
+### 명령 표면 — `/ait:<verb>` (issue #286)
+
+설치 형상(`/plugin install`)에서 **플러그인 이름이 네임스페이스**가 된다. 그래서 사용자가 실제로 치는 형태는 `/ait:<verb>`이고, 공백 형태 `/ait <verb>`는 어떤 형상에서도 존재한 적이 없다(`Unknown command: /ait`). 문서·skill seam은 전부 콜론 형태로 인쇄한다 — 검증기 A8이 공백 형태를 하드 실패로 잡는다.
+
+같은 목록에 두 종류가 함께 오른다:
+
+- **skill** `shared/skills/<name>/` → `ait:<name>`. 대응 stub 없이도 그 자체로 호출된다(`/ait:plan`, `/ait:docs` …).
+- **command stub** `shared/commands/<file>.md` → `ait:<basename>`.
+
+그래서 stub 파일명은 **자기가 위임하는 skill과 이름이 겹치면 안 된다**(겹치면 한 칸을 두고 다툰다). facet stub 6개는 대응 skill과 이름이 다르므로 bare verb를 쓰고(`new.md`, `logs.md`, `deploy-key.md`, `inject-*.md`), skill과 같은 verb를 갖는 stub 12개는 `ait-` prefix를 유지해 skill 쪽 `ait:<verb>` 칸을 비워 둔다(`ait-plan.md` → `ait:ait-plan`, 문서화하지 않는 별칭). 예외는 `changeset.md` 하나 — 같은 이름 skill로 위임하므로 어느 쪽이 이겨도 결과가 같다. 이 계약은 `A1/cmd-name-shadows-skill`이 강제한다.
+
+### Slash commands & Templates
+
+`commands/*.md`는 얇은 진입점, 실제 절차는 skill이 담는다. `templates/`는 `react-vite/`, `react-vite-polyfill/`, `react-vite-supabase/` (oidc-bridge + Supabase Auth) — `new-miniapp`이 단순 파일 복사 + 변수 치환으로 사용.
+
+## 디렉토리 구조
+
+```
+agent-plugin/
+├── shared/                      # ✅ source of truth (debug §5는 Claude Code-only — 다른 타겟은 adapter overlay로 교체)
+│   ├── skills/                  # SKILL.md + 하위 리소스
+│   ├── commands/                # slash command 진입점
+│   └── templates/               # (README만, 실제 템플릿 계획)
+├── .claude-plugin/              # ✅ Claude Code plugin + marketplace manifest (Phase 1)
+├── gemini-extension.json        # 🔜 Gemini CLI extension (Phase 2, multi-target build harness 미착수 — harness M3 이후)
+├── .codex-plugin/               # 🔜 Codex (Phase 3, 스펙 확정 후)
+├── .cursor-plugin/              # 🔜 Cursor (Phase 4, multi-target build harness 미착수 — harness M3 이후)
+├── install/                     # 🔜 cursor.sh / windsurf.sh (multi-target build harness 미착수 — harness M3 이후)
+└── scripts/build.ts             # 🔜 shared/ → 각 타겟 생성 (multi-target build harness 미착수 — harness M3 이후)
+```
+
+`shared/`가 single source of truth. 각 도구별 어댑터 디렉토리는 파일 복사/변환만.
+
+## 배포 phases (repo-specific)
+
+Phase 2-4 어댑터는 harness roadmap M3 달성 후 착수.
+
+단일 repo에서 지원 도구들 marketplace로 동시 배포 (Figma `mcp-server-guide`의 `.claude-plugin/` + `.cursor-plugin/` 패턴과 유사):
+
+1. **Claude Code** — 공식 plugin manifest, 전 기능 풀스택.
+2. **Gemini CLI** — `gemini-extension.json` 매니페스트, skills 네이티브 지원.
+3. **Codex** — 스펙이 2026-04 기준 유동적이라 확정 후 착수.
+4. **Cursor / Windsurf** — 공식 번들 포맷 부재. `install/*.sh`로 `.cursor/rules/`, `.windsurf/workflows/`에 파일을 꽂는 방식. 자동 업데이트 불가라 후순위.
+
+당장은 main branch + latest only, 태그/버전 없음. Changesets는 도입되어 있지만 npm publish는 skip (Git repo 자체가 배포 산출물).
+
+## adapter 계약 (multi-target)
+
+`shared/`는 모든 어댑터의 single source of truth다. 새 어댑터를 추가할 때 아래 계약을 따른다.
+
+**REQUIRED — skills · commands path 필드**
+
+어댑터 manifest는 반드시 `shared/skills/`와 `shared/commands/`를 가리켜야 한다. Claude Code adapter(`.claude-plugin/plugin.json`)의 실제 필드:
+
+```json
+{
+  "skills": "./shared/skills/",
+  "commands": "./shared/commands/"
+}
+```
+
+다른 어댑터도 같은 디렉토리를 참조한다(경로 형식은 어댑터 포맷에 따라 조정).
+
+**OPTIONAL — mcpServers (Claude Code-only)**
+
+`mcpServers`는 Claude Code manifest 전용이다. `ait-devtools` MCP server는 station 2·3의 live CDP attach를 위해 등록되며, 다른 어댑터는 이를 생략하거나 해당 에이전트의 MCP 등록 메커니즘으로 교체한다:
+
+```json
+{
+  "mcpServers": {
+    "ait-devtools": {
+      "command": "npx",
+      "args": ["-y", "-p", "@ait-co/debugger", "debugger"]
+    }
+  }
+}
+```
+
+`mcpServers.ait-devtools`는 Claude Code manifest에만 존재하는 항목이다 — `run_in_background`, `/mcp` auto-start, `notifications/tools/list_changed` 처리가 모두 Claude Code-specific이다. `debug/SKILL.md`의 §5(on-device MCP attach)는 이 메커니즘에 결합돼 있으므로, 다른 타겟 어댑터는 §5를 adapter-specific overlay로 교체해야 한다.
+
+**OPTIONAL — install script**
+
+`install/*.sh`는 `.cursor/rules/`·`.windsurf/workflows/` 같이 manifest 기반 설치가 없는 에이전트를 위한 파일 복사 스크립트다. Phase 4(Cursor/Windsurf) 착수 시 추가.
+
+## eval (성능 측정) — 두 슈트로 분업
+
+`eval/`은 플러그인이 **에이전트 안에서 실제로 동작하는가**를 두 각도로 검증한다. 둘은 형제이고 서로 안 건드린다.
+
+- **슈트 A — `eval/promptfoo/` + `eval/routing/`** (라우팅 정합성): 맞는 발화에서 맞는 skill이 뜨고(positive) off-topic에선 안 뜨는가(negative control)를 **single-turn**으로 결정적 판정(호출된 skill만 보고 산문은 채점 안 함). 러너가 둘인 건 **얹는 형상이 달라서**다 — `promptfoo/`는 skill을 project skill(`.claude/skills/`)로 얹고(`pnpm eval:promptfoo`, API 키 필요), `routing/`은 `claude -p --plugin-dir`로 **실제 설치 형상**(skill이 `ait:` 네임스페이스 + command stub 17개가 같은 목록에 함께 오름)을 재며 API 키가 필요 없다. 이 차이는 측정값을 바꾼다(#275: 두 케이스가 project 형상 5/5, 설치 형상 0/5·2/5). **케이스 정본은 `promptfooconfig.yaml`, 회귀 판정은 `bash eval/routing/run.sh 3`.**
+- **슈트 B — `eval/e2e/`** (완주·비용·분산): "작은 아이디어 → 작동하는 미니앱"(`/ait:new`→번들 빌드)을 **멀티턴**으로 자율 완주시켜 **완주율·성공당 토큰·run-to-run 분산**을 모델·공급자별로 측정. **공급자 축 포함** — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(`--base-url`로 Anthropic-호환 게이트웨이 라우팅) 둘 다. Claude Agent SDK 직접 드라이버(신규 의존성 0 — promptfoo가 이미 끌어오는 동일 패키지). `pnpm eval:e2e --task <id> --model <id> --n <int> [--base-url <url> --auth-token-env <NAME>]`. 상세는 `eval/e2e/README.md`.
+
+  가변성 두 결을 분리: (1) 같은 모델 반복 흔들림(run-to-run, 토큰 CV — 한 공급자 안에서) vs (2) 모델·공급자 간 차이(셀 비교). (1)을 깨끗이 재려고 한 run 안에서 공급자를 안 섞는다. 게이트웨이 경로는 미문서·실험적 — 슬래시 디스패치·tool-use·캐시 토큰 계약이 모델 구현에 의존(캐시 토큰 ≈0 → 캐시 기반 USD 무의미, 토큰 KPI는 유효). 게이트웨이 토큰은 `--auth-token-env`로 *이름*만 받아 값은 출력 안 함.
+
+슈트 B 불변(반드시 지킨다):
+
+- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 안 부른다(dog-food `31146` 구조적 무접촉). `register`/`deploy`/`auth-setup` 디스패치 **금지** — 특히 `register`는 매 run 새 `miniAppId`를 서버 발급·자동 기록(= "lock 풀려고 새 앱 만들기" 반-패턴). deploy 격리 경로는 P2 opt-in.
+- **1차 신호는 토큰**(USD 아님). `total_cost_usd`는 클라이언트 추정치라 참고로만 기록하고, `runs.jsonl`의 토큰을 `pricing.json`으로 리포트 시점에 재계산한다. 가격이 바뀌면 `pricing.json`만 고쳐 과거를 다시 돈다.
+- **메인테이너 수동·오프라인** harness — runtime telemetry 아님, CI gate 아님(조직 telemetry 전면 제거 원칙). 시크릿 값은 어떤 출력에도 싣지 않는다.
+
+## Status
+
+Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/{plugin.json,marketplace.json}` 존재 — `marketplace.json`이 `/plugin marketplace add apps-in-toss-community/agent-plugin` 설치 경로(harness station 0)를 지탱한다. `plugin.json`의 `mcpServers."ait-devtools"`가 `debugger`를 상시 기동해 station 2·3을 단일 MCP surface로 묶는다(Phase 3 분리 후 데몬 패키지는 `@ait-co/debugger` — server key `ait-devtools`는 개명하지 않는다).
+
+- ✅ **작동** (14 skill / 18 command): `docs`, `status`(+logs facet), `new-miniapp`, `inject`(devtools·polyfill·debug-console facet), `auth-setup`, `setup-phone-preview`, `deploy`(+Deploy Key facet), `setup-bundle`, `register`, `debug`, `welcome`, `plan`, `design`, `changeset`
+- ✅ **등록**: `ait-devtools` MCP(`npx -y -p @ait-co/debugger debugger`) — `/ait:debug`가 환경 3 attach 경로(`start_attach` QR) 발급. attach 전 bootstrap 도구만, 폰 attach 후 `list_changed`로 동적 등록(devtools #208).
+- 🔜 **남은 검증**: plugin 설치 → `/mcp`에 `ait-devtools` 노출 + 실기기 QR attach 1회 acceptance (GitHub Project harness roadmap 추적)
+- 📁 **Templates**: `react-vite/` 사용 가능. `react-vite-polyfill/`, `react-vite-supabase/`는 의존 repo 준비 후 추가
+
+## 공통 스택
+
+Node 24 LTS, pnpm 11.17.0, TypeScript strict, Biome (lint+format, ESLint/Prettier 사용 안 함). pre-commit hook은 source-controlled (`.githooks/pre-commit`), contributor가 수동 활성화: `git config core.hooksPath .githooks`. Commit message는 Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
+
+이슈/제안은 GitHub Issues로.

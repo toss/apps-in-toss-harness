@@ -1,0 +1,56 @@
+{
+  "name": "@ait-co/agent-plugin",
+  "version": "0.1.21",
+  "description": "Community plugin for building Apps in Toss mini-apps from inside AI coding agents (Claude Code first; Codex and others to follow)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run --passWithNoTests",
+    "test:links": "VALIDATE_LINKS=1 node scripts/validate-plugin.mjs",
+    "sync:plugin-version": "node scripts/sync-plugin-version.mjs",
+    "release:version": "changeset version && pnpm sync:plugin-version",
+    "eval:promptfoo": "bash eval/promptfoo/setup-fixture.sh && npx promptfoo@latest eval -c eval/promptfoo/promptfooconfig.yaml",
+    "eval:e2e": "tsx eval/e2e/run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
+    "@biomejs/biome": "2.4.15",
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^25.8.0",
+    "tsx": "^4.19.4",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.2"
+  },
+  "keywords": [
+    "apps-in-toss",
+    "toss",
+    "mini-app",
+    "claude-code",
+    "codex",
+    "plugin"
+  ],
+  "packageManager": "pnpm@11.17.0",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apps-in-toss-community/agent-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/apps-in-toss-community/agent-plugin/issues"
+  },
+  "homepage": "https://aitc.dev/",
+  "vitest": {
+    "include": [
+      "shared/**/*.test.ts",
+      "eval/**/*.test.ts"
+    ],
+    "environment": "node"
+  }
+}

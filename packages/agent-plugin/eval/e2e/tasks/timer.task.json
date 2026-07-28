@@ -1,0 +1,11 @@
+{
+  "id": "timer",
+  "appName": "timer",
+  "prompt": "간단한 타이머 미니앱을 만들어줘. 권한이나 외부 SDK 호출 없이 순수 UI로 카운트다운만 동작하면 된다. 이름은 timer.",
+  "expect": {
+    "scaffold": ["timer/package.json", "timer/index.html", "timer/src"],
+    "dep": "@apps-in-toss/web-framework",
+    "bundle": ["timer/granite.config.ts"]
+  },
+  "endpoint": "build-only"
+}
