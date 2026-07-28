@@ -14,6 +14,7 @@
 
 - pnpm workspace (`packages/*`), packageManager 고정. 각 패키지는 단독 repo 시절의 biome.json·scripts를 유지한다(루트 `pnpm -r lint/test`로 실행). 설정 dedupe는 이관 안정화 후.
 - 단독 repo 시절 `pnpm-workspace.yaml`(allowBuilds)은 루트로 병합됨. 패키지에 nested pnpm-workspace.yaml을 다시 만들지 마라.
+- **lockfile quirk (사내망 머신)**: 사내 투명 프록시가 npm 메타데이터의 tarball URL을 `nexus.toss.bz`로 재작성해 내려주므로, 그 머신에서 재해석(re-resolution)하면 pnpm-lock.yaml에 명시적 tarball URL이 박힌다 — nexus URL은 GitHub CI에서, npmjs URL은 로컬 정책 검사에서 거부되는 대칭 함정. **lockfile은 tarball URL 필드가 없는 형태(`resolution: {integrity: …}`만)를 유지해야 양쪽 다 통과한다.** 재해석 후 URL이 생겼으면 `sed -E 's|, tarball: [^}]*\}|}|g' pnpm-lock.yaml`로 제거하고 `pnpm install --frozen-lockfile`로 검증하라. 루트 pnpm-workspace.yaml의 `overrides.baseline-browser-mapping`도 같은 프록시가 최신 버전 tarball을 404로 주는 문제의 회피다.
 - `packages/agent-plugin/.claude-plugin/`이 플러그인 manifest — 타깃 아키텍처(기본: docs MCP + console MCP remote, opt-in: devtools devDependency + debugger MCP를 skill이 프로젝트 `.mcp.json`에 배선)로의 재작성은 추적 이슈에서 진행.
 
 ## 노출 산출물
