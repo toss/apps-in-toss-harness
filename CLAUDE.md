@@ -16,7 +16,7 @@
 - 단독 repo 시절 `pnpm-workspace.yaml`(allowBuilds)은 루트로 병합됨. 패키지에 nested pnpm-workspace.yaml을 다시 만들지 마라.
 - **lockfile quirk (사내망 머신)**: 사내 투명 프록시가 npm 메타데이터의 tarball URL을 `nexus.toss.bz`로 재작성해 내려주므로, 그 머신에서 재해석(re-resolution)하면 pnpm-lock.yaml에 명시적 tarball URL이 박힌다 — nexus URL은 GitHub CI에서, npmjs URL은 로컬 정책 검사에서 거부되는 대칭 함정. **lockfile은 tarball URL 필드가 없는 형태(`resolution: {integrity: …}`만)를 유지해야 양쪽 다 통과한다.** 재해석 후 URL이 생겼으면 `sed -E 's|, tarball: [^}]*\}|}|g' pnpm-lock.yaml`로 제거하고 `pnpm install --frozen-lockfile`로 검증하라. 루트 pnpm-workspace.yaml의 `overrides.baseline-browser-mapping`도 같은 프록시가 최신 버전 tarball을 404로 주는 문제의 회피다.
 - **integrity quirk (같은 프록시, 두 번째 함정)**: nexus는 일부 `@apps-in-toss/*` 패키지를 **같은 버전·다른 바이트의 사내 빌드**로 내려준다(예: `ait-format@1.0.0`, `webview-bridge@3.0.0-beta.*`). 그 머신에서 재해석하면 lockfile에 사내 해시가 박혀 GitHub CI가 `ERR_PNPM_TARBALL_INTEGRITY`로 죽는다. **lockfile의 integrity는 항상 public npm 해시여야 한다.** public 해시 확보는 프록시가 안 가로채는 공개 미러 `https://registry.npmmirror.com/@apps-in-toss/<pkg>`의 `versions[<v>].dist.integrity`로 (신뢰 검증: 이미 아는 public 해시 하나를 canary로 대조). 로컬 fetch는 사내 빌드라 public 해시와 불일치하므로, store에 없는 패키지는 일회용 userconfig(`@apps-in-toss:registry=https://registry.npmmirror.com/` + 기존 `cafile` 유지)로 한 번 받아 store에 캐시시키면 이후 일반 `pnpm install --frozen-lockfile`은 store-hit으로 통과한다. integrity가 바이트를 고정하므로 미러 사용은 공급망상 안전하다.
-- `packages/agent-plugin/.claude-plugin/`이 플러그인 manifest — 타깃 아키텍처(기본: docs MCP + console MCP remote, opt-in: devtools devDependency + debugger MCP를 skill이 프로젝트 `.mcp.json`에 배선)로의 재작성은 추적 이슈에서 진행.
+- `packages/agent-plugin/.claude-plugin/`이 플러그인 manifest — 타깃 아키텍처(기본: docs MCP + console MCP remote, opt-in: devtools devDependency + debugger MCP를 skill이 프로젝트 `.mcp.json`에 배선)로의 재작성은 #1에서 진행. 이관 트랙 전체는 milestone `MT — 공식 이관`(#1~#8).
 
 ## 노출 산출물
 
