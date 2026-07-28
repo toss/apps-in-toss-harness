@@ -133,11 +133,11 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 | # | station | 명령 | 기대 산출물 | seam (다음 명령을 인쇄?) |
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add apps-in-toss-community/agent-plugin` → `/plugin install` | `/ait *` 명령이 존재 | (플러그인 메커니즘) → `/ait:new` 안내 |
-| 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` + package.json + index.html | ✅ `pnpm dev` → `/ait:setup-bundle` → `/ait:register` → `/ait:deploy` 인쇄 |
+| 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` (create-ait-app 산출물 + devtools 배선 + granite.config.ts 기본 포함) | ✅ `pnpm dev` → `/ait:design` → `/ait:register` → `/ait:deploy` 인쇄 (setup-bundle 불필요 명시) |
 | 2 | dev | `cd demo-shop && pnpm dev` | 브라우저에서 devtools panel 과 함께 실행 | ✅ 회귀 의심 시 `/ait:debug` 로 분기 |
 | 3 | debug | `/ait:debug` | 환경 3겹 분기 안내(환경 1 브라우저 / 2 PWA / 3 MCP attach) | ✅ 환경에 맞는 다음 동작(`setup-phone-preview` 등) |
 | 4 | auth | `/ait:auth-setup` | oidc-bridge 연결 옵션 배선 | ✅ 다음 단계(번들/배포) |
-| 5 | bundle | `/ait:setup-bundle` | granite.config.ts + scripts.bundle:ait + cli devDep | ✅ `/ait:register` → `/ait:deploy-key` → `/ait:deploy` 인쇄 |
+| 5 | bundle | `/ait:setup-bundle` | (create-ait-app 산출물) "이미 구성됨" 안내 — 신규 생성 없음 / (번들 설정 없는 프로젝트) granite.config.ts + scripts.bundle:ait + cli devDep | ✅ 어느 분기든 `/ait:register` → `/ait:deploy` 인쇄 |
 | 5 | register | `/ait:register` | aitcc.yaml 생성 → `aitcc app register` | ✅ `/ait:deploy` (또는 `/ait:deploy-key` 선행) |
 | 5 | deploy | `/ait:deploy` | `ait build` → `.ait` 업로드 → scheme URL 표시 | ✅ `/ait:status` / `/ait:logs` 로 운영 분기 |
 

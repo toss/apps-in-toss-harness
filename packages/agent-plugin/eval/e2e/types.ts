@@ -8,7 +8,7 @@ export type FailClass =
   | 'toolchain' // Node/pnpm 부재 등 환경
   | 'scaffold' // 프로젝트 파일이 안 만들어짐
   | 'install' // 의존성 설치 실패 (node_modules 없음)
-  | 'build' // bundle:ait / ait build 실패 (.ait 없음)
+  | 'build' // 번들 빌드 실패 (.ait 없음) — build(=ait build)/bundle:ait 어느 레이아웃이든
   | 'timeout' // maxTurns 초과
   | 'agent-gaveup' // 에이전트가 완주 전 정상 종료(success) but 산출물 미달
   | 'dispatch-missing' // /ait 명령이 세션에 로드 안 됨 (init assert 실패)
@@ -28,7 +28,10 @@ export interface Task {
     scaffold: string[];
     /** package.json dependencies에 있어야 하는 패키지. */
     dep: string;
-    /** setup-bundle 후 존재해야 하는 경로. */
+    /**
+     * 번들 설정 완료 후 존재해야 하는 경로. 정본 경로(create-ait-app)는 scaffold에
+     * 기본 포함, `--local` 폴백만 setup-bundle로 추가 — 채점은 경로 불가지.
+     */
     bundle: string[];
   };
   /** 종착점. P1은 build-only만. */

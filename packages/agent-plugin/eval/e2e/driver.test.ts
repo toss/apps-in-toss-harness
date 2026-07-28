@@ -35,6 +35,10 @@ describe('isForbiddenBashCommand', () => {
   const ALLOWED = [
     'ait build',
     'pnpm bundle:ait',
+    'pnpm run build', // create-ait-app 산출물의 번들 빌드 (= ait build)
+    // 정본 scaffold 경로 — "-ait-" 부분 문자열이 콘솔 게이트에 오탐되면 안 된다.
+    'pnpm dlx create-ait-app@latest coupon-shop --inline --pm pnpm --template react-ts',
+    'pnpm --dir ./timer add @apps-in-toss/web-framework@2', // 후처리 A granite bin 고정
     'RELEASE_CHANNEL=dogfood ait build',
     'pnpm install',
     'pnpm dev',

@@ -1,10 +1,18 @@
 # 슈트 B — e2e 완주·비용·분산 측정
 
 "작은 아이디어 → 작동하는 미니앱"을 **에이전트가 자율로 얼마나·얼마의 비용으로 완주하는가**를
-정량 측정하는 harness다. `/ait:new` → (`/ait:setup-bundle`) → 번들 빌드(`.ait` 생성)까지의
-멀티턴 완주를 [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
+정량 측정하는 harness다. `/ait:new`(create-ait-app wrapper — 번들 설정 기본 포함) → 번들
+빌드(`.ait` 생성)까지의 멀티턴 완주를
+[Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
 직접 드라이버로 격리 실행하고, **모델·공급자별로 (완주율 · 성공당 토큰 · run-to-run 분산)** 을
 수집한다 — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(게이트웨이) 둘 다.
+`/ait:setup-bundle`은 번들 설정이 없는 산출물(`--local` 폴백 등)에서만 조건부로 끼는 마디다.
+채점은 경로 불가지(granite.config.ts + `.ait` 존재)라 두 경로 모두 같은 기준으로 잰다.
+
+> **측정 여정 변경 (harness#6)**: `/ait:new`가 로컬 템플릿 복사에서 create-ait-app 비대화형
+> wrapper로 재작성되면서 측정 여정에 create-ait-app 네트워크 설치가 포함된다. 이전
+> baseline과 토큰·완주율을 직접 비교하지 않는다 — 재작성 이후 첫 의미 있는 측정이 새
+> baseline epoch다.
 
 슈트 A(`../promptfoo/`)는 skill **라우팅 정합성**(맞는 발화→맞는 skill, single-turn)을 본다.
 슈트 B는 그게 못 보는 **멀티턴 완주·비용·분산**을 본다. 둘은 형제이고 A는 이 작업으로 안 바뀐다.

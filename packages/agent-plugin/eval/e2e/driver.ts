@@ -1,8 +1,10 @@
 // eval/e2e — Suite B 드라이버
 // ------------------------------------------------------------------
-// 빈 격리 디렉토리에서 Claude Agent SDK 세션을 띄워 `/ait-new` →
-// (`/ait-setup-bundle`) → 번들 빌드까지의 멀티턴 완주를 1회 실행하고,
-// 토큰 사용량(modelUsage)·턴 수·도달 station·실패 분류를 수집한다.
+// 빈 격리 디렉토리에서 Claude Agent SDK 세션을 띄워 `/ait-new`(create-ait-app
+// wrapper — 번들 설정 기본 포함, harness#6) → 번들 빌드(`.ait` 생성)까지의
+// 멀티턴 완주를 1회 실행하고, 토큰 사용량(modelUsage)·턴 수·도달 station·실패
+// 분류를 수집한다. `/ait-setup-bundle`은 번들 설정이 없는 산출물(--local 폴백
+// 등)에서만 조건부로 끼는 마디다.
 //
 // 안전 불변(plan §3):
 //   - **build-only가 기본** — 콘솔 API를 아예 안 부른다. 31146 구조적 무접촉.
@@ -43,7 +45,8 @@ const COMMANDS_SRC = join(REPO_ROOT, 'shared', 'commands');
 // `exposesKey` 가 두 형상을 모두 받아주므로 여기엔 맨 basename 을 둔다.
 //
 // 문서 표면과 같은 지점을 재려고 **문서가 안내하는 verb** 를 그대로 쓴다:
-// `/ait:new` → `shared/commands/new.md`, `/ait:setup-bundle` → `setup-bundle` skill
+// `/ait:new` → `shared/commands/new.md`. `/ait:setup-bundle`(`setup-bundle` skill)은
+// 정본 경로(create-ait-app)에선 불필요해 조건부 폴백으로만 프롬프트에 남긴다
 // (`ait-setup-bundle.md` stub 은 `ait:ait-setup-bundle` 이라 문서 경로가 아니다).
 const DISPATCH_COMMAND = 'new';
 const SETUP_BUNDLE_COMMAND = 'setup-bundle';
@@ -62,7 +65,8 @@ const FORBIDDEN_DISPATCH = ['register', 'deploy', 'auth-setup'] as const;
 //
 // 매칭은 보수적으로 넓게: `aitcc` 전체(콘솔 자동화 CLI 전부), `ait deploy`/`ait register`/
 // `ait login`(번들러의 콘솔-접촉 서브명령), 그리고 Deploy Key 를 싣는 `--api-key`.
-// 번들 빌드 경로(`ait build`, `pnpm bundle:ait`, `pnpm install` 등)는 매칭하지 않는다.
+// 번들 빌드 경로(`ait build`, `pnpm run build`, `pnpm bundle:ait`, `pnpm install`,
+// `pnpm dlx create-ait-app …` 등)는 매칭하지 않는다.
 const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
   /\baitcc\b/, // 콘솔 자동화 CLI 전체 (register/deploy/app/keys/me/workspace …)
   /\bait\s+deploy\b/, // 번들러의 콘솔 업로드/검수 제출
@@ -196,14 +200,16 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
       `로컬 번들(.ait)까지 빌드해라. 다음 순서로 진행한다:`,
       ``,
       `1. \`/${DISPATCH_COMMAND} ${task.appName}\` 로 프로젝트를 생성한다.`,
-      `2. 생성된 프로젝트 디렉토리로 들어가 \`/${SETUP_BUNDLE_COMMAND}\` 로 번들 빌드 환경을 추가한다.`,
-      `3. \`pnpm bundle:ait\` (= \`ait build\`) 로 \`.ait\` 번들을 생성한다.`,
+      `2. 생성된 프로젝트 디렉토리에서 package.json 의 번들 빌드 스크립트로 \`.ait\` 번들을 생성한다`,
+      `   — \`pnpm run build\` (= \`ait build\`, create-ait-app 산출물) 또는 \`pnpm bundle:ait\`.`,
+      `   granite.config.ts 가 없는 산출물일 때만 \`/${SETUP_BUNDLE_COMMAND}\` 로 번들 환경을 먼저 추가한다.`,
       ``,
       `아이디어: ${task.prompt}`,
       ``,
       `중요 제약:`,
       `- 콘솔 등록/배포/로그인은 절대 하지 않는다. ${FORBIDDEN_DISPATCH.map((v) => `\`${v}\``).join(', ')} skill 을 어떤 형태로도 실행하지 마라.`,
       `- 번들(.ait)이 생성되면 완료다. 거기서 멈춘다.`,
+      `- dev 서버(\`pnpm dev\`)는 띄우지 않는다 — 측정은 번들 빌드에서 끝난다.`,
       `- 막혀도 멈추지 말고 다음 단계를 시도한다.`,
     ].join('\n');
 
