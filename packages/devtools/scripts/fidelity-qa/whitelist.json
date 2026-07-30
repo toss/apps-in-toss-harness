@@ -1,0 +1,102 @@
+[
+  {
+    "id": "safe-area.SafeAreaInsetsGet",
+    "reason": "Mock default (no preset selected) returns {top:0,bottom:0,left:0,right:0}. Real device relay returns device-specific values — e.g. iPhone 15 Pro portrait: {top:54,bottom:34,left:0,right:0}. The mock top=0 intentionally differs from real-device top=54: per devtools#275, the SDK top value is informational (host nav bar is outside WebView viewport) and must not be applied as padding. This is the expected corrected model, not an unintentional mismatch."
+  },
+  {
+    "id": "safe-area.getSafeAreaInsets",
+    "reason": "Deprecated helper returns safeAreaInsets.top (mock default=0 after devtools#275 fix). Real device relay returns actual navBarHeight (e.g. 54 on iPhone 15 Pro). Same intentional mismatch as safe-area.SafeAreaInsetsGet — mock top=0 is the correct fidelity model."
+  },
+  {
+    "id": "safe-area.SafeAreaInsetsSubscribeFirstEmit",
+    "reason": "First emit mirrors SafeAreaInsets.get() — same device-specific variance as safe-area.SafeAreaInsetsGet."
+  },
+  {
+    "id": "browser.navigatorUserAgent",
+    "reason": "jsdom UA ('Mozilla/5.0 (darwin) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/29.1.1') differs from real device WebView UA. Expected environment difference."
+  },
+  {
+    "id": "browser.screenWidth",
+    "reason": "jsdom screen.width=0, real device returns physical screen width in CSS px."
+  },
+  {
+    "id": "browser.screenHeight",
+    "reason": "jsdom screen.height=0, real device returns physical screen height in CSS px."
+  },
+  {
+    "id": "browser.devicePixelRatio",
+    "reason": "jsdom devicePixelRatio=1 (set by mock runner), real device returns hardware DPR (e.g. 3 for iPhone 15 Pro)."
+  },
+  {
+    "id": "browser.windowInnerWidth",
+    "reason": "jsdom innerWidth=1024 (default), real device returns actual viewport width."
+  },
+  {
+    "id": "browser.windowInnerHeight",
+    "reason": "jsdom innerHeight=768 (default), real device returns actual viewport height."
+  },
+  {
+    "id": "browser.navigatorLanguage",
+    "reason": "jsdom navigator.language='en-US' by default, real device returns device locale (e.g. 'ko-KR')."
+  },
+  {
+    "id": "env.getDeviceId",
+    "reason": "Mock returns a randomly-generated mock device ID ('mock-device-<random>'). Real device relay returns a real stable device identifier."
+  },
+  {
+    "id": "env.getSchemeUri",
+    "reason": "Mock returns '/' (jsdom location.pathname). Real device relay returns the actual mini-app scheme URI."
+  },
+  {
+    "id": "env.getServerTime",
+    "reason": "Both return '<timestamp>' sentinel (normalized in probe). Exact numeric values differ by definition."
+  },
+  {
+    "id": "env.getAppsInTossGlobals",
+    "reason": "Mock returns mock brand defaults (displayName='Mock App'). Real device returns actual app brand values."
+  },
+  {
+    "id": "env.envGetDeploymentId",
+    "reason": "Mock returns 'mock-deployment-id'. Real device returns the actual deploymentId."
+  },
+  {
+    "id": "env.getGroupId",
+    "reason": "Mock returns 'mock-group-id'. Real device returns the actual group ID."
+  },
+  {
+    "id": "device.getClipboardText",
+    "reason": "Mock returns empty string (default mock clipboard). Real device relay returns actual clipboard content (typically empty or last copied text)."
+  },
+  {
+    "id": "iap.getPendingOrdersEmpty",
+    "reason": "Mock state includes pending orders by default for testing (returns Array with items). Real device relay will typically return empty array (no pending orders)."
+  },
+  {
+    "id": "iap.getCompletedOrRefundedOrdersEmpty",
+    "reason": "Mock state includes completed orders by default for testing (returns Array with items). Real device relay will typically return empty array."
+  },
+  {
+    "id": "game.getGameCenterGameProfileNull",
+    "reason": "Mock state includes a default game profile ({statusCode:'SUCCESS', nickname:'MockPlayer'}). Real device relay returns actual game center profile or null."
+  },
+  {
+    "id": "auth.getUserKeyForGame",
+    "reason": "Mock returns {type:'HASH', hasHash:true} (mock state has userKeyHash). Real device may return undefined (not logged in) or a real hash."
+  },
+  {
+    "id": "auth.getAnonymousKey",
+    "reason": "Mock returns {type:'HASH', hasHash:true} (mock state has anonymousKeyHash). Real device returns actual anonymous key or undefined."
+  },
+  {
+    "id": "scenario-parity.listPages.schema",
+    "reason": "Mock returns tunnel.up=false (no relay), relay returns tunnel.up=true. Page URL pattern also differs: mock uses localhost, relay uses trycloudflare.com or intoss-private://. Both satisfy the schema (pages[], tunnel.up boolean) — this is the intended fidelity difference between Env 1 (local) and Env 2–4 (relay). See docs/qa/scenarios.md."
+  },
+  {
+    "id": "scenario-parity.measureSafeArea.schema",
+    "reason": "Mock returns source='mock', sdkInsetsSource='window.__ait', desktop userAgent. Relay returns source='relay', sdkInsetsSource='window.__sdk', real device userAgent. sdkInsets.top differs: mock default=54 (preset-based), relay=real device nav bar height (44–54 CSS px, e.g. iPhone 15 Pro=54). cssEnv.top=0 on real device (Toss host WebView overrides notch env vars). All differences are intentional real-device fidelity — the normalized probe returns structural sentinel keys (source, sdkInsetsSource, cssEnvPresent, userAgentPresent) which differ expectedly. See docs/mock-fidelity-catalog.md §0.5."
+  },
+  {
+    "id": "scenario-parity.callSdkGetOpEnv.schema",
+    "reason": "Mock returns value.environment='sandbox' (mock state default). Relay (Env 3 dogfood) returns 'dev', Env 4 live returns 'production'. Env 2 non-dogfood PWA returns ok=false (bridge absent). The normalized probe returns environmentType='string' (mock) vs null/string (relay) — this environmentType field differs expectedly. The ok field and envelope structure are the invariant; the environment value is the intentional per-environment diff. See docs/qa/scenarios.md acceptance matrix."
+  }
+]

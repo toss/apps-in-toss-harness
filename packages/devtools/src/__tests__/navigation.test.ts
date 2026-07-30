@@ -1,0 +1,329 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  closeView,
+  env,
+  getAppsInTossGlobals,
+  getDeviceId,
+  getGroupId,
+  getLocale,
+  getNetworkStatus,
+  getOperationalEnvironment,
+  getPlatformOS,
+  getSafeAreaInsets,
+  getSchemeUri,
+  getServerTime,
+  getTossAppVersion,
+  getTossShareLink,
+  graniteEvent,
+  isMinVersionSupported,
+  openURL,
+  requestReview,
+  SafeAreaInsets,
+  setDeviceOrientation,
+  setIosSwipeGestureEnabled,
+  setScreenAwakeMode,
+  setSecureScreen,
+  share,
+  tdsEvent,
+} from '../mock/navigation/index.js';
+import { aitState } from '../mock/state.js';
+
+describe('Navigation mock', () => {
+  beforeEach(() => {
+    aitState.reset();
+  });
+
+  // devtools#795: 실기기(2.x×iOS)는 이 6개를 Promise로 반환하지만 상류 타입은
+  // 동기로 선언한다(#775 원칙 확장) — mock도 Promise를 반환하므로 await한다.
+  it('getPlatformOS: 상태의 platform을 반환한다 (Promise, devtools#795)', async () => {
+    expect(await getPlatformOS()).toBe('ios');
+    aitState.update({ platform: 'android' });
+    expect(await getPlatformOS()).toBe('android');
+  });
+
+  it('getOperationalEnvironment: 상태의 environment를 반환한다 (Promise, devtools#795)', async () => {
+    expect(await getOperationalEnvironment()).toBe('sandbox');
+    aitState.update({ environment: 'toss' });
+    expect(await getOperationalEnvironment()).toBe('toss');
+  });
+
+  describe('isMinVersionSupported (Promise, devtools#795)', () => {
+    it('현재 버전이 최소 버전 이상이면 true', async () => {
+      expect(await isMinVersionSupported({ ios: '5.240.0', android: '5.240.0' })).toBe(true);
+      expect(await isMinVersionSupported({ ios: '5.200.0', android: '5.200.0' })).toBe(true);
+    });
+
+    it('현재 버전이 최소 버전 미만이면 false', async () => {
+      expect(await isMinVersionSupported({ ios: '6.0.0', android: '6.0.0' })).toBe(false);
+    });
+
+    it('always는 항상 true, never는 항상 false', async () => {
+      expect(await isMinVersionSupported({ ios: 'always', android: 'always' })).toBe(true);
+      expect(await isMinVersionSupported({ ios: 'never', android: 'never' })).toBe(false);
+    });
+
+    it('android 플랫폼일 때 android 버전을 비교한다', async () => {
+      aitState.update({ platform: 'android' });
+      expect(await isMinVersionSupported({ ios: '999.0.0', android: '1.0.0' })).toBe(true);
+    });
+  });
+
+  it('getNetworkStatus: 상태의 networkStatus를 반환한다', async () => {
+    expect(await getNetworkStatus()).toBe('WIFI');
+    aitState.update({ networkStatus: 'OFFLINE' });
+    expect(await getNetworkStatus()).toBe('OFFLINE');
+  });
+
+  // Note: requires real timers (no vi.useFakeTimers)
+  it('getServerTime: 현재 시간을 반환한다', async () => {
+    const before = Date.now();
+    const time = await getServerTime();
+    const after = Date.now();
+    expect(time).toBeGreaterThanOrEqual(before);
+    expect(time).toBeLessThanOrEqual(after);
+  });
+
+  it('getTossAppVersion: 상태의 appVersion을 반환한다', () => {
+    expect(getTossAppVersion()).toBe('5.240.0');
+  });
+
+  it('getSchemeUri: 상태의 schemeUri를 반환한다 (Promise, devtools#806)', async () => {
+    expect(await getSchemeUri()).toBe('/');
+    aitState.update({ schemeUri: '/test' });
+    expect(await getSchemeUri()).toBe('/test');
+  });
+
+  it('getLocale: 상태의 locale을 반환한다 (Promise, devtools#795)', async () => {
+    expect(await getLocale()).toBe('ko-KR');
+  });
+
+  it('getDeviceId: 상태의 deviceId를 반환한다 (Promise, devtools#795)', async () => {
+    expect(await getDeviceId()).toBe(aitState.state.deviceId);
+  });
+
+  it('getGroupId: 상태의 groupId를 반환한다', () => {
+    expect(getGroupId()).toBe('mock-group-id');
+  });
+
+  it('env.getDeploymentId: 상태의 deploymentId를 반환한다', () => {
+    expect(env.getDeploymentId()).toBe('mock-deployment-id');
+  });
+
+  it('getAppsInTossGlobals: brand 정보를 포함한 globals를 반환한다', () => {
+    const globals = getAppsInTossGlobals();
+    expect(globals.deploymentId).toBe('mock-deployment-id');
+    expect(globals.brandDisplayName).toBe('Mock App');
+    expect(globals.brandPrimaryColor).toBe('#3182F6');
+  });
+
+  it('closeView: history.back()을 호출한다', async () => {
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    await closeView();
+    expect(backSpy).toHaveBeenCalled();
+  });
+
+  it('openURL: window.open()을 호출한다', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    await openURL('https://example.com');
+    expect(openSpy).toHaveBeenCalledWith('https://example.com', '_blank');
+  });
+
+  it('getTossShareLink: scheme이 있는 유효한 경로는 mock share link를 반환한다', async () => {
+    // devtools#780 이전엔 '/path'(scheme 없는 bare path)로도 테스트했으나, 실기기(env3)는
+    // 이런 입력을 reject한다 — 유효 입력(scheme 포함)으로 갱신.
+    const link = await getTossShareLink('intoss://path');
+    expect(link).toBe('https://toss.im/share/mockintoss://path');
+  });
+
+  it('getTossShareLink: scheme 없는 bare path는 EXECUTION_ERROR로 reject된다 (devtools#780)', async () => {
+    await expect(getTossShareLink('/some/path')).rejects.toThrow();
+    try {
+      await getTossShareLink('/some/path');
+      expect.unreachable('reject되어야 한다');
+    } catch (err) {
+      // 캡처 하네스(aitCapture.extractErrorShape)는 errorName을 err.constructor.name,
+      // errorCode를 err.code ?? err.errorCode에서 뽑는다. 실기기 실측이
+      // errorName: "Error"이므로 서브클래스가 아닌 평범한 Error여야 한다.
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).constructor.name).toBe('Error');
+      expect((err as Error & { code?: string }).code).toBe('EXECUTION_ERROR');
+      // devtools#788: 손수 만든 `{errorCode}` 대신 buildNativeError의 실기기
+      // 2.x native envelope을 얹으므로, key-set도 env3 캡처와 필드 단위로
+      // 일치해야 한다 (Object.keys 발산이 sdk-example capture-diff가 잡아낸 회귀).
+      expect(Object.keys(err as object).sort()).toEqual([
+        '__isError',
+        'code',
+        'moduleName',
+        'name',
+        'userInfo',
+      ]);
+    }
+  });
+
+  it('setScreenAwakeMode: 설정한 값을 반환한다', async () => {
+    const result = await setScreenAwakeMode({ enabled: true });
+    expect(result).toEqual({ enabled: true });
+  });
+
+  it('requestReview: isSupported()가 true를 반환한다', () => {
+    // requestReview는 런타임에 isSupported가 부착되지만 타입 정의에는 없다
+    const fn = requestReview as unknown as { isSupported: () => boolean };
+    expect(fn.isSupported()).toBe(true);
+  });
+
+  it('share: 에러 없이 실행된다', async () => {
+    await expect(share({ message: 'hello' })).resolves.toBeUndefined();
+  });
+
+  it('setIosSwipeGestureEnabled: 에러 없이 실행된다', async () => {
+    await expect(setIosSwipeGestureEnabled({ isEnabled: true })).resolves.toBeUndefined();
+  });
+
+  describe('setIosSwipeGestureEnabled → navigation slice', () => {
+    it('reset 직후 기본값은 null(미호출)이다', () => {
+      expect(aitState.state.navigation.iosSwipeGestureEnabled).toBeNull();
+    });
+
+    it('호출하면 마지막 호출값을 navigation.iosSwipeGestureEnabled에 mirror한다', async () => {
+      await setIosSwipeGestureEnabled({ isEnabled: false });
+      expect(aitState.state.navigation.iosSwipeGestureEnabled).toBe(false);
+
+      await setIosSwipeGestureEnabled({ isEnabled: true });
+      expect(aitState.state.navigation.iosSwipeGestureEnabled).toBe(true);
+    });
+
+    it('상태 변경 시 구독자에게 통지한다 (패널 실시간 반영용)', async () => {
+      const listener = vi.fn();
+      const unsub = aitState.subscribe(listener);
+      await setIosSwipeGestureEnabled({ isEnabled: false });
+      expect(listener).toHaveBeenCalled();
+      unsub();
+    });
+  });
+
+  it('setDeviceOrientation: 에러 없이 실행된다', async () => {
+    await expect(setDeviceOrientation({ type: 'landscape' })).resolves.toBeUndefined();
+  });
+
+  it('setDeviceOrientation: auto 모드에서 호출 값을 appOrientation에 기록한다', async () => {
+    const { aitState } = await import('../mock/state.js');
+    aitState.reset();
+    expect(aitState.state.viewport.orientation).toBe('auto');
+    expect(aitState.state.viewport.appOrientation).toBeNull();
+
+    await setDeviceOrientation({ type: 'landscape' });
+
+    // 사용자 의도(orientation)는 auto 그대로, SDK 요청만 별도 기록
+    expect(aitState.state.viewport.orientation).toBe('auto');
+    expect(aitState.state.viewport.appOrientation).toBe('landscape');
+  });
+
+  it('setDeviceOrientation: auto 모드에서 여러 번 호출해도 매번 반영된다', async () => {
+    const { aitState } = await import('../mock/state.js');
+    aitState.reset();
+
+    await setDeviceOrientation({ type: 'landscape' });
+    expect(aitState.state.viewport.appOrientation).toBe('landscape');
+    expect(aitState.state.viewport.orientation).toBe('auto');
+
+    await setDeviceOrientation({ type: 'portrait' });
+    expect(aitState.state.viewport.appOrientation).toBe('portrait');
+    expect(aitState.state.viewport.orientation).toBe('auto');
+
+    await setDeviceOrientation({ type: 'landscape' });
+    expect(aitState.state.viewport.appOrientation).toBe('landscape');
+    expect(aitState.state.viewport.orientation).toBe('auto');
+  });
+
+  it('setDeviceOrientation: Panel이 override 중이면 요청을 무시하고 경고를 낸다', async () => {
+    const { aitState } = await import('../mock/state.js');
+    aitState.reset();
+    aitState.patch('viewport', { orientation: 'portrait' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await setDeviceOrientation({ type: 'landscape' });
+    // orientation도 appOrientation도 변경되지 않아야 함
+    expect(aitState.state.viewport.orientation).toBe('portrait');
+    expect(aitState.state.viewport.appOrientation).toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('setDeviceOrientation(landscape) ignored'),
+    );
+
+    warn.mockRestore();
+  });
+
+  it('setSecureScreen: 설정한 값을 반환한다', async () => {
+    const result = await setSecureScreen({ enabled: true });
+    expect(result).toEqual({ enabled: true });
+  });
+
+  it('getSafeAreaInsets (deprecated): insets 객체를 담은 Promise를 반환한다 — 상류 타입 선언(동기 number)이 아니라 실측(devtools#770/#795)', async () => {
+    // 상류 SDK 선언은 `(): number`지만 실기기(2.x×iOS) capture는 SafeAreaInsets.get()과
+    // 같은 객체를 Promise로 반환함을 보였다(devtools#770 shape, devtools#795 sync/async축).
+    // mock은 런타임 실측을 재현한다. default는 iPhone 15 Pro partner WebView 실측과 정합
+    // (nav bar top 54).
+    expect(await getSafeAreaInsets()).toEqual({ top: 54, bottom: 34, left: 0, right: 0 });
+  });
+
+  describe('SafeAreaInsets', () => {
+    it('get: 현재 safe area insets를 반환한다', () => {
+      const insets = SafeAreaInsets.get();
+      expect(insets).toEqual({ top: 54, bottom: 34, left: 0, right: 0 });
+    });
+
+    it('subscribe: 상태 변경 시 콜백이 호출되고 unsubscribe 후 호출되지 않는다', () => {
+      const handler = vi.fn();
+      const unsub = SafeAreaInsets.subscribe({ onEvent: handler });
+
+      aitState.patch('safeAreaInsets', { top: 50 });
+      expect(handler).toHaveBeenCalledWith({ top: 50, bottom: 34, left: 0, right: 0 });
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      unsub();
+      aitState.patch('safeAreaInsets', { top: 60 });
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    // TODO: SafeAreaInsets.subscribe는 현재 aitState.subscribe에 위임하므로
+    // safeAreaInsets 외 상태 변경에도 콜백이 호출된다. 향후 insets 변경 시에만 호출되도록 개선 필요.
+    it.todo('subscribe: safeAreaInsets 변경 시에만 콜백이 호출되어야 한다');
+  });
+
+  describe('graniteEvent', () => {
+    it('backEvent 리스너를 등록하고 trigger로 호출할 수 있다', () => {
+      const handler = vi.fn();
+      const unsub = graniteEvent.addEventListener('backEvent', { onEvent: handler });
+
+      aitState.trigger('backEvent');
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      unsub();
+      aitState.trigger('backEvent');
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('homeEvent 리스너를 등록하고 trigger로 호출할 수 있다', () => {
+      const handler = vi.fn();
+      const unsub = graniteEvent.addEventListener('homeEvent', { onEvent: handler });
+
+      aitState.trigger('homeEvent');
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      unsub();
+    });
+  });
+
+  describe('tdsEvent', () => {
+    it('navigationAccessoryEvent를 수신할 수 있다', () => {
+      const handler = vi.fn();
+      const unsub = tdsEvent.addEventListener('navigationAccessoryEvent', { onEvent: handler });
+
+      window.dispatchEvent(
+        new CustomEvent('__ait:navigationAccessoryEvent', { detail: { id: 'btn1' } }),
+      );
+      expect(handler).toHaveBeenCalledWith({ id: 'btn1' });
+
+      unsub();
+    });
+  });
+});

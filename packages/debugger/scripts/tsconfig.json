@@ -1,0 +1,20 @@
+{
+  // Typecheck pass for the build-time dashboard/attach HTML precompile
+  // (scripts/build-dashboard-html.ts, scripts/dashboard/*.tsx), mirroring
+  // devtools' scripts/tsconfig.json. react/react-dom are referenced ONLY
+  // here — never in src/ (see check-mcp-react-free.sh).
+  //
+  // Deliberately does NOT sweep scripts/debug-absence-fixture/: that fixture
+  // dynamic-imports the sibling @ait-co/debug-console package, whose dist/
+  // types only exist after `pnpm build` — a static tsc pass run before build
+  // (as `pnpm typecheck` is in CI) would fail to resolve it. The fixture's
+  // correctness is verified at runtime by check-debug-surface-absent.sh's
+  // real `vite build`, not by this static pass.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["build-dashboard-html.ts", "dashboard/**/*.tsx"]
+}

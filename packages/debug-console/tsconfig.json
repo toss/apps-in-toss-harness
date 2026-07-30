@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // Node types are here for exactly one reason: `auto.ts` reads the
+    // `process.env.NODE_ENV` token verbatim so the consumer's bundler can
+    // substitute it (a `typeof process` guard would survive substitution and
+    // always read false in a browser). Nothing in this package runs on Node.
+    "types": ["node"],
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

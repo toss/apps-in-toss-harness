@@ -1,0 +1,255 @@
+// Pure nav-bar emulation logic for the launcher PWA (#495) — no DOM, no library
+// imports — so it can be unit-tested under vitest (jsdom) without the launcher's
+// heavy top-level imports (same pattern as entry.ts / letterbox.ts). Launcher.tsx
+// reads the live query string + viewport from the DOM and feeds them in.
+//
+// Background: environment 2 (AITC Sandbox PWA) frames an ephemeral tunnel URL in
+// a full-viewport iframe. Before #495 the framed app was full-bleed under the OS
+// status bar, with no emulation of the real toss mini-app host chrome. This
+// module models that host chrome so the launcher's own shell reproduces the two
+// observed runtime nav-bar shapes:
+//
+//   - partner (non-game): a full nav bar below the status bar — title + a right
+//     capsule (`···` menu · `✕`). Height 54 CSS px (real-device measured, #190).
+//   - game: no full bar — only a floating right capsule (`···` | `✕`) overlaid on
+//     a full-bleed canvas (viewport.ts: game nav bar is a transparent overlay
+//     INSIDE the WebView).
+//
+// `←` (back) is rendered as `.ait-navbar-back` (glyph `‹`) and drives the framed
+// iframe via `{ type: 'ait:navigate-back' }` postMessage — same-protocol opt-in,
+// cross-origin history is not directly accessible (SecurityError). Implemented in
+// #510/#511; safe-area-bridge.ts handles the receiving side.
+
+import {
+  computeBridgeInsets as computeLetterboxBridgeInsets,
+  type SafeAreaInsets,
+} from './letterbox.js';
+
+/**
+ * Apps in Toss host nav bar height (CSS px), `partner` type.
+ *
+ * DUPLICATE of `AIT_NAV_BAR_HEIGHT_PARTNER` in `src/panel/viewport.ts` — kept in
+ * sync by value. The launcher fixture intentionally does NOT import from `src/`
+ * (it is a standalone PWA bundle with its own build graph; reaching into the
+ * mock package's panel internals would couple the fixture to src module layout).
+ * If one changes, change both. See src/panel/viewport.ts for the real-device
+ * measurement provenance (iPhone 15 Pro on-device relay, devtools#190/#275).
+ */
+export const AIT_NAV_BAR_HEIGHT_PARTNER = 54;
+
+// ---------------------------------------------------------------------------
+// Navbar spacing constants — kept in sync with src/panel/styles.ts by the
+// parity guard tests in navbar.vitest.ts. Any change here must be reflected
+// in both files and vice versa (#510).
+// ---------------------------------------------------------------------------
+
+/** Icon size (px). Matches `.ait-navbar-icon { width: 22px; height: 22px; }`. */
+export const LAUNCHER_NAVBAR_ICON_SIZE_PX = 22;
+/** Title-group gap (px). Matches `.ait-navbar-title { gap: 6px; }`. */
+export const LAUNCHER_NAVBAR_TITLE_GAP_PX = 6;
+/** Title-group margin-left (px). Matches `.ait-navbar-title { margin-left: 4px; }`. */
+export const LAUNCHER_NAVBAR_TITLE_MARGIN_LEFT_PX = 4;
+/** Back button font-size (px). Matches `.ait-navbar-back { font-size: 24px; }`. */
+export const LAUNCHER_NAVBAR_BACK_FONT_SIZE_PX = 24;
+/** Back button padding. Matches `.ait-navbar-back { padding: 0 8px; }`. */
+export const LAUNCHER_NAVBAR_BACK_PADDING = '0 8px';
+/** Back glyph. Matches the `‹` character in viewport.ts / Launcher.tsx. */
+export const LAUNCHER_NAVBAR_BACK_GLYPH = '‹';
+
+export type NavBarType = 'partner' | 'game';
+
+/**
+ * Decide which host nav-bar shape to emulate from the launcher query string.
+ *
+ * `navBarType=game` selects the game variant (floating capsule, full-bleed
+ * iframe). Anything else — including absent — is the default partner bar.
+ */
+export function parseNavBarType(search: string): NavBarType {
+  return new URLSearchParams(search).get('navBarType') === 'game' ? 'game' : 'partner';
+}
+
+/**
+ * Decide whether the partner nav bar should render with a transparent background
+ * from the launcher query string (SDK 2.8.0 `navigationBar.transparentBackground`,
+ * #587).
+ *
+ * `navBarTransparent=1` → true. Anything else (absent, `0`, other values) → false.
+ */
+export function parseNavBarTransparent(search: string): boolean {
+  return new URLSearchParams(search).get('navBarTransparent') === '1';
+}
+
+/**
+ * Resolve the partner nav bar foreground theme from the launcher query string
+ * (SDK 2.8.0 `navigationBar.theme`, #587).
+ *
+ * `navBarTheme=light` → `'light'`, `navBarTheme=dark` → `'dark'`. Absent or
+ * any other value → `'dark'` (conservative default matching the current launcher
+ * bar — dark background + light text).
+ */
+export function parseNavBarTheme(search: string): 'light' | 'dark' {
+  const val = new URLSearchParams(search).get('navBarTheme');
+  if (val === 'light' || val === 'dark') return val;
+  return 'dark';
+}
+
+/**
+ * Resolve the title shown in the partner nav bar.
+ *
+ * Reads the `name=` query param (a friendly app name the dev session may pass).
+ * SECURITY: never falls back to the tunnel host — a quick-tunnel hostname is
+ * session-sensitive and must not be painted on-screen. When `name=` is absent or
+ * blank the caller supplies a generic localized default (e.g. "Mini App").
+ *
+ * Returns the trimmed name, or null so the caller substitutes its i18n default.
+ */
+export function resolveAppTitle(search: string): string | null {
+  const raw = new URLSearchParams(search).get('name');
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Resolve the icon URL shown in the partner nav bar.
+ *
+ * Priority:
+ *   1. `icon=` param — accepted only when it is an absolute `https://` URL.
+ *      Non-https, relative paths, `javascript:`, `data:`, etc. are rejected.
+ *   2. Fallback (when `icon=` is absent): `<framed-origin>/favicon.ico` derived
+ *      from `url=` — the `url=` param's https origin + `/favicon.ico`. The framed
+ *      origin is already loaded in the iframe, so this is not a new host exposure.
+ *      If `url=` is absent, not https, or not parseable → null.
+ *
+ * Returns null when no safe icon can be derived (caller omits the icon slot).
+ *
+ * SECURITY: `<img src>` paints no text on-screen, and the framed origin of the
+ * favicon fallback is already the iframe host — not a new host disclosure. The
+ * tunnel host is still never rendered as visible text (that principle applies to
+ * the title slot, not this img src slot).
+ */
+export function resolveAppIcon(search: string): string | null {
+  const params = new URLSearchParams(search);
+
+  // 1. Explicit icon= param — must be absolute https:// URL.
+  const iconParam = params.get('icon');
+  if (iconParam !== null) {
+    let parsed: URL;
+    try {
+      parsed = new URL(iconParam);
+    } catch {
+      return null;
+    }
+    // Accept only absolute https:// URLs. Reject data:, javascript:, relative, etc.
+    return parsed.protocol === 'https:' ? iconParam : null;
+  }
+
+  // 2. Fallback: derive favicon.ico from the framed url= origin.
+  const urlParam = params.get('url');
+  if (urlParam === null) return null;
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(urlParam);
+  } catch {
+    return null;
+  }
+  // Only allow https: origins (same guard as normalizeUrl in Launcher.tsx).
+  if (parsedUrl.protocol !== 'https:') return null;
+  return `${parsedUrl.origin}/favicon.ico`;
+}
+
+/**
+ * Extract the search string from a launcher-style URL for nav-bar param parsing.
+ *
+ * A "launcher-style URL" is a launcher deep-link or QR payload that carries a
+ * `url=` query param pointing to the tunnel. Nav-bar params (`name=`, `icon=`,
+ * `navBarType=`) live on the outer launcher URL, not on the tunnel URL itself.
+ *
+ * Returns the `search` string (e.g. `"?name=My%20App&url=https%3A%2F%2F..."`)
+ * of the outer URL when the input is a valid launcher-style URL, or null when
+ * the input is a direct tunnel URL (no `url=`), an unparseable string, or empty.
+ *
+ * Pure function — no DOM, no side-effects — so it can be unit-tested under
+ * vitest without the launcher's heavy top-level imports.
+ */
+export function extractLauncherSearch(raw: string): string | null {
+  if (!raw) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  // Only launcher-style URLs have a `url=` param. Direct tunnel URLs don't.
+  return parsed.searchParams.has('url') ? parsed.search : null;
+}
+
+/**
+ * Compute the safe-area insets the launcher forwards to the framed dev app
+ * (`ait:safe-area-insets`), now that #495 makes the partner nav bar part of the
+ * launcher chrome.
+ *
+ * Bridge-inset matrix (re-grounded for #495, updated for #527 correction, extended
+ * for #587 partner+transparent):
+ *
+ *   | navBarType | transparent | letterbox | corrected | top forwarded | bottom forwarded | rationale |
+ *   |------------|-------------|-----------|-----------|---------------|------------------|-----------|
+ *   | partner    | false       | false     | n/a       | 0             | raw.bottom       | bar is launcher chrome; iframe starts below it, env(top)=0. |
+ *   | partner    | false       | true      | true      | 0             | raw.bottom       | #527: frame reaches real screen bottom → restore actual bottom inset. |
+ *   | partner    | false       | true      | false     | 0             | 0                | legacy #491: frame still stops above indicator → phantom bottom zeroed. |
+ *   | partner    | true        | false     | n/a       | raw.top       | raw.bottom       | UNVERIFIED HYPOTHESIS (#587): transparent bar is overlay → iframe full-bleed; raw top passes through like game. |
+ *   | partner    | true        | true      | true      | raw.top       | raw.bottom       | UNVERIFIED HYPOTHESIS (#587): same as above + correction restores real bottom. |
+ *   | partner    | true        | true      | false     | raw.top       | 0                | UNVERIFIED HYPOTHESIS (#587): same as above + legacy phantom-bottom zero. |
+ *   | game       | n/a         | false     | n/a       | raw.top       | raw.bottom       | full-bleed canvas; raw env passes through. |
+ *   | game       | n/a         | true      | true      | raw.top       | raw.bottom       | #527: correction restores real bottom. |
+ *   | game       | n/a         | true      | false     | raw.top       | 0                | legacy #491: phantom bottom zeroed. |
+ *
+ * For the partner bar (non-transparent), top is forced to 0 because the iframe
+ * no longer sits under the OS status bar — the launcher's status-bar strip + nav
+ * bar occupy that region as host chrome. This mirrors `computeSafeAreaInsets` in
+ * viewport.ts, which returns top=0 for partner portrait: the SDK's informational
+ * top=54 is surfaced by the mock inside the framed page, not double-counted as
+ * padding.
+ *
+ * For the game variant (and partner+transparent, see below), the iframe IS
+ * full-bleed under the status bar (the floating capsule / transparent bar is an
+ * overlay), so the raw status-bar inset is the honest value — identical to the
+ * pre-#495 letterbox-only correction.
+ *
+ * **UNVERIFIED HYPOTHESIS — partner+transparent (#587)**: when
+ * `transparentBackground: true` the partner bar becomes a transparent overlay
+ * over the iframe (content shows through). This is analogous to the game capsule:
+ * the iframe is full-bleed under the status bar, so the raw top inset should pass
+ * through. This behaviour has NOT been verified on a real device against the toss
+ * host — it is a reasonable inference from the semantics. If real-device testing
+ * contradicts it (e.g. the host still positions the WebView below the bar even
+ * when transparent), this branch must be corrected.
+ *
+ * `letterboxCorrected` (default true) propagates to `computeBridgeInsets` (#527):
+ * when the screen.height px correction is in effect the frame genuinely reaches
+ * the home-indicator band, so the bottom inset is meaningful and must not be
+ * zeroed. Pass false only on the legacy/uncorrected path.
+ *
+ * Pure function — no DOM reads — so it can be tested under vitest independently
+ * of the React component.
+ */
+export function computeNavBarBridgeInsets(
+  raw: SafeAreaInsets,
+  letterboxDetected: boolean,
+  navBarType: NavBarType,
+  letterboxCorrected = true,
+  navBarTransparent = false,
+): SafeAreaInsets {
+  const base = computeLetterboxBridgeInsets(raw, letterboxDetected, letterboxCorrected);
+  // game = full-bleed 가정으로 raw top을 그대로 통과시킨다. game frame type은 SDK deprecated
+  // (web-framework 2.6.1) 이므로 실기기 실측은 미추진 — 이 passthrough는 미검증 경로다 (#577).
+  if (navBarType === 'game') return base;
+  // UNVERIFIED HYPOTHESIS (#587): partner+transparent — the bar becomes a
+  // transparent overlay, so the iframe is full-bleed (bar behind content). By
+  // analogy with the game capsule the raw top passes through. Not verified on
+  // real device against toss host — see JSDoc above.
+  if (navBarTransparent) return base;
+  // Partner bar (non-transparent) consumes the status-bar + nav-bar band as
+  // launcher chrome; the iframe starts below it so its top inset is 0.
+  return { ...base, top: 0 };
+}
