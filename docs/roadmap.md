@@ -49,7 +49,11 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
   tools: searchDocumentation·getPage·askQuestion·sendFeedback.
 - console MCP: `https://mcp.toss.im/adapters/apps-in-toss-console/mcp` — #3의
   MCP Gateway. OAuth protected resource(RFC 9728)라 설치 후 `/mcp`에서
-  `apps-in-toss-console` 인증 1회 필요. 공식 문서 기준 워크스페이스·미니앱·검수·
+  `apps-in-toss-console` 인증 1회 필요. 인증 서버(business-accounts)가 동적
+  클라이언트 등록(DCR)을 지원하지 않으므로 manifest가 정적 client id
+  `mcp-gateway`를 `oauth.clientId`로 지정한다(공식 codex 안내와 같은 값 —
+  미지정 시 Claude Code는 "Incompatible auth server: does not support dynamic
+  client registration"으로 실패). 공식 문서 기준 워크스페이스·미니앱·검수·
   번들·인앱 결제·인앱 광고 조작을 노출한다.
 
 플러그인 설치 형상에서의 실측(2026-07-30): docs는 `connected` + tool 4종 노출

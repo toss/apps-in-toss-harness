@@ -18,7 +18,10 @@
     },
     "apps-in-toss-console": {
       "type": "http",
-      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp"
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
+      "oauth": {
+        "clientId": "mcp-gateway"
+      }
     }
   }
 }
