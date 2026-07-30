@@ -60,7 +60,7 @@ function writeFile(filePath: string, content: string): void {
 
 /**
  * 최소 valid SKILL.md 본문 (올바른 frontmatter + 올바른 body).
- * exempt 목록에 없는 skill 이므로 docs deep-link, seam 둘 다 필수.
+ * exempt 목록에 없는 skill 이므로 docs MCP 언급, seam 둘 다 필수.
  */
 function validSkillMd(): string {
   return `---
@@ -75,8 +75,8 @@ argument-hint: ''
 
 픽스처 skill 이다.
 
-<!-- docs deep-link (A2/docs-deeplink-required 통과용) -->
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+<!-- docs MCP 언급 (A2/docs-mcp-mention-required 통과용) -->
+필요하면 docs MCP(searchDocumentation/getPage)로 조회한다.
 
 ## 실행
 
@@ -347,9 +347,9 @@ argument-hint: ''
     expect(rulesFired(violations)).toContain('A2/docs-root-link');
   });
 
-  it('A2/docs-deeplink-required — docs deep-link 없으면 위반이 난다', async () => {
+  it('A2/docs-mcp-mention-required — docs MCP 언급 없으면 위반이 난다', async () => {
     buildValidFixture(tmpDir);
-    // deep-link 없이 seam 만 있는 SKILL.md
+    // docs MCP 언급 없이 seam 만 있는 SKILL.md
     const broken = `---
 name: ${SKILL_NAME}
 description: Fixture skill.
@@ -360,7 +360,7 @@ argument-hint: ''
 
 ## 목적
 
-본문. 링크 없음.
+본문. 문서 안내 없음.
 
 \`\`\`
 /ait:new
@@ -368,7 +368,7 @@ argument-hint: ''
 `;
     writeFile(path.join(tmpDir, 'shared', 'skills', SKILL_NAME, 'SKILL.md'), broken);
     const { violations } = await runChecks(tmpDir);
-    expect(rulesFired(violations)).toContain('A2/docs-deeplink-required');
+    expect(rulesFired(violations)).toContain('A2/docs-mcp-mention-required');
   });
 
   it('A2/no-seam — ## 참고 이전 본문에 /ait 참조가 없으면 위반이 난다', async () => {

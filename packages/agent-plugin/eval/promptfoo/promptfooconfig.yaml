@@ -25,10 +25,12 @@
 #
 # 형상 주의 (issue #275): 이 파일은 skill 을 **project skill** 로 얹는다. 실제
 #   사용자는 /plugin install 로 얹으므로 skill 이 `ait:` 네임스페이스에 들어가고
-#   shared/commands/ 17개가 같은 목록에 함께 오른다 — 그 차이가 측정값을 바꾼다
-#   (case 03·09 가 여기선 5/5, 설치 형상에선 0/5·2/5 였다). 여기는 **케이스 정본**
-#   이고, 라우팅 회귀 판정은 eval/routing/ (claude -p --plugin-dir, API 키 불필요)
-#   로 한다. 발화를 고치면 eval/routing/cases.tsv 로 함께 옮긴다.
+#   shared/commands/ 10개가 같은 목록에 함께 오른다 — 그 차이가 측정값을 바꿀 수
+#   있다(project-skill 형상 vs 설치 형상에서 동일 케이스의 통과율이 달랐던 사례가
+#   과거 있었다 — aitcc 정리로 케이스 번호가 재편돼 구체 번호는 더 이상 유효하지
+#   않다). 여기는 **케이스 정본**이고, 라우팅 회귀 판정은 eval/routing/
+#   (claude -p --plugin-dir, API 키 불필요)로 한다. 발화를 고치면
+#   eval/routing/cases.tsv 로 함께 옮긴다.
 
 description: ait 플러그인 skill 트리거링 정합성 (positive + negative control)
 
@@ -46,25 +48,19 @@ providers:
       # 확인됨: working_dir 키 이름. skill 이 0개로 잡히면 이 키를 확인하라
       # (provider 버전에 따라 cwd / workingDir 일 수 있음).
       working_dir: ./fixture
-      # 15개 skill을 명시적으로 노출 (setting_sources 발견과 병행 — 안전).
-      # skill 통합 17→14 (issue #273): logs→status, deploy-key→deploy,
-      # inject-devtools+inject-polyfill→inject. command 표면은 17개 그대로.
-      # harness#1: setup-debugger 신설(debugger MCP를 프로젝트 .mcp.json opt-in 배선으로 전환) — 14→15.
+      # 8개 skill을 명시적으로 노출 (setting_sources 발견과 병행 — 안전).
+      # aitcc 전제 skill 4종(register/deploy/status/setup-bundle) + 불필요
+      # skill 3종(docs/auth-setup/changeset)이 콘솔 MCP(apps-in-toss-console)·
+      # docs MCP(apps-in-toss-docs)·oidc 제거 방침·harness-external 정리로
+      # 제거됐다(harness aitcc 정리 — 15→8 skill).
       skills:
-        - auth-setup
-        - changeset
         - debug
-        - deploy
         - design
-        - docs
         - inject
         - new-miniapp
         - plan
-        - register
-        - setup-bundle
         - setup-debugger
         - setup-phone-preview
-        - status
         - welcome
 
 # 기본 assertion 은 각 test 에 직접 둔다 (skill 마다 기대 skill 이 다름).
@@ -161,83 +157,11 @@ tests:
       - type: skill-used
         value: debug
 
-  # --- station 4: auth ---
-  - description: 'POS auth-setup — oidc-bridge 로그인 배선'
-    vars:
-      utterance: '앱인토스 로그인을 oidc-bridge로 연결해서 Supabase 인증까지 배선하고 싶어'
-    assert:
-      - type: skill-used
-        value: auth-setup
-
-  # --- station 5: register+ship — 번들 환경 ---
-  - description: 'POS setup-bundle — .ait 번들 빌드 환경 추가'
-    vars:
-      utterance: '이 프로젝트에 .ait 네이티브 번들 빌드 환경을 추가해줘 (granite.config.ts 랑 bundle 스크립트)'
-    assert:
-      - type: skill-used
-        value: setup-bundle
-
-  # --- station 5: register ---
-  - description: 'POS register — 콘솔에 앱 등록'
-    vars:
-      utterance: '이 미니앱을 앱인토스 콘솔에 등록하고 싶어. aitcc.yaml 만들고 register 까지.'
-    assert:
-      - type: skill-used
-        value: register
-
-  # --- station 5: deploy-key (deploy skill의 Deploy Key facet) ---
-  - description: 'POS deploy (Deploy Key facet) — Deploy Key 발급'
-    vars:
-      utterance: '앱인토스 Deploy Key 발급해서 프로파일로 저장해줘'
-    assert:
-      - type: skill-used
-        value: deploy
-
-  # --- station 5: deploy ---
-  - description: 'POS deploy — 번들 배포'
-    vars:
-      utterance: '미니앱 번들을 앱인토스 콘솔에 배포해줘'
-    assert:
-      - type: skill-used
-        value: deploy
-
-  # --- station 6: status ---
-  - description: 'POS status — 콘솔 상태 조회'
-    vars:
-      utterance: '내 앱인토스 콘솔 상태 보여줘. 워크스페이스랑 등록된 미니앱 상태.'
-    assert:
-      - type: skill-used
-        value: status
-
-  # --- station 6: logs (status skill의 logs facet) ---
-  - description: 'POS status (logs facet) — 런타임 로그 조회'
-    vars:
-      utterance: '배포한 미니앱의 런타임 로그를 보고 싶어'
-    assert:
-      - type: skill-used
-        value: status
-
-  # --- cross-cutting: docs ---
-  - description: 'POS docs — 커뮤니티 docs 토픽 로드'
-    vars:
-      utterance: '앱인토스 docs에서 clipboard API 사용법 찾아줘'
-    assert:
-      - type: skill-used
-        value: docs
-
-  # --- harness 외부: changeset (메인테이너 도구) ---
-  - description: 'POS changeset — 버전 changeset 생성'
-    vars:
-      utterance: '이 패키지 changeset 하나 추가해줘. 버전 올려줘.'
-    assert:
-      - type: skill-used
-        value: changeset
-
   # ================================================================
   # NEGATIVE CONTROL — off-topic 발화. 어떤 ait skill 도 트리거되면 안 된다.
   #   가장 잘못 발화하기 쉬운 skill 들을 골라 not-skill-used 로 못박는다.
-  #   (new-miniapp/setup-bundle/inject-* 은 "프로젝트 만들기/빌드/설정"
-  #    같은 일반 개발 발화에 끌려갈 위험이 가장 크다.)
+  #   (new-miniapp/inject 는 "프로젝트 만들기/빌드/설정" 같은 일반 개발 발화에
+  #    끌려갈 위험이 가장 크다.)
   # ================================================================
 
   - description: 'NEG 일반 리팩토링 — 어떤 ait skill 도 아님'
@@ -251,15 +175,6 @@ tests:
       - type: not-skill-used
         value: design
 
-  - description: 'NEG 커밋 메시지 — changeset 으로 새지 않아야'
-    vars:
-      utterance: '이 변경에 대한 커밋 메시지 하나 써줘.'
-    assert:
-      - type: not-skill-used
-        value: changeset
-      - type: not-skill-used
-        value: deploy
-
   - description: 'NEG 알고리즘 — 어떤 ait skill 도 아님'
     vars:
       utterance: '파이썬으로 피보나치 함수 짜줘.'
@@ -268,30 +183,10 @@ tests:
         value: new-miniapp
       - type: not-skill-used
         value: plan
-      - type: not-skill-used
-        value: docs
 
-  - description: 'NEG 일반 npm 빌드 — setup-bundle/deploy 로 새지 않아야'
+  - description: 'NEG 일반 npm 빌드 — new-miniapp 으로 새지 않아야'
     vars:
       utterance: '이 프로젝트 그냥 npm run build 한 번 돌려줘.'
     assert:
       - type: not-skill-used
-        value: setup-bundle
-      - type: not-skill-used
-        value: deploy
-      - type: not-skill-used
         value: new-miniapp
-
-  - description: 'NEG 일반 로그인 코드 — auth-setup 으로 새지 않아야'
-    vars:
-      utterance: '그냥 JWT 검증하는 Express 미들웨어 하나 짜줘.'
-    assert:
-      - type: not-skill-used
-        value: auth-setup
-
-  - description: 'NEG 일반 상태 조회 — status(+logs facet) 로 새지 않아야'
-    vars:
-      utterance: 'git 상태 한 번 보여줘. 뭐가 staged 됐는지.'
-    assert:
-      - type: not-skill-used
-        value: status

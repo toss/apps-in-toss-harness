@@ -3,6 +3,8 @@
 #   expect  "+<skill>"        해당 skill이 호출돼야 한다        (promptfoo의 skill-used)
 #           "-<s1>,<s2>,..."  나열한 skill이 호출되면 안 된다   (promptfoo의 not-skill-used)
 # 두 파일이 갈라지면 promptfooconfig.yaml이 정본이다 — 여기로 다시 옮긴다.
+# aitcc 전제 skill 4종(register/deploy/status/setup-bundle) + 불필요 skill 3종
+# (docs/auth-setup/changeset) 제거로 23케이스 → 13케이스로 재편(harness aitcc 정리).
 #
 # --- POSITIVE ---
 01-new-1	+new-miniapp	앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로.
@@ -11,22 +13,11 @@
 04-design	+design	Figma 디자인을 앱인토스 미니앱 UX 제약에 맞추고 등록용 이미지 에셋 만들어줘
 05-inject-devtools	+inject	이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어
 06-inject-polyfill	+inject	표준 Web API로 코드를 쓸 수 있게 앱인토스 polyfill 모드로 마이그레이션해줘
-07-phone-preview	+setup-phone-preview	개발 중인 미니앱을 실제 폰에서 미리 보고 싶은데 터널 셋업 해줘
-07b-setup-debugger	+setup-debugger	온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘
-08-debug	+debug	미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어
-09-auth	+auth-setup	앱인토스 로그인을 oidc-bridge로 연결해서 Supabase 인증까지 배선하고 싶어
-10-setup-bundle	+setup-bundle	이 프로젝트에 .ait 네이티브 번들 빌드 환경을 추가해줘 (granite.config.ts 랑 bundle 스크립트)
-11-register	+register	이 미니앱을 앱인토스 콘솔에 등록하고 싶어. aitcc.yaml 만들고 register 까지.
-12-deploy-key	+deploy	앱인토스 Deploy Key 발급해서 프로파일로 저장해줘
-13-deploy	+deploy	미니앱 번들을 앱인토스 콘솔에 배포해줘
-14-status	+status	내 앱인토스 콘솔 상태 보여줘. 워크스페이스랑 등록된 미니앱 상태.
-15-logs	+status	배포한 미니앱의 런타임 로그를 보고 싶어
-16-docs	+docs	앱인토스 docs에서 clipboard API 사용법 찾아줘
-17-changeset	+changeset	이 패키지 changeset 하나 추가해줘. 버전 올려줘.
+07-inject-debug-console	+inject	실기기 candidate 빌드에서 디버그 콘솔로 attach할 수 있게 debug-console 패키지 설치해줘
+08-phone-preview	+setup-phone-preview	개발 중인 미니앱을 실제 폰에서 미리 보고 싶은데 터널 셋업 해줘
+09-setup-debugger	+setup-debugger	온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘
+10-debug	+debug	미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어
 # --- NEGATIVE CONTROL ---
-18-neg-refactor	-new-miniapp,inject,design	이 React 컴포넌트 리팩토링해줘. props 너무 많아.
-19-neg-commit-msg	-changeset,deploy	이 변경에 대한 커밋 메시지 하나 써줘.
-20-neg-algo	-new-miniapp,plan,docs	파이썬으로 피보나치 함수 짜줘.
-21-neg-npm-build	-setup-bundle,deploy,new-miniapp	이 프로젝트 그냥 npm run build 한 번 돌려줘.
-22-neg-jwt	-auth-setup	그냥 JWT 검증하는 Express 미들웨어 하나 짜줘.
-23-neg-git-status	-status	git 상태 한 번 보여줘. 뭐가 staged 됐는지.
+11-neg-refactor	-new-miniapp,inject,design	이 React 컴포넌트 리팩토링해줘. props 너무 많아.
+12-neg-algo	-new-miniapp,plan	파이썬으로 피보나치 함수 짜줘.
+13-neg-npm-build	-new-miniapp	이 프로젝트 그냥 npm run build 한 번 돌려줘.

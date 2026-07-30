@@ -31,7 +31,8 @@ export interface Task {
     dep: string;
     /**
      * 번들 설정 완료 후 존재해야 하는 경로. 정본 경로(create-ait-app)는 scaffold에
-     * 기본 포함, `--local` 폴백만 setup-bundle로 추가 — 채점은 경로 불가지.
+     * 기본 포함, `--local` 폴백만 new-miniapp의 인라인 절차(references/local-template.md
+     * L-5)로 추가 — 채점은 경로 불가지.
      */
     bundle: string[];
   };
