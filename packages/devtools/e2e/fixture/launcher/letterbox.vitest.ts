@@ -1,0 +1,892 @@
+// Unit tests for the pure letterbox-detection logic (#469, discriminator
+// restored to #479 rule in #491). The `.vitest.ts` extension keeps Playwright
+// (testMatch '**/*.test.ts') from collecting this file — see vitest.config.ts
+// `include`.
+//
+// #491 re-grounds the fixtures on real-device measurement (iPhone, iOS 18.7,
+// 2026-06-11): the letterboxed window reported safeAreaBottom 34 (phantom),
+// not 0 as #487 assumed. Bottom carries no signal; top > 0 is reinstated.
+
+import { describe, expect, it, vi } from 'vitest';
+import {
+  computeBridgeInsets,
+  detectLetterbox,
+  detectLetterboxWithReason,
+  isLetterboxResolved,
+  LETTERBOX_MIN_SHORTFALL_PX,
+  type LetterboxVerification,
+  letterboxEpochKey,
+  type PollTimers,
+  type SentinelObserver,
+  scheduleSafeAreaTopPolls,
+  type VerificationTimers,
+  type ViewportMetrics,
+  verifyLetterboxCorrection,
+} from './letterbox.js';
+
+// iPhone 16e-class geometry (390×844 logical, 47pt status bar, 34pt home
+// indicator). Under black-translucent the HEALTHY edge-to-edge window fills
+// screen.height with no shortfall — safeAreaTop 47, safeAreaBottom 34.
+function base(overrides: Partial<ViewportMetrics> = {}): ViewportMetrics {
+  return {
+    innerWidth: 390,
+    innerHeight: 844,
+    screenWidth: 390,
+    screenHeight: 844,
+    visualViewportHeight: 844,
+    safeAreaTop: 47,
+    safeAreaBottom: 34,
+    standalone: true,
+    ...overrides,
+  };
+}
+
+describe('detectLetterbox', () => {
+  // -------------------------------------------------------------------------
+  // Core real-device case (#491 AC)
+  // -------------------------------------------------------------------------
+
+  it('오늘 실측 letterbox(797/844, top 47, bottom 34) → detected=true', () => {
+    // Real-device CDP measurement: iPhone iOS 18.7, 2026-06-11, launcher
+    // cold start. The OS mis-sizes the window (797 vs 844), safeAreaTop 47
+    // (black-translucent active), safeAreaBottom 34 (phantom — window does
+    // NOT reach the home indicator, yet the OS still reports 34).
+    // The #487 discriminator (bottom===0) produced false-negative here.
+    // The restored #479 rule (top>0 + shortfall) correctly detects it.
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 797,
+        visualViewportHeight: 797,
+        safeAreaTop: 47,
+        safeAreaBottom: 34,
+      }),
+    );
+    expect(verdict.detected).toBe(true);
+    expect(verdict.shortfallPx).toBe(47);
+  });
+
+  it('신메타(black-translucent) healthy: shortfall 0, top 47, bottom 34 → detected=false', () => {
+    // Healthy edge-to-edge window: shortfall 0 — the top>0 guard never fires.
+    const verdict = detectLetterbox(base());
+    expect(verdict.detected).toBe(false);
+    expect(verdict.shortfallPx).toBe(0);
+  });
+
+  it('구메타(stale web clip) healthy below-status-bar: shortfall 59, top 0 → detected=false', () => {
+    // Legacy web clip without black-translucent meta: window starts below the
+    // status bar (safeAreaTop 0), so even with a height shortfall the top
+    // guard correctly gates it out — safeAreaTop===0 means no status bar
+    // underlay, not a black-translucent letterbox.
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 785,
+        visualViewportHeight: 785,
+        screenHeight: 844,
+        safeAreaTop: 0,
+        safeAreaBottom: 34,
+      }),
+    );
+    expect(verdict.detected).toBe(false);
+    expect(verdict.shortfallPx).toBe(59);
+  });
+
+  it('SE-class healthy (shortfall 20 < threshold 24) → detected=false', () => {
+    // iPhone SE: 375×667, 20pt status bar, no home indicator.
+    // Shortfall stays under the threshold — safe-area-bottom is 0 here too,
+    // but the threshold guard resolves it before the top check.
+    const verdict = detectLetterbox(
+      base({
+        innerWidth: 375,
+        innerHeight: 647,
+        screenWidth: 375,
+        screenHeight: 667,
+        visualViewportHeight: 647,
+        safeAreaTop: 20,
+        safeAreaBottom: 0,
+      }),
+    );
+    expect(verdict.detected).toBe(false);
+    expect(verdict.shortfallPx).toBe(20);
+    expect(verdict.shortfallPx).toBeLessThan(LETTERBOX_MIN_SHORTFALL_PX);
+  });
+
+  // -------------------------------------------------------------------------
+  // bottom inset has NO effect on detection (#491 key invariant)
+  // -------------------------------------------------------------------------
+
+  it('bottom 0 + shortfall 47 + top 47 → detected=true (bottom=0 does not block)', () => {
+    // Even if the OS were to report bottom 0 in the letterbox state, the
+    // detection must still fire — the rule is top>0, not bottom===0.
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 797,
+        visualViewportHeight: 797,
+        safeAreaTop: 47,
+        safeAreaBottom: 0,
+      }),
+    );
+    expect(verdict.detected).toBe(true);
+  });
+
+  it('bottom 1 + shortfall 47 + top 47 → detected=true (bottom=1 does not block)', () => {
+    // Any non-zero bottom value must not veto detection under #491 rule.
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 797,
+        visualViewportHeight: 797,
+        safeAreaTop: 47,
+        safeAreaBottom: 1,
+      }),
+    );
+    expect(verdict.detected).toBe(true);
+  });
+
+  it('bottom 99 + shortfall 47 + top 47 → detected=true (arbitrary bottom does not veto)', () => {
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 797,
+        visualViewportHeight: 797,
+        safeAreaTop: 47,
+        safeAreaBottom: 99,
+      }),
+    );
+    expect(verdict.detected).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Other guards
+  // -------------------------------------------------------------------------
+
+  it('not standalone → detected=false', () => {
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 797,
+        visualViewportHeight: 797,
+        safeAreaTop: 47,
+        safeAreaBottom: 34,
+        standalone: false,
+      }),
+    );
+    expect(verdict.detected).toBe(false);
+  });
+
+  it('landscape (innerWidth > screenWidth) → detected=false', () => {
+    const verdict = detectLetterbox(
+      base({
+        innerWidth: 844,
+        innerHeight: 390,
+        visualViewportHeight: 390,
+        safeAreaTop: 0,
+        safeAreaBottom: 0,
+      }),
+    );
+    expect(verdict.detected).toBe(false);
+  });
+
+  it('keyboard shrink: tallest of innerHeight/visualViewport used — no spurious shortfall', () => {
+    // Soft keyboard: visualViewport shrinks, innerHeight stays at 844.
+    const keyboard = detectLetterbox(
+      base({ innerHeight: 844, visualViewportHeight: 500, safeAreaTop: 47, safeAreaBottom: 34 }),
+    );
+    expect(keyboard.detected).toBe(false);
+    expect(keyboard.shortfallPx).toBe(0);
+
+    // Inverse lag: innerHeight stale-small while visualViewport already settled.
+    const settled = detectLetterbox(
+      base({ innerHeight: 700, visualViewportHeight: 844, safeAreaTop: 47, safeAreaBottom: 34 }),
+    );
+    expect(settled.detected).toBe(false);
+    expect(settled.shortfallPx).toBe(0);
+  });
+
+  it('visualViewport null: innerHeight alone carries shortfall', () => {
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 797,
+        visualViewportHeight: null,
+        safeAreaTop: 47,
+        safeAreaBottom: 34,
+      }),
+    );
+    expect(verdict.detected).toBe(true);
+    expect(verdict.shortfallPx).toBe(47);
+  });
+
+  it('safeAreaTop 0 with large shortfall → detected=false (top guard)', () => {
+    // safeAreaTop 0 means the window does not extend under the status bar —
+    // regardless of shortfall this is not a black-translucent letterbox.
+    const verdict = detectLetterbox(
+      base({
+        innerHeight: 785,
+        visualViewportHeight: 785,
+        safeAreaTop: 0,
+        safeAreaBottom: 34,
+      }),
+    );
+    expect(verdict.detected).toBe(false);
+    expect(verdict.shortfallPx).toBe(59);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeBridgeInsets — bridge bottom correction (#491, updated #527, #561)
+// ---------------------------------------------------------------------------
+//
+// #561 note: the pure function's contract is unchanged — letterboxCorrected=true
+// still means "the px correction reaches the home-indicator band → restore the
+// real bottom inset". What changed is WHEN the React layer passes true: only
+// after the bottom-sentinel verification confirms the band actually paints
+// (letterboxVerified==='visible'). While pending or clipped the caller now
+// passes false, so these corrected=true cases are the "verification passed"
+// branch and the corrected=false cases are the pending/clipped branch.
+
+describe('computeBridgeInsets', () => {
+  const raw = { top: 47, bottom: 34, left: 0, right: 0 };
+
+  // -------------------------------------------------------------------------
+  // Verification-passed path (letterboxCorrected=true → #527 bottom restored)
+  // -------------------------------------------------------------------------
+
+  it('letterbox detected + corrected/verified-visible (default) → bottom RESTORED, top/left/right unchanged (#527)', () => {
+    // px correction verified visible: the frame genuinely reaches the
+    // home-indicator area, so the real bottom inset (34) must be forwarded.
+    const result = computeBridgeInsets(raw, true);
+    expect(result.bottom).toBe(34);
+    expect(result.top).toBe(47);
+    expect(result.left).toBe(0);
+    expect(result.right).toBe(0);
+  });
+
+  it('letterbox detected + corrected explicit → bottom RESTORED (#527)', () => {
+    const result = computeBridgeInsets(raw, true, true);
+    expect(result.bottom).toBe(34);
+    expect(result.top).toBe(47);
+  });
+
+  it('실측 오늘 letterbox(top 47 / phantom bottom 34) + corrected → bridge bottom 34 복원 (#527)', () => {
+    // iPhone iOS 18.7, 2026-06-12: with screen.height px correction the frame
+    // reaches the real screen bottom — restore the real bottom inset (34).
+    const result = computeBridgeInsets({ top: 47, bottom: 34, left: 0, right: 0 }, true);
+    expect(result.bottom).toBe(34);
+    expect(result.top).toBe(47);
+  });
+
+  it('letterbox detected + corrected + raw bottom 0 (SE-class, no home indicator) → 0', () => {
+    // SE-class device: no home indicator → bottom 0, correction does not change that.
+    const result = computeBridgeInsets({ ...raw, bottom: 0 }, true, true);
+    expect(result.bottom).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Legacy uncorrected path (letterboxCorrected=false, #491 original behaviour)
+  // -------------------------------------------------------------------------
+
+  it('letterbox detected + NOT corrected (legacy) → bottom zeroed (#491)', () => {
+    // When correction is unavailable the frame still stops above the home
+    // indicator — keep the #491 zeroing to avoid dead-band padding.
+    const result = computeBridgeInsets(raw, true, false);
+    expect(result.bottom).toBe(0);
+    expect(result.top).toBe(47);
+    expect(result.left).toBe(0);
+    expect(result.right).toBe(0);
+  });
+
+  it('legacy: letterbox with raw bottom 0 → still 0 (idempotent)', () => {
+    const result = computeBridgeInsets({ ...raw, bottom: 0 }, true, false);
+    expect(result.bottom).toBe(0);
+  });
+
+  it('legacy: 실측 오늘 letterbox(top 47 / phantom bottom 34) + uncorrected → bridge bottom 0 (#491)', () => {
+    // Without correction the app must not add 34px padding for an area it cannot
+    // reach. This is the original #491 behaviour, now gated on letterboxCorrected=false.
+    const result = computeBridgeInsets({ top: 47, bottom: 34, left: 0, right: 0 }, true, false);
+    expect(result.bottom).toBe(0);
+    expect(result.top).toBe(47);
+  });
+
+  // -------------------------------------------------------------------------
+  // Healthy path (not letterbox) — unchanged regardless of corrected flag
+  // -------------------------------------------------------------------------
+
+  it('healthy (not letterbox) → bottom passed through unchanged', () => {
+    const result = computeBridgeInsets(raw, false);
+    expect(result.bottom).toBe(34);
+    expect(result.top).toBe(47);
+  });
+
+  it('healthy with raw bottom 0 (SE-class) → 0 passed through', () => {
+    const result = computeBridgeInsets({ ...raw, bottom: 0 }, false);
+    expect(result.bottom).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verifyLetterboxCorrection — runtime self-verification of the #527 px
+// correction (#561). On real hardware the WebKit top-level viewport clips the
+// bottom band, so the sentinel reports `clipped` and the layout must fall back.
+// jsdom has no IntersectionObserver, so the observer + timers are injected.
+// ---------------------------------------------------------------------------
+
+describe('verifyLetterboxCorrection', () => {
+  // A controllable IntersectionObserver stand-in: captures the result callback
+  // so the test can fire it on demand, and records disconnect/cleanup calls.
+  function makeObserver(): {
+    observe: SentinelObserver;
+    fire: (isIntersecting: boolean) => void;
+    disconnected: () => number;
+    fired: () => boolean;
+  } {
+    let cb: ((isIntersecting: boolean) => void) | null = null;
+    let disconnects = 0;
+    return {
+      observe: (onResult) => {
+        cb = onResult;
+        return () => {
+          disconnects += 1;
+        };
+      },
+      fire: (isIntersecting) => cb?.(isIntersecting),
+      disconnected: () => disconnects,
+      fired: () => cb !== null,
+    };
+  }
+
+  // A manual timer stand-in: stores the timeout callback so the test can trip
+  // it explicitly, and records clearTimeout so cancellation is observable.
+  function makeTimers(): {
+    timers: VerificationTimers<number>;
+    trip: () => void;
+    cleared: () => boolean;
+  } {
+    let pending: (() => void) | null = null;
+    let cleared = false;
+    return {
+      timers: {
+        setTimeout: (fn) => {
+          pending = fn;
+          return 1;
+        },
+        clearTimeout: () => {
+          cleared = true;
+        },
+      },
+      trip: () => pending?.(),
+      cleared: () => cleared,
+    };
+  }
+
+  it('(a) sentinel intersects → visible, correction kept, observer + timer torn down', () => {
+    const obs = makeObserver();
+    const { timers, trip, cleared } = makeTimers();
+    const onVerified = vi.fn<(r: LetterboxVerification) => void>();
+
+    verifyLetterboxCorrection(obs.observe, onVerified, timers);
+    obs.fire(true);
+
+    expect(onVerified).toHaveBeenCalledTimes(1);
+    expect(onVerified).toHaveBeenCalledWith('visible');
+    expect(obs.disconnected()).toBe(1); // sentinel/observer torn down
+    expect(cleared()).toBe(true); // timeout cancelled
+
+    // A late timeout firing after a result is a no-op (no second verdict).
+    trip();
+    expect(onVerified).toHaveBeenCalledTimes(1);
+  });
+
+  it('(b) sentinel clipped → clipped, fallback verdict, torn down', () => {
+    const obs = makeObserver();
+    const { timers, cleared } = makeTimers();
+    const onVerified = vi.fn<(r: LetterboxVerification) => void>();
+
+    verifyLetterboxCorrection(obs.observe, onVerified, timers);
+    obs.fire(false);
+
+    expect(onVerified).toHaveBeenCalledTimes(1);
+    expect(onVerified).toHaveBeenCalledWith('clipped');
+    expect(obs.disconnected()).toBe(1);
+    expect(cleared()).toBe(true);
+  });
+
+  it('(c) observer silent past timeout → clipped (fail safe — never keep #527)', () => {
+    const obs = makeObserver();
+    const { timers, trip } = makeTimers();
+    const onVerified = vi.fn<(r: LetterboxVerification) => void>();
+
+    verifyLetterboxCorrection(obs.observe, onVerified, timers);
+    // No obs.fire() — simulate the IO never reporting. Trip the timeout.
+    trip();
+
+    expect(onVerified).toHaveBeenCalledTimes(1);
+    expect(onVerified).toHaveBeenCalledWith('clipped');
+    expect(obs.disconnected()).toBe(1); // sentinel/observer cleaned up on timeout
+
+    // A late IO callback arriving after the timeout is ignored.
+    obs.fire(true);
+    expect(onVerified).toHaveBeenCalledTimes(1);
+    expect(onVerified).not.toHaveBeenCalledWith('visible');
+  });
+
+  it('cancel (React cleanup) before any result → no verdict, observer + timer torn down', () => {
+    const obs = makeObserver();
+    const { timers, trip, cleared } = makeTimers();
+    const onVerified = vi.fn<(r: LetterboxVerification) => void>();
+
+    const cancel = verifyLetterboxCorrection(obs.observe, onVerified, timers);
+    cancel();
+
+    expect(onVerified).not.toHaveBeenCalled();
+    expect(obs.disconnected()).toBe(1);
+    expect(cleared()).toBe(true);
+
+    // Both a late timeout and a late IO callback are no-ops after cancel.
+    trip();
+    obs.fire(true);
+    expect(onVerified).not.toHaveBeenCalled();
+  });
+
+  it('uses the injected timeout value', () => {
+    const obs = makeObserver();
+    let observedMs = -1;
+    const timers: VerificationTimers<number> = {
+      setTimeout: (_fn, ms) => {
+        observedMs = ms;
+        return 1;
+      },
+      clearTimeout: () => {},
+    };
+    verifyLetterboxCorrection(obs.observe, vi.fn(), timers, 250);
+    expect(observedMs).toBe(250);
+  });
+
+  it('a synchronously-firing observer still tears down (defensive)', () => {
+    // Real IntersectionObserver never reports synchronously, but a stub that
+    // does must not leak: the observer is disconnected even though the result
+    // arrived before `disconnect` was assigned.
+    let disconnects = 0;
+    const syncObserve: SentinelObserver = (onResult) => {
+      onResult(false); // fire during observe()
+      return () => {
+        disconnects += 1;
+      };
+    };
+    const { timers } = makeTimers();
+    const onVerified = vi.fn<(r: LetterboxVerification) => void>();
+
+    verifyLetterboxCorrection(syncObserve, onVerified, timers);
+
+    expect(onVerified).toHaveBeenCalledWith('clipped');
+    expect(disconnects).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// letterboxEpochKey + isLetterboxResolved — the geometry-epoch latch (#566).
+// These two pure functions encode the anti-oscillation invariant that fixes the
+// #563 violent jitter: the epoch key is invariant under the html/body force, and
+// the resolved verdict stays "detected" while a correction holds.
+// ---------------------------------------------------------------------------
+
+describe('letterboxEpochKey', () => {
+  it('the height force (797→844) does NOT change the epoch key', () => {
+    const pre = base({ innerHeight: 797, visualViewportHeight: 797 }); // letterboxed
+    const post = base({ innerHeight: 844, visualViewportHeight: 844 }); // force landed
+    expect(letterboxEpochKey(pre)).toBe(letterboxEpochKey(post)); // SAME epoch — anti-oscillation invariant
+    expect(letterboxEpochKey(post)).toBe('390x844|P');
+  });
+
+  it('real rotation flips the orientation char (P→L)', () => {
+    const portrait = base({ innerWidth: 390, innerHeight: 797 });
+    const landscape = base({
+      innerWidth: 844,
+      innerHeight: 390,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    expect(letterboxEpochKey(portrait)).toBe('390x844|P');
+    expect(letterboxEpochKey(landscape)).toBe('390x844|L');
+    expect(letterboxEpochKey(portrait)).not.toBe(letterboxEpochKey(landscape));
+  });
+
+  it('degenerate metrics (screenHeight 0, iOS background) → null (cannot forge an epoch change)', () => {
+    expect(letterboxEpochKey(base({ screenHeight: 0, innerHeight: 0 }))).toBeNull();
+    expect(letterboxEpochKey(base({ screenWidth: 0 }))).toBeNull();
+  });
+});
+
+describe('isLetterboxResolved (correction-aware)', () => {
+  it('correctionActive=false is byte-identical to detectLetterbox', () => {
+    const lb = base({ innerHeight: 797, visualViewportHeight: 797 });
+    const healthy = base();
+    expect(isLetterboxResolved(lb, false)).toBe(detectLetterbox(lb).detected);
+    expect(isLetterboxResolved(healthy, false)).toBe(detectLetterbox(healthy).detected);
+  });
+
+  it('THE FIX: shortfall→0 while a correction is HELD still reads detected (force not torn down)', () => {
+    // After the force lands, innerHeight===screenHeight so detectLetterbox=false.
+    const healed = base({ innerHeight: 844, visualViewportHeight: 844, safeAreaTop: 47 });
+    expect(detectLetterbox(healed).detected).toBe(false); // raw predicate erases its own signal
+    expect(isLetterboxResolved(healed, true)).toBe(true); // but the latch sees "holding"
+  });
+
+  it('genuine heal (landscape, correction cleared) honestly returns false', () => {
+    const landscape = base({ innerWidth: 844, innerHeight: 390, safeAreaTop: 0 });
+    expect(isLetterboxResolved(landscape, true)).toBe(false); // not portrait → not holding
+    expect(isLetterboxResolved(landscape, false)).toBe(false);
+  });
+
+  it('partial expansion (797→820, shortfall 24) still resolved via the RAW branch (no boundary off-by-one)', () => {
+    const partial = base({ innerHeight: 820, visualViewportHeight: 820, safeAreaTop: 47 });
+    expect(detectLetterbox(partial).shortfallPx).toBe(24);
+    expect(detectLetterbox(partial).detected).toBe(true); // 24 >= 24
+    expect(isLetterboxResolved(partial, true)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectLetterboxWithReason — verdict gate reason surfacing (#536)
+// ---------------------------------------------------------------------------
+
+describe('detectLetterboxWithReason', () => {
+  it('detected=true → reason "detected"', () => {
+    const result = detectLetterboxWithReason(
+      base({ innerHeight: 797, visualViewportHeight: 797, safeAreaTop: 47 }),
+    );
+    expect(result.detected).toBe(true);
+    expect(result.reason).toBe('detected');
+    expect(result.shortfallPx).toBe(47);
+  });
+
+  it('not standalone → reason "notStandalone"', () => {
+    const result = detectLetterboxWithReason(
+      base({ innerHeight: 797, visualViewportHeight: 797, safeAreaTop: 47, standalone: false }),
+    );
+    expect(result.detected).toBe(false);
+    expect(result.reason).toBe('notStandalone');
+  });
+
+  it('landscape → reason "landscape"', () => {
+    const result = detectLetterboxWithReason(
+      base({ innerWidth: 844, innerHeight: 390, safeAreaTop: 0 }),
+    );
+    expect(result.detected).toBe(false);
+    expect(result.reason).toBe('landscape');
+  });
+
+  it('shortfall too small (20 < 24) → reason "shortfallTooSmall"', () => {
+    const result = detectLetterboxWithReason(
+      base({
+        innerWidth: 375,
+        innerHeight: 647,
+        screenWidth: 375,
+        screenHeight: 667,
+        visualViewportHeight: 647,
+        safeAreaTop: 20,
+      }),
+    );
+    expect(result.detected).toBe(false);
+    expect(result.reason).toBe('shortfallTooSmall');
+    expect(result.shortfallPx).toBe(20);
+  });
+
+  it('cold-start stale env(): shortfall 47 but safeAreaTop 0 → reason "safeAreaTopZero"', () => {
+    // The key cold-start case (#536): the window IS letterboxed (shortfall 47)
+    // but env(safe-area-inset-top) returned stale 0 so the verdict is false.
+    // 'safeAreaTopZero' in the diag panel tells the developer this is likely a
+    // transient WebKit cold-start stale reading (WebKit #274773), not a healthy
+    // stale web clip.
+    const result = detectLetterboxWithReason(
+      base({ innerHeight: 797, visualViewportHeight: 797, safeAreaTop: 0 }),
+    );
+    expect(result.detected).toBe(false);
+    expect(result.reason).toBe('safeAreaTopZero');
+    expect(result.shortfallPx).toBe(47);
+  });
+
+  it('healthy (shortfall 0, top 47) → reason "shortfallTooSmall"', () => {
+    // Healthy edge-to-edge window: shortfall 0 — the shortfall gate resolves
+    // before the top check (both are false, but the first gate wins).
+    const result = detectLetterboxWithReason(base());
+    expect(result.detected).toBe(false);
+    expect(result.reason).toBe('shortfallTooSmall');
+    expect(result.shortfallPx).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scheduleSafeAreaTopPolls — multi-timeout env() re-read (#536)
+// ---------------------------------------------------------------------------
+//
+// The polling function is purely about scheduling: it accepts `read` (the
+// env() measurement) and timers (injectable) so the entire flow is testable
+// under vitest without a real DOM or real timers.
+
+describe('scheduleSafeAreaTopPolls', () => {
+  // Build a fake-timer pair that stores pending callbacks so tests can trip
+  // them manually (same pattern as VerificationTimers in the verify tests above).
+  function makeTimers(): {
+    timers: PollTimers<number>;
+    trip: (index: number) => void;
+    handleCount: () => number;
+    cleared: () => number[];
+  } {
+    const pending = new Map<number, () => void>();
+    let nextId = 1;
+    const clearedIds: number[] = [];
+    return {
+      timers: {
+        setTimeout: (fn, _ms) => {
+          const id = nextId++;
+          pending.set(id, fn);
+          return id;
+        },
+        clearTimeout: (id) => {
+          pending.delete(id);
+          clearedIds.push(id);
+        },
+      },
+      trip: (index) => {
+        // Trip the nth registered timer (0-indexed by registration order).
+        const keys = [...pending.keys()];
+        const key = keys[index];
+        if (key !== undefined) pending.get(key)?.();
+      },
+      handleCount: () => pending.size + clearedIds.length,
+      cleared: () => clearedIds,
+    };
+  }
+
+  it('first non-zero reading settles immediately and cancels remaining timers', () => {
+    const { timers, trip, cleared } = makeTimers();
+    const onSettled = vi.fn<(v: number) => void>();
+    // read() returns 47 on the first call (env() already settled)
+    const read = vi.fn().mockReturnValue(47);
+
+    scheduleSafeAreaTopPolls(read, onSettled, [100, 300, 600, 1000], timers);
+    trip(0); // fire first timer (100ms)
+
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(47);
+    // All 4 handles are cleared (clearAll() clears all registered handles,
+    // including the one that just fired).
+    expect(cleared()).toHaveLength(4);
+  });
+
+  it('cold-start stale 0: polls fire 0/0/47 → settles on third checkpoint', () => {
+    const { timers, trip, cleared } = makeTimers();
+    const onSettled = vi.fn<(v: number) => void>();
+    // read() returns 0/0/47 on successive calls
+    const read = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(0).mockReturnValueOnce(47);
+
+    scheduleSafeAreaTopPolls(read, onSettled, [100, 300, 600, 1000], timers);
+
+    trip(0); // 100ms: read()=0, continue
+    expect(onSettled).not.toHaveBeenCalled();
+
+    trip(1); // 300ms: read()=0, continue
+    expect(onSettled).not.toHaveBeenCalled();
+
+    trip(2); // 600ms: read()=47, settle
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(47);
+    // The 4th timer (1000ms) must be cleared
+    expect(cleared()).toContain(4); // 4th handle registered = id 4
+  });
+
+  it('all polls return 0 → settles with 0 after the last delay', () => {
+    const { timers, trip } = makeTimers();
+    const onSettled = vi.fn<(v: number) => void>();
+    const read = vi.fn().mockReturnValue(0);
+
+    scheduleSafeAreaTopPolls(read, onSettled, [100, 300], timers);
+
+    trip(0); // 100ms: 0, not last → continue
+    expect(onSettled).not.toHaveBeenCalled();
+
+    trip(1); // 300ms: 0, is last → settle with 0
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(0);
+  });
+
+  it('cancel before any timer fires → onSettled never called', () => {
+    const { timers, trip } = makeTimers();
+    const onSettled = vi.fn<(v: number) => void>();
+    const read = vi.fn().mockReturnValue(47);
+
+    const cancel = scheduleSafeAreaTopPolls(read, onSettled, [100, 300, 600], timers);
+    cancel();
+
+    // Trip all registered timers — callbacks are no-ops after cancel
+    trip(0);
+    trip(1);
+    trip(2);
+
+    expect(onSettled).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('cancel after partial progress → onSettled never called for remaining timers', () => {
+    const { timers, trip } = makeTimers();
+    const onSettled = vi.fn<(v: number) => void>();
+    const read = vi.fn().mockReturnValue(0); // stays 0
+
+    const cancel = scheduleSafeAreaTopPolls(read, onSettled, [100, 300, 600], timers);
+
+    trip(0); // 100ms: 0, continue
+    cancel(); // cancel mid-sequence
+
+    trip(1); // no-op
+    trip(2); // no-op
+
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it('onSettled called exactly once even if both non-zero and isLast fire', () => {
+    // Edge: single-delay list — isLast AND value>0 at the same checkpoint.
+    const { timers, trip } = makeTimers();
+    const onSettled = vi.fn<(v: number) => void>();
+    const read = vi.fn().mockReturnValue(47);
+
+    scheduleSafeAreaTopPolls(read, onSettled, [100], timers);
+    trip(0);
+
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(47);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cold-start integration scenario (#536)
+// ---------------------------------------------------------------------------
+//
+// Simulates the full cold-start sequence: initial snapshot has safeAreaTop=0
+// (stale env()), detectLetterboxWithReason flags 'safeAreaTopZero', then the
+// 300ms poll fires a settled value of 47 and the verdict flips to 'detected'.
+// This is a pure-function simulation — no DOM, no real timers.
+
+describe('cold-start stale-0 integration (#536)', () => {
+  it('stale-0 snapshot: verdict false + reason safeAreaTopZero; settled snapshot: verdict true', () => {
+    // Cold-start initial snapshot (safeAreaTop=0, shortfall 47).
+    const staleSnapshot = base({ innerHeight: 797, visualViewportHeight: 797, safeAreaTop: 0 });
+    const staleResult = detectLetterboxWithReason(staleSnapshot);
+    expect(staleResult.detected).toBe(false);
+    expect(staleResult.reason).toBe('safeAreaTopZero');
+    expect(staleResult.shortfallPx).toBe(47);
+
+    // After env() settles (safeAreaTop=47), re-measured snapshot flips.
+    const settledSnapshot = base({ innerHeight: 797, visualViewportHeight: 797, safeAreaTop: 47 });
+    const settledResult = detectLetterboxWithReason(settledSnapshot);
+    expect(settledResult.detected).toBe(true);
+    expect(settledResult.reason).toBe('detected');
+    expect(settledResult.shortfallPx).toBe(47);
+  });
+
+  it('poll sequence correctly drives the stale→settled transition', () => {
+    // Simulate: read() returns 0 at 100ms (still stale), 47 at 300ms (settled).
+    let snapshotSafeAreaTop = 0; // tracks the "current" measurement
+    const reads: number[] = [];
+    const snapshots: ViewportMetrics[] = [];
+
+    // Make a mock timer pair
+    const pending = new Map<number, () => void>();
+    let nextId = 1;
+    const timers: PollTimers<number> = {
+      setTimeout: (fn, _ms) => {
+        const id = nextId++;
+        pending.set(id, fn);
+        return id;
+      },
+      clearTimeout: (id) => pending.delete(id),
+    };
+
+    scheduleSafeAreaTopPolls(
+      () => {
+        reads.push(snapshotSafeAreaTop);
+        return snapshotSafeAreaTop;
+      },
+      (_value) => {
+        // Simulate what Launcher.tsx does: re-read full viewport metrics
+        const snap = base({
+          innerHeight: 797,
+          visualViewportHeight: 797,
+          safeAreaTop: snapshotSafeAreaTop,
+        });
+        snapshots.push(snap);
+      },
+      [100, 300, 600],
+      timers,
+    );
+
+    // 100ms: env() still stale
+    snapshotSafeAreaTop = 0;
+    pending.get(1)?.(); // trip first timer
+    expect(reads).toEqual([0]);
+    expect(snapshots).toHaveLength(0); // not settled yet
+
+    // 300ms: env() settled
+    snapshotSafeAreaTop = 47;
+    pending.get(2)?.(); // trip second timer
+    expect(reads).toEqual([0, 47]);
+    expect(snapshots).toHaveLength(1);
+
+    const finalSnapshot = snapshots[0];
+    expect(finalSnapshot).toBeDefined();
+    if (finalSnapshot) {
+      const verdict = detectLetterboxWithReason(finalSnapshot);
+      expect(verdict.detected).toBe(true);
+      expect(verdict.reason).toBe('detected');
+    }
+
+    // Third timer should be cleared (no longer pending)
+    expect(pending.has(3)).toBe(false);
+  });
+});
+
+describe('latch oscillation guard (#563 regression — the violent jitter)', () => {
+  // Simulate the reducer the Launcher drives, in pure form, to assert the
+  // verdict the FORCE decision reads does NOT flip-flop across the alternating
+  // 844↔797 metric sequence that the self-induced resize produced. Under the
+  // OLD live-derived logic this array would oscillate true/false/true/false…;
+  // under the latch it is monotone true after the first detection.
+  // Pure model of the Launcher's correction lifecycle (idle→applying→held),
+  // run sample-by-sample so the test can assert the verdict the FORCE decision
+  // reads does NOT flip-flop across the alternating 844↔797 sequence. The phase
+  // transitions are split across `let next` so TS does not narrow `phase` to a
+  // literal that would make a later `=== 'applying'` look unreachable.
+  function driveLatch(seq: ViewportMetrics[]): boolean[] {
+    let armedEpoch: string | null = null;
+    let correctionActive = false;
+    const out: boolean[] = [];
+    for (const m of seq) {
+      const key = letterboxEpochKey(m);
+      if (key !== null && armedEpoch !== key) {
+        armedEpoch = key;
+        correctionActive = false; // new epoch re-arms detection (phase→idle)
+      }
+      // idle→applying→held collapses to "a real letterbox in this epoch latches
+      // the correction on, and shortfall→0 never releases it" — the invariant.
+      if (!correctionActive && detectLetterbox(m).detected) correctionActive = true;
+      out.push(isLetterboxResolved(m, correctionActive)); // what applyPxCorrection reads
+    }
+    return out;
+  }
+
+  it('alternating 797/844/797/844 within one epoch latches and does NOT oscillate', () => {
+    const lb = base({ innerHeight: 797, visualViewportHeight: 797 });
+    const forced = base({ innerHeight: 844, visualViewportHeight: 844 });
+    // The exact loop signature: detect 797 → force → 844 → (old code) un-detect → 797 → …
+    const verdicts = driveLatch([lb, forced, lb, forced, forced, lb]);
+    // First sample arms; every subsequent sample stays held — NO false in the tail.
+    expect(verdicts).toEqual([true, true, true, true, true, true]);
+    // Explicit anti-flip assertion: no two consecutive verdicts differ after index 0.
+    for (let i = 1; i < verdicts.length; i++) expect(verdicts[i]).toBe(true);
+  });
+
+  it('a genuine rotation to landscape DOES release the latch (re-arm works)', () => {
+    const portrait = base({ innerHeight: 797, visualViewportHeight: 797 });
+    const landscape = base({ innerWidth: 844, innerHeight: 390, safeAreaTop: 0 });
+    const verdicts = driveLatch([portrait, landscape]);
+    expect(verdicts[0]).toBe(true); // letterboxed portrait → held
+    expect(verdicts[1]).toBe(false); // rotation = new epoch → reset → honest false
+  });
+});

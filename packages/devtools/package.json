@@ -1,0 +1,164 @@
+{
+  "name": "@apps-in-toss/devtools",
+  "version": "0.1.144",
+  "description": "Development tools for Apps in Toss mini-apps — mock SDK, floating devtools panel, and universal bundler plugin",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/mock/index.js",
+  "types": "./dist/mock/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/mock/index.d.ts",
+      "import": "./dist/mock/index.js"
+    },
+    "./mock": {
+      "types": "./dist/mock/index.d.ts",
+      "import": "./dist/mock/index.js"
+    },
+    "./panel": {
+      "types": "./dist/panel/index.d.ts",
+      "import": "./dist/panel/index.js"
+    },
+    "./in-app": {
+      "types": "./dist/in-app/index.d.ts",
+      "import": "./dist/in-app/index.js"
+    },
+    "./in-app/auto": {
+      "types": "./dist/in-app/auto.d.ts",
+      "import": "./dist/in-app/auto.js"
+    },
+    "./unplugin": {
+      "types": "./dist/unplugin/index.d.ts",
+      "import": "./dist/unplugin/index.js",
+      "require": "./dist/unplugin/index.cjs"
+    },
+    "./mcp/server": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./mcp/cli": {
+      "types": "./dist/mcp/cli.d.ts",
+      "import": "./dist/mcp/cli.js"
+    },
+    "./test-runner": {
+      "types": "./dist/test-runner/config.d.ts",
+      "import": "./dist/test-runner/config.js"
+    }
+  },
+  "bin": {
+    "devtools-mcp": "./dist/mcp/cli.js",
+    "devtools-test": "./dist/test-runner/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:dashboard-html": "tsx --tsconfig scripts/tsconfig.json scripts/build-dashboard-html.ts",
+    "build": "pnpm build:dashboard-html && tsdown",
+    "check:mcp-react-free": "bash scripts/check-mcp-react-free.sh",
+    "check:test-runner-dist": "bash scripts/check-test-runner-dist.sh",
+    "check:debug-surface-absent": "bash scripts/check-debug-surface-absent.sh",
+    "check:dashboard-html-fresh": "pnpm build:dashboard-html && git diff --exit-code src/mcp/dashboard.generated.ts",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.2x.json && tsc --noEmit -p e2e/fixture/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "e2e:build": "pnpm build && vite build --config e2e/fixture/vite.config.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check-sdk-update": "tsx scripts/check-sdk-update.ts",
+    "diff-sdk-exports": "tsx scripts/diff-sdk-exports.ts",
+    "build:og": "tsx --tsconfig scripts/tsconfig.json scripts/build-og-image.tsx",
+    "qa:fidelity": "tsx --tsconfig scripts/tsconfig.json scripts/fidelity-qa/index.ts",
+    "prepublishOnly": "pnpm build && pnpm check:mcp-react-free && pnpm check:test-runner-dist && pnpm check:debug-surface-absent && pnpm typecheck && pnpm test && pnpm build:og"
+  },
+  "peerDependencies": {
+    "@apps-in-toss/debug-console": "^0.1.0",
+    "@apps-in-toss/debugger": "^0.1.0",
+    "@apps-in-toss/web-framework": ">=2.6.0 <3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@apps-in-toss/debug-console": {
+      "optional": true
+    },
+    "@apps-in-toss/debugger": {
+      "optional": true
+    },
+    "@apps-in-toss/web-framework": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@vitest/expect": "^4.1.9",
+    "@vitest/runner": "^4.1.9",
+    "ajv": "^8.20.0",
+    "chii": "^1.15.5",
+    "cloudflared": "^0.7.1",
+    "eruda": "^3.4.3",
+    "esbuild": "^0.28.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "unplugin": "^3.2.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@apps-in-toss/debug-console": "workspace:*",
+    "@apps-in-toss/debugger": "workspace:*",
+    "@apps-in-toss/polyfill": "workspace:*",
+    "@apps-in-toss/web-framework": "3.0.0-beta.3051978",
+    "@apps-in-toss/web-framework-2x": "npm:@apps-in-toss/web-framework@2.10.7",
+    "@biomejs/biome": "2.5.1",
+    "@changesets/cli": "^2.31.0",
+    "@khmyznikov/pwa-install": "^0.6.3",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/qrcode-terminal": "^0.12.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "jsdom": "^29.1.1",
+    "qr-scanner": "^1.4.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "satori": "^0.26.0",
+    "sharp": "^0.35.2",
+    "tsdown": "^0.21.7",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.9"
+  },
+  "keywords": [
+    "apps-in-toss",
+    "toss",
+    "mini-app",
+    "devtools",
+    "mock",
+    "sdk",
+    "miniapp",
+    "simulator",
+    "testing",
+    "vite-plugin",
+    "webpack-plugin"
+  ],
+  "packageManager": "pnpm@11.17.0",
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apps-in-toss-community/devtools"
+  },
+  "homepage": "https://devtools.aitc.dev/",
+  "bugs": {
+    "url": "https://github.com/apps-in-toss-community/devtools/issues"
+  }
+}
