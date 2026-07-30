@@ -74,8 +74,8 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 | 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
 | 4 auth | (재정의 후 확정) 공식 로그인 경로 문서 + 레퍼런스 배선 1회 실증 | **잠정** — #5 재정의 대기 |
-| 5 ship | 빈 디렉토리 → 등록 → 배포가 에이전트 안에서 완주 — 종착 인터페이스는 console MCP GW, 과도기는 aitcc | 과도기 충족(aitcc) — **MCP GW endpoint 실재·manifest 포함 완료**, skill의 aitcc→MCP tool 전환은 #3 잔여 |
-| 6 operate | 배포 후 상태·로그 조회가 에이전트 안에서 동작 | **상태 조회만** 과도기 충족(aitcc) — 로그 조회는 콘솔이 런타임 로그 API를 공개하지 않아 gap(현행 skill은 대안 안내만). 콘솔 측은 MCP GW(#3), on-device 관측은 debugger relay(#2)에서 해소 |
+| 5 ship | 빈 디렉토리 → 등록 → 배포가 에이전트 안에서 완주 — 종착 인터페이스는 console MCP GW, 과도기는 aitcc | **충족 (MCP 완주 실증, 2026-07-30)** — 빈 디렉토리→scaffold→`.ait` 빌드→`miniapp_create`(**58955** `ait-harness-e2e`, ws 59)→`bundle_upload`+S3 PUT+`upload_complete`→컴파일 **CREATED**까지 에이전트 안에서 완주. 검수 제출·릴리즈는 dog-food 정책상 scope 제외. skill 표면 재구성은 #3 잔여 |
+| 6 operate | 배포 후 상태·로그 조회가 에이전트 안에서 동작 | **상태 조회 MCP 실증** — `miniapp_get_status`·`bundle_list` 실호출 확인(단 `bundle_build_status`는 GW `-32000` 오류, 피드백 대상). 로그 조회는 콘솔 미공개 gap 유지 — on-device 관측은 debugger relay(#2)에서 해소 |
 | 7 plan | 아이디어 발화 → 계획 산출 + scaffold seam 인쇄 | 충족 |
 | 8 design | 등록 규격 이미지 자산 산출 + register seam 인쇄 | 충족 |
 | docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | **기본 포함 완료** (GitBook MCP live 확인) — skill 말미 deep-link 재편은 #4 잔여 |
@@ -94,6 +94,9 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
    endpoint로 manifest에 포함.
 4. **완주 실증 1회** — 빈 디렉토리에서 시작해 scaffold → 브라우저 dev → 번들 →
    등록 → 배포 → 상태 조회까지 실제 미니앱 1개로 에이전트 안에서 완주한 기록.
+   (2026-07-30 1차 실증: 58955 `ait-harness-e2e`로 등록→업로드→컴파일 CREATED→상태
+   조회까지 완주. "배포"를 릴리즈로 읽으면 검수 게이트가 남는데, dog-food 정책상
+   검수 제출은 금지라 1.0 판정 시 이 조건의 "배포" 정의를 재확정해야 한다.)
 5. **측정 가능** — eval 슈트 A(라우팅 정합)·B(완주·비용·분산)가 공식 형상에서
    통과·측정되고 baseline epoch가 갱신됨.
 

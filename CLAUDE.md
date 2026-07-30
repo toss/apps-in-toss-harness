@@ -20,6 +20,14 @@
 - `packages/agent-plugin/.claude-plugin/`이 플러그인 manifest — 타깃 아키텍처(기본: docs MCP + console MCP remote, opt-in: devtools devDependency + debugger MCP를 skill이 프로젝트 `.mcp.json`에 배선)는 #1에서 진행. **opt-in 축 완료** — devtools·debugger는 manifest 상시 등록이 아니라 skill 배선(`setup-debugger`가 프로젝트 `.mcp.json`, `/ait:new`는 `--no-devtools` opt-out). **remote 축 완료(2026-07-30)** — 공식 endpoint 실재를 확인하고 manifest `mcpServers`에 기본 포함: docs MCP `https://developers-apps-in-toss.toss.im/~gitbook/mcp`(무인증, GitBook — tools: searchDocumentation·getPage·askQuestion·sendFeedback), console MCP `https://mcp.toss.im/adapters/apps-in-toss-console/mcp`(#3 MCP GW — OAuth protected resource, 설치 후 `/mcp`에서 `apps-in-toss-console` 인증 필요). 서버 키는 공식 문서 표기와 동일(`apps-in-toss-docs`·`apps-in-toss-console`). placeholder 금지 원칙은 유지 — 이번 포함은 실재 확인의 결과다. 설치 형상 실측(2026-07-30, SDK plugin 로드): docs `connected`+tool 4종, console `needs-auth`(대화형 `/mcp` 인가 대기) — 콘솔 tool 실호출·완주 실증은 인가 후 잔여(`docs/roadmap.md` 1.0 조건 4). 이관 트랙 전체는 milestone `MT — 공식 이관`(#1~#8).
 - **station map·1.0 정의는 `docs/roadmap.md`** (#7 draft — 확정 전까지 제안 상태). 공식 harness의 정규 경로(station 0~8)·station별 AC·과도기 허용 항목이 여기 정의돼 있다.
 
+## dog-food (콘솔 E2E 재활용 타겟)
+
+콘솔 실증의 상시 타겟은 **워크스페이스 59(rn-framework) / miniAppId 58955 (`ait-harness-e2e`)** 다 (2026-07-30 E2E 완주로 생성, Dave 결정). 커뮤니티 dog-food(31146/워크스페이스 3095)는 커뮤니티 계정 축이라 이 harness의 console MCP OAuth(사내 business-accounts 계정)로는 접근 불가 — 두 축을 혼동하지 마라.
+
+- **새 앱을 만들지 않는다.** 모든 업로드·조회 실증은 58955 재사용. granite.config.ts `appName: 'ait-harness-e2e'`가 콘솔 매칭 키다 — 불일치 번들은 업로드는 되지만 컴파일에서 `BUILD_FAILED`("콘솔에 등록된 앱 ID와 granite.config.ts의 appName이 일치하지 않아요")가 난다.
+- **검수 제출(`review_*`·`bundle_submit_review`)·릴리즈/롤백·푸시·프로모션 금지.** 실증 scope는 업로드·컴파일(`CREATED`)까지다. 자동화 세션은 항상 콘솔 tool allowlist(canUseTool)로 이 경계를 결정적으로 강제한다.
+- 로컬 재현 프로젝트: `~/Projects/ait-e2e-run/ait-harness-e2e/` (plugin project-scope 테스트 디렉토리 안, node_modules 제외 보존본 — `pnpm install --frozen-lockfile`로 복원).
+
 ## 노출 산출물
 
 이 repo는 **토스 공식**이다 — 커뮤니티 시절의 "공식 표방 금지" disclaimer는 넣지 않는다. i18n은 ko primary + en sub(`README.md`/`README.en.md`), 파일당 단일 언어 원칙은 유지.
