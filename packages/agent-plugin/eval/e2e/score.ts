@@ -19,6 +19,8 @@ export interface ScoreResult {
     dep: boolean;
     bundleConfig: boolean;
     aitArtifact: boolean;
+    /** 앱 소스에 미치환 스캐폴드 토큰이 없나 (있으면 런타임에 앱이 안 뜬다). */
+    sourceIntact: boolean;
   };
   /** 채점이 본 프로젝트 루트 (찾았으면). */
   projectDir: string | null;
@@ -101,6 +103,54 @@ function hasAitArtifact(projectDir: string): boolean {
   return false;
 }
 
+/**
+ * 미치환 스캐폴드 토큰 검출. `{{SAMPLE_IMPORTS}}`처럼 **대문자+밑줄로만** 된
+ * `{{TOKEN}}`을 찾는다 — JSX의 `style={{ padding: 4 }}`나 객체 리터럴은 소문자·공백을
+ * 포함하므로 걸리지 않는다. create-ait-app v0.1.3이 `--sample` 없이 만들면 예제
+ * placeholder를 그대로 남겨 런타임 ReferenceError로 화면이 비는데(빌드는 통과),
+ * `.ait` 산출만 보는 채점은 그걸 success로 집계한다 — 이 검사가 그 구멍을 막는다.
+ */
+export function hasUnsubstitutedToken(source: string): boolean {
+  return /\{\{[A-Z][A-Z0-9_]*\}\}/.test(source);
+}
+
+/** 프로젝트의 앱 소스(src/ 얕은 재귀)에 미치환 토큰이 있나. */
+function sourceHasUnsubstitutedToken(projectDir: string): boolean {
+  const exts = ['.ts', '.tsx', '.js', '.jsx', '.html'];
+  const stack: Array<{ dir: string; depth: number }> = [{ dir: join(projectDir, 'src'), depth: 0 }];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur) break;
+    let names: string[];
+    try {
+      names = readdirSync(cur.dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (name === 'node_modules' || name.startsWith('.')) continue;
+      const p = join(cur.dir, name);
+      let isDir = false;
+      try {
+        isDir = statSync(p).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDir) {
+        if (cur.depth < 3) stack.push({ dir: p, depth: cur.depth + 1 });
+        continue;
+      }
+      if (!exts.some((e) => name.endsWith(e))) continue;
+      try {
+        if (hasUnsubstitutedToken(readFileSync(p, 'utf8'))) return true;
+      } catch {
+        // skip
+      }
+    }
+  }
+  return false;
+}
+
 /** 경로 목록이 (프로젝트 루트 또는 cwd 기준으로) 모두 존재하나. */
 function allExist(roots: string[], rels: string[]): boolean {
   return rels.every((rel) =>
@@ -134,6 +184,7 @@ export async function scoreBuildOnly(args: ScoreArgs): Promise<ScoreResult> {
     dep: false,
     bundleConfig: false,
     aitArtifact: false,
+    sourceIntact: false,
   };
 
   if (projectDir) {
@@ -143,17 +194,19 @@ export async function scoreBuildOnly(args: ScoreArgs): Promise<ScoreResult> {
     checks.dep = depPresent(projectDir, task.expect.dep);
     checks.bundleConfig = allExist(roots, task.expect.bundle);
     checks.aitArtifact = hasAitArtifact(projectDir);
+    checks.sourceIntact = !sourceHasUnsubstitutedToken(projectDir);
   }
 
-  // 가장 먼 도달 station.
+  // 가장 먼 도달 station. dev-able 은 "브라우저에서 뜬다"는 뜻이라 소스 무결성이 전제다.
   let station: Station = 'none';
   if (checks.scaffold) station = 'scaffold';
   if (checks.scaffold && checks.install) station = 'install';
-  if (station === 'install' && checks.dep) station = 'dev-able';
-  if (checks.bundleConfig && checks.aitArtifact) station = 'bundle';
+  if (station === 'install' && checks.dep && checks.sourceIntact) station = 'dev-able';
+  if (checks.bundleConfig && checks.aitArtifact && checks.sourceIntact) station = 'bundle';
 
-  // build-only 완주 = `.ait` 번들 생성 (+ bundle config 존재).
-  const success = checks.aitArtifact && checks.bundleConfig;
+  // build-only 완주 = `.ait` 번들 생성 (+ bundle config 존재) + 앱 소스 무결성.
+  // 소스에 미치환 토큰이 남으면 빌드는 통과해도 앱이 런타임에 안 뜨므로 완주가 아니다.
+  const success = checks.aitArtifact && checks.bundleConfig && checks.sourceIntact;
 
   return { success, station, checks, projectDir };
 }
@@ -178,6 +231,7 @@ export function classifyFailure(args: ClassifyArgs): FailClass {
   // 단계별: 가장 이른 미달을 고른다.
   if (!score.checks.scaffold) return 'scaffold';
   if (!score.checks.install) return 'install';
+  if (!score.checks.sourceIntact) return 'source-broken';
   if (!score.checks.aitArtifact) return 'build';
 
   // 산출물은 다 있는데 success=false면 result 자체가 error거나 엣지.

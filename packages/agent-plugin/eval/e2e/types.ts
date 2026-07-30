@@ -9,6 +9,7 @@ export type FailClass =
   | 'scaffold' // 프로젝트 파일이 안 만들어짐
   | 'install' // 의존성 설치 실패 (node_modules 없음)
   | 'build' // 번들 빌드 실패 (.ait 없음) — build(=ait build)/bundle:ait 어느 레이아웃이든
+  | 'source-broken' // 산출물은 생겼지만 앱 소스에 미치환 `{{TOKEN}}`이 남아 런타임에 안 뜸
   | 'timeout' // maxTurns 초과
   | 'agent-gaveup' // 에이전트가 완주 전 정상 종료(success) but 산출물 미달
   | 'dispatch-missing' // /ait 명령이 세션에 로드 안 됨 (init assert 실패)

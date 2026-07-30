@@ -50,8 +50,8 @@ MCP가 아니라 프로젝트 devDependency다.
 | Station | AC (공식 harness 기준) | 현재 상태 |
 |---|---|---|
 | 0 install | public repo에서 플러그인 설치 → 에이전트 세션에 `/ait:*` 명령·skill 노출 (e2e 드라이버의 init assert와 같은 기준) | public flip(#8) 대기 |
-| 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` — 네트워크 불가 시 `--local` 폴백 | **충족** (#6, 적대적 QA 1라운드 통과) |
-| 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | 충족 (커뮤니티 devtools 소비 중) — `@apps-in-toss/*` 스코프 전환은 #2 |
+| 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족** (#6 — clean-room 스모크로 `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구) |
+| 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
 | 4 auth | (재정의 후 확정) 공식 로그인 경로 문서 + 레퍼런스 배선 1회 실증 | **잠정** — #5 재정의 대기 |
 | 5 ship | 빈 디렉토리 → 등록 → 배포가 에이전트 안에서 완주 — 종착 인터페이스는 console MCP GW, 과도기는 aitcc | 과도기 충족(aitcc) — MCP GW 전환은 #3 |

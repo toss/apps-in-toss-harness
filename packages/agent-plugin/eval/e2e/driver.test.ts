@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { exposesKey, isForbiddenBashCommand } from './driver.ts';
+import { hasUnsubstitutedToken } from './score.ts';
 
 describe('isForbiddenBashCommand', () => {
   // 차단돼야 하는 콘솔/인증 변이 명령.
@@ -108,4 +109,41 @@ describe('exposesKey', () => {
   it('빈 목록이면 false', () => {
     expect(exposesKey([], 'ait-new')).toBe(false);
   });
+});
+
+// 미치환 스캐폴드 토큰 검출. create-ait-app v0.1.3 이 `--sample` 없이 만들면
+// 예제 placeholder 를 남기고, 그 앱은 빌드는 통과하지만 런타임에 안 뜬다 —
+// `.ait` 만 보는 채점이 그걸 success 로 집계하던 구멍을 막는 검사다.
+describe('hasUnsubstitutedToken', () => {
+  const LEFTOVER = [
+    '{{SAMPLE_IMPORTS}}',
+    '  {{PAGE_STATE_AND_ROUTES}}',
+    '        {{SAMPLE_BUTTONS}}',
+    '{{SAMPLE_ROUTES}}',
+    'const x = 1;\n{{SAMPLE_IMPORTS}}\nexport default x;',
+    '<title>{{APP_NAME}}</title>',
+  ];
+
+  // 정상 소스에 흔한 이중 중괄호 — 오탐되면 모든 React 프로젝트가 실패로 찍힌다.
+  const CLEAN = [
+    '<div style={{ padding: 4 }} />',
+    '<p style={{ marginTop: "2rem", color: "#666" }}>다음</p>',
+    'foo({{ a: 1 }});',
+    '{{ nested: { deep: true } }}',
+    '// {{ 소문자는 토큰이 아니다 }}',
+    '{{app_name}}', // 내장 로컬 템플릿 토큰(소문자) — 이 검사 대상 아님
+    '',
+  ];
+
+  for (const src of LEFTOVER) {
+    it(`검출: ${JSON.stringify(src).slice(0, 48)}`, () => {
+      expect(hasUnsubstitutedToken(src)).toBe(true);
+    });
+  }
+
+  for (const src of CLEAN) {
+    it(`통과: ${JSON.stringify(src).slice(0, 48)}`, () => {
+      expect(hasUnsubstitutedToken(src)).toBe(false);
+    });
+  }
 });

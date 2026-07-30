@@ -31,6 +31,9 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   템플릿에 기본 포함돼 있어 **`/ait:setup-bundle`이 필요 없다**. 단 템플릿은
   `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패하므로,
   후처리 C가 플레이스홀더 URL로 채운다(실제 아이콘은 `/ait:design` 후 교체).
+- `--sample` 없이 만든 프로젝트는 CLI(v0.1.3)가 예제 placeholder를 치환하지
+  않고 남기며, 그대로 두면 **런타임에 앱 본체가 렌더되지 않는다** — 후처리 D가
+  그 잔존 placeholder를 지운다.
 - 이건 토스 앱 WebView에서 도는 **웹(DOM) 미니앱**이지 React Native 앱이
   아니다. RN 네이티브 컴포넌트나 `react-native` import를 쓰지 않는다.
   (설치 시 SDK가 RN을 peer로 선언해 뜨는 `unmet peer react-native` 경고는
@@ -39,7 +42,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   `/ait:deploy-key` → `/ait:deploy`)가 명확히 안내된다.
 
 이 skill은 **scaffold 호출 + 후처리(granite bin 검증·devtools 배선·brand.icon
-플레이스홀더·.gitignore)**만 담당한다. 콘솔 등록(`aitcc app register`), 로그인, 배포는 다른 skill 또는
+플레이스홀더·.gitignore·예제 placeholder 복구)**만 담당한다. 콘솔 등록(`aitcc app register`), 로그인, 배포는 다른 skill 또는
 console-cli의 책임 — 여기서 자동 호출하지 않는다.
 
 생성되는 README/UI/주석에서 "공식(official)", "토스가 제공하는", "powered by
@@ -214,7 +217,7 @@ directory>/../inject/references/devtools.md**.
 icon: ""  →  icon: "https://aitc.dev/apple-touch-icon.png"
 ```
 
-(플레이스홀더임은 Step 6 안내 블록에서 알린다 — 실제 아이콘은 `/ait:design`으로
+(플레이스홀더임은 Step 7 안내 블록에서 알린다 — 실제 아이콘은 `/ait:design`으로
 생성 후 호스팅된 `https://` URL로 교체. 다른 필드는 건드리지 않는다.)
 
 **.gitignore**: create-ait-app 템플릿에는 `.gitignore`가 없다. 없으면 생성:
@@ -234,7 +237,39 @@ dist/
 
 (`git init` 자체는 하지 않는다 — 사용자 결정. Out of scope 참조.)
 
-### 6. 다음 단계 안내 + dev 서버 기동
+### 6. 후처리 D — 미치환 예제 placeholder 복구
+
+create-ait-app v0.1.3은 `--sample`을 주지 않으면(= 정본 호출) 예제 치환 단계를
+조기 반환해 **템플릿의 `{{…}}` placeholder를 그대로 남긴다** (v0.1.3
+`src/apply-samples.js`의 `sampleChoices.length === 0` early return — 오프라인
+재현 확인). 남는 위치:
+
+- react 계열(`react-ts`·`react`·`--tds`): `src/App.tsx`(또는 `App.jsx`)에
+  `{{SAMPLE_IMPORTS}}` · `{{PAGE_STATE_AND_ROUTES}}` · `{{SAMPLE_BUTTONS}}`
+- vanilla(`ts`·`js`): `src/app.ts`(또는 `app.js`)에
+  `{{SAMPLE_IMPORTS}}` · `{{SAMPLE_ROUTES}}` · `{{SAMPLE_BUTTONS}}`
+
+이 상태는 **빌드는 통과하지만**(vite build는 타입 검사를 하지 않는다) 런타임에
+`ReferenceError: SAMPLE_IMPORTS is not defined`가 나 앱 본체가 렌더되지 않는다
+— 화면이 빈 채로 남아 station 2(dev)가 사실상 막힌다. 그래서 dev 안내 전에
+반드시 복구한다.
+
+빈 치환의 정상 결과는 빈 문자열이므로, **placeholder만 있는 줄을 줄 단위로
+삭제**한다. 먼저 위치를 확인하고(JSX의 `style={{ … }}`는 이 패턴에 걸리지 않는다):
+
+```bash
+grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAMPLE_BUTTONS}}' <app-file>
+```
+
+걸린 줄을 `Edit`로 제거한다. `--sample`을 준 경우 CLI가 이미 치환했으므로 걸리는
+줄이 없다 — 이 단계는 조건부가 아니라 **멱등**하다("남아 있으면 지운다").
+
+> upstream 0.2.0-rc.0에서는 이 결함이 구조적으로 해소됐다(비-TDS는 base가
+> create-vite 산출물이라 placeholder 자체가 없고, TDS 경로는 App.tsx를 무조건
+> 재작성). `create-ait-app@latest`가 0.2.x로 올라가면 이 단계는 no-op이 되므로
+> 그 시점에 제거를 검토한다.
+
+### 7. 다음 단계 안내 + dev 서버 기동
 
 생성이 끝나면 한 블록으로 마무리:
 

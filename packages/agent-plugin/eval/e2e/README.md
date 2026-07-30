@@ -8,11 +8,20 @@
 수집한다 — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(게이트웨이) 둘 다.
 `/ait:setup-bundle`은 번들 설정이 없는 산출물(`--local` 폴백 등)에서만 조건부로 끼는 마디다.
 채점은 경로 불가지(granite.config.ts + `.ait` 존재)라 두 경로 모두 같은 기준으로 잰다.
+여기에 **앱 소스 무결성**(미치환 `{{TOKEN}}` 부재)이 함께 걸린다 — 산출물만 보는 채점은
+빌드는 통과하지만 런타임에 화면이 비는 산출물을 success로 집계하기 때문이다(실측: 아래 note).
 
 > **측정 여정 변경 (harness#6)**: `/ait:new`가 로컬 템플릿 복사에서 create-ait-app 비대화형
 > wrapper로 재작성되면서 측정 여정에 create-ait-app 네트워크 설치가 포함된다. 이전
 > baseline과 토큰·완주율을 직접 비교하지 않는다 — 재작성 이후 첫 의미 있는 측정이 새
 > baseline epoch다.
+>
+> **채점 강화 (같은 epoch)**: `success`에 소스 무결성 검사(`sourceIntact`)가 추가됐고
+> 실패 라벨 `source-broken`이 생겼다. 근거는 실측 결함이다 — create-ait-app v0.1.3은
+> `--sample` 없이 만들면 예제 placeholder를 남기고, 그 앱은 `ait build`는 통과하지만
+> 브라우저에서 `ReferenceError`로 화면이 빈다. `.ait` 존재만 보던 이전 채점은 그런 run을
+> 완주로 집계했다(측정이 GREEN인데 station 2는 막힌 상태). `station`도 같은 이유로
+> `dev-able`·`bundle` 판정에 이 검사를 전제한다.
 
 슈트 A(`../promptfoo/`)는 skill **라우팅 정합성**(맞는 발화→맞는 skill, single-turn)을 본다.
 슈트 B는 그게 못 보는 **멀티턴 완주·비용·분산**을 본다. 둘은 형제이고 A는 이 작업으로 안 바뀐다.
