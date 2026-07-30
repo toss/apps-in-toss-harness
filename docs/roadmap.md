@@ -52,6 +52,12 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
   `apps-in-toss-console` 인증 1회 필요. 공식 문서 기준 워크스페이스·미니앱·검수·
   번들·인앱 결제·인앱 광고 조작을 노출한다.
 
+플러그인 설치 형상에서의 실측(2026-07-30): docs는 `connected` + tool 4종 노출
+(searchDocumentation 실호출로 실제 문서 검색 결과 확인), console은 `needs-auth`
+(OAuth 감지 정상, 대화형 인가 대기). codex도 공식 `codex mcp add` 2종이 정상
+등록되고 console은 토스 비즈니스 계정 OAuth 인가 플로우를 자동 개시한다 —
+양쪽 모두 인증 게이트까지는 검증 완료, tool 실호출(콘솔 조작)은 인가 후 잔여.
+
 ## 2. Station별 acceptance criteria
 
 "작동한다"의 판정 기준. 각 항목은 사람 손이 아니라 **재현 가능한 절차**로 검증할
@@ -59,7 +65,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 
 | Station | AC (공식 harness 기준) | 현재 상태 |
 |---|---|---|
-| 0 install | public repo에서 플러그인 설치 → 에이전트 세션에 `/ait:*` 명령·skill 노출 (e2e 드라이버의 init assert와 같은 기준) | public flip(#8) 대기 |
+| 0 install | public repo에서 플러그인 설치 → 에이전트 세션에 `/ait:*` 명령·skill 노출 (e2e 드라이버의 init assert와 같은 기준) | **설치 형상 로컬 실증 완료**(2026-07-30) — SDK plugin 로드에서 `ait:*` 명령·skill 전부 노출 + plugin 경유 MCP 2종 등록: docs **connected**(tool 4종)·console **needs-auth**(`/mcp` 대화형 인가 대기, 설계대로). marketplace 해석(`add` → 루트 manifest → 상대 source)·public 경로 실증은 #8 대기 |
 | 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족** (#6 — clean-room 스모크로 `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구) |
 | 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
