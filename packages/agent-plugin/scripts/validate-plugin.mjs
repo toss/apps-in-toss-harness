@@ -373,7 +373,10 @@ function checkA1(root) {
 // ---------------------------------------------------------------------------
 
 // seam 검사 면제 skill: harness 외부 메인테이너 도구 (next-station seam 없음이 정상)
-const SEAM_EXEMPT_SKILLS = new Set(['changeset']);
+// aitcc 전제 skill 제거(register/deploy/status/setup-bundle) + 불필요 skill 제거
+// (docs/auth-setup/changeset) 이후 남은 8개는 전부 next-station seam을 갖는다 —
+// 면제 대상 없음(harness#N aitcc 정리).
+const SEAM_EXEMPT_SKILLS = new Set();
 
 /**
  * fenced code block 안에 있는 라인 번호(1-based) 집합을 반환한다.
@@ -409,51 +412,44 @@ function fencedCodeLineNumbers(lines) {
   return inFence;
 }
 
-// docs link allowlist: welcome + new-miniapp 는 /intro 링크 허용
-const DOCS_LINK_ALLOWLIST = new Set(['welcome', 'new-miniapp']);
+// docs link allowlist — 이제 어떤 skill 도 docs.aitc.dev 루트/intro 링크를
+// 직접 인쇄하지 않는다(아래 DOCS_MCP_MENTION_RE 참조: docs MCP 도구로 대체).
+// 빈 Set 이라 A2/docs-root-link 검사가 전 skill 에 균일하게 적용된다.
+const DOCS_LINK_ALLOWLIST = new Set();
 
-// A2 deep-link-required (positive) allowlist — §1.3.4("skill 말미 docs 링크는
-// docs.aitc.dev/<주제>로 deep-link 필수")를 코드로 강제하되, deep-link 의무가
-// 면제되는 skill 을 명시한다. 면제 사유 3종 (영구):
-//   1. entry/scaffold (welcome·new-miniapp): docs 루트 링크가 적절 (§1.2 예외)
-//   2. harness-external (changeset): zero→ship station 이 아님, docs 주제 페이지 무관
-//   3. docs 로더 자체 (docs): self-link 가 무의미
-//
-// issue #200 Layer 3 완료: "대상 docs 페이지 미존재" 임시 면제는 모두 해소됐다.
-// ship(setup-bundle·register·deploy-key·deploy)·operate(status) 5종은 docs
-// guides/ship-mini-app·operate-mini-app 신설(docs #116)로, dev-setup 3종
-// (inject-devtools·inject-polyfill·setup-phone-preview)은 guides/dev-environment
-// 신설(docs #130)로 각각 deep-link 타깃이 생겨 set 에서 제거됐다. 이제 모든
-// 비면제 skill 은 실재하는 docs deep-link 를 가져야 한다(VALIDATE_LINKS=1 A6 로
-// liveness 까지 강제 가능).
-const DOCS_DEEPLINK_EXEMPT = new Set(['welcome', 'new-miniapp', 'changeset', 'docs']);
+// A2 docs-mcp-mention-required (positive) — docs GitBook MCP(`apps-in-toss-docs`,
+// searchDocumentation/getPage)가 manifest 기본 포함되면서, skill 말미의 문서
+// 안내는 docs.aitc.dev deep-link 대신 "docs MCP로 조회" 안내로 통일됐다
+// (harness — aitcc 전제 skill 제거와 함께 `docs` skill 자체도 제거: MCP tool이
+// 대체). 잔존 8개 skill 은 전부 문서 참조가 있으므로 면제 없음 — 새 skill을
+// 추가할 때 정말 문서 참조가 무관하면 여기에 등재한다.
+const DOCS_MCP_MENTION_EXEMPT = new Set();
 
-// docs deep-link 형태: docs.aitc.dev/guides/<slug> 또는 docs.aitc.dev/api/<group>[/<method>]
-const DOCS_DEEPLINK_RE = /docs\.aitc\.dev\/(guides|api)\/[a-zA-Z0-9][a-zA-Z0-9/_-]*/;
+// "docs MCP" 언급 검출 — searchDocumentation/getPage 도구를 가리키는 관용 표현.
+const DOCS_MCP_MENTION_RE = /docs MCP/;
 
 // ---------------------------------------------------------------------------
 // A1 라우팅 스냅샷 — 명령 파일 ↔ skill 매핑 기대값
 // shared/commands/ 전수를 열거한다. 변경 시 이 상수도 함께 갱신.
 // ---------------------------------------------------------------------------
 
-// 19개 command stub → 15개 skill 매핑 (issue #273 skill 통합 17→14; agent-plugin#280
-// 이 inject 에 debug-console facet 을 추가하며 command 표면이 17→18 로 늘었다 — devtools
-// 단일 패키지가 debugger repo 로 분리되며 생긴 실제 갭(온디바이스 attach 설치 안내 부재)을
-// 메우는 신규 facet 이라 병합이 아니라 순수 추가다. harness#1 이 setup-debugger 를
-// 추가하며 18→19 — debugger MCP 를 manifest 상시 등록에서 프로젝트 .mcp.json opt-in
-// 배선으로 전환하고, 그 배선을 담당하는 skill 이 신설됐다).
-// 병합 3건은 여러 command 가 한 skill 로 위임한다(command 표면은 무변경):
-//   ait-logs               → status  (status+logs 병합: 같은 read-only 콘솔 조회 계열)
-//   ait-deploy-key         → deploy  (deploy-key 를 deploy 로 흡수: deploy 의 인증 전제)
-//   ait-inject-devtools    → inject  (inject-devtools+inject-polyfill+inject-debug-console
-//   ait-inject-polyfill    → inject   3-facet 병합: 셋 다 기존 프로젝트 빌드 셋업 패치 —
-//   ait-inject-debug-console → inject 병합 skill 이름은 중립적 `inject`)
-// 병합 skill 의 secondary-facet command stub (primary 는 skill 과 같은 verb).
+// 10개 command stub → 8개 skill 매핑. aitcc 전제 skill 4종(register/deploy/status/
+// setup-bundle) + 대응 facet stub(ait-register·ait-deploy·ait-status·ait-setup-bundle·
+// deploy-key·logs) 은 콘솔 MCP(`apps-in-toss-console`) 기본 포함으로 제거됐다(등록=
+// miniapp_create, 번들 업로드=bundle_upload/bundle_upload_complete, 상태=
+// miniapp_get_status). 불필요 skill 3종(docs/auth-setup/changeset) + 대응 stub도
+// 함께 제거됐다 — docs 는 docs MCP(`apps-in-toss-docs`)가, auth-setup 은 oidc 제거
+// 방침이, changeset 은 harness-external 메인테이너 도구 정리가 근거다(harness
+// aitcc 정리 — 19→10 command, 15→8 skill).
+// 병합 1건만 남는다(command 표면은 무변경):
+//   ait-inject-devtools      → inject  (inject-devtools+inject-polyfill+inject-debug-console
+//   ait-inject-polyfill      → inject   3-facet 병합: 셋 다 기존 프로젝트 빌드 셋업 패치 —
+//   ait-inject-debug-console → inject   병합 skill 이름은 중립적 `inject`)
+// 병합 skill 의 secondary-facet command stub (primary 는 skill 과 같은 verb — inject
+// 는 대응 primary stub 이 없어 3개 모두 secondary 취급).
 // 이 stub 들은 argument-hint sync 검사에서 면제된다 — 병합 skill 은 hint 를
 // 하나만 가지므로 secondary facet 의 hint 와는 본질적으로 어긋나기 때문.
 const MERGED_SECONDARY_FACET_CMDS = new Set([
-  'logs.md', // → status
-  'deploy-key.md', // → deploy
   'inject-devtools.md', // → inject
   'inject-polyfill.md', // → inject
   'inject-debug-console.md', // → inject
@@ -461,24 +457,15 @@ const MERGED_SECONDARY_FACET_CMDS = new Set([
 
 /** @type {Record<string, string>} */
 const EXPECTED_CMD_TO_SKILL = {
-  'ait-auth-setup.md': 'auth-setup',
   'ait-debug.md': 'debug',
-  'ait-deploy.md': 'deploy',
   'ait-design.md': 'design',
-  'ait-docs.md': 'docs',
   'ait-plan.md': 'plan',
-  'ait-register.md': 'register',
-  'ait-setup-bundle.md': 'setup-bundle',
   'ait-setup-debugger.md': 'setup-debugger',
   'ait-setup-phone-preview.md': 'setup-phone-preview',
-  'ait-status.md': 'status',
   'ait-welcome.md': 'welcome',
-  'changeset.md': 'changeset',
-  'deploy-key.md': 'deploy',
   'inject-debug-console.md': 'inject',
   'inject-devtools.md': 'inject',
   'inject-polyfill.md': 'inject',
-  'logs.md': 'status',
   'new.md': 'new-miniapp',
 };
 
@@ -583,18 +570,19 @@ function checkA2(root) {
       }
     }
 
-    // docs deep-link 존재 강제 (positive — §1.3.4 "deep-link 필수"를 코드로):
-    // exempt 가 아닌 skill 은 본문 어딘가에 docs.aitc.dev/(guides|api)/<slug>
-    // deep-link 가 최소 1개 있어야 한다. (음성 검사 A2/docs-root-link 와 짝 — 그건
-    // "루트 링크 금지", 이건 "deep-link 있어야 함". 둘 다 통과해야 §1.3.4 충족.)
-    if (!DOCS_DEEPLINK_EXEMPT.has(skillName)) {
-      if (!DOCS_DEEPLINK_RE.test(src)) {
+    // docs MCP 언급 존재 강제 (positive — §1.3.4 "문서 참조 필수"를 코드로,
+    // docs.aitc.dev deep-link → docs MCP 안내로 전환된 뒤의 형태):
+    // exempt 가 아닌 skill 은 본문 어딘가에 "docs MCP" 언급이 최소 1개 있어야
+    // 한다. (음성 검사 A2/docs-root-link 와 짝 — 그건 "루트 링크 금지", 이건
+    // "docs MCP 안내가 있어야 함". 둘 다 통과해야 §1.3.4 충족.)
+    if (!DOCS_MCP_MENTION_EXEMPT.has(skillName)) {
+      if (!DOCS_MCP_MENTION_RE.test(src)) {
         violations.push(
           mkv(
             relFile,
             1,
-            'A2/docs-deeplink-required',
-            `docs deep-link 없음 — §1.3.4 위반. 본문에 docs.aitc.dev/guides/<slug> 또는 docs.aitc.dev/api/<group> 링크 필요 (대상 페이지가 아직 없으면 DOCS_DEEPLINK_EXEMPT 에 임시 등재 + issue #200 Layer 3 추적)`,
+            'A2/docs-mcp-mention-required',
+            `docs MCP 안내 없음 — §1.3.4 위반. 본문에 "docs MCP" 언급(searchDocumentation/getPage로 조회) 필요 (정말 문서 참조가 무관한 skill 이면 DOCS_MCP_MENTION_EXEMPT 에 등재)`,
           ),
         );
       }

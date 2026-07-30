@@ -6,7 +6,8 @@
 [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
 직접 드라이버로 격리 실행하고, **모델·공급자별로 (완주율 · 성공당 토큰 · run-to-run 분산)** 을
 수집한다 — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(게이트웨이) 둘 다.
-`/ait:setup-bundle`은 번들 설정이 없는 산출물(`--local` 폴백 등)에서만 조건부로 끼는 마디다.
+번들 설정이 없는 산출물(`--local` 폴백 등)에서는 `new-miniapp` skill 자신이 절차를
+인라인으로(references/local-template.md L-5) 처리한다 — 별도 skill을 거치지 않는다.
 채점은 경로 불가지(granite.config.ts + `.ait` 존재)라 두 경로 모두 같은 기준으로 잰다.
 여기에 **앱 소스 무결성**(미치환 `{{TOKEN}}` 부재)이 함께 걸린다 — 산출물만 보는 채점은
 빌드는 통과하지만 런타임에 화면이 비는 산출물을 success로 집계하기 때문이다(실측: 아래 note).
@@ -95,7 +96,7 @@ op run --env-file=.env.eval -- pnpm eval:e2e --task timer --model claude-haiku-4
 
 | 형상 | `slash_commands` 키 (예) | 실제로 치는 것 |
 |---|---|---|
-| project `.claude/commands` (이 드라이버) | `new`, `ait-plan`, `changeset` | `/new` |
+| project `.claude/commands` (이 드라이버) | `new`, `ait-plan`, `ait-debug` | `/new` |
 | 설치 플러그인 (`/plugin install`) | `ait:new`, `ait:plan`(skill), `ait:ait-plan`(stub 별칭) | `/ait:new` |
 
 skill도 같은 목록에 `ait:<name>` 키로 오르므로, 같은 verb의 stub은 `ait-` 접두
@@ -166,16 +167,28 @@ stdout 요약 예:
 ## 안전 불변 (반드시 지킨다)
 
 - **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 아예 안 부른다. dog-food 앱
-  `31146`은 구조적으로 못 건드린다.
-- **`register`/`deploy`/`auth-setup` 디스패치 금지 — 결정적 게이트로 강제.** 특히 `register`는
-  매 run 서버 발급 새 `miniAppId`를 자동 기록한다(= "lock 풀려고 새 앱 만들기" 반-패턴).
-  이 skill 들은 결국 Bash 로 `aitcc …` / `ait deploy …` 를 호출하므로 프롬프트 텍스트만으로는
-  모델이 무시할 수 있다 → SDK `canUseTool` 콜백이 모든 `Bash` 명령 문자열을 검사해
-  콘솔/인증 변이(`aitcc` / `ait deploy·register·login` / `--api-key`)를 **결정적으로 deny**
-  하고 run 을 `forbidden-dispatch` 로 중단한다(`driver.ts` `isForbiddenBashCommand` — 단위
-  테스트 `driver.test.ts`). `permissionMode: bypassPermissions` 는 쓰지 않는다(쓰면 이 게이트가
-  우회된다). 프롬프트의 금지 명시는 soft 보조 안내일 뿐 강제 계층이 아니다. 심층 방어로
-  in-app debug MCP(`mcp__ait-devtools`)도 `disallowedTools` 에 둔다.
+  `31146`은 구조적으로 못 건드린다. aitcc 전제 skill(register/deploy/status/setup-bundle)은
+  harness에서 이미 제거됐지만, 모델이 학습 지식만으로 같은 명령을 시도할 수 있으므로 아래
+  두 게이트는 skill 존재 여부와 무관하게 유지한다.
+- **Bash 경로 — 콘솔/인증 변이 명령은 결정적으로 차단.** `aitcc …`(커뮤니티 console-cli 전체)와
+  `ait deploy`/`ait register`/`ait login`/`--api-key`(공식 번들러 `@apps-in-toss/cli`의 API 키
+  기반 직접 콘솔 접근 서브명령)는 skill 문서에 안 나와도 모델이 프롬프트 텍스트만으로 시도할
+  수 있다 → SDK `canUseTool` 콜백이 모든 `Bash` 명령 문자열을 검사해 **결정적으로 deny**하고
+  run 을 `forbidden-dispatch` 로 중단한다(`driver.ts` `isForbiddenBashCommand` — 단위 테스트
+  `driver.test.ts`).
+- **MCP 경로 — 콘솔 MCP 서버(`apps-in-toss-console`) 호출도 결정적으로 차단.** 플러그인
+  manifest가 이 서버(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`/
+  `miniapp_get_status`)를 기본 포함하면서 생긴 leak path다 — 특히 `miniapp_create`는 매 run
+  서버 발급 새 `miniAppId`를 자동 기록한다(= "lock 풀려고 새 앱 만들기" 반-패턴, register
+  Bash 경로와 동일한 위험을 MCP 경로로 재현). 같은 `canUseTool` 콜백이 도구 이름이
+  `mcp__apps-in-toss-console__` 로 시작하면 **결정적으로 deny**하고 run 을
+  `forbidden-dispatch` 로 중단한다(`driver.ts` `isConsoleMcpTool` — 단위 테스트
+  `driver.test.ts`). 정적 방어로 `disallowedTools` 에도 `mcp__apps-in-toss-console` 을 둔다
+  (defense-in-depth — `canUseTool` 이 권위 있는 관문). docs MCP(`apps-in-toss-docs`,
+  `searchDocumentation`/`getPage`)는 읽기 전용·콘솔 무변이라 차단 대상이 아니다.
+  `permissionMode: bypassPermissions` 는 쓰지 않는다(쓰면 두 게이트 모두 우회된다). 프롬프트의
+  금지 명시는 soft 보조 안내일 뿐 강제 계층이 아니다. 심층 방어로 in-app debug MCP
+  (`mcp__ait-devtools`)도 `disallowedTools` 에 둔다.
 - **시크릿 값(Deploy Key·TOTP·게이트웨이 토큰 등)은 stdout/stderr/`runs.jsonl`/로그 어디에도 출력 금지.**
   `--auth-token-env`는 토큰 *값*이 아니라 환경변수 *이름*만 받는다 — 드라이버가 값을 SDK env로만
   전달하고 RunRecord엔 base URL(호스트, 비밀 아님)만 남긴다.

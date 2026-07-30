@@ -3,13 +3,15 @@
 // 빈 격리 디렉토리에서 Claude Agent SDK 세션을 띄워 `/ait-new`(create-ait-app
 // wrapper — 번들 설정 기본 포함, harness#6) → 번들 빌드(`.ait` 생성)까지의
 // 멀티턴 완주를 1회 실행하고, 토큰 사용량(modelUsage)·턴 수·도달 station·실패
-// 분류를 수집한다. `/ait-setup-bundle`은 번들 설정이 없는 산출물(--local 폴백
-// 등)에서만 조건부로 끼는 마디다.
+// 분류를 수집한다.
 //
 // 안전 불변(plan §3):
 //   - **build-only가 기본** — 콘솔 API를 아예 안 부른다. 31146 구조적 무접촉.
-//   - register / deploy / auth-setup 슬래시 명령은 절대 디스패치하지 않는다
-//     (register는 매 run 새 miniAppId를 서버 발급·자동 기록 → 반-패턴).
+//   - 콘솔/인증을 변이시키는 Bash 명령(aitcc / ait deploy·register·login /
+//     --api-key)은 절대 실행하지 않는다.
+//   - **콘솔 MCP 도구(apps-in-toss-console)는 절대 호출하지 않는다** — 플러그인이
+//     이 서버를 manifest 기본 포함(§1.4)하면서 생긴 새 leak path. miniapp_create가
+//     매 run 새 miniAppId를 서버 발급·자동 기록 → 반-패턴.
 //   - 시크릿 값은 어떤 출력에도 싣지 않는다.
 //
 // 격리(plan §2):
@@ -45,28 +47,27 @@ const COMMANDS_SRC = join(REPO_ROOT, 'shared', 'commands');
 // `exposesKey` 가 두 형상을 모두 받아주므로 여기엔 맨 basename 을 둔다.
 //
 // 문서 표면과 같은 지점을 재려고 **문서가 안내하는 verb** 를 그대로 쓴다:
-// `/ait:new` → `shared/commands/new.md`. `/ait:setup-bundle`(`setup-bundle` skill)은
-// 정본 경로(create-ait-app)에선 불필요해 조건부 폴백으로만 프롬프트에 남긴다
-// (`ait-setup-bundle.md` stub 은 `ait:ait-setup-bundle` 이라 문서 경로가 아니다).
+// `/ait:new` → `shared/commands/new.md`. 번들 설정(granite.config.ts)은
+// 정본 경로(create-ait-app)에 기본 포함되므로 별도 skill 디스패치가 필요 없다
+// (aitcc 전제 skill 4종 register/deploy/status/setup-bundle 제거 — harness
+// aitcc 정리).
 const DISPATCH_COMMAND = 'new';
-const SETUP_BUNDLE_COMMAND = 'setup-bundle';
-
-// 디스패치 금지 명령 — build-only 경로 밖. register는 새 앱 자동 생성(반-패턴),
-// deploy/auth는 콘솔/인증 변이. 드라이버 프롬프트에 명시(soft) + canUseTool 게이트(hard).
-// 형상 접두 없이 verb 로 적는다 — 프롬프트는 사람이 읽는 soft 안내고, 결정적
-// 차단은 아래 FORBIDDEN_BASH_PATTERNS + canUseTool 이 한다.
-const FORBIDDEN_DISPATCH = ['register', 'deploy', 'auth-setup'] as const;
 
 // 콘솔/인증을 변이시키는 Bash 명령 패턴 — canUseTool 게이트가 결정적으로 차단한다.
-// register/deploy/auth-setup skill 은 결국 Bash 로 `aitcc …` / `ait deploy …` 를
-// 호출하므로(프롬프트 텍스트로만 막으면 모델이 무시할 수 있다), 명령 문자열을
-// 직접 검사해 거부한다. 31146 dog-food 앱·워크스페이스 3095 에 닿는 모든 경로를
-// build-only 측정에서 구조적으로 차단하는 것이 목적(§1.4 "register 자율 디스패치 금지").
+// `ait deploy`/`ait register`/`ait login`은 번들러(`@apps-in-toss/cli`) 자체의
+// API-key 기반 콘솔 접촉 서브명령이라 register/deploy 등 skill 유무와 무관하게
+// 여전히 실재하는 위험 경로다(명령 문자열을 직접 검사해 거부). 31146 dog-food
+// 앱·워크스페이스 3095 에 닿는 모든 경로를 build-only 측정에서 구조적으로
+// 차단하는 것이 목적(§1.4 "register 자율 디스패치 금지"). 콘솔 MCP 도구
+// (apps-in-toss-console)는 Bash가 아니라 별도 canUseTool 분기(아래
+// isConsoleMcpTool)가 차단한다.
 //
-// 매칭은 보수적으로 넓게: `aitcc` 전체(콘솔 자동화 CLI 전부), `ait deploy`/`ait register`/
-// `ait login`(번들러의 콘솔-접촉 서브명령), 그리고 Deploy Key 를 싣는 `--api-key`.
-// 번들 빌드 경로(`ait build`, `pnpm run build`, `pnpm bundle:ait`, `pnpm install`,
-// `pnpm dlx create-ait-app …` 등)는 매칭하지 않는다.
+// 매칭은 보수적으로 넓게: `aitcc` 전체(콘솔 자동화 CLI 전부 — harness에서는
+// 제거됐지만 모델이 훈련 지식으로 시도할 수 있어 방어로 유지), `ait deploy`/
+// `ait register`/`ait login`(번들러의 콘솔-접촉 서브명령), 그리고 Deploy Key 를
+// 싣는 `--api-key`. 번들 빌드 경로(`ait build`, `pnpm run build`,
+// `pnpm bundle:ait`, `pnpm install`, `pnpm dlx create-ait-app …` 등)는
+// 매칭하지 않는다.
 const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
   /\baitcc\b/, // 콘솔 자동화 CLI 전체 (register/deploy/app/keys/me/workspace …)
   /\bait\s+deploy\b/, // 번들러의 콘솔 업로드/검수 제출
@@ -81,6 +82,24 @@ const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
  */
 export function isForbiddenBashCommand(command: string): boolean {
   return FORBIDDEN_BASH_PATTERNS.some((re) => re.test(command));
+}
+
+// 콘솔 MCP 서버(`apps-in-toss-console`, `.claude-plugin/plugin.json` manifest 기본
+// 포함)로 가는 모든 tool 호출 식별 — canUseTool 게이트가 결정적으로 차단한다.
+// Claude Code MCP tool 이름은 `mcp__<server-key>__<tool>` 형태이므로 서버 키
+// prefix로 판정한다(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`/
+// `miniapp_get_status` 등 도구 이름이 늘어나도 이 판정은 그대로 유효하다).
+// docs MCP(`apps-in-toss-docs`, searchDocumentation/getPage)는 읽기 전용·콘솔
+// 무변이라 차단 대상이 아니다.
+const CONSOLE_MCP_SERVER_PREFIX = 'mcp__apps-in-toss-console__';
+
+/**
+ * tool 이름이 콘솔 MCP 서버(apps-in-toss-console) 소속인지 판정한다 (순수 함수 —
+ * 단위 테스트 대상). true 면 canUseTool 게이트가 거부하고 run 을
+ * forbidden-dispatch 로 종료한다.
+ */
+export function isConsoleMcpTool(toolName: string): boolean {
+  return toolName.startsWith(CONSOLE_MCP_SERVER_PREFIX);
 }
 
 /**
@@ -170,7 +189,8 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
   // 결정적 권한 게이트. permissionMode 를 bypassPermissions 로 두면 이 콜백이
   // 호출되지 않을 수 있으므로(모든 검사 우회), bypass 를 끄고 canUseTool 을
   // 권위 있는 관문으로 삼는다 — 격리 temp cwd 안의 안전한 작업(파일 쓰기·번들
-  // 빌드 Bash)은 전부 allow 하되, 콘솔/인증 변이 Bash 만 결정적으로 deny 한다.
+  // 빌드 Bash)은 전부 allow 하되, 콘솔/인증 변이 Bash 와 콘솔 MCP 도구 호출은
+  // 결정적으로 deny 한다.
   const canUseTool: CanUseTool = async (toolName, input) => {
     if (toolName === 'Bash') {
       const command = typeof input.command === 'string' ? input.command : '';
@@ -185,6 +205,17 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
           interrupt: true,
         };
       }
+    }
+    // 콘솔 MCP 도구(apps-in-toss-console) 차단 — 플러그인이 이 서버를 manifest
+    // 기본 포함하면서 생긴 새 leak path. disallowedTools(아래)로도 정적 차단하지만,
+    // 이 콜백이 권위 있는 관문이라 여기서도 결정적으로 deny한다(defense-in-depth).
+    if (isConsoleMcpTool(toolName)) {
+      forbiddenDispatchAttempted = true;
+      return {
+        behavior: 'deny',
+        message: 'build-only 측정 경로에서 콘솔 MCP 도구(apps-in-toss-console) 호출은 금지됩니다.',
+        interrupt: true,
+      };
     }
     return { behavior: 'allow', updatedInput: input };
   };
@@ -202,12 +233,14 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
       `1. \`/${DISPATCH_COMMAND} ${task.appName}\` 로 프로젝트를 생성한다.`,
       `2. 생성된 프로젝트 디렉토리에서 package.json 의 번들 빌드 스크립트로 \`.ait\` 번들을 생성한다`,
       `   — \`pnpm run build\` (= \`ait build\`, create-ait-app 산출물) 또는 \`pnpm bundle:ait\`.`,
-      `   granite.config.ts 가 없는 산출물일 때만 \`/${SETUP_BUNDLE_COMMAND}\` 로 번들 환경을 먼저 추가한다.`,
       ``,
       `아이디어: ${task.prompt}`,
       ``,
       `중요 제약:`,
-      `- 콘솔 등록/배포/로그인은 절대 하지 않는다. ${FORBIDDEN_DISPATCH.map((v) => `\`${v}\``).join(', ')} skill 을 어떤 형태로도 실행하지 마라.`,
+      `- 콘솔 등록/업로드/로그인은 절대 하지 않는다. \`aitcc\`/\`ait deploy\`/\`ait register\`/`,
+      `  \`ait login\` 같은 명령을 어떤 형태로도 실행하지 마라.`,
+      `- 콘솔 MCP 도구(apps-in-toss-console — miniapp_create/bundle_upload/`,
+      `  bundle_upload_complete/miniapp_get_status 등)도 호출하지 마라.`,
       `- 번들(.ait)이 생성되면 완료다. 거기서 멈춘다.`,
       `- dev 서버(\`pnpm dev\`)는 띄우지 않는다 — 측정은 번들 빌드에서 끝난다.`,
       `- 막혀도 멈추지 말고 다음 단계를 시도한다.`,
@@ -227,10 +260,10 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
         maxTurns,
         // gateway 라우팅 변수가 들어간 환경. anthropic이면 process.env 그대로.
         env: childEnv,
-        // 심층 방어: in-app debug MCP 표면도 금지(build-only 경로에 불필요).
-        // 실제 콘솔 변이 차단은 위 canUseTool 의 Bash 검사가 담당한다 —
-        // register/deploy/auth-setup skill 은 MCP 가 아니라 Bash 로 aitcc/ait 를 호출하므로.
-        disallowedTools: ['mcp__ait-devtools'],
+        // 심층 방어: in-app debug MCP 표면과 콘솔 MCP 표면 모두 정적으로도 금지
+        // (build-only 경로에 불필요). 실제 결정적 차단은 위 canUseTool 의 Bash
+        // 검사 + isConsoleMcpTool 검사가 담당한다 — 이 배열은 추가 방어선이다.
+        disallowedTools: ['mcp__ait-devtools', 'mcp__apps-in-toss-console'],
       },
     });
 
@@ -240,13 +273,13 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
         initSlashCommands = message.slash_commands ?? [];
         initSkills = message.skills ?? [];
         // 키 표현은 확정됐다 (2026-07-27 실측, issue #226·#286): slash-command
-        // 키는 **command 파일의 basename**이다 — `new`, `ait-plan`, `changeset`.
+        // 키는 **command 파일의 basename**이다 — `new`, `ait-plan`, `ait-debug`.
         // `"ait new"`(다단어)도 `"ait"`(단일 prefix)도 아니다. 플러그인으로 얹히면
         // 앞에 `<plugin>:`이 붙어 `ait:new`가 된다. 이 드라이버는 project
         // `.claude/commands` 형상이라 접두어 없는 쪽이지만, 같은 코드가 설치
         // 형상에서도 통하도록 `:` suffix 매칭을 함께 허용한다.
         // skill 도 같은 목록에 오르므로(`ait:plan` 등) stub 없는 verb 도 이 검사를
-        // 통과한다 — SETUP_BUNDLE_COMMAND 가 그 경우다.
+        // 통과한다.
         initOk =
           exposesKey(initSlashCommands, DISPATCH_COMMAND) && exposesKey(initSkills, 'new-miniapp');
         if (opts.logInit) {

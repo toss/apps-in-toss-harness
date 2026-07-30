@@ -95,15 +95,17 @@ npx promptfoo@latest view
 
 이 fixture 는 skill 을 **project skill**(`.claude/skills/`)로 얹는다. 실제 사용자는
 `/plugin install` 로 얹으므로 skill 이 `ait:` 네임스페이스에 들어가고 `shared/commands/`
-17개가 **같은 목록에 함께** 오른다. 이 차이가 측정값을 바꾼다 — issue #275 에서 두 케이스가
-project 형상에선 5/5 통과, 설치 형상에선 각각 0/5·2/5 였다.
+10개가 **같은 목록에 함께** 오른다. 이 차이가 측정값을 바꿀 수 있다 — issue #275 에서 두
+케이스가 project 형상에선 5/5 통과, 설치 형상에선 각각 0/5·2/5 였다(그 두 케이스가 걸었던
+`docs`·`auth-setup` skill 은 이후 harness aitcc 정리로 제거됐고 케이스 번호도 23→13 으로
+재편돼, 구체 수치는 더 이상 현재 케이스에 대응하지 않는다 — 상세는 `routing/README.md`).
 
 그래서 **케이스 정본은 여기**(`promptfooconfig.yaml`)에 두되, **라우팅 회귀 판정은
 [`routing/`](./routing/)** 로 한다 — `claude -p --plugin-dir` 라 설치 형상을 그대로 재고
 API 키도 필요 없다.
 
 ```bash
-bash eval/routing/run.sh 3        # 전체 23케이스 × 3회
+bash eval/routing/run.sh 3        # 전체 13케이스 × 3회
 bash eval/routing/run.sh 5 03 09  # 특정 케이스만 × 5회
 ```
 
@@ -130,23 +132,26 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 명령을 직접 인쇄하는가)과 출력 톤 — 을 사람이 확인하는 단계다. 각 station 에서 두 가지를
 본다: ① 기대 산출물이 나왔는가, ② 출력 마지막 블록이 **다음 station 명령을 직접 인쇄**하는가.
 
+콘솔 등록/업로드/상태 조회는 더 이상 `/ait` skill 이 아니라 **콘솔 MCP**
+(`apps-in-toss-console` — `miniapp_create`/`bundle_upload`/`bundle_upload_complete`/
+`miniapp_get_status`)가 담당한다. 이 서버는 plugin manifest 에 기본 포함되므로 첫 사용
+시 `/mcp`에서 1회 OAuth 승인이 뜬다 — 그것도 확인 포인트다.
+
 | # | station | 명령 | 기대 산출물 | seam (다음 명령을 인쇄?) |
 |---|---|---|---|---|
-| 0 | install | `/plugin marketplace add apps-in-toss-community/agent-plugin` → `/plugin install` | `/ait *` 명령이 존재 | (플러그인 메커니즘) → `/ait:new` 안내 |
-| 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` (create-ait-app 산출물 + devtools 배선 + granite.config.ts 기본 포함) | ✅ `pnpm dev` → `/ait:design` → `/ait:register` → `/ait:deploy` 인쇄 (setup-bundle 불필요 명시) |
+| 0 | install | `/plugin marketplace add apps-in-toss-community/agent-plugin` → `/plugin install` | `/ait *` 명령이 존재, `apps-in-toss-docs`/`apps-in-toss-console` MCP 서버가 목록에 기본 포함 | (플러그인 메커니즘) → `/ait:welcome` → `/ait:new` 안내 |
+| 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` (create-ait-app 산출물 + devtools 배선 + granite.config.ts 기본 포함) | ✅ `pnpm dev` → `/ait:design` → `ait build` → 콘솔 MCP(`miniapp_create`) 인쇄 |
 | 2 | dev | `cd demo-shop && pnpm dev` | 브라우저에서 devtools panel 과 함께 실행 | ✅ 회귀 의심 시 `/ait:debug` 로 분기 |
-| 3 | debug | `/ait:debug` | 환경 3겹 분기 안내(환경 1 브라우저 / 2 PWA / 3 MCP attach) | ✅ 환경에 맞는 다음 동작(`setup-phone-preview` 등) |
-| 4 | auth | `/ait:auth-setup` | oidc-bridge 연결 옵션 배선 | ✅ 다음 단계(번들/배포) |
-| 5 | bundle | `/ait:setup-bundle` | (create-ait-app 산출물) "이미 구성됨" 안내 — 신규 생성 없음 / (번들 설정 없는 프로젝트) granite.config.ts + scripts.bundle:ait + cli devDep | ✅ 어느 분기든 `/ait:register` → `/ait:deploy` 인쇄 |
-| 5 | register | `/ait:register` | aitcc.yaml 생성 → `aitcc app register` | ✅ `/ait:deploy` (또는 `/ait:deploy-key` 선행) |
-| 5 | deploy | `/ait:deploy` | `ait build` → `.ait` 업로드 → scheme URL 표시 | ✅ `/ait:status` / `/ait:logs` 로 운영 분기 |
+| 3 | debug | `/ait:debug` | 환경 3겹 분기 안내(환경 1 브라우저 / 2 PWA / 3 MCP attach). candidate scheme URL 이 없으면 §5-B 가 `ait build` → 콘솔 MCP 로 직접 등록·업로드 | ✅ 환경에 맞는 다음 동작(`/ait:setup-phone-preview`/`/ait:setup-debugger` 등) 또는 5-C attach |
+| 4 | design | `/ait:design` | `./assets/`(등록용 이미지 에셋) | ✅ 콘솔 MCP(`miniapp_create`) 규격 일치 안내 + `/ait:debug` (화면 회귀 점검) 인쇄 |
+| 5 | ship | `ait build` → 콘솔 MCP `miniapp_create` → `bundle_upload` → `bundle_upload_complete` | `.ait` 번들 + 콘솔 등록·업로드 완료 | ✅ 콘솔 MCP `miniapp_get_status` 로 운영 상태 분기 |
 
 확인 포인트(seam 규칙 — umbrella `CLAUDE.md` §1.3.3):
 
-- **각 skill 의 마지막 블록**이 다음 실행할 `/ait` 명령(또는 `pnpm dev`)을 **직접 인쇄**하는가.
-  "사용자가 알아서 안다"고 가정하면 seam 이 끊긴 것.
-- read-only skill(`status`/`logs`)은 **관측 결과에 따라 분기하는** seam 인가
-  (예: 등록 안 됨 → `/ait:register`).
+- **각 skill 의 마지막 블록**이 다음 실행할 `/ait` 명령(또는 `pnpm dev`/console MCP 도구
+  호출)을 **직접 인쇄**하는가. "사용자가 알아서 안다"고 가정하면 seam 이 끊긴 것.
+- `debug`(§5-B)처럼 skill 이 내부에서 직접 콘솔 MCP 를 호출하는 경우, **관측 결과에 따라
+  분기하는** seam 인가(예: 4046 lock·약관 미체결 → 에러를 그대로 전달하고 중단).
 - 출력 톤: 차분한 한 블록 마무리. 과한 이모지·방어적 disclaimer·헤더 직후 `>` blockquote 금지.
 - "공식(official)" / "powered by Toss" / 제휴 암시 표현이 산출물 어디에도 없는가(커뮤니티 OSS).
 

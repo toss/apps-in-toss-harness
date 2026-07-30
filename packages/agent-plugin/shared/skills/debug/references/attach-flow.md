@@ -35,7 +35,8 @@
 ## 환경 3 경로
 
 1. **`start_attach({mode: 'relay-staging', scheme_url, projectRoot})`** 도구를 호출한다
-   (5-B에서 `/ait:deploy`가 돌려준 scheme URL을 에이전트가 그대로 `scheme_url`로 전달 — 사용자 복사 없음).
+   (5-B에서 `ait build` → console MCP `bundle_upload_complete`가 돌려준 scheme URL을
+   에이전트가 그대로 `scheme_url`로 전달 — 사용자 복사 없음).
    이 한 번의 호출이 relay-staging 환경으로 전환하고, `?debug=1&relay=<wss://<random>.trycloudflare.com>`을 splice해 attach용 deep-link를 합성하며, **QR PNG를 OS 기본 이미지 뷰어로 자동 열고** ASCII QR도 터미널에 병행 출력한다.
    `start_attach`는 attach까지 폴링하며 대기한다(`wait_timeout_seconds` 기본 60s). TOTP 코드가 만료되면 자동으로 재발행해 QR/대시보드를 갱신하므로 타임아웃마다 재호출할 필요가 없다.
 

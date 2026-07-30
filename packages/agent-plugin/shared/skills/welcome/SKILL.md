@@ -34,33 +34,32 @@ Apps in Toss Community 플러그인이 설치됐습니다. (커뮤니티 오픈�
   /ait:new <app-name>   # 1. 빈 프로젝트 생성 (scaffold)
   pnpm dev              # 2. 브라우저에서 개발 (devtools mock + panel)
   /ait:debug            # 3. 라이브 상태 디버깅 (회귀 진단)
-  /ait:auth-setup       # 4. 토스 로그인 배선 (필요 시)
-  /ait:setup-bundle     # 5a. .ait 번들 빌드 환경 추가 (/ait:new 산출물엔 기본 포함 — 없을 때만)
-  /ait:design           # 5b. 등록용 이미지 자산 생성
-  /ait:register         # 5c. 콘솔에 앱 등록
-  /ait:deploy-key       # 5d. Deploy Key 발급 (처음이면 먼저)
-  /ait:deploy           # 5e. 번들 업로드
-  /ait:status / logs    # 6. 콘솔 상태·운영 조회
+  /ait:design           # 4. 등록용 이미지 자산 생성
+  console MCP           # 5. 앱 등록·번들 업로드·상태 조회 (miniapp_create /
+                         #    bundle_upload / bundle_upload_complete / miniapp_get_status)
 
 지금 시작:
   /ait:new <app-name>
 
+콘솔 도구를 쓰려면 먼저 1회 인가가 필요합니다:
+  /mcp                  # apps-in-toss-console 서버를 승인(브라우저 OAuth)
+
 기존 프로젝트에 들어가려면:
   /ait:inject-devtools  # 기존 프로젝트에 devtools 주입
-  /ait:status           # 이미 등록된 앱의 현재 위치 확인
 
-문서: https://docs.aitc.dev/  (커뮤니티 docs)
+문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
 ## Out of scope
 
 - 프로젝트 생성·파일 변경 — 그건 `/ait:new` (`new-miniapp` skill). 이 skill은
   아무것도 쓰지 않는다.
-- 콘솔 인증·상태 조회 — `/ait:status`. 등록된 앱이 이미 있는 사용자는 welcome
-  대신 status로 현재 위치를 확인한다.
+- 콘솔 등록·상태 조회 — console MCP 도구(`miniapp_create`, `miniapp_get_status`
+  등)가 직접 담당한다. welcome은 그 존재와 인가 경로(`/mcp`)만 안내한다.
 
 ## 참고
 
 - harness 전체 흐름·station map 정본: umbrella CLAUDE.md §1.1–§1.2
 - 각 station의 진척·blocker: GitHub Project `harness roadmap`
   (github.com/orgs/apps-in-toss-community/projects/1)
+- 주제별 문서는 docs MCP(`searchDocumentation`/`getPage`)로 조회한다.

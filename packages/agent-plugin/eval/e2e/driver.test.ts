@@ -1,18 +1,22 @@
 /**
  * driver.test.ts
  *
- * canUseTool 게이트의 결정적 핵심인 isForbiddenBashCommand 단위 테스트.
+ * canUseTool 게이트의 결정적 핵심인 isForbiddenBashCommand/isConsoleMcpTool
+ * 단위 테스트.
  *
  * 이 게이트가 build-only 측정 경로에서 콘솔/인증 변이(특히 register 자율 디스패치
  * = 새 앱 자동 생성 반-패턴, §1.4)를 구조적으로 막는다. 프롬프트 텍스트는 모델이
- * 무시할 수 있으므로 명령 문자열을 직접 검사하는 이 함수가 권위 있는 관문이다.
+ * 무시할 수 있으므로 명령/도구 이름을 직접 검사하는 이 두 함수가 권위 있는 관문이다.
  *
- * 회귀 가드: 금지 명령(aitcc / ait deploy·register·login / --api-key)은 전부 차단,
- * 정상 build-only 명령(ait build / pnpm / git 등)은 전부 통과해야 한다.
+ * 회귀 가드:
+ *   - Bash: 금지 명령(aitcc / ait deploy·register·login / --api-key)은 전부 차단,
+ *     정상 build-only 명령(ait build / pnpm / git 등)은 전부 통과해야 한다.
+ *   - MCP: 콘솔 MCP 서버(apps-in-toss-console) 소속 도구는 전부 차단, docs MCP
+ *     (apps-in-toss-docs, 읽기 전용)·ait-devtools·평범한 내장 도구는 통과해야 한다.
  */
 
 import { describe, expect, it } from 'vitest';
-import { exposesKey, isForbiddenBashCommand } from './driver.ts';
+import { exposesKey, isConsoleMcpTool, isForbiddenBashCommand } from './driver.ts';
 import { hasUnsubstitutedToken } from './score.ts';
 
 describe('isForbiddenBashCommand', () => {
@@ -72,17 +76,57 @@ describe('isForbiddenBashCommand', () => {
   });
 });
 
+// 콘솔 MCP 서버(apps-in-toss-console) 소속 도구 판정. §1.4 manifest 기본 포함으로
+// 생긴 leak path 회귀 가드 — 도구 이름이 늘어나도(miniapp_create 외에 신규 도구가
+// 추가돼도) 서버 키 prefix 판정이라 그대로 유효해야 한다.
+describe('isConsoleMcpTool', () => {
+  const CONSOLE_TOOLS = [
+    'mcp__apps-in-toss-console__miniapp_create',
+    'mcp__apps-in-toss-console__bundle_upload',
+    'mcp__apps-in-toss-console__bundle_upload_complete',
+    'mcp__apps-in-toss-console__miniapp_get_status',
+  ];
+
+  const OTHER_TOOLS = [
+    'mcp__apps-in-toss-docs__searchDocumentation', // docs MCP — 읽기 전용, 콘솔 무변이
+    'mcp__apps-in-toss-docs__getPage',
+    'mcp__ait-devtools__start_attach', // 온디바이스 디버그 MCP — 별개 서버
+    'Bash',
+    'Read',
+    '',
+  ];
+
+  for (const tool of CONSOLE_TOOLS) {
+    it(`차단: ${tool}`, () => {
+      expect(isConsoleMcpTool(tool)).toBe(true);
+    });
+  }
+
+  for (const tool of OTHER_TOOLS) {
+    it(`통과: ${JSON.stringify(tool)}`, () => {
+      expect(isConsoleMcpTool(tool)).toBe(false);
+    });
+  }
+
+  it('서버 키 부분 문자열만으론 오탐하지 않는다', () => {
+    // "apps-in-toss-console" 을 포함하지만 정확한 prefix(트레일링 `__`)가 아닌 경우.
+    expect(isConsoleMcpTool('mcp__apps-in-toss-console-v2__miniapp_create')).toBe(false);
+    expect(isConsoleMcpTool('apps-in-toss-console__miniapp_create')).toBe(false);
+  });
+});
+
 // init assert 의 키 매칭. slash-command 키는 command 파일의 basename 이고
 // (`ait-plan`), 플러그인으로 얹히면 `ait:ait-plan` 이 된다 — 2026-07-27 실측(#226).
 // 아래 벡터의 `ait-new` 류 문자열은 prefix/substring 경계 검사를 위한 합성 키다.
-// `"ait new"` 같은 다단어 키는 어느 형상에도 존재하지 않는다.
+// `"ait new"` 같은 다단어 키는 어느 형상에도 존재하지 않는다. 실존 skill 이름
+// (new-miniapp/plan/design)과 합성 키(ait-new)를 섞어 실제 형상과의 괴리를 줄인다.
 describe('exposesKey', () => {
-  const PROJECT_FORM = ['changeset', 'ait-auth-setup', 'ait-new', 'ait-setup-bundle'];
-  const PLUGIN_FORM = ['ait:changeset', 'ait:ait-new', 'ait:new-miniapp', 'ait:plan'];
+  const PROJECT_FORM = ['design', 'ait-new', 'plan', 'setup-debugger'];
+  const PLUGIN_FORM = ['ait:design', 'ait:ait-new', 'ait:new-miniapp', 'ait:plan'];
 
   it('project 형상의 basename 키를 찾는다', () => {
     expect(exposesKey(PROJECT_FORM, 'ait-new')).toBe(true);
-    expect(exposesKey(PROJECT_FORM, 'ait-setup-bundle')).toBe(true);
+    expect(exposesKey(PROJECT_FORM, 'setup-debugger')).toBe(true);
   });
 
   it('플러그인 형상의 <plugin>: 접두어 키도 같은 이름으로 찾는다', () => {

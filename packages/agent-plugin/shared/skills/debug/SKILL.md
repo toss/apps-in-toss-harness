@@ -132,7 +132,7 @@ panel 유무와 무관하게 항상 가능한 관찰:
 - **Console**: 앱 코드의 `console.*` 출력, 던져진 예외 스택. devtools mock은
   미구현 SDK API 접근 시 **throw**하므로(잘 되는 척 방지), "devtools에선 되는데
   실 SDK에선 안 됨"이 아니라 미구현 mock이 원인이면 여기서 명확한 에러가 뜬다.
-- **Network**: SDK가 호출하는 fetch/XHR, oidc-bridge auth 왕복 등.
+- **Network**: SDK가 호출하는 fetch/XHR 등.
 - **Sources**: breakpoint, source map.
 
 ### 3. `window.__ait` 런타임 상태 직접 읽기
@@ -183,13 +183,13 @@ CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
   cloudflared 터널 + CDP relay를 boot한다. `pnpm dev:phone`(screen-only)은 CDP relay를
   띄우지 않으므로 이 경로에서 쓰지 않는다. **mock SDK** — `call_sdk`/`evaluate` 실 SDK 호출
   불가, CDP 관측 전용. 5-C의 `relay-sandbox` 분기에서 launcher QR을 발급한다.
-- **환경 3 (intoss-private candidate)** — `RELEASE_CHANNEL=dogfood`로 빌드해
-  `ait deploy --scheme-only`가 출력한 `intoss-private://…?_deploymentId=<uuid>`
+- **환경 3 (intoss-private candidate)** — `RELEASE_CHANNEL=dogfood`로 `ait build`한
+  뒤 console MCP로 등록·업로드해 받는 `intoss-private://…?_deploymentId=<uuid>`
   candidate. PREPARE 상태에서도 cold-load된다. 출시 전 실기기 개발 루프.
 
 환경 2 진입에는 candidate 번들이 필요 없다(터널만). 환경 3에 candidate scheme URL이
-없으면 먼저 station 5(`/ait:setup-bundle` → `/ait:register` → `/ait:deploy`)로
-candidate를 만들도록 안내한다.
+없으면 5-B에서 `ait build` → console MCP(`miniapp_create`/`bundle_upload`/
+`bundle_upload_complete`)로 candidate를 만들도록 안내한다.
 
 `start_debug`/`start_attach`의 mode 값·내부 동작(dual-connection 라우터, lazy-boot relay, 수동 `/mcp` 재구성 fallback)은 정상 경로에서는 몰라도 되는 세부다 — **상세가 필요하면 Read <이 skill의 base directory>/references/mode-switching.md**. attach까지 한 번에 처리하려면 바로 아래 5-B·5-C 순서를 따른다(`start_attach`가 환경 전환+QR 발급을 1호출로).
 
@@ -198,16 +198,23 @@ candidate를 만들도록 안내한다.
 환경 2(`relay-sandbox`) attach에는 candidate 번들이 필요 없다 — `/ait:setup-phone-preview`가
 배선한 터널이 있으면 된다(이 skill이 자동 기동). 환경 3은 이미 올라가 있는 candidate scheme URL이 필요하다.
 
-candidate scheme URL이 없으면 에이전트는 이 자리에서 바로 `/ait:deploy`를 dispatch한다 —
-그 skill이 빌드·인증·업로드를 처리하고, 완료 출력 마지막에 `intoss-private://...` scheme URL을
-돌려준다. **에이전트는 그 URL을 `/ait:deploy` 완료 출력에서 직접 읽어 같은 흐름에서
-5-C의 `start_attach({mode:'relay-staging', scheme_url})`으로 그대로 전달한다 — 사용자에게
+candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보 빌드→등록→업로드를 진행한다:
+
+1. `RELEASE_CHANNEL=dogfood ait build`로 candidate 번들을 만든다.
+2. 아직 콘솔에 등록되지 않은 앱이면 console MCP `miniapp_create`로 등록한다
+   (이미 등록돼 있으면 건너뛴다).
+3. console MCP `bundle_upload` → `bundle_upload_complete`로 번들을 업로드한다.
+4. 업로드 완료 응답에서 `intoss-private://…?_deploymentId=<uuid>` scheme URL을 받는다.
+
+**에이전트는 그 URL을 같은 흐름에서 곧바로 5-C의
+`start_attach({mode:'relay-staging', scheme_url})`으로 전달한다 — 사용자에게
 URL을 복사·재입력하게 하지 않는다.**
 
-(이 skill은 `ait deploy`를 직접 Bash로 호출하지 않는다 — 콘솔 변이는 `/ait:deploy` skill
-경계 안에서, 그 skill의 인증·에러 복구 로직과 함께 일어난다. `/ait:deploy`가 프로파일 미설정·
-4046 lock·약관 미체결 등으로 멈추면 scheme URL 없이 돌아오며, 에이전트는 그 에러를 사용자에게
-그대로 전달하고 5-C 진행을 중단한다.)
+(콘솔 등록·업로드는 1회 인가가 필요하다 — `/mcp`에서 `apps-in-toss-console`을
+승인한다. 등록·업로드가 4046 lock·약관 미체결 등으로 멈추면 scheme URL 없이
+돌아오며, 에이전트는 그 에러를 사용자에게 그대로 전달하고 5-C 진행을
+중단한다. 이 skill은 `ait deploy`(API 키 기반 직접 배포)를 Bash로 호출하지
+않는다 — 인가는 항상 console MCP의 OAuth 세션을 통한다.)
 
 ### 5-C. attach — `start_attach` QR
 
@@ -253,12 +260,12 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   브라우저는 사용자가 직접 연다(에이전트는 URL만 출력). 환경 2·3의 QR 스캔은 사람이 폰 카메라로 한다(이 skill은 QR을 발급).
 - ❌ `ait-devtools` MCP 서버 배선·기동 — 배선은 `/ait:setup-debugger`(프로젝트
   `.mcp.json`), 기동은 Claude Code가 한다. 이 skill은 attach 경로만 발급한다.
-- ❌ candidate 번들 빌드·배포 — `/ait:setup-bundle` → `/ait:register` → `/ait:deploy`.
-  (환경 2는 candidate 번들 불필요 — 터널만.)
 - ❌ 검수 큐 제출(환경 3 밖의 배포 상태 전환, 비가역) — 명시 승인 없이 하지 않는다.
+  (5-B의 candidate 등록·업로드는 디버깅 목적 한정이며 검수 제출과는 다르다.)
 - ❌ devtools 설정 주입 — `/ait:inject-devtools`.
 - ❌ 환경 2 PWA 터널 인프라 배선 — `/ait:setup-phone-preview`(vite.config tunnel 옵션 주입 + `dev:phone:cdp` 스크립트 추가). 이 skill은 그 위에서(배선이 완료된 상태에서) dev 서버를 자동 기동하고 CDP attach/관측을 담당한다.
-- ❌ 콘솔 인증·앱 등록·운영 조회 — `/ait:deploy`, `/ait:register`, `/ait:status`.
+- ❌ 배포 후 운영 상태 조회 — 필요하면 console MCP `miniapp_get_status`를 직접
+  호출한다. 이 skill은 디버깅 목적의 candidate 등록·업로드까지만 한다.
 - ❌ 코드 자동 수정 — 관찰·진단을 돕고, 수정은 에이전트의 일반 편집 흐름으로.
 
 ## 하지 말아야 할 것
@@ -269,7 +276,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 - ❌ `devicectl`/`adb` 등 device-control로 폰을 발사. 진입은 QR 스캔 단일 경로다(5-C).
 - ❌ 환경 2(`relay-sandbox`)에서 `call_sdk`/`evaluate`로 실 SDK 호출 시도. SDK가 mock이라
   불가하다. 실 SDK fidelity가 필요하면 환경 3(intoss-private dogfood)으로 올라간다.
-- ❌ 환경 2 진입 시 candidate scheme URL을 준비하려 `/ait:deploy` 시작. 환경 2는
+- ❌ 환경 2 진입 시 candidate 번들 빌드·등록·업로드를 시도. 환경 2는
   candidate 번들 불필요 — `dev:phone:cdp` 스크립트 + `tunnel:{cdp:true}` 배선이 있으면 된다.
 - ❌ 환경 2에서 `pnpm dev` 또는 `pnpm dev:phone`(screen-only)으로 dev 서버를 띄우거나
   기동을 권장. CDP relay(`AIT_RELAY_BASE_URL`/`AIT_TUNNEL_BASE_URL`)는 `AIT_TUNNEL_CDP=1`일 때만
@@ -286,12 +293,9 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   제휴·후원·인증 암시 표현.
 - ❌ `MCP_ENV` 기반 구버전 진입 방식에 의존. 환경 전환은 `start_debug({mode})`로
   런타임에 한다(상세는 `references/mode-switching.md`).
-- ❌ `ait build`/`ait deploy` 대신 `aitcc`로 번들 빌드 시도. `ait`(번들러)와
-  `aitcc`(콘솔 자동화)는 별개 도구다(5-B).
-- ❌ 환경 3 scheme URL을 얻으려 `ait deploy`(또는 `pnpm exec ait deploy`)를 이 skill에서
-  직접 Bash로 호출. 콘솔 변이는 `/ait:deploy` skill을 dispatch해 그 경계 안에서 일어난다 —
-  이 skill은 read-only/build-only이며, eval e2e canUseTool 게이트가 `ait deploy` 직접 호출을
-  차단한다(5-B).
+- ❌ 환경 3 scheme URL을 얻으려 `ait deploy --api-key`/`--profile`(API 키 기반 직접
+  배포)를 Bash로 호출. 콘솔 등록·업로드는 항상 console MCP 도구로 처리한다 —
+  OAuth 세션 인가만 쓰고 Deploy Key/API 키 경로는 쓰지 않는다(5-B).
 
 ## 다음 단계 (관찰 결과에 따라 분기)
 
@@ -303,17 +307,18 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   확인 가능). 배선 후 `/ait:debug`를 다시 실행하면 이 skill이 `pnpm dev:phone:cdp`를
   자동 기동하고 `start_attach({mode:'relay-sandbox'})` 1호출로 5-C relay-sandbox 경로를 진행한다.
   실 SDK fidelity(토스 WebView·네이티브 브리지)가 필요한 회귀라면 환경 3으로:
-  `/ait:deploy`를 dispatch해 에이전트가 scheme URL을 받아 바로
+  5-B에서 `ait build` → console MCP로 등록·업로드해 scheme URL을 받아 바로
   `start_attach({mode:'relay-staging', scheme_url})`으로 QR attach (복사 없음 — 5-B 참조).
-- **candidate scheme URL이 아직 없음** → `/ait:setup-bundle` → `/ait:register` →
-  `/ait:deploy`로 candidate를 만든 뒤 다시 `/ait:debug`.
+- **candidate scheme URL이 아직 없음** → 5-B로 `ait build` → console MCP
+  (`miniapp_create` → `bundle_upload` → `bundle_upload_complete`)로 candidate를
+  만든 뒤 다시 `/ait:debug`.
 - **`start_attach` 스캔 대기 중** → 폰 카메라로 QR 스캔.
   attach 후 `list_pages`로 확인 → 페이지가 보이면 5-D의 13종 도구로 디버깅 시작.
 - **attach 후 미니앱에 `*.ait.test.ts` 테스트가 있으면** → `run_tests({ files: ["**/*.ait.test.ts"], projectRoot: "<프로젝트 루트>" })`로 실기기에서 실행 (5-E). env별 결과를 대조하면 SDK 버전·플랫폼 거동 차이를 잡는다.
 - **attach는 됐는데 도구가 아직 안 보임** → `notifications/tools/list_changed`가
   Claude Code에 전달되기까지 수 초 걸릴 수 있다. 잠시 후 에이전트의 도구 목록을
   다시 확인. 여전히 없으면 `get_debug_status`로 현재 환경/모드·relay 연결 상태 점검.
-- **콘솔 운영 관측** → `/ait:status`, `/ait:logs`로 콘솔 상태도 함께 확인.
+- **콘솔 운영 관측** → console MCP `miniapp_get_status`로 콘솔 상태도 함께 확인.
 
 ## 참고
 
@@ -327,7 +332,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 - on-device debug MCP 데몬(`start_debug`/`start_attach` 등 attach 도구): `@ait-co/debugger`(`/mcp/server` + `/mcp/cli` exports, `debugger`·`debugger-test` bin) — `/ait:setup-debugger`가 배선한 프로젝트 `.mcp.json`의 `mcpServers."ait-devtools"`가 `npx -y -p @ait-co/debugger debugger`로 기동. server key `ait-devtools`는 유지하되 실제 데몬 패키지는 `@ait-co/debugger`다(Phase 3 분리, 이전에는 devtools repo의 `devtools-mcp` bin이었다): https://github.com/apps-in-toss-community/debugger
 - on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + eruda): `@ait-co/debug-console`(`.` + `/auto` exports) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 미니앱 `dependencies`로 별도 설치해야 한다. 설치·와이어업은 `/ait:inject-debug-console` (`inject` skill의 debug-console facet)이 담당한다.
 - env-2 부트스트랩 설계 근거 (approach B): https://github.com/apps-in-toss-community/devtools/issues/428
-- 커뮤니티 docs — lifecycle 디버깅(swipe-back 등): https://docs.aitc.dev/guides/navigation-flow
-- 커뮤니티 docs — on-device CDP relay 디버깅 구조·진입 경로: https://docs.aitc.dev/guides/debug-relay
-- 커뮤니티 docs — relay TOTP 인증(터널 URL 유출 차단): https://docs.aitc.dev/guides/relay-auth-totp
+- lifecycle 디버깅(swipe-back 등), on-device CDP relay 디버깅 구조·진입 경로,
+  relay TOTP 인증(터널 URL 유출 차단) 등은 docs MCP(`searchDocumentation`/
+  `getPage`)로 조회한다.
 - 환경 3겹 설계: umbrella CLAUDE.md §1.1 + meta/three-environments-fidelity.md

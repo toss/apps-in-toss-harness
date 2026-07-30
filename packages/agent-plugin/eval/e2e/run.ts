@@ -13,7 +13,8 @@
 //   --keep            실패 디버깅용 격리 디렉토리 보존
 //   --log-init        첫 run의 init slash_commands/skills 키를 stderr로 출력
 //
-// 안전(plan §3): build-only 전용. 콘솔 무접촉. register/deploy/auth 디스패치 없음.
+// 안전(plan §3): build-only 전용. 콘솔 무접촉. 콘솔/인증 변이 Bash 명령과 콘솔
+// MCP(apps-in-toss-console) 도구 호출 둘 다 canUseTool 게이트로 결정적 차단(driver.ts).
 // runtime telemetry 아님 — 메인테이너가 수동으로 돌리는 오프라인 harness.
 
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';

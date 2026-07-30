@@ -29,7 +29,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   (샘플 코드가 "샌드박스앱/토스앱에서 실행해주세요" alert를 띄우는 구조),
   이 후처리 덕에 토스 앱 없이 브라우저에서 바로 개발할 수 있다(`pnpm dev` 즉시 실행).
 - 번들 설정(granite.config.ts + `build`/`deploy` 스크립트)은 create-ait-app
-  템플릿에 기본 포함돼 있어 **`/ait:setup-bundle`이 필요 없다**. 단 템플릿은
+  템플릿에 기본 포함돼 있어 별도 배선이 필요 없다. 단 템플릿은
   `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패하므로,
   후처리 C가 플레이스홀더 URL로 채운다(실제 아이콘은 `/ait:design` 후 교체).
 - `--sample` 없이 만든 프로젝트는 CLI(v0.1.3)가 예제 placeholder를 치환하지
@@ -39,12 +39,13 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   아니다. RN 네이티브 컴포넌트나 `react-native` import를 쓰지 않는다.
   (설치 시 SDK가 RN을 peer로 선언해 뜨는 `unmet peer react-native` 경고는
   그래서 무시해도 된다.)
-- 다음 단계(`pnpm dev` → 코드 수정 → `/ait:design` → `/ait:register` →
-  `/ait:deploy-key` → `/ait:deploy`)가 명확히 안내된다.
+- 다음 단계(`pnpm dev` → 코드 수정 → `/ait:design` → `ait build`로 번들 생성 →
+  console MCP 도구로 등록·업로드)가 명확히 안내된다.
 
 이 skill은 **scaffold 호출 + 후처리(granite bin 검증·devtools 배선·brand.icon
-플레이스홀더·.gitignore·예제 placeholder 복구)**만 담당한다. 콘솔 등록(`aitcc app register`), 로그인, 배포는 다른 skill 또는
-console-cli의 책임 — 여기서 자동 호출하지 않는다.
+플레이스홀더·.gitignore·예제 placeholder 복구)**만 담당한다. 콘솔 등록·번들
+업로드는 console MCP 도구(`miniapp_create`/`bundle_upload`/
+`bundle_upload_complete`)의 책임 — 여기서 자동 호출하지 않는다.
 
 생성되는 README/UI/주석에서 "공식(official)", "토스가 제공하는", "powered by
 Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
@@ -219,8 +220,8 @@ directory>/../inject/references/devtools.md**.
 
 **brand.icon**: create-ait-app 템플릿의 `granite.config.ts`는 `brand.icon: ""`
 (빈 문자열)로 생성되는데, `brand.icon`은 필수 필드라 이 상태로는 `ait build`가
-`플러그인 옵션이 올바르지 않습니다` 오류로 실패한다(setup-bundle skill과 동일
-근거). `Edit`로 **이 필드만** 커뮤니티 플레이스홀더 URL로 교체한다:
+`플러그인 옵션이 올바르지 않습니다` 오류로 실패한다. `Edit`로 **이 필드만**
+커뮤니티 플레이스홀더 URL로 교체한다:
 
 ```
 icon: ""  →  icon: "https://aitc.dev/apple-touch-icon.png"
@@ -289,19 +290,16 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
   cd <package_name>
   pnpm dev          # 브라우저에서 devtools panel과 함께 실행
 
-토스 로그인이 필요하면:
-  /ait:auth-setup   # oidc-bridge로 로그인 배선 (appLogin → OIDC → 백엔드 세션)
-
-배포 준비가 되면 (번들 설정은 템플릿에 이미 포함 — /ait:setup-bundle 불필요):
-  /ait:design        # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — register 전제)
-  /ait:register      # 앱인토스 콘솔에 앱 등록 (aitcc.yaml 생성 → aitcc app register)
-  /ait:deploy-key    # Deploy Key 발급 — 처음 배포면 deploy 전에
-  /ait:deploy        # 번들을 콘솔에 업로드 (ait build → ait deploy --profile <name>)
+배포 준비가 되면 (번들 설정은 템플릿에 이미 포함):
+  /ait:design       # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — 등록 전제)
+  ait build         # .ait 번들 생성
+  console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
+                     # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
 
 참고: granite.config.ts의 brand.icon은 플레이스홀더 URL입니다 —
   /ait:design으로 실제 아이콘을 만들고 호스팅된 https:// URL로 교체하세요.
 
-문서: https://docs.aitc.dev/guides/dev-environment
+문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
 `--no-devtools`로 만들었으면 완료 블록에서 `pnpm dev` 줄의 주석을
@@ -336,15 +334,15 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 
 ## Out of scope (이 skill이 하지 않는 것)
 
-- ❌ 콘솔 인증 (`aitcc login`) — 인증이 필요한 작업은 별도 skill.
-- ❌ `aitcc.yaml` 생성 / 콘솔에 앱 등록 — `/ait:register` skill의 역할.
-- ❌ 배포 — `/ait:deploy` (`deploy` skill).
+- ❌ 콘솔 등록·번들 업로드 — console MCP 도구(`miniapp_create`/`bundle_upload`/
+  `bundle_upload_complete`)의 역할. 인가는 `/mcp`에서 `apps-in-toss-console`
+  1회 승인(브라우저 OAuth)으로 끝난다.
 - ❌ 기존 프로젝트에 devtools 주입 — `/ait:inject-devtools`
   (`inject` skill의 devtools facet).
 - ❌ 기존 프로젝트에 IAP/IAA 샘플 추가 — create-ait-app의 `add-sample`
   서브커맨드가 brownfield를 지원한다 (`pnpm dlx create-ait-app@latest
   add-sample iap`). 이 skill은 greenfield 전용.
-- ❌ Workspace 등록 / 멤버 초대 / billing — console-cli + 콘솔 UI.
+- ❌ Workspace 등록 / 멤버 초대 / billing — 콘솔 UI의 책임.
 - ❌ Git 초기화 — 사용자가 결정 (`.gitignore` 파일만 생성해 둔다).
 - ❌ create-ait-app 자체의 버그 수정 — upstream(toss/create-ait-app) 이슈로.
   이 skill의 후처리는 v0.1.3 기준 우회일 뿐, upstream이 옵션을 수용하면
@@ -369,12 +367,12 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 ## 참고
 
 - 짝 skill: `inject` (devtools facet — 기존 프로젝트에 devtools 추가,
-  polyfill facet — 표준 Web API 모드), `design` (등록 이미지 자산 생성),
-  `deploy`.
+  polyfill facet — 표준 Web API 모드), `design` (등록 이미지 자산 생성).
 - 공식 스캐폴더: https://github.com/toss/create-ait-app — 템플릿 5종(내부
   react-ts-tds 포함), IAP/IAA 샘플, brownfield `add-sample` 서브커맨드.
   이 skill의 호출 규칙·후처리 근거는 harness#6 gap 분석(§C 함정 10건).
 - devtools (mock + panel + unplugin): https://github.com/apps-in-toss-community/devtools
-- 커뮤니티 docs — 브라우저 mock dev 환경: https://docs.aitc.dev/guides/dev-environment
+- 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
+  getPage)로 조회한다.
 - `--local` 폴백 템플릿 정책: `shared/templates/README.md` (react-vite는 폴백
   전용으로 유지, 단계적 폐기 예정).
