@@ -4,11 +4,20 @@ packages:
 # 사내 npm 미러(nexus)가 아직 캐시하지 못한 최신 transitive 버전 회피 — 커뮤니티 lockfile이 검증한 버전으로 고정.
 overrides:
   baseline-browser-mapping: 2.10.19
+  # devtools 단독 repo에서는 postcss가 단일 버전(8.5.15)으로만 해석됐으나, debug-console/debugger가
+  # 끌어오는 다른 web-framework 버전 체인과 합쳐지며 postcss가 8.5.23으로 다중 해석됨. 단일 버전으로 고정.
+  postcss: 8.5.15
+  # devtools는 tsdown "^0.21.7"을 쓰는데, 단독 repo lockfile은 0.21.7(→ rolldown 1.0.0-rc.12)로 고정돼
+  # 있었다. 모노레포에서 새로 resolve하면 0.21.10(→ rolldown 1.0.0-rc.17)으로 뜨는데, 이 조합에서
+  # tsdown의 dts 번들링(vite/postcss 타입 재-export)이 Warning이 아니라 fatal Error로 승격돼 빌드가
+  # 깨진다. debugger/debug-console은 별도 range("^0.22.0")라 이 override에 영향받지 않는다.
+  "tsdown@^0.21.7": 0.21.7
 
 # 각 패키지의 단독 repo 시절 pnpm-workspace.yaml(allowBuilds 설정)을 병합한 것.
 allowBuilds:
   "@sentry/cli": false
   "@swc/core": false
+  cloudflared: false
   esbuild: true
   protobufjs: false
   sharp: false

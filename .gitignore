@@ -8,3 +8,8 @@ coverage/
 .claude/settings.local.json
 .claude/*.lock
 .claude.lock
+
+# SECRET-HANDLING (devtools/debugger relay): relay state files carry TOTP
+# secrets, wss:// relay URLs, and tunnel hostnames. Never track them.
+.ait_relay
+.ait_urls
