@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // No DOM. The daemon is a Node process: it *authors* page-side source as
+    // strings and ships them over CDP, but it never touches a DOM itself.
+    // Omitting the lib turns that boundary into a compile error rather than a
+    // convention. The suites that evaluate those strings under jsdom need DOM
+    // globals, so they typecheck via `tsconfig.test.json` instead.
+    "lib": ["ES2022"],
+    "types": ["node"],
+    // Relaxed relative to the workspace baseline, for this package only.
+    //
+    // This package is vendored wholesale from `@ait-co/devtools`, which
+    // compiled under plain `strict`. Both flags below are clean in
+    // `debug-console` and `internal-protocol` and stay on there; turning them
+    // on for the vendored half means ~110 rewrites at index and
+    // optional-property sites — a behaviour-bearing change that has no business
+    // riding along with a package split. Ratcheting them back on, directory by
+    // directory, is follow-up work, not a permanent exemption.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/__tests__/**", "src/**/*.test.ts"]
+}
