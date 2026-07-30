@@ -131,5 +131,5 @@ QR)·환경 3(relay-staging QR) attach를 진행한다. 환경 2가 처음이면
   (환경 2 터널 인프라), `inject` (debug-console facet — 환경 3 attach 표면 설치).
 - MCP 데몬 패키지: `@ait-co/debugger`(`debugger`·`debugger-test` bin):
   https://github.com/apps-in-toss-community/debugger
-- 커뮤니티 docs — on-device CDP relay 디버깅 구조·진입 경로:
-  https://docs.aitc.dev/guides/debug-relay
+- on-device CDP relay 디버깅 구조·진입 경로는 docs MCP(`searchDocumentation`/
+  `getPage`)로 조회한다.

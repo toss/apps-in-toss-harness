@@ -6,17 +6,21 @@ Community plugin for building [Apps in Toss](https://toss.im/) mini-apps from in
 
 ## Goal
 
-Ties together `@ait-co/devtools`, `sdk-example`, `@ait-co/polyfill`, and the community docs into a single integrated experience. Slash commands available today:
+Ties together `@ait-co/devtools`, `sdk-example`, `@ait-co/polyfill`, the docs MCP, and the console MCP into a single integrated experience. Slash commands available today:
 
+- `/ait:welcome` — confirm installation + point to the first station (`/ait:new`)
 - `/ait:new` — scaffold a new mini-app
-- `/ait:docs <topic>` — load curated SDK docs into the session
+- `/ait:plan` — plan SDK domains/permissions/terms before scaffolding
+- `/ait:design` — turn Figma designs into registration image assets
 - `/ait:inject-devtools` / `/ait:inject-polyfill` / `/ait:inject-debug-console` — inject config into an existing project
-- `/ait:status` / `/ait:logs` — console-cli-backed status queries
-- `/ait:auth-setup` — configure oidc-bridge connection
-- `/ait:debug` — browser debugging guidance (devtools panel · `window.__ait` · browser DevTools). On-device CDP debugging of phone bundles is in progress
-- `/ait:deploy` — deploy the mini-app
+- `/ait:setup-phone-preview` — real-device preview tunnel (Cloudflare quick-tunnel + launcher PWA)
+- `/ait:setup-debugger` — wire the on-device debug MCP server into the project's `.mcp.json`
+- `/ait:debug` — live-state debugging guidance (browser devtools panel · `window.__ait` · on-device CDP relay)
 
-See the "Skills" table in [`CLAUDE.md`](./CLAUDE.md) for the full skill list and dependency repos.
+Docs lookups go through the docs MCP (`searchDocumentation`/`getPage`); console registration, bundle
+upload, and status queries go through the console MCP (`miniapp_create`/`bundle_upload`/
+`bundle_upload_complete`/`miniapp_get_status`) — both need a one-time authorization via `/mcp`. See
+the "Skills" table in [`CLAUDE.md`](./CLAUDE.md) for the full skill list and dependency repos.
 
 ## Distribution
 
@@ -43,7 +47,7 @@ In Claude Code, add the marketplace and install the plugin:
 /plugin install ait@aitc
 ```
 
-After installation the `/ait:` commands (`/ait:new`, `/ait:deploy`, etc.) become available. The plugin name is the namespace, so the colon form is the real command — a space form (`/ait new`) does not exist.
+After installation the `/ait:` commands (`/ait:new`, `/ait:debug`, etc.) become available. The plugin name is the namespace, so the colon form is the real command — a space form (`/ait new`) does not exist.
 
 Codex / Gemini CLI / Cursor / Windsurf are planned for Phase 2+. See the deployment-phases section in [`CLAUDE.md`](./CLAUDE.md).
 

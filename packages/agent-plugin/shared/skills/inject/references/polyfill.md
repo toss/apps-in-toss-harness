@@ -207,7 +207,7 @@ Tier-1 매핑:
 [다음 단계]
   pnpm dev              # 표준 API 경로가 동작하는지 브라우저에서 확인
   /ait:inject-devtools  # (권장) devtools와 함께 쓰면 브라우저에서도 mock SDK 경유 확인
-  /ait:setup-bundle     # 배포 준비가 되면 .ait 번들 환경 구성
+  ait build             # 배포 준비가 되면 .ait 번들 생성 → console MCP로 등록·업로드
 
 참고: https://github.com/apps-in-toss-community/polyfill
 ```

@@ -328,14 +328,14 @@ setup-phone-preview 완료
   실행하면 됩니다 — 구체 절차와 fallback(/mcp 수동 재구성)은 debug skill §5-A 참조.
 
 다음 단계:
-  screen-only 미리보기 후: /ait:setup-bundle  # 배포 준비
+  화면 미리보기: pnpm dev:phone
   CDP 디버깅으로 진행:    /ait:debug           # relay 배선 후 기본 데몬에서 바로 진입 (debug §5-A)
 
 참고:
   - tunnel URL은 실행마다 바뀝니다 (*.trycloudflare.com, 인증 없음).
   - tunnel은 pnpm dev에는 영향 없습니다 (AIT_TUNNEL=1 일 때만 켜짐).
   - 환경 2에서 실 SDK 호출(call_sdk/evaluate)은 불가합니다 (mock SDK).
-    실 토스 WebView fidelity가 필요하면 환경 3: /ait:deploy 후 /ait:debug.
+    실 토스 WebView fidelity가 필요하면 환경 3: /ait:debug (§5-B가 candidate 빌드·등록·업로드까지 처리).
   - 환경 3겹 설계: umbrella CLAUDE.md §1.1 + meta/three-environments-fidelity.md
 ```
 
@@ -349,7 +349,8 @@ setup-phone-preview 완료
 - ❌ Next.js / Rspack / Webpack 프로젝트 — Vite 전용. 다른 빌드 도구는 cloudflared CLI 직접 사용.
 - ❌ 실제 tunnel URL 확인·연결 테스트 — `pnpm dev:phone` 직접 실행 후 확인.
 - ❌ launcher PWA 홈화면 추가 자동화 — OS gesture 필요, 수동.
-- ❌ 콘솔 인증·배포 — 별도 skill (`/ait:deploy`).
+- ❌ 콘솔 인증·등록·업로드 — console MCP 도구(`miniapp_create`/`bundle_upload`/
+  `bundle_upload_complete`)의 역할, `/ait:debug` §5-B가 필요 시 호출한다.
 - ❌ `pnpm-workspace.yaml`의 `allowBuilds` 외 다른 pnpm 설정 변경.
 - ❌ cloudflare 계정 설정 / 유료 tunnel — quick tunnel만 (인증·계정 불필요).
 
@@ -369,8 +370,9 @@ setup-phone-preview 완료
 
 ## 참고
 
-- 커뮤니티 docs — 실기기 PWA 미리보기(환경 2)와 dev 환경 fidelity 사다리: https://docs.aitc.dev/guides/dev-environment
-- 짝 skill: `inject-devtools` (`@ait-co/devtools` 신규 설치 + vite.config 기본 설정 — `setup-phone-preview`보다 먼저 실행), `inject-polyfill` (polyfill 병행 사용 시), `debug` (이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅), `deploy` (tunnel 검증 후 앱인토스 배포).
+- 실기기 PWA 미리보기(환경 2)와 dev 환경 fidelity 사다리 등 주제별 가이드는
+  docs MCP(`searchDocumentation`/`getPage`)로 조회한다.
+- 짝 skill: `inject-devtools` (`@ait-co/devtools` 신규 설치 + vite.config 기본 설정 — `setup-phone-preview`보다 먼저 실행), `inject-polyfill` (polyfill 병행 사용 시), `debug` (이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅, §5-B가 환경 3 candidate 등록·업로드까지 처리).
 - devtools tunnel 구현 (PR #131): https://github.com/apps-in-toss-community/devtools/pull/131
 - sdk-example wiring 사례 (PR #59): https://github.com/apps-in-toss-community/sdk-example/pull/59
 - devtools README "Run on a real phone" 섹션: https://github.com/apps-in-toss-community/devtools

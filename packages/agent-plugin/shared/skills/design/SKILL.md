@@ -4,8 +4,9 @@ description: |
   Bridge a Figma design into a mini-app — reads it via a Figma MCP if
   configured (else manual walkthrough), checks Apps in Toss UX constraints
   (safe-area, swipe-back, PageHeader), and produces registration image
-  assets at `/ait:register`'s exact specs (logo, thumbnail, screenshots).
-  Never registers/deploys. Triggered by `/ait:design [figma-url]`.
+  assets at the console MCP `miniapp_create` tool's exact specs (logo,
+  thumbnail, screenshots). Never registers/uploads. Triggered by
+  `/ait:design [figma-url]`.
 argument-hint: '[figma-url]'
 ---
 
@@ -22,19 +23,19 @@ argument-hint: '[figma-url]'
    시스템(TDS)을 모사·의존하도록 권하지 않는다 — 디자인 자유도를 묶고, 모델이
    실제 토큰 값을 알지 못한 채 "TDS 호환"을 추측하게 만들기 때문이다. 미니앱은
    자체 토큰으로 일관되게 디자인하면 충분하다.
-2. **등록 이미지 자산을 정확한 규격으로 생성** — `/ait:register`가 소비하는
-   `./assets/`의 PNG들(logo·thumbnail·세로 스크린샷 등)을 register가 검증하는
-   것과 **동일한 규격**으로 만든다.
+2. **등록 이미지 자산을 정확한 규격으로 생성** — 콘솔 등록(console MCP
+   `miniapp_create`)이 소비하는 `./assets/`의 PNG들(logo·thumbnail·세로
+   스크린샷 등)을 등록이 검증하는 것과 **동일한 규격**으로 만든다.
 
-이 skill은 harness의 디자인 station(station 8)이다. register는 그동안 자산을
-"사용자가 직접 `./assets/`에 배치"하는 수동 hand-off로 안내해 왔는데, design이
-바로 그 산출을 맡는 앞 단계다 — design이 자산을 만들고, register가 그 자산을
+이 skill은 harness의 디자인 station(station 8)이다. 콘솔 등록은 그동안 자산을
+"사용자가 직접 `./assets/`에 배치"하는 수동 hand-off를 전제해 왔는데, design이
+바로 그 산출을 맡는 앞 단계다 — design이 자산을 만들고, 등록이 그 자산을
 소비한다.
 
 이 skill이 완료되면:
-- 프로젝트 루트 `./assets/`에 register 규격에 맞는 PNG 자산이 준비된다.
+- 프로젝트 루트 `./assets/`에 등록 규격에 맞는 PNG 자산이 준비된다.
 - 화면별 UX 제약 점검 결과(safe-area / swipe-back / PageHeader / 토큰 일관성)가 정리된다.
-- 곧바로 `/ait:register`로 넘어가 같은 자산으로 등록을 진행할 수 있다.
+- 곧바로 console MCP `miniapp_create`로 넘어가 같은 자산으로 등록을 진행할 수 있다.
 
 생성·수정하는 모든 파일과 안내에서 "공식(official)", "토스가 제공하는",
 "powered by Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다. 토스의 디자인
@@ -54,7 +55,8 @@ argument-hint: '[figma-url]'
   채우게 한다(절벽이 아니라 seam — register와 동일한 규격을 그대로 전달).
 
 > 이 skill은 콘솔 인증을 **요구하지 않는다**. 디자인 매핑·자산 생성은 로컬 작업이고,
-> 등록(`/ait:register`)이 콘솔 세션을 쓴다.
+> 등록(console MCP `miniapp_create`)이 콘솔 세션을 쓴다(1회 인가는 `/mcp`에서
+> `apps-in-toss-console` 브라우저 OAuth).
 
 ## 입력
 
@@ -63,8 +65,9 @@ argument-hint: '[figma-url]'
 - **자산 의도**: 어떤 화면이 앱 아이콘·대표 썸네일·스크린샷이 될지. Figma 프레임이
   있으면 그 프레임을 후보로 제시한다.
 
-이 skill은 register와 **동일한 자산 규격**을 산출 목표로 삼는다. 규격은 아래
-"생성 자산 규격" 표에 있고, register의 입력 표와 정확히 일치한다.
+이 skill은 콘솔 등록(console MCP `miniapp_create`)과 **동일한 자산 규격**을
+산출 목표로 삼는다. 규격은 아래 "생성 자산 규격" 표에 있고, 등록이 요구하는
+입력 규격과 정확히 일치한다.
 
 ## 실행 순서
 
@@ -127,8 +130,8 @@ argument-hint: '[figma-url]'
 mkdir -p assets
 ```
 
-아래 규격으로 PNG를 산출한다. 이 표는 `register` skill의 입력 규격과 **정확히
-일치**해야 한다 — register가 등록 시점에 로컬 + 서버 양쪽에서 같은 규격을
+아래 규격으로 PNG를 산출한다. 이 표는 console MCP `miniapp_create`의 입력
+규격과 **정확히 일치**해야 한다 — 등록이 로컬 + 서버 양쪽에서 같은 규격을
 강제하므로, 여기서 어긋나면 등록이 거부된다.
 
 | 파일 | 규격 | 개수 |
@@ -190,7 +193,7 @@ mkdir -p assets
   완료 안내에 다음 한 줄을 반드시 추가한다:
 
   ```
-  이 자산은 플레이스홀더입니다. /ait:register 전에 실제 디자인으로 교체하세요.
+  이 자산은 플레이스홀더입니다. 콘솔 등록 전에 실제 디자인으로 교체하세요.
   ```
 
   > 참고: `sips`는 기존 파일 리사이즈 전용이므로 소스 파일이 없는 합성에는
@@ -247,18 +250,23 @@ UX 매핑:
   - screenshot-1.png …   636×1048       (필수, 세로 ≥ 3장)
   - logo-dark.png        600×600        (선택, 생성했으면)
   - screenshot-h-1.png   1504×741       (선택, 가로, 생성했으면)
-  규격은 생성 직후 검증했고, 등록 시 로컬 + 서버에서 다시 강제됩니다.
+  규격은 생성 직후 검증했고, 등록 시(console MCP miniapp_create) 서버에서 다시 강제됩니다.
 
 다음 단계:
-  /ait:register          # 이 자산으로 미니앱을 콘솔에 등록
+  console MCP            # 이 자산으로 miniapp_create → bundle_upload →
+                          # bundle_upload_complete 로 등록·업로드
+                          # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
+
+실기기에서 화면 회귀를 점검하려면:
+  /ait:debug
 ```
 
 ## Out of scope (이 skill이 하지 않는 것)
 
 - ❌ MCP server 추가·제공 — 이 플러그인은 순수 skills 패키지(idle context 비용 0).
   Figma MCP는 **소비만** 한다(있으면 쓰고 없으면 수동 경로). 설치를 강요하지 않는다.
-- ❌ 등록·배포 — design은 그 **앞** 단계(자산 생산자). 등록은 `/ait:register`,
-  배포는 `/ait:deploy`.
+- ❌ 등록·업로드 — design은 그 **앞** 단계(자산 생산자). 등록·업로드는 console
+  MCP 도구(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`)의 역할.
 - ❌ 이미지 렌더링 백엔드 노릇 — 임의 디자인을 픽셀부터 창작하지 않는다. 가용
   로컬 도구로 규격에 맞춰 리사이즈/검증하거나, 소스가 없으면 단색 플레이스홀더를
   자동 생성한다(사용자가 이후 실제 디자인으로 교체). Figma export를 직접 실행하지
@@ -280,7 +288,9 @@ UX 매핑:
 
 ## 참고
 
-- 짝 skill: `register` (생성한 자산으로 콘솔 등록 — design 바로 뒤 단계).
 - 짝 skill: `new-miniapp` (greenfield 프로젝트 생성 — 디자인을 입힐 대상이 없을 때 먼저).
-- 커뮤니티 docs — 진입·종료·화면 컨텍스트, swipe-back/PageHeader: https://docs.aitc.dev/guides/navigation-flow
-- 커뮤니티 docs — 상단 네비게이션 바 악세서리 버튼(`partner.addAccessoryButton` 라이프사이클): https://docs.aitc.dev/guides/accessory-button-ux
+- 짝 skill: `debug` (자산 반영 후 실기기 화면 회귀 점검).
+- 생성한 자산은 콘솔 등록(console MCP `miniapp_create`)이 바로 소비한다.
+- 진입·종료·화면 컨텍스트(swipe-back/PageHeader), 상단 네비게이션 바
+  악세서리 버튼(`partner.addAccessoryButton`) 등 주제별 가이드는 docs MCP
+  (`searchDocumentation`/`getPage`)로 조회한다.

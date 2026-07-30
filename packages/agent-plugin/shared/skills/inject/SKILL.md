@@ -98,7 +98,7 @@ API로 자동 변환한다(Grep+Edit). Tier-1 외 API(IAP·Auth·Payments)는 �
 다음 단계:
   pnpm dev              # 표준 API 경로가 동작하는지 브라우저에서 확인
   /ait:inject-devtools  # (권장) devtools와 함께 쓰면 브라우저에서도 mock SDK 경유 확인
-  /ait:setup-bundle     # 배포 준비가 되면 .ait 번들 환경 구성
+  ait build             # 배포 준비가 되면 .ait 번들 생성 → console MCP로 등록·업로드
 ```
 
 **debug-console facet** 완료 후:
@@ -116,8 +116,10 @@ API로 자동 변환한다(Grep+Edit). Tier-1 외 API(IAP·Auth·Payments)는 �
 ## Out of scope (이 skill이 하지 않는 것)
 
 - ❌ 새 프로젝트 생성 (greenfield) — `/ait:new` (`new-miniapp` skill).
-- ❌ 콘솔 인증·배포 — `/ait:deploy` (`deploy` skill).
-- ❌ `.ait` 번들 빌드 환경 설정 — `/ait:setup-bundle`.
+- ❌ 콘솔 인증·등록·업로드 — console MCP 도구(`miniapp_create`/`bundle_upload`/
+  `bundle_upload_complete`)의 역할.
+- ❌ 번들 설정(`granite.config.ts`) 최초 생성 — 정본 경로(create-ait-app)는
+  `/ait:new`에 기본 포함, `--local` 폴백만 `new-miniapp`의 L-5 절차로 추가.
 - ❌ (devtools) panel 마운트 E2E 검증 — 사용자가 직접 `pnpm dev`로 확인.
 - ❌ (devtools) Rollup/esbuild 라이브러리 빌드에 mock 주입 — 앱(미니앱) 전용.
 - ❌ (polyfill) Tier-1 외 API 자동 변환 / `@apps-in-toss/web-framework` 제거.
@@ -127,11 +129,12 @@ API로 자동 변환한다(Grep+Edit). Tier-1 외 API(IAP·Auth·Payments)는 �
 
 ## 참고
 
-- 커뮤니티 docs — 표준 Web API → SDK 라우팅 shim과 dev 환경 셋업(브라우저 mock·실기기 미리보기): https://docs.aitc.dev/guides/dev-environment
+- 표준 Web API → SDK 라우팅 shim과 dev 환경 셋업(브라우저 mock·실기기 미리보기)
+  등 주제별 가이드는 docs MCP(`searchDocumentation`/`getPage`)로 조회한다.
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`
 - polyfill facet 상세: `<이 skill의 base directory>/references/polyfill.md`
 - debug-console facet 상세: `<이 skill의 base directory>/references/debug-console.md`
-- 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 panel·CDP relay 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 on-device 디버깅), `setup-phone-preview` (실기기 WebKit 미리보기 병행), `deploy` (설정 완료 후 콘솔 배포).
+- 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 panel·CDP relay 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 on-device 디버깅), `setup-phone-preview` (실기기 WebKit 미리보기 병행). 설정 완료 후 콘솔 등록·업로드는 console MCP 도구가 담당한다.
 - `@ait-co/devtools`(mock+panel+unplugin, 브라우저 dev 전용): https://github.com/apps-in-toss-community/devtools · live demo: https://devtools.aitc.dev/
 - `@ait-co/polyfill`: https://github.com/apps-in-toss-community/polyfill · 통합 가이드: [`polyfill/INTEGRATION.md`](https://github.com/apps-in-toss-community/polyfill/blob/main/INTEGRATION.md)
 - `@ait-co/debug-console`(on-device attach + eruda) · `@ait-co/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/apps-in-toss-community/debugger

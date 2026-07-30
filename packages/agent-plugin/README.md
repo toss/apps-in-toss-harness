@@ -6,17 +6,20 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 
 ## 목표
 
-`@ait-co/devtools`, `sdk-example`, `@ait-co/polyfill`, 커뮤니티 docs를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
+`@ait-co/devtools`, `sdk-example`, `@ait-co/polyfill`, docs MCP, 콘솔 MCP를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
 
+- `/ait:welcome` — 설치 확인 + 첫 station(`/ait:new`) 안내
 - `/ait:new` — 새 미니앱 스캐폴딩
-- `/ait:docs <topic>` — 큐레이트된 SDK 문서를 세션에 로드
+- `/ait:plan` — SDK 도메인/권한/약관 기획 (스캐폴드 전 분석)
+- `/ait:design` — Figma 디자인 → 등록용 이미지 에셋
 - `/ait:inject-devtools` / `/ait:inject-polyfill` / `/ait:inject-debug-console` — 기존 프로젝트에 설정 주입
-- `/ait:status` / `/ait:logs` — console-cli 기반 상태 조회
-- `/ait:auth-setup` — oidc-bridge 연결 구성
-- `/ait:debug` — 브라우저 디버깅 안내 (devtools 패널 · `window.__ait` · 브라우저 DevTools). 폰 안 번들의 on-device CDP 디버깅은 진행 중
-- `/ait:deploy` — 미니앱 배포
+- `/ait:setup-phone-preview` — 실기기 미리보기 터널(Cloudflare quick-tunnel + launcher PWA)
+- `/ait:setup-debugger` — on-device 디버그 MCP 서버를 프로젝트 `.mcp.json`에 배선
+- `/ait:debug` — 라이브 상태 디버깅 안내 (브라우저 devtools 패널 · `window.__ait` · 실기기 on-device CDP relay)
 
-전체 skill 목록과 의존 repo는 [`CLAUDE.md`](./CLAUDE.md)의 "Skills" 표 참고.
+문서 조회는 docs MCP(`searchDocumentation`/`getPage`), 콘솔 등록·번들 업로드·상태 조회는 콘솔 MCP
+(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`/`miniapp_get_status`)를 씁니다 — 둘 다
+`/mcp`에서 1회 인가하면 됩니다. 전체 skill 목록과 의존 repo는 [`CLAUDE.md`](./CLAUDE.md)의 "Skills" 표 참고.
 
 ## 배포 구조
 
@@ -43,7 +46,7 @@ Claude Code에서 marketplace를 추가하고 플러그인을 설치합니다:
 /plugin install ait@aitc
 ```
 
-설치 후 `/ait:` 명령(`/ait:new`, `/ait:deploy` 등)을 사용할 수 있습니다. 플러그인 이름이 네임스페이스라 콜론 형태가 실제 명령이고, 공백 형태(`/ait new`)는 존재하지 않습니다.
+설치 후 `/ait:` 명령(`/ait:new`, `/ait:debug` 등)을 사용할 수 있습니다. 플러그인 이름이 네임스페이스라 콜론 형태가 실제 명령이고, 공백 형태(`/ait new`)는 존재하지 않습니다.
 
 Codex / Gemini CLI / Cursor / Windsurf는 Phase 2+ 예정입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
 

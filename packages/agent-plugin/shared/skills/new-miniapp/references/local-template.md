@@ -62,10 +62,46 @@ cd ./<package_name> && pnpm install
   가정합니다(`packageManager` 필드). 다른 매니저를 쓰려면 `--no-install`로
   만든 뒤 본인 환경에 맞게 변경하세요"로 안내하고 종료.
 
-## L-5. 다음 단계 안내 + dev 서버 기동
+## L-5. 번들 설정 추가 (배포 준비 시)
 
-이 템플릿에는 **번들 설정이 없다**(create-ait-app 템플릿과 다른 점) — 안내
-블록에 `/ait:setup-bundle`을 포함한다:
+이 템플릿에는 **번들 설정이 없다**(create-ait-app 템플릿과 다른 점) — 사용자가
+배포를 준비하는 시점에 아래를 추가한다:
+
+1. devDependency 추가:
+
+   ```bash
+   pnpm --dir ./<package_name> add -D @apps-in-toss/cli@^2.5.2
+   ```
+
+2. `./<package_name>/granite.config.ts` 생성:
+
+   ```ts
+   import { defineConfig } from '@apps-in-toss/web-framework/config';
+
+   export default defineConfig({
+     appName: '<appName>',
+     brand: {
+       displayName: '<displayName>',
+       primaryColor: '<primaryColor>',
+       icon: '<icon URL 또는 https://aitc.dev/apple-touch-icon.png>',
+     },
+     web: {
+       host: 'localhost',
+       port: <port>,
+       commands: {
+         dev: 'vite',
+         build: 'vite build',
+       },
+     },
+     permissions: [],
+     outdir: 'dist',
+   });
+   ```
+
+3. `package.json`에 `bundle:ait` 스크립트(`"ait build"`) 추가.
+4. `.gitignore`에 `.granite/`, `*.ait`가 없으면 추가.
+
+## L-6. 다음 단계 안내 + dev 서버 기동
 
 ```
 <app-name> 생성 완료 (./<package_name>/)
@@ -74,17 +110,13 @@ cd ./<package_name> && pnpm install
   cd <package_name>
   pnpm dev          # 브라우저에서 devtools panel과 함께 실행
 
-토스 로그인이 필요하면:
-  /ait:auth-setup   # oidc-bridge로 로그인 배선
-
 배포 준비가 되면:
-  /ait:setup-bundle  # .ait 번들 빌드 환경 추가 (granite.config.ts + bundle:ait 스크립트)
-  /ait:design        # 등록용 이미지 자산 생성
-  /ait:register      # 앱인토스 콘솔에 앱 등록
-  /ait:deploy-key    # Deploy Key 발급
-  /ait:deploy        # 번들 업로드
+  /ait:design       # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — 등록 전제)
+  (L-5로 번들 설정 추가) → ait build → console MCP(miniapp_create →
+  bundle_upload → bundle_upload_complete)로 등록·업로드
+  (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
 
-문서: https://docs.aitc.dev/guides/dev-environment
+문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
 `--no-install`이었으면 안내에 `pnpm install`을 한 줄 추가하고, dev 서버

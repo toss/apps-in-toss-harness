@@ -29,9 +29,16 @@ pnpm preview    # 로컬에서 빌드 결과 확인
 
 ## 배포
 
-이 프로젝트를 앱인토스 콘솔에 배포하려면
-[`@ait-co/console-cli`](https://github.com/apps-in-toss-community/console-cli)
-또는 `agent-plugin`의 `/ait:deploy` 명령을 사용하세요.
+번들 빌드 환경(`granite.config.ts` + `@apps-in-toss/cli`)이 아직 없다면 `agent-plugin`의
+`/ait:new` 또는 `new-miniapp` skill(L-5 절차)로 추가한 뒤:
+
+```bash
+ait build
+```
+
+로 `.ait` 번들을 만듭니다. 콘솔 등록·업로드는 `agent-plugin`을 설치한 에이전트 세션에서
+`/mcp`로 `apps-in-toss-console`을 1회 승인한 뒤 콘솔 MCP 도구(`miniapp_create` →
+`bundle_upload` → `bundle_upload_complete`)로 진행하세요.
 
 ## 다음 단계
 
@@ -39,7 +46,7 @@ pnpm preview    # 로컬에서 빌드 결과 확인
 - `@apps-in-toss/web-framework`에서 필요한 SDK API를 import해서 호출합니다.
   개발 중에는 devtools가 자동으로 mock으로 대체합니다.
 - 처음 배포 전에 콘솔에 워크스페이스/앱이 등록되어 있는지
-  `/ait:status`로 확인하세요.
+  콘솔 MCP 도구(`miniapp_get_status`)로 확인하세요.
 
 ## 참고
 
