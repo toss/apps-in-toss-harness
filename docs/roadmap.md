@@ -23,17 +23,17 @@ docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 공
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
 | 2 | dev | `pnpm dev` | devtools (2차 이관 대기, #2) | 구조 유지 — devtools는 opt-in 프로젝트 devDependency, `/ait:new`가 기본 배선. 패키지 스코프만 `@apps-in-toss/*`로 전환 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (2차 이관 대기, #2) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
-| 4 | auth | `/ait:auth-setup` (재정의 대상) | 공식 로그인 경로 (#5) | oidc-bridge/-cloud 제거 — `appLogin` + 공식 백엔드 검증 경로로 station 자체를 재정의. 실체 확정 전까지 이 station의 AC는 잠정 |
-| 5 | register+ship | `/ait:register` → `/ait:deploy-key` → `/ait:deploy` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환. 과도기에는 aitcc 경로 유지 |
-| 6 | operate | `/ait:status` · `/ait:logs` | console MCP GW (#3) + debugger relay | station 5와 같은 전환. logs의 on-device 관측은 debugger relay(#2)가 담당 |
+| 4 | auth | (재정의 대상) | 공식 로그인 경로 (#5) | oidc-bridge/-cloud 제거 — `appLogin` + 공식 백엔드 검증 경로로 station 자체를 재정의. 실체 확정 전까지 이 station의 AC는 잠정 |
+| 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
+| 6 | operate | console MCP `miniapp_get_status`·`bundle_list` | console MCP GW (#3) + debugger relay | station 5와 같은 전환. logs의 on-device 관측은 debugger relay(#2)가 담당 |
 | 7 | plan | `/ait:plan` | agent-plugin | 유지 |
 | 8 | design | `/ait:design` | agent-plugin (+ Figma MCP) | 유지 |
-| — | docs (cross-cutting) | `/ait:docs <topic>` → docs MCP | GitBook published-docs MCP (#4) | 커뮤니티 docs 사이트 deep-link에서 GitBook MCP 조회로 전환. skill들의 말미 deep-link 규칙도 함께 재편 |
+| — | docs (cross-cutting) | docs MCP `searchDocumentation`·`getPage` | GitBook published-docs MCP (#4) | 커뮤니티 docs 사이트 deep-link에서 GitBook MCP 조회로 전환 — `/ait:docs` skill 자체도 트리밍으로 제거되고 각 skill이 docs MCP를 직접 호출한다. skill들의 말미 deep-link 규칙도 함께 재편 |
 
 **표기 규약**: 이 문서의 `/ait:<verb>` 표기는 실제 설치 표면이다 — skill이
 `ait:<verb>` 키로 직접 노출·호출되고, 같은 verb의 command stub은 `ait-` 접두
 파일명(`ait:ait-<verb>`, 문서화하지 않는 별칭)으로 그 키를 비켜서 있다.
-facet 명령(`new`·`logs`·`deploy-key`·`inject-*`)은 stub 자체가 bare verb다.
+facet 명령(`new`·`inject-*`)은 stub 자체가 bare verb다.
 이 명령 표면 계약은 agent-plugin 검증기(`A1/cmd-name-shadows-skill`·A8)가
 commit 시점에 강제한다.
 
