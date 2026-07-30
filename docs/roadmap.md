@@ -40,7 +40,17 @@ commit 시점에 강제한다.
 MCP 배치 원칙(#1에서 확정): **manifest 기본 포함은 remote HTTP 2종(docs MCP ·
 console MCP)뿐이고, endpoint가 실재하기 전에는 placeholder로도 넣지 않는다.**
 로컬 프로세스가 필요한 debugger MCP는 opt-in(프로젝트 `.mcp.json`)이며, devtools는
-MCP가 아니라 프로젝트 devDependency다.
+MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`로 제외 가능).
+
+**2026-07-30 두 endpoint의 실재가 확인되어 manifest에 기본 포함됐다** (서버 키는
+공식 문서 표기와 동일):
+
+- docs MCP: `https://developers-apps-in-toss.toss.im/~gitbook/mcp` — 무인증,
+  tools: searchDocumentation·getPage·askQuestion·sendFeedback.
+- console MCP: `https://mcp.toss.im/adapters/apps-in-toss-console/mcp` — #3의
+  MCP Gateway. OAuth protected resource(RFC 9728)라 설치 후 `/mcp`에서
+  `apps-in-toss-console` 인증 1회 필요. 공식 문서 기준 워크스페이스·미니앱·검수·
+  번들·인앱 결제·인앱 광고 조작을 노출한다.
 
 ## 2. Station별 acceptance criteria
 
@@ -54,11 +64,11 @@ MCP가 아니라 프로젝트 devDependency다.
 | 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
 | 4 auth | (재정의 후 확정) 공식 로그인 경로 문서 + 레퍼런스 배선 1회 실증 | **잠정** — #5 재정의 대기 |
-| 5 ship | 빈 디렉토리 → 등록 → 배포가 에이전트 안에서 완주 — 종착 인터페이스는 console MCP GW, 과도기는 aitcc | 과도기 충족(aitcc) — MCP GW 전환은 #3 |
+| 5 ship | 빈 디렉토리 → 등록 → 배포가 에이전트 안에서 완주 — 종착 인터페이스는 console MCP GW, 과도기는 aitcc | 과도기 충족(aitcc) — **MCP GW endpoint 실재·manifest 포함 완료**, skill의 aitcc→MCP tool 전환은 #3 잔여 |
 | 6 operate | 배포 후 상태·로그 조회가 에이전트 안에서 동작 | **상태 조회만** 과도기 충족(aitcc) — 로그 조회는 콘솔이 런타임 로그 API를 공개하지 않아 gap(현행 skill은 대안 안내만). 콘솔 측은 MCP GW(#3), on-device 관측은 debugger relay(#2)에서 해소 |
 | 7 plan | 아이디어 발화 → 계획 산출 + scaffold seam 인쇄 | 충족 |
 | 8 design | 등록 규격 이미지 자산 산출 + register seam 인쇄 | 충족 |
-| docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | #4 대기 |
+| docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | **기본 포함 완료** (GitBook MCP live 확인) — skill 말미 deep-link 재편은 #4 잔여 |
 
 ## 3. 1.0 정의 (첫 GA)
 

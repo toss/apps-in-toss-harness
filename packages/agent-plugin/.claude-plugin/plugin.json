@@ -10,5 +10,15 @@
   "license": "BSD-3-Clause",
   "keywords": ["apps-in-toss", "toss", "mini-app", "claude-code", "community"],
   "skills": "./shared/skills/",
-  "commands": "./shared/commands/"
+  "commands": "./shared/commands/",
+  "mcpServers": {
+    "apps-in-toss-docs": {
+      "type": "http",
+      "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    },
+    "apps-in-toss-console": {
+      "type": "http",
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp"
+    }
+  }
 }

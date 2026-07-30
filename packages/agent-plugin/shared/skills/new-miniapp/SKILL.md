@@ -6,10 +6,11 @@ description: |
   `@ait-co/devtools` (mock SDK + panel) so `pnpm dev` runs in a plain
   browser immediately. Supports `--tds` and `--sample iap,iaa`
   passthrough. Falls back to the bundled react-vite template with
-  `--local` (offline). Greenfield only (see `inject-devtools` for
-  existing projects). Triggered by `/ait:new <app-name>
-  [--template <name>] [--tds] [--sample <ids>] [--local]`.
-argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local]'
+  `--local` (offline); `--no-devtools` skips the devtools wiring.
+  Greenfield only (see `inject-devtools` for existing projects).
+  Triggered by `/ait:new <app-name> [--template <name>] [--tds]
+  [--sample <ids>] [--local] [--no-devtools]`.
+argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]'
 ---
 
 # new-miniapp skill
@@ -63,6 +64,9 @@ Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
   템플릿을 복사한다. 오프라인/네트워크 제한 환경 폴백. 이 경로에서만
   `--no-install`을 지원한다 (create-ait-app 경로는 CLI가 install을 강제해
   생략 불가).
+- `--no-devtools` (선택): 후처리 B(devtools 배선)를 건너뛴다 — mock 없이
+  실기기/샌드박스 위주로 개발하려는 경우. 나중에 필요해지면
+  `/ait:inject-devtools`로 언제든 배선할 수 있다.
 
 호출 예:
 
@@ -71,6 +75,7 @@ Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
 /ait:new "내 미니앱" --tds
 /ait:new my-shop --sample iap
 /ait:new my-app --local --no-install
+/ait:new my-app --no-devtools
 ```
 
 ## 의존
@@ -174,6 +179,10 @@ ls ./<package_name>/node_modules/.bin/granite
   보여준다.
 
 ### 4. 후처리 B — devtools 배선 (브라우저 dev 활성화)
+
+**`--no-devtools`가 지정됐으면 이 단계 전체를 건너뛴다** — devtools는 사용자
+의향에 따르는 선택 요소다. 건너뛴 경우 Step 7 완료 안내에서 `pnpm dev` 줄의
+설명을 조정하고 `/ait:inject-devtools` seam을 알린다.
 
 `inject` skill의 devtools facet과 같은 패턴을 이 자리에서 수행한다 (idempotent —
 이미 배선돼 있으면 skip). 상세 패치 패턴이 필요하면 **Read <이 skill의 base
@@ -294,6 +303,11 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 
 문서: https://docs.aitc.dev/guides/dev-environment
 ```
+
+`--no-devtools`로 만들었으면 완료 블록에서 `pnpm dev` 줄의 주석을
+`# 브라우저 실행 (devtools 미배선 — SDK 호출은 실기기/샌드박스 필요)`로 바꾸고,
+그 아래에 `나중에 브라우저 mock 개발이 필요하면: /ait:inject-devtools` 한 줄을
+덧붙인다.
 
 #### dev 서버 자동 기동
 
