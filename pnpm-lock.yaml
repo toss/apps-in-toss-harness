@@ -390,14 +390,14 @@ packages:
         optional: true
 
   '@apps-in-toss/ait-format-proto@1.0.0':
-    resolution: {integrity: sha512-N/4XKp5odd0VkqRAfpCgahYyA6GnkRN+r8caGJ6Ov/nOynNmB1e6Cia4iiz97pUv9bry4wXPhWJLY1dRAFbrnA==}
+    resolution: {integrity: sha512-4255jhwHd2NGqckUd7jTbaYE+lajs2v2HbgWqOk7/XRUmxu3HmagEu6qPgbdkW1z04xdcgno8P/h6Gc0+L9o0A==}
 
   '@apps-in-toss/ait-format@1.0.0':
-    resolution: {integrity: sha512-hb6Ahshyqcqdhv4mRDODN7z2SgZ0BGADdaTWaW7ET5HUSfHfNsmT1txp41e1k+yxYU96EzkmfRYjYla6fsDEJg==}
+    resolution: {integrity: sha512-1no0CXOhPEeSCrGduT37KMmCqA6irhowXa0S7AaPHb4RQSHGioR3wvvD7HHBCaUriMYs0EvtqRJfOgYd0ycKlQ==}
     engines: {node: '>=24'}
 
   '@apps-in-toss/analytics@2.10.7':
-    resolution: {integrity: sha512-0BOm7NjNIT4cXN0G+bYXbZi9e986K6Gkml39RX40YZuiXymCpGt11eRV+LbIs0Df4vtyGyBOiDK8HEXx9HR/0Q==}
+    resolution: {integrity: sha512-rHY77khvcS/+Xv4bS/tVVwqSM4HJ/LKj4QBdGIjQa+NkTX8QO7O1o0Rs0AfKa8Lsp5LsU9uujC8hMIyggZkkKQ==}
     peerDependencies:
       '@granite-js/native': '*'
       '@granite-js/react-native': '*'
@@ -417,19 +417,19 @@ packages:
       react-native: '*'
 
   '@apps-in-toss/bridge-core@2.10.7':
-    resolution: {integrity: sha512-GnRWktdVMT9hhPa5jKY+bPQSkJQfAitKMK+FCOZ5AaQr996PgQFg7DjwL53/yC1XV5872udpadMvgeO5ApR9/g==}
+    resolution: {integrity: sha512-c6H7EZ8Ux4LtaPrm/EkNTWRVjegkbRiuQZIQsknOuh+h0k7vlzB10armjbG5DYTeAn+geChi5qEZCGZ6BZD9sg==}
 
   '@apps-in-toss/bridge-core@2.10.8':
     resolution: {integrity: sha512-mZPLdxMo2eEG3NGRwrjZwzXwqms20UJxdi/6d7Rfvjw2GBvfdBvZbupVCp9kxROYYxfXsbCI2vmuCgZDG8/XAQ==}
 
   '@apps-in-toss/cli@2.10.7':
-    resolution: {integrity: sha512-IrJk+L9nJd8NZtkVP3xEs5ns6mDaGbiNOuAZ4uv9hKRMFa1gZQcon9o40Lu/yJJ9Eb/DkaUa1/MsTlrIc6qKfg==}
+    resolution: {integrity: sha512-+iF1Mc7l7w2yQODCEde6VCegynU9Py+U9uCqsFBTaRrGxsSl/tzpQR2jswgApY68dyAcSymxSm3TZ+5CVqsTBA==}
 
   '@apps-in-toss/cli@2.10.8':
     resolution: {integrity: sha512-IUOUjixsL+pvGiMC6VPycAoJ/pKwymHLwowjFfoznY03EyYocrbou2h4ND2Foh3g9xtjSPAKRnfFWj+cy3CJ5g==}
 
   '@apps-in-toss/framework@2.10.7':
-    resolution: {integrity: sha512-kyGbJAZip7kkPLvcKzzCl2JAXwvF21ufzda+2RMI2DpIlQdpxorv61/fvfo2GKT4qCxuFdN6MvDAxALon3fuCQ==}
+    resolution: {integrity: sha512-Jke0MHUdqYAtVkZaHeiSAfvYEq3kMFqB5BguI/PWbRVN9dZhgSclgsSx7GhFzF+BNAcaagHEv+HsLOi/PgDZ9Q==}
     hasBin: true
     peerDependencies:
       '@granite-js/native': '*'
@@ -453,7 +453,7 @@ packages:
       react-native: '*'
 
   '@apps-in-toss/native-modules@2.10.7':
-    resolution: {integrity: sha512-8E0JzaN81gUzC3dBMMmaOZpoKAMOXa+TpO7DOYIQ4FzOAlKhiXa5KXaVk66MI1wtS0sbQKyl7tzn9jW5SQO1ig==}
+    resolution: {integrity: sha512-RjH2AkPUbM/FDFI+Faa3rHo2NixFqZVbOLgv+ijCPob2cLY9kFUpErLWagVeupwQDI9Yz9WkcI8jiy629wlxQw==}
     peerDependencies:
       '@granite-js/native': '*'
       '@granite-js/react-native': '*'
@@ -469,19 +469,19 @@ packages:
       react-native: '*'
 
   '@apps-in-toss/plugin-compat@2.10.7':
-    resolution: {integrity: sha512-z1ky2emlBXCW4bMDaFkf0T9lVyBKU5IkIS2JgLFJXKuY+UHythkSTp3p/fPFj++6dWXCmjI9nxoT2F1gEX7gdw==}
+    resolution: {integrity: sha512-XDEux+hLXdiJmqX/szd+021Ve1THqhiSlc6yUW/sk4SujM9GGuKBK+neQ+YeiTeBXgl5Rvz+vv1EXwZMrjltQA==}
 
   '@apps-in-toss/plugin-compat@2.10.8':
     resolution: {integrity: sha512-np+yJn7HhNSlqHJ8VjbTyM3D6o+fSsF4f9QV53tK+NgxxtVwKwuC1WQ0tXr9wBQyC/3GxlmIJTfBKl7fI06nGg==}
 
   '@apps-in-toss/plugins@2.10.7':
-    resolution: {integrity: sha512-o1iyEpa+oW8zt1wQY5rva9DhRoxnapkTL2XOuLe8Y6iIDjkN1Yqg8NrEHaEwZAeq0ZaBLWvV5jIN02dXC05wCw==}
+    resolution: {integrity: sha512-hrld+yTcDNDZP63aUZhGnyd4ILkbCXDVLVhg7C/hwM8mZRLJ89gKoGBVE1Jb5z8bBvPGfVj5uiNzbAm7hqVJZA==}
 
   '@apps-in-toss/plugins@2.10.8':
     resolution: {integrity: sha512-bbanH9U8hrMNVzca1awdQOjr0RG6Ql/8UgnqDw9mltDyRHI9FzPcjZwqrkKZlkz5JCTNb1hTR9pqxqpTrZohyA==}
 
   '@apps-in-toss/types@2.10.7':
-    resolution: {integrity: sha512-IYEQDokx886/Gz0BNz+c9c82FbxfM1onbZLB0x4fkUqQWmV2NIIH322dub22kUqyyD6zHNF+sdZgpFFWxBWrzw==}
+    resolution: {integrity: sha512-NhOyuEXdkPvHeIxAKEVwSBLXtNmgI2OII/5oSfgQZ9RgVhh7EWxZgRLBjgXVKcyXdwPsYFe/rqbiZdNaZpI+IQ==}
 
   '@apps-in-toss/types@2.10.8':
     resolution: {integrity: sha512-TLpKTXqDwDPBQH4qDX8Yj8OCL0aPZCxNMcF98JGnjObx33nvzrrQA22Xfbho8tFVsZhlLvji4k0RtvECyfHjsg==}
@@ -490,7 +490,7 @@ packages:
     resolution: {integrity: sha512-a4Ea37kKeq/QkOWELgoUGHrTbrFSrGVkfpqGQqBO5vjH+j6rSBH+LzYf9kzSTOO43QZIMZMUQelXlMe0pDjVww==}
 
   '@apps-in-toss/web-analytics@2.10.7':
-    resolution: {integrity: sha512-Rxf30DwHWvyNLdRStCxByVoBXL67QKHQ/moZPeufCM58dQAyxSZLHaKgxGQX3zpkge6zl1xlcn/P0H6TYq+ZUQ==}
+    resolution: {integrity: sha512-8UJwUOVqH2VmTEf7/FXXTFaUbICnTC/0mzj+lQNeYfoDKLAUsbEyE1Sdy6MAgL3QlutB3NAAS3VboWVrXDCJGw==}
     peerDependencies:
       '@apps-in-toss/web-bridge': '*'
 
@@ -500,19 +500,19 @@ packages:
       '@apps-in-toss/web-bridge': '*'
 
   '@apps-in-toss/web-bridge@2.10.7':
-    resolution: {integrity: sha512-oYwcWPR4dRyxrsxKD6dFAfNbjV9m9Sf4bkxTl1xV47363FyMtcnwBoVWJTaS5yyuaozTUZdc/UEmEtZRE50G9w==}
+    resolution: {integrity: sha512-Mq1yWlJ3WP1DdMgsyiEIg1wCBZo3EsVxTzD4IrTMk3sSNpwCIF2m+/6AUJ8j24U8+P0Bkj4XqErzs0y1khADag==}
 
   '@apps-in-toss/web-bridge@2.10.8':
     resolution: {integrity: sha512-P9AMSvBblL6YochydWfFdhP/OuOFTZFpIVt8wMpm7EUKJ60u+eQZTsiaXubrXWeL7SRDLrYXTz+MMmuTk5A7WQ==}
 
   '@apps-in-toss/web-config@2.10.7':
-    resolution: {integrity: sha512-p5Q09vMH0Cb5R3anUpkD1Mqwkzbr/Y4HKbpNEg0v0za8igWMT10M8I7r5Y8Xd0ltiRjH2E9KUwc+EzTohmAIBA==}
+    resolution: {integrity: sha512-POoiNICPy9dSKFaZYR7lhSjPIOGQYX6LGjPo94Jv52AKoptgpYUg9Lt4o837lHWxZqrDcO4vKpkx+j4xbmlu+w==}
 
   '@apps-in-toss/web-config@2.10.8':
     resolution: {integrity: sha512-jONapZ9TKRPbYMc30EGHIfR8iLl8BR7wbhJi5FOyZgEnOIdnVSuyF7wv5nPz1oQ6+XOElU5Uzl3Rq8MJ/HRM5g==}
 
   '@apps-in-toss/web-framework@2.10.7':
-    resolution: {integrity: sha512-jg0z8CUB7rrE4KoMGmNsJhdCvETzqaB7bb66Hl6czaniC79BpFActddqn5bknbi93B9D+48qTd7tHkp1KEs+yA==}
+    resolution: {integrity: sha512-kj8z+8TmNHRZij9mB5JidqCZLjQnNdsDNZpE+wRz+BEeRRY8K2ZlVmm9Gk8+Uq9Zcj42pznwE+UWf9fszQ874g==}
     hasBin: true
 
   '@apps-in-toss/web-framework@2.10.8':
@@ -524,7 +524,7 @@ packages:
     hasBin: true
 
   '@apps-in-toss/webview-bridge@3.0.0-beta.0c56009':
-    resolution: {integrity: sha512-8XmdEA91RB86GxUEbcNVNryJvUQST1fIdB8DrF1/mLELUd+iaGGq+k8p6jwAxlJOwBfzL+lHa5vZCcAGDSf+DQ==}
+    resolution: {integrity: sha512-v4L1yvKSFci06xMXjf2mWA2VNn3ORUpVLyGbj8ybVB4+GnBw08K9sgYBaaBUEjdmWLA1DncGtREZNpQbWWJqEA==}
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
