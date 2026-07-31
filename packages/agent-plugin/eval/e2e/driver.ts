@@ -77,6 +77,15 @@ const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
 ] as const;
 
 /**
+ * `query()`에 그대로 넘기는 정적 차단 목록 — canUseTool 게이트의 심층 방어선.
+ *
+ * 여기 적힌 `mcp__<serverKey>` prefix는 **실제로 등록되는 서버 키와 문자 단위로
+ * 일치해야** 한다. 한쪽이 개명되면 매치가 조용히 풀려 차단이 무력화되므로,
+ * `driver.test.ts`가 이 배열을 skill/manifest의 서버 키와 대조한다.
+ */
+export const STATIC_DISALLOWED_TOOLS = ['mcp__ait-devtools', 'mcp__apps-in-toss-console'];
+
+/**
  * Bash 명령 문자열이 콘솔/인증 변이 경로인지 판정한다 (순수 함수 — 단위 테스트 대상).
  * true 면 canUseTool 게이트가 거부하고 run 을 forbidden-dispatch 로 종료한다.
  */
@@ -263,7 +272,7 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
         // 심층 방어: in-app debug MCP 표면과 콘솔 MCP 표면 모두 정적으로도 금지
         // (build-only 경로에 불필요). 실제 결정적 차단은 위 canUseTool 의 Bash
         // 검사 + isConsoleMcpTool 검사가 담당한다 — 이 배열은 추가 방어선이다.
-        disallowedTools: ['mcp__ait-devtools', 'mcp__apps-in-toss-console'],
+        disallowedTools: STATIC_DISALLOWED_TOOLS,
       },
     });
 

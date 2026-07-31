@@ -15,8 +15,16 @@
  *     (apps-in-toss-docs, 읽기 전용)·ait-devtools·평범한 내장 도구는 통과해야 한다.
  */
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { exposesKey, isConsoleMcpTool, isForbiddenBashCommand } from './driver.ts';
+import {
+  exposesKey,
+  isConsoleMcpTool,
+  isForbiddenBashCommand,
+  STATIC_DISALLOWED_TOOLS,
+} from './driver.ts';
 import { hasUnsubstitutedToken } from './score.ts';
 
 describe('isForbiddenBashCommand', () => {
@@ -190,4 +198,95 @@ describe('hasUnsubstitutedToken', () => {
       expect(hasUnsubstitutedToken(src)).toBe(false);
     });
   }
+});
+
+// --- MCP 서버 키 결합 ---------------------------------------------------------
+//
+// `disallowedTools`는 `mcp__<serverKey>` 문자열 매칭이라, 차단 목록과 **실제로
+// 등록되는 서버 키**가 한 글자라도 어긋나면 게이트가 조용히 풀린다. 지금까지 이
+// 결합을 지키던 건 SKILL.md·driver.ts 양쪽의 "개명 금지" 주석뿐이었다 — 프로즈는
+// 리팩터링을 막지 못한다. 아래 테스트가 그 결합을 기계 검사로 바꾼다.
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pluginRoot = path.join(__dirname, '..', '..');
+
+/** `setup-debugger` skill 이 프로젝트 `.mcp.json` 에 merge 하라고 지시하는 서버 키. */
+function serverKeysFromSetupDebuggerSkill(): string[] {
+  const md = readFileSync(
+    path.join(pluginRoot, 'shared', 'skills', 'setup-debugger', 'SKILL.md'),
+    'utf8',
+  );
+  const keys: string[] = [];
+  for (const [, body] of md.matchAll(/```json\n([\s\S]*?)```/g)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      continue; // 발췌라 파싱 안 되는 블록은 건너뛴다.
+    }
+    const servers = (parsed as { mcpServers?: Record<string, unknown> })?.mcpServers;
+    if (servers) keys.push(...Object.keys(servers));
+  }
+  return keys;
+}
+
+/** plugin manifest 가 기본 포함하는 서버 키. */
+function serverKeysFromManifest(): string[] {
+  const manifest = JSON.parse(
+    readFileSync(path.join(pluginRoot, '.claude-plugin', 'plugin.json'), 'utf8'),
+  ) as { mcpServers?: Record<string, unknown> };
+  return Object.keys(manifest.mcpServers ?? {});
+}
+
+// 차단하지 않기로 **의도적으로** 정한 서버. 읽기 전용이고 콘솔 변이가 없다.
+// 여기 새 키를 넣는 건 "이 서버는 eval 런에서 자유롭게 써도 된다"는 명시적 결정이다.
+const ALLOWED_READONLY_SERVERS = ['apps-in-toss-docs'];
+
+describe('MCP 서버 키 ↔ disallowedTools 결합', () => {
+  it('skill 이 지시하는 서버 키(setup-debugger)를 실제로 찾을 수 있어야 한다', () => {
+    // 이 자체가 회귀 가드다 — SKILL.md 의 json 블록 구조가 바뀌어 키를 못 읽게 되면
+    // 아래 검사들이 공허하게 통과하므로, 먼저 추출이 살아 있는지 확인한다.
+    expect(serverKeysFromSetupDebuggerSkill()).toContain('ait-devtools');
+  });
+
+  it('차단 목록의 모든 항목이 실재하는 서버 키를 가리켜야 한다', () => {
+    const known = new Set([...serverKeysFromManifest(), ...serverKeysFromSetupDebuggerSkill()]);
+    for (const tool of STATIC_DISALLOWED_TOOLS) {
+      const key = tool.replace(/^mcp__/, '');
+      expect(
+        known.has(key),
+        `disallowedTools 의 \`${tool}\` 이 어떤 서버 키와도 안 맞는다 — ` +
+          `manifest 나 setup-debugger SKILL.md 에서 개명됐을 수 있다. ` +
+          `개명하면 차단이 조용히 풀린다.`,
+      ).toBe(true);
+    }
+  });
+
+  it('등록되는 모든 서버 키가 차단되거나 명시적으로 허용돼야 한다', () => {
+    const known = [...serverKeysFromManifest(), ...serverKeysFromSetupDebuggerSkill()];
+    for (const key of known) {
+      const classified =
+        STATIC_DISALLOWED_TOOLS.includes(`mcp__${key}`) || ALLOWED_READONLY_SERVERS.includes(key);
+      expect(
+        classified,
+        `서버 키 \`${key}\` 가 미분류다 — eval 런에서 차단할지(driver.ts ` +
+          `STATIC_DISALLOWED_TOOLS) 읽기 전용으로 허용할지(ALLOWED_READONLY_SERVERS) ` +
+          `정해라. 기본값을 두지 않는 건 새 MCP 서버가 조용히 열리는 걸 막기 위해서다.`,
+      ).toBe(true);
+    }
+  });
+
+  it('차단 대상 manifest 서버는 isConsoleMcpTool prefix 판정에도 걸려야 한다', () => {
+    // canUseTool 게이트는 정적 차단 목록이 뚫려도 이 prefix 판정으로 한 번 더 막는다.
+    // 두 층이 같은 키를 봐야 심층 방어가 성립한다.
+    const blockedManifestKeys = serverKeysFromManifest().filter((k) =>
+      STATIC_DISALLOWED_TOOLS.includes(`mcp__${k}`),
+    );
+    expect(blockedManifestKeys.length).toBeGreaterThan(0);
+    for (const key of blockedManifestKeys) {
+      expect(isConsoleMcpTool(`mcp__${key}__some_tool`), `prefix 판정이 \`${key}\` 를 놓친다`).toBe(
+        true,
+      );
+    }
+  });
 });
