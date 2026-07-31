@@ -130,8 +130,14 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 ### 2. scaffold — create-ait-app 비대화형 호출
 
 ```bash
-pnpm dlx create-ait-app@latest <package_name> --inline --pm pnpm --template <template> [--tds] [--sample iap,iaa]
+pnpm dlx create-ait-app@0.1.3 <package_name> --inline --pm pnpm --template <template> [--tds] [--sample iap,iaa]
 ```
+
+> `@latest`가 아니라 **`@0.1.3`으로 명시 핀**한다 — upstream main은 이미 0.2.0이고
+> `apps-in-toss.config.ts`·oxlint로 산출물 구조가 바뀌어 아래 후처리 단계들의
+> 전제(`granite.config.ts`·`brand.icon` 등)가 깨진다. `latest`가 0.2.x로
+> 승격되는 순간 이 skill이 조용히 깨지는 걸 막기 위한 핀이다. 0.2.x 대응은
+> harness#6 잔여 작업.
 
 호출 규칙 (create-ait-app v0.1.3 소스 실측 근거 — harness#6 gap 분석 §C):
 
@@ -281,8 +287,9 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 
 > upstream 0.2.0-rc.0에서는 이 결함이 구조적으로 해소됐다(비-TDS는 base가
 > create-vite 산출물이라 placeholder 자체가 없고, TDS 경로는 App.tsx를 무조건
-> 재작성). `create-ait-app@latest`가 0.2.x로 올라가면 이 단계는 no-op이 되므로
-> 그 시점에 제거를 검토한다.
+> 재작성). 호출은 지금 `@0.1.3`으로 핀돼 있으므로(Step 2) 이 단계는 당분간
+> no-op이 되지 않는다 — 핀을 0.2.x로 올리는 시점에 이 단계와 함께 후처리 A/C의
+> `granite.config.ts` 전제를 재검토한다(harness#6).
 
 ### 7. 다음 단계 안내 + dev 서버 기동
 
@@ -348,7 +355,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 - ❌ 기존 프로젝트에 devtools 주입 — `/ait:inject-devtools`
   (`inject` skill의 devtools facet).
 - ❌ 기존 프로젝트에 IAP/IAA 샘플 추가 — create-ait-app의 `add-sample`
-  서브커맨드가 brownfield를 지원한다 (`pnpm dlx create-ait-app@latest
+  서브커맨드가 brownfield를 지원한다 (`pnpm dlx create-ait-app@0.1.3
   add-sample iap`). 이 skill은 greenfield 전용.
 - ❌ Workspace 등록 / 멤버 초대 / billing — 콘솔 UI의 책임.
 - ❌ Git 초기화 — 사용자가 결정 (`.gitignore` 파일만 생성해 둔다).
