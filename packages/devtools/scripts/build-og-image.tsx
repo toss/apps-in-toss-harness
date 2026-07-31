@@ -1,7 +1,7 @@
 /**
  * build-og-image.tsx
  *
- * Generates the single static Open Graph PNG (1200x630) for the @ait-co/devtools
+ * Generates the single static Open Graph PNG (1200x630) for the @apps-in-toss/devtools
  * npm landing. Output: assets/og/image.png.
  *
  * Pipeline: JSX template (scripts/og/template.tsx) -> satori -> SVG -> sharp -> PNG.
@@ -31,10 +31,10 @@ const OUT_FILE = resolve(OUT_DIR, 'image.png');
 const FONTS_DIR = resolve(__dirname, 'og/fonts');
 
 const OG = {
-  eyebrow: 'Open Source Community',
-  title: '@ait-co/devtools',
+  eyebrow: 'Apps in Toss',
+  title: '@apps-in-toss/devtools',
   subtitle: 'mock SDK + DevTools panel for Apps in Toss mini-apps.',
-  footer: 'aitc.dev · npmjs.com/package/@ait-co/devtools',
+  footer: 'developers-apps-in-toss.toss.im · npmjs.com/package/@apps-in-toss/devtools',
 };
 
 async function loadFonts(): Promise<Parameters<typeof satori>[1]['fonts']> {

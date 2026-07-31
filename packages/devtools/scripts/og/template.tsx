@@ -1,9 +1,8 @@
 /**
- * Static OG image template (1200x630) for the @ait-co/devtools npm landing.
+ * Static OG image template (1200x630) for the @apps-in-toss/devtools npm landing.
  *
- * Mirrors the homepage OG design (apps-in-toss-community.github.io's
- * src/og/template.tsx) for brand consistency. devtools ships a single OG image,
- * so the props are flattened to constants by build-og-image.tsx at build time.
+ * devtools ships a single OG image, so the props are flattened to constants
+ * by build-og-image.tsx at build time.
  *
  * satori only supports a subset of CSS — flex layout, no grid. Keep
  * positioning explicit (every node with multiple children has display: 'flex').

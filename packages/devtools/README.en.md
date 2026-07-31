@@ -1,10 +1,10 @@
-# @ait-co/devtools
+# @apps-in-toss/devtools
 
 [한국어](./README.md) · **English**
 
-[![npm](https://img.shields.io/npm/v/@ait-co/devtools)](https://www.npmjs.com/package/@ait-co/devtools) [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@apps-in-toss/devtools)](https://www.npmjs.com/package/@apps-in-toss/devtools) [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
-![@ait-co/devtools — mock SDK + DevTools panel for Apps in Toss mini-apps](./assets/og/image.png)
+![@apps-in-toss/devtools — mock SDK + DevTools panel for Apps in Toss mini-apps](./assets/og/image.png)
 
 A mock library for the `@apps-in-toss/web-framework` SDK. Imports of `@apps-in-toss/webview-bridge` are intercepted by the unplugin too (only the high-level SDK functions are exposed — bridge primitives are not). (2.x packages `@apps-in-toss/web-bridge` and `@apps-in-toss/web-analytics` are supported for back-compat.)
 
@@ -15,8 +15,6 @@ Lets you develop and test Apps in Toss mini-apps in a **regular browser** — wi
 - **Device simulation** — iPhone/Galaxy presets + orientation toggle to simulate a mobile viewport in your desktop browser
 - **Floating DevTools Panel** — control SDK state in real time from the browser (12 tabs, mock state preset library included)
 - **All bundlers supported** — [unplugin](https://github.com/unjs/unplugin)-based Vite, Webpack, Rspack, esbuild, and Rollup integration
-
-Live demo: <https://devtools.aitc.dev/> (the `e2e/fixture/` from this repo deployed to GitHub Pages as a self-contained demo).
 
 ## 15-second quickstart — pick your environment
 
@@ -73,7 +71,7 @@ To enable on-device CDP debugging in environments 2 and 3, add **one line** to y
 
 ```ts
 // main.tsx (or the top of your mini-app entry)
-import '@ait-co/devtools/in-app/auto';
+import '@apps-in-toss/devtools/in-app/auto';
 ```
 
 What this single line does:
@@ -85,7 +83,7 @@ What this single line does:
 
 For environment 3 (intoss-private relay), the relay QR deep-link carries `?debug=1&relay=<wss>` query params, so this one line is all the wiring you need. Environment 2 (PWA, `tunnel: { cdp: true }`) works the same way.
 
-> For dog-food builds with TOTP authentication, inject `__DEBUG_TOTP_SECRET__` via your build define and use `@ait-co/devtools/in-app` directly with `evaluateDebugGate({ verifyTotpCode })` + `maybeAttach()`. `in-app/auto` does not inject a TOTP verifier, so Layer C3 is disabled.
+> For dog-food builds with TOTP authentication, inject `__DEBUG_TOTP_SECRET__` via your build define and use `@apps-in-toss/devtools/in-app` directly with `evaluateDebugGate({ verifyTotpCode })` + `maybeAttach()`. `in-app/auto` does not inject a TOTP verifier, so Layer C3 is disabled.
 
 ## Five common problems
 
@@ -99,15 +97,15 @@ No page has joined the relay yet. Re-enter via `start_attach` → QR scan on you
 
 **"Tunnel down" — no response or timeout**
 
-A cloudflared quick tunnel can drop after a few hours. Restart the `devtools-mcp` process to get a new tunnel URL, then scan the new QR. (Related: [#290](https://github.com/apps-in-toss-community/devtools/issues/290))
+A cloudflared quick tunnel can drop after a few hours. Restart the `devtools-mcp` process to get a new tunnel URL, then scan the new QR. (Related: devtools#290)
 
 **"Page crash" — list_pages shows a non-null crashDetectedAt**
 
-The page on the phone died (OOM, JS exception, or native bridge crash). Relaunch the app, then re-attach via `start_attach` → QR scan. (Related: [#265](https://github.com/apps-in-toss-community/devtools/issues/265))
+The page on the phone died (OOM, JS exception, or native bridge crash). Relaunch the app, then re-attach via `start_attach` → QR scan. (Related: devtools#265)
 
 **"SDK not available" — window.__sdkCall not injected**
 
-When `call_sdk` returns `ok: false, error: "window.__sdkCall is not available"`, the SDK bridge has not been installed. Check that `import '@ait-co/devtools/in-app/auto'` is present at the top of your mini-app entry — see the "On-device debugging in one line" section above. This error is the expected result in environment 2 (PWA). (Related: [#285](https://github.com/apps-in-toss-community/devtools/issues/285))
+When `call_sdk` returns `ok: false, error: "window.__sdkCall is not available"`, the SDK bridge has not been installed. Check that `import '@apps-in-toss/devtools/in-app/auto'` is present at the top of your mini-app entry — see the "On-device debugging in one line" section above. This error is the expected result in environment 2 (PWA). (Related: devtools#285)
 
 **"QR scanned but auth rejected" — TOTP code expired**
 
@@ -136,7 +134,7 @@ devtools runs two npm dist-tags off the same code at once. Pick the channel that
 - On the web-framework **3.0.0-beta** pre-release, install the `@beta` channel. It is a snapshot auto-published on every main push (`0.0.0-beta-<datetime>-<sha>`), so the versions are hard to pin — install with the `@beta` tag.
 - Both channels keep the web-framework peer `optional`, so MCP-only debugging users are never forced to pull the SDK.
 
-When 3.0 ships GA, the stable `latest` peer moves up to the 3.0 line and the beta channel is retired. Calling an API that devtools has not yet mocked will throw a runtime error — please [file an issue](https://github.com/apps-in-toss-community/devtools/issues) for missing APIs.
+When 3.0 ships GA, the stable `latest` peer moves up to the 3.0 line and the beta channel is retired. Calling an API that devtools has not yet mocked will throw a runtime error — please [file an issue](https://github.com/toss/apps-in-toss-harness/issues) for missing APIs.
 
 ### Debugging packages (environments 2 and 3)
 
@@ -150,17 +148,13 @@ pnpm add -D @ait-co/debugger @ait-co/debug-console
 
 | Package | Role | Can enter a bundle |
 |---|---|---|
-| [`@ait-co/debugger`](https://www.npmjs.com/package/@ait-co/debugger) | MCP daemon · real-device test runner · dev-bridge (environment 2 CDP relay + QR dashboard) | No — devDependency / `npx` only |
-| [`@ait-co/debug-console`](https://www.npmjs.com/package/@ait-co/debug-console) | On-device attach + in-app eruda console | Yes — the only one that enters a debug build |
+| [`@apps-in-toss/debugger`](https://www.npmjs.com/package/@apps-in-toss/debugger) | MCP daemon · real-device test runner · dev-bridge (environment 2 CDP relay + QR dashboard) | No — devDependency / `npx` only |
+| [`@apps-in-toss/debug-console`](https://www.npmjs.com/package/@apps-in-toss/debug-console) | On-device attach + in-app eruda console | Yes — the only one that enters a debug build |
 
 Both are **optional peers** of devtools.
 
-- Without `@ait-co/debugger`, `tunnel: { cdp: true }` skips the CDP wiring, degrades to the plain screen-preview tunnel, and prints the install hint once.
-- Without `@ait-co/debug-console`, the unplugin injects no in-app attach at all — the attach code cannot structurally enter your bundle, which is the technical boundary of the debug surface.
-
-## Reference consumer
-
-[`sdk-example`](https://github.com/apps-in-toss-community/sdk-example) is the reference consumer of devtools. It's a catalog app where every SDK API can be run interactively, and the web demo is live at <https://sdk-example.aitc.dev/>. When you add a new mock, confirming that it works on the sdk-example card is the first sanity check. That said, this repo's E2E suite runs against an **internal self-contained fixture (`e2e/fixture/`)** without cloning sdk-example — so a broken sdk-example won't affect devtools CI.
+- Without `@apps-in-toss/debugger`, `tunnel: { cdp: true }` skips the CDP wiring, degrades to the plain screen-preview tunnel, and prints the install hint once.
+- Without `@apps-in-toss/debug-console`, the unplugin injects no in-app attach at all — the attach code cannot structurally enter your bundle, which is the technical boundary of the debug surface.
 
 ## Bundler setup
 
@@ -168,7 +162,7 @@ Both are **optional peers** of devtools.
 
 ```ts
 // vite.config.ts (development only)
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default {
   plugins: [aitDevtools.vite()],
@@ -181,11 +175,11 @@ export default {
 
 ```js
 // webpack.config.js (ESM, recommended for development only)
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 config.plugins.push(aitDevtools.webpack());
 
 // webpack.config.js (CommonJS)
-const aitDevtools = require('@ait-co/devtools/unplugin');
+const aitDevtools = require('@apps-in-toss/devtools/unplugin');
 config.plugins.push(aitDevtools.webpack());
 ```
 
@@ -201,7 +195,7 @@ Turbopack does not support a plugin system, so use `resolveAlias` instead.
 module.exports = {
   turbo: {
     resolveAlias: {
-      '@apps-in-toss/web-framework': '@ait-co/devtools/mock',
+      '@apps-in-toss/web-framework': '@apps-in-toss/devtools/mock',
     },
   },
 };
@@ -215,7 +209,7 @@ module.exports = {
   experimental: {
     turbo: {
       resolveAlias: {
-        '@apps-in-toss/web-framework': '@ait-co/devtools/mock',
+        '@apps-in-toss/web-framework': '@apps-in-toss/devtools/mock',
       },
     },
   },
@@ -225,7 +219,7 @@ module.exports = {
 > **Panel injection**: Turbopack does not support unplugin, so the Panel is not auto-injected. Import it directly from your entry point:
 > ```ts
 > // app/layout.tsx or pages/_app.tsx
-> import '@ait-co/devtools/panel';
+> import '@apps-in-toss/devtools/panel';
 > ```
 
 ### Next.js (Webpack)
@@ -234,7 +228,7 @@ When using Webpack mode in Next.js (`next dev` without `--turbo`, or `next build
 
 ```js
 // next.config.js (Webpack mode)
-const aitDevtools = require('@ait-co/devtools/unplugin'); // CJS entrypoint provided
+const aitDevtools = require('@apps-in-toss/devtools/unplugin'); // CJS entrypoint provided
 
 module.exports = {
   webpack: (config, { dev }) => {
@@ -257,7 +251,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   resolve: {
     alias: {
-      '@apps-in-toss/web-framework': '@ait-co/devtools/mock',
+      '@apps-in-toss/web-framework': '@apps-in-toss/devtools/mock',
     },
   },
 });
@@ -268,7 +262,7 @@ export default defineConfig({
 module.exports = {
   resolve: {
     alias: {
-      '@apps-in-toss/web-framework': require.resolve('@ait-co/devtools/mock'),
+      '@apps-in-toss/web-framework': require.resolve('@apps-in-toss/devtools/mock'),
     },
   },
 };
@@ -276,7 +270,7 @@ module.exports = {
 
 > **Note**: Using manual aliases alone will not auto-inject the DevTools Panel. Add a direct import to your entry point:
 > ```ts
-> import '@ait-co/devtools/panel'; // add to entry point
+> import '@apps-in-toss/devtools/panel'; // add to entry point
 > ```
 
 ### Plugin options
@@ -314,7 +308,7 @@ You can also conditionally exclude the plugin from your bundler config entirely:
 ```ts
 // vite.config.ts
 import { defineConfig } from 'vite';
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default defineConfig(({ command }) => ({
   plugins: [
@@ -325,7 +319,7 @@ export default defineConfig(({ command }) => ({
 
 ```js
 // webpack.config.js (same applies to Rspack)
-const aitDevtools = require('@ait-co/devtools/unplugin');
+const aitDevtools = require('@apps-in-toss/devtools/unplugin');
 const plugins = [];
 if (process.env.NODE_ENV !== 'production') {
   plugins.push(aitDevtools.webpack());
@@ -351,7 +345,7 @@ Setup has three tiers:
 ```ts
 // vite.config.ts
 import { defineConfig } from 'vite';
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default defineConfig({
   plugins: [
@@ -376,7 +370,7 @@ export default defineConfig({
 }
 ```
 
-> Without this, things still work — `tunnel.ts` lazily calls `cloudflared.install()` on first start. You will just see an "Ignored build scripts" warning on every `pnpm install`, and the binary download is deferred to the first `pnpm dev`. See [`sdk-example#60`](https://github.com/apps-in-toss-community/sdk-example/pull/60).
+> Without this, things still work — `tunnel.ts` lazily calls `cloudflared.install()` on first start. You will just see an "Ignored build scripts" warning on every `pnpm install`, and the binary download is deferred to the first `pnpm dev`.
 
 (c) **(Optional) `dev:phone` script** — to avoid typing the env variable each time:
 
@@ -413,7 +407,7 @@ The launcher **only works when launched as an installed PWA from the home screen
 
 ### One-line setup
 
-The per-project steps above (vite.config patch + `onlyBuiltDependencies` + `dev:phone` script) are automated by a single [`agent-plugin`](https://github.com/apps-in-toss-community/agent-plugin) command, `/ait:setup-phone-preview`. Since this README serves as the spec for that automation, the manual steps stay documented here alongside it.
+The per-project steps above (vite.config patch + `onlyBuiltDependencies` + `dev:phone` script) are automated by a single `agent-plugin` command, `/ait:setup-phone-preview`. Since this README serves as the spec for that automation, the manual steps stay documented here alongside it.
 
 ## Device API mode system
 
@@ -496,7 +490,7 @@ Any state you've toggled together can be saved as a preset via the "Save current
 Presets are also exported from the package:
 
 ```ts
-import { applyPreset, builtInPresets, saveUserPreset } from '@ait-co/devtools';
+import { applyPreset, builtInPresets, saveUserPreset } from '@apps-in-toss/devtools';
 
 // Apply a built-in preset
 const offline = builtInPresets.find((p) => p.id === 'offline')!;
@@ -512,12 +506,12 @@ saveUserPreset('My QA scenario', {
 
 ### Panel mount / dispose
 
-Importing `@ait-co/devtools/panel` mounts the panel automatically when the DOM is ready. Mounting is idempotent — even if the same page imports it multiple times or calls `mount()` again, only one toggle button will be shown.
+Importing `@apps-in-toss/devtools/panel` mounts the panel automatically when the DOM is ready. Mounting is idempotent — even if the same page imports it multiple times or calls `mount()` again, only one toggle button will be shown.
 
 If you need to explicitly remove the panel in HMR or SPA routing scenarios, use `disposePanel()`:
 
 ```ts
-import { disposePanel, mount } from '@ait-co/devtools/panel';
+import { disposePanel, mount } from '@apps-in-toss/devtools/panel';
 
 disposePanel();  // Removes the toggle, panel, injected <style>, and all listeners.
                   // Safe to call before mounting or to call twice.
@@ -816,8 +810,8 @@ You can import the mock library directly in vitest/jest.
 
 ```ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { appLogin, Storage, getCurrentLocation, getNetworkStatus, openCamera, IAP } from '@ait-co/devtools/mock';
-import { aitState } from '@ait-co/devtools/mock';
+import { appLogin, Storage, getCurrentLocation, getNetworkStatus, openCamera, IAP } from '@apps-in-toss/devtools/mock';
+import { aitState } from '@apps-in-toss/devtools/mock';
 
 beforeEach(() => {
   aitState.reset(); // reset state before each test
@@ -895,7 +889,7 @@ Four things need to be in place:
 |---|---|
 | A relay TOTP secret | The runner requires this before it boots the relay — without it, it exits 1 before the QR ever appears. Booting `pnpm dev:phone:cdp` once (unplugin's `tunnel.cdp` option) auto-generates `.ait_relay` in the project root; otherwise set `AIT_DEBUG_TOTP_SECRET` yourself (`openssl rand -hex 32`). Which directory the runner looks for `.ait_relay` in is decided by `--project-root` (defaults to cwd) |
 | Dog-food bundle | `ait build && ait deploy --scheme-only` → the printed `intoss-private://…?_deploymentId=…` URL is your `--scheme-url` value |
-| One line in the mini-app entry | `import '@ait-co/devtools/in-app/auto'` — wires attach + the `window.__sdk` bridge ([section above](#on-device-debugging-in-one-line)) |
+| One line in the mini-app entry | `import '@apps-in-toss/devtools/in-app/auto'` — wires attach + the `window.__sdk` bridge ([section above](#on-device-debugging-in-one-line)) |
 | Test files | `*.ait.test.ts`. `describe`/`it`/`test`/`expect` are installed as globals by the runner (no import needed), and `@apps-in-toss/web-framework` imports are redirected to `window.__sdk` at bundle time |
 
 ### Scan the dashboard QR, not the raw scheme URL
@@ -930,7 +924,7 @@ Tests that need a human to tap through a native sheet — photo picker, permissi
 
 ## SDK update tracking
 
-devtools tracks [`@apps-in-toss/web-framework`](https://www.npmjs.com/package/@apps-in-toss/web-framework), and [`sdk-example`](https://github.com/apps-in-toss-community/sdk-example) tracks both the original SDK and devtools. When a new SDK version is released, the flow is: (1) devtools catches up on mock/type signatures → (2) sdk-example incorporates both new versions together. If a devtools-only PR breaks sdk-example, both are addressed together.
+devtools tracks [`@apps-in-toss/web-framework`](https://www.npmjs.com/package/@apps-in-toss/web-framework). When a new SDK version is released, devtools catches up on mock/type signatures.
 
 Three mechanisms keep the SDK changes safely tracked:
 
@@ -946,12 +940,12 @@ type _AppLogin = Assert<typeof Mock.appLogin, typeof Original.appLogin>;
 
 ### 2. Proxy tripwire (runtime blocking)
 
-`createMockProxy()` immediately throws an `Error` when an unimplemented API is accessed. This is intentional — to prevent "works in devtools but fails with the real SDK" production incidents caused by APIs that exist in the real SDK but haven't been mocked yet. Please [file an issue](https://github.com/apps-in-toss-community/devtools/issues) or add the mock yourself.
+`createMockProxy()` immediately throws an `Error` when an unimplemented API is accessed. This is intentional — to prevent "works in devtools but fails with the real SDK" production incidents caused by APIs that exist in the real SDK but haven't been mocked yet. Please [file an issue](https://github.com/toss/apps-in-toss-harness/issues) or add the mock yourself.
 
 ```
-[@ait-co/devtools] IAP.newMethod is not mocked. This API may exist in
+[@apps-in-toss/devtools] IAP.newMethod is not mocked. This API may exist in
 @apps-in-toss/web-framework, but devtools' mock does not cover it yet.
-Please file an issue: https://github.com/apps-in-toss-community/devtools/issues
+Please file an issue: https://github.com/toss/apps-in-toss-harness/issues
 ```
 
 ### 3. Weekly GitHub Actions CI
@@ -1014,18 +1008,18 @@ This hook is a developer convenience for catching lint issues before push. The a
 
 ## Troubleshooting
 
-### `[@ait-co/devtools] XXX.method is not mocked` error
+### `[@apps-in-toss/devtools] XXX.method is not mocked` error
 
-The SDK API you're calling has not been implemented in the mock yet. devtools throws on unimplemented API access to prevent "works fine" deployments. [File an issue](https://github.com/apps-in-toss-community/devtools/issues) or add the mock yourself and try again.
+The SDK API you're calling has not been implemented in the mock yet. devtools throws on unimplemented API access to prevent "works fine" deployments. [File an issue](https://github.com/toss/apps-in-toss-harness/issues) or add the mock yourself and try again.
 
 ### DevTools Panel not appearing
 
 - Check that you haven't set `panel: false` in your plugin options
 - If you're using manual alias setup, add a direct import to your entry point:
   ```ts
-  import '@ait-co/devtools/panel';
+  import '@apps-in-toss/devtools/panel';
   ```
-- The plugin auto-injects only into entry points whose filename is `main`, `index`, `entry`, or `app` (case-insensitive). If your filename doesn't match that pattern, add `import '@ait-co/devtools/panel'` manually.
+- The plugin auto-injects only into entry points whose filename is `main`, `index`, `entry`, or `app` (case-insensitive). If your filename doesn't match that pattern, add `import '@apps-in-toss/devtools/panel'` manually.
 
 ### Subpath imports are not mocked
 
@@ -1037,7 +1031,7 @@ Since Turbopack doesn't support unplugin, use `resolveAlias` in `next.config.js`
 
 ```ts
 // app/layout.tsx or pages/_app.tsx
-import '@ait-co/devtools/panel';
+import '@apps-in-toss/devtools/panel';
 ```
 
 ## MCP Server
@@ -1161,7 +1155,7 @@ Browser (aitState)
 
 ```ts
 // vite.config.ts
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default {
   plugins: [aitDevtools.vite({ mcp: true })],
@@ -1205,18 +1199,14 @@ Returns the full current mock state (permissions, location, auth, network, IAP, 
 
 | Import path | Purpose |
 |---|---|
-| `@ait-co/devtools` or `@ait-co/devtools/mock` | All mock exports (bundler alias target) |
-| `@ait-co/devtools/panel` | Floating DevTools Panel (auto-mounts on import) |
-| `@ait-co/devtools/unplugin` | Bundler plugin (.vite, .webpack, .rspack, .esbuild, .rollup) |
-| `@ait-co/devtools/mcp/server` | Dev-mode MCP stdio server function (Node.js) |
-| `@ait-co/devtools/mcp/cli` | `devtools-mcp` bin entry point (debug / dev mode, Node.js) |
-| `@ait-co/devtools/in-app` | In-app debug attach — runtime gate (layers B/C) + Chii target.js injection. The consumer wraps the import in `if (__DEBUG_BUILD__)` so it is DCE'd from release builds — dog-food builds only |
-| `@ait-co/devtools/in-app/auto` | Self-gating side-effect entry — a single `import '@ait-co/devtools/in-app/auto'` line wires attach + SDK bridge. Active only when `?debug=1` / `?relay=` are in the URL or it is a DEV build; stays dormant on normal production loads. See the [section above](#on-device-debugging-in-one-line) |
+| `@apps-in-toss/devtools` or `@apps-in-toss/devtools/mock` | All mock exports (bundler alias target) |
+| `@apps-in-toss/devtools/panel` | Floating DevTools Panel (auto-mounts on import) |
+| `@apps-in-toss/devtools/unplugin` | Bundler plugin (.vite, .webpack, .rspack, .esbuild, .rollup) |
+| `@apps-in-toss/devtools/mcp/server` | Dev-mode MCP stdio server function (Node.js) |
+| `@apps-in-toss/devtools/mcp/cli` | `devtools-mcp` bin entry point (debug / dev mode, Node.js) |
+| `@apps-in-toss/devtools/in-app` | In-app debug attach — runtime gate (layers B/C) + Chii target.js injection. The consumer wraps the import in `if (__DEBUG_BUILD__)` so it is DCE'd from release builds — dog-food builds only |
+| `@apps-in-toss/devtools/in-app/auto` | Self-gating side-effect entry — a single `import '@apps-in-toss/devtools/in-app/auto'` line wires attach + SDK bridge. Active only when `?debug=1` / `?relay=` are in the URL or it is a DEV build; stays dormant on normal production loads. See the [section above](#on-device-debugging-in-one-line) |
 
 ## License
 
 BSD 3-Clause
-
----
-
-Community open-source project.

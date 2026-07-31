@@ -6,7 +6,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 
 ## 목표
 
-`@ait-co/devtools`, `sdk-example`, docs MCP, 콘솔 MCP를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
+`@apps-in-toss/devtools`, docs MCP, 콘솔 MCP를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
 
 - `/ait:welcome` — 설치 확인 + 첫 station(`/ait:new`) 안내
 - `/ait:new` — 새 미니앱 스캐폴딩

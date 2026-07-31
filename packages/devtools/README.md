@@ -1,10 +1,10 @@
-# @ait-co/devtools
+# @apps-in-toss/devtools
 
 **한국어** · [English](./README.en.md)
 
-[![npm](https://img.shields.io/npm/v/@ait-co/devtools)](https://www.npmjs.com/package/@ait-co/devtools) [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@apps-in-toss/devtools)](https://www.npmjs.com/package/@apps-in-toss/devtools) [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
-![@ait-co/devtools — mock SDK + DevTools panel for Apps in Toss mini-apps](./assets/og/image.png)
+![@apps-in-toss/devtools — mock SDK + DevTools panel for Apps in Toss mini-apps](./assets/og/image.png)
 
 `@apps-in-toss/web-framework` SDK의 mock 라이브러리입니다. `@apps-in-toss/webview-bridge` import도 unplugin이 함께 인터셉트합니다(high-level SDK 함수만 노출 — bridge primitive는 미노출). (2.x의 `@apps-in-toss/web-bridge`, `@apps-in-toss/web-analytics`도 back-compat으로 지원.)
 
@@ -15,8 +15,6 @@
 - **Device simulation** — iPhone/Galaxy 프리셋 + orientation 토글로 데스크탑 브라우저에서 모바일 뷰포트 시뮬레이션
 - **Floating DevTools Panel** — 브라우저에서 SDK 상태를 실시간으로 제어 (12개 탭, mock state preset library 포함)
 - **모든 번들러 지원** — [unplugin](https://github.com/unjs/unplugin) 기반 Vite, Webpack, Rspack, esbuild, Rollup 통합
-
-라이브 데모: <https://devtools.aitc.dev/> (이 repo의 `e2e/fixture/`를 GitHub Pages에 그대로 배포한 self-contained 데모).
 
 ## 15초 quickstart — 내 상황에 맞는 환경 고르기
 
@@ -73,7 +71,7 @@ HMR 없음(토스 WebView cold-load만). 상세: [`docs/scenarios/env-3.md`](./d
 
 ```ts
 // main.tsx (또는 미니앱 entry 최상단)
-import '@ait-co/devtools/in-app/auto';
+import '@apps-in-toss/devtools/in-app/auto';
 ```
 
 이 한 줄이 하는 일:
@@ -85,7 +83,7 @@ import '@ait-co/devtools/in-app/auto';
 
 환경 3(intoss-private relay) 빌드는 relay QR deep-link가 `?debug=1&relay=<wss>` 파라미터를 실어 보내므로, 이 한 줄만 있으면 별도 게이트 코드가 필요 없습니다. 환경 2(PWA, `tunnel: { cdp: true }`)도 동일하게 동작합니다.
 
-> TOTP 인증이 필요한 dog-food 빌드는 빌드 define으로 `__DEBUG_TOTP_SECRET__`을 주입하고 `@ait-co/devtools/in-app`을 직접 import해 `evaluateDebugGate({ verifyTotpCode })` + `maybeAttach()`를 사용하세요. `in-app/auto`는 TOTP verifier를 주입하지 않으므로 C3 레이어가 비활성화됩니다.
+> TOTP 인증이 필요한 dog-food 빌드는 빌드 define으로 `__DEBUG_TOTP_SECRET__`을 주입하고 `@apps-in-toss/devtools/in-app`을 직접 import해 `evaluateDebugGate({ verifyTotpCode })` + `maybeAttach()`를 사용하세요. `in-app/auto`는 TOTP verifier를 주입하지 않으므로 C3 레이어가 비활성화됩니다.
 
 ## 자주 겪는 문제 5가지
 
@@ -99,15 +97,15 @@ relay에 붙은 페이지가 없는 상태입니다. `start_attach` → QR 스�
 
 **"tunnel down" — 터널 응답 없음 또는 timeout**
 
-cloudflared quick tunnel은 수 시간 후 drop될 수 있습니다. `devtools-mcp` 프로세스를 재시작하면 새 tunnel URL이 발급됩니다. 재발급 후 QR을 다시 스캔하세요. (관련: [#290](https://github.com/apps-in-toss-community/devtools/issues/290))
+cloudflared quick tunnel은 수 시간 후 drop될 수 있습니다. `devtools-mcp` 프로세스를 재시작하면 새 tunnel URL이 발급됩니다. 재발급 후 QR을 다시 스캔하세요. (관련: devtools#290)
 
 **"page crash" — list_pages에 crashDetectedAt이 찍힘**
 
-폰 측 페이지가 OOM·JS exception·native bridge crash로 죽은 상태입니다. 앱을 재실행 후 `start_attach` → QR 스캔으로 다시 attach하세요. (관련: [#265](https://github.com/apps-in-toss-community/devtools/issues/265))
+폰 측 페이지가 OOM·JS exception·native bridge crash로 죽은 상태입니다. 앱을 재실행 후 `start_attach` → QR 스캔으로 다시 attach하세요. (관련: devtools#265)
 
 **"SDK 부재" — window.__sdkCall 미주입**
 
-`call_sdk` 호출 시 `ok: false, error: "window.__sdkCall is not available"` 에러가 뜨면 SDK 브리지가 아직 설치되지 않은 상태입니다. 아래 "on-device 디버깅 한 줄 설정" 섹션을 참고해 `import '@ait-co/devtools/in-app/auto'`가 미니앱 entry에 추가돼 있는지 확인하세요. 환경 2(PWA)에서는 이 에러가 예상 결과입니다. (관련: [#285](https://github.com/apps-in-toss-community/devtools/issues/285))
+`call_sdk` 호출 시 `ok: false, error: "window.__sdkCall is not available"` 에러가 뜨면 SDK 브리지가 아직 설치되지 않은 상태입니다. 아래 "on-device 디버깅 한 줄 설정" 섹션을 참고해 `import '@apps-in-toss/devtools/in-app/auto'`가 미니앱 entry에 추가돼 있는지 확인하세요. 환경 2(PWA)에서는 이 에러가 예상 결과입니다. (관련: devtools#285)
 
 **"QR 스캔했는데 인증 실패" — TOTP 만료**
 
@@ -136,7 +134,7 @@ devtools는 같은 코드에서 두 개의 npm dist-tag를 동시에 운영합�
 - web-framework **3.0.0-beta** 프리릴리즈를 쓰면 `@beta` 채널을 설치하세요. 이 채널은 main push마다 자동 publish되는 스냅샷(`0.0.0-beta-<datetime>-<sha>`)이라 버전을 핀하기 어려우니 `@beta` 태그로 설치하는 걸 권장합니다.
 - 두 채널 모두 web-framework peer는 `optional`이라 MCP 디버깅만 쓰는 경우 SDK를 강제로 끌어오지 않습니다.
 
-3.0이 정식(GA) 출시되면 stable `latest` peer가 3.0 라인으로 올라가고 beta 채널은 정리됩니다. devtools가 아직 mock하지 않은 API를 호출하면 런타임에 에러가 발생합니다 — 누락된 API는 [이슈](https://github.com/apps-in-toss-community/devtools/issues)로 알려주세요.
+3.0이 정식(GA) 출시되면 stable `latest` peer가 3.0 라인으로 올라가고 beta 채널은 정리됩니다. devtools가 아직 mock하지 않은 API를 호출하면 런타임에 에러가 발생합니다 — 누락된 API는 [이슈](https://github.com/toss/apps-in-toss-harness/issues)로 알려주세요.
 
 ### 디버깅 패키지 (환경 2·3)
 
@@ -150,17 +148,13 @@ pnpm add -D @ait-co/debugger @ait-co/debug-console
 
 | 패키지 | 역할 | 번들 반입 |
 |---|---|---|
-| [`@ait-co/debugger`](https://www.npmjs.com/package/@ait-co/debugger) | MCP 데몬 · 실기기 테스트 러너 · dev-bridge(환경 2 CDP relay + QR 대시보드) | 안 됨 — devDependency / `npx` 전용 |
-| [`@ait-co/debug-console`](https://www.npmjs.com/package/@ait-co/debug-console) | on-device attach + 인앱 eruda 콘솔 | 됨 — debug 빌드에만 들어가는 유일한 패키지 |
+| [`@apps-in-toss/debugger`](https://www.npmjs.com/package/@apps-in-toss/debugger) | MCP 데몬 · 실기기 테스트 러너 · dev-bridge(환경 2 CDP relay + QR 대시보드) | 안 됨 — devDependency / `npx` 전용 |
+| [`@apps-in-toss/debug-console`](https://www.npmjs.com/package/@apps-in-toss/debug-console) | on-device attach + 인앱 eruda 콘솔 | 됨 — debug 빌드에만 들어가는 유일한 패키지 |
 
 두 패키지 모두 devtools의 **optional peer**입니다.
 
-- `@ait-co/debugger`가 없으면 `tunnel: { cdp: true }`는 CDP 배선을 건너뛰고 일반 화면 미리보기 터널로 degrade하며, 터미널에 설치 안내를 한 번 출력합니다.
-- `@ait-co/debug-console`이 없으면 unplugin이 in-app attach를 아예 주입하지 않습니다 — attach 코드가 번들에 구조적으로 들어갈 수 없다는 뜻이고, 이게 디버그 표면의 기술적 경계입니다.
-
-## Reference consumer
-
-[`sdk-example`](https://github.com/apps-in-toss-community/sdk-example)이 devtools의 reference consumer다. 모든 SDK API를 인터랙티브하게 실행해볼 수 있는 카탈로그 앱으로, 웹 데모는 <https://sdk-example.aitc.dev/>에서 바로 확인할 수 있다. 새 mock을 추가하면 sdk-example의 카드에서 그대로 동작하는 게 1차 sanity check. 단, 이 repo의 E2E suite는 sdk-example을 clone하지 않고 **내부 자기완결 fixture(`e2e/fixture/`)** 로 운영한다 — sdk-example이 깨져도 devtools CI는 영향받지 않는다.
+- `@apps-in-toss/debugger`가 없으면 `tunnel: { cdp: true }`는 CDP 배선을 건너뛰고 일반 화면 미리보기 터널로 degrade하며, 터미널에 설치 안내를 한 번 출력합니다.
+- `@apps-in-toss/debug-console`이 없으면 unplugin이 in-app attach를 아예 주입하지 않습니다 — attach 코드가 번들에 구조적으로 들어갈 수 없다는 뜻이고, 이게 디버그 표면의 기술적 경계입니다.
 
 ## 번들러 설정
 
@@ -168,7 +162,7 @@ pnpm add -D @ait-co/debugger @ait-co/debug-console
 
 ```ts
 // vite.config.ts (개발 전용)
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default {
   plugins: [aitDevtools.vite()],
@@ -181,11 +175,11 @@ export default {
 
 ```js
 // webpack.config.js (ESM, 개발 환경에서만 사용 권장)
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 config.plugins.push(aitDevtools.webpack());
 
 // webpack.config.js (CommonJS)
-const aitDevtools = require('@ait-co/devtools/unplugin');
+const aitDevtools = require('@apps-in-toss/devtools/unplugin');
 config.plugins.push(aitDevtools.webpack());
 ```
 
@@ -201,7 +195,7 @@ Turbopack은 플러그인 시스템을 지원하지 않으므로 `resolveAlias`�
 module.exports = {
   turbo: {
     resolveAlias: {
-      '@apps-in-toss/web-framework': '@ait-co/devtools/mock',
+      '@apps-in-toss/web-framework': '@apps-in-toss/devtools/mock',
     },
   },
 };
@@ -215,7 +209,7 @@ module.exports = {
   experimental: {
     turbo: {
       resolveAlias: {
-        '@apps-in-toss/web-framework': '@ait-co/devtools/mock',
+        '@apps-in-toss/web-framework': '@apps-in-toss/devtools/mock',
       },
     },
   },
@@ -225,7 +219,7 @@ module.exports = {
 > **Panel 주입**: Turbopack은 unplugin을 지원하지 않으므로 Panel이 자동 주입되지 않습니다. 진입점에서 직접 import하세요:
 > ```ts
 > // app/layout.tsx 또는 pages/_app.tsx
-> import '@ait-co/devtools/panel';
+> import '@apps-in-toss/devtools/panel';
 > ```
 
 ### Next.js (Webpack)
@@ -234,7 +228,7 @@ Next.js에서 Webpack 모드(`next dev` without `--turbo`, 또는 `next build`)�
 
 ```js
 // next.config.js (Webpack 모드)
-const aitDevtools = require('@ait-co/devtools/unplugin'); // CJS entrypoint 제공
+const aitDevtools = require('@apps-in-toss/devtools/unplugin'); // CJS entrypoint 제공
 
 module.exports = {
   webpack: (config, { dev }) => {
@@ -257,7 +251,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   resolve: {
     alias: {
-      '@apps-in-toss/web-framework': '@ait-co/devtools/mock',
+      '@apps-in-toss/web-framework': '@apps-in-toss/devtools/mock',
     },
   },
 });
@@ -268,7 +262,7 @@ export default defineConfig({
 module.exports = {
   resolve: {
     alias: {
-      '@apps-in-toss/web-framework': require.resolve('@ait-co/devtools/mock'),
+      '@apps-in-toss/web-framework': require.resolve('@apps-in-toss/devtools/mock'),
     },
   },
 };
@@ -276,7 +270,7 @@ module.exports = {
 
 > **주의**: 수동 alias만 사용하면 DevTools Panel이 자동 주입되지 않습니다. 진입점 파일에 직접 import를 추가하세요:
 > ```ts
-> import '@ait-co/devtools/panel'; // 진입점에 추가
+> import '@apps-in-toss/devtools/panel'; // 진입점에 추가
 > ```
 
 ### 플러그인 옵션
@@ -314,7 +308,7 @@ aitDevtools.vite({ forceEnable: true, mock: true }); // panel + mock 모두 ON
 ```ts
 // vite.config.ts
 import { defineConfig } from 'vite';
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default defineConfig(({ command }) => ({
   plugins: [
@@ -325,7 +319,7 @@ export default defineConfig(({ command }) => ({
 
 ```js
 // webpack.config.js (Rspack도 동일)
-const aitDevtools = require('@ait-co/devtools/unplugin');
+const aitDevtools = require('@apps-in-toss/devtools/unplugin');
 const plugins = [];
 if (process.env.NODE_ENV !== 'production') {
   plugins.push(aitDevtools.webpack());
@@ -351,7 +345,7 @@ if (process.env.NODE_ENV !== 'production') {
 ```ts
 // vite.config.ts
 import { defineConfig } from 'vite';
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default defineConfig({
   plugins: [
@@ -376,7 +370,7 @@ export default defineConfig({
 }
 ```
 
-> 명시하지 않아도 동작은 됩니다 — `tunnel.ts`가 첫 기동 시 `cloudflared.install()`을 lazy로 호출. 다만 `pnpm install`마다 "Ignored build scripts" 경고가 남고, 바이너리 다운로드가 첫 `pnpm dev` 시점으로 미뤄집니다. 참고: [`sdk-example#60`](https://github.com/apps-in-toss-community/sdk-example/pull/60).
+> 명시하지 않아도 동작은 됩니다 — `tunnel.ts`가 첫 기동 시 `cloudflared.install()`을 lazy로 호출. 다만 `pnpm install`마다 "Ignored build scripts" 경고가 남고, 바이너리 다운로드가 첫 `pnpm dev` 시점으로 미뤄집니다.
 
 (c) **(선택) `dev:phone` 스크립트** — env 변수 매번 타기 귀찮으면:
 
@@ -413,7 +407,7 @@ launcher는 **PWA(홈 화면 앱)로 실행할 때만 동작**합니다. 일반 
 
 ### 한 줄 셋업
 
-위 "프로젝트당 1회" 단계(vite.config 패치 + `onlyBuiltDependencies` + `dev:phone` 스크립트)는 [`agent-plugin`](https://github.com/apps-in-toss-community/agent-plugin)의 `/ait:setup-phone-preview` 한 명령으로 자동화돼 있습니다. 이 README가 그 자동화의 명세서 역할을 하므로, 수동 셋업 단계가 줄어들어도 동작 모델 자체는 동일합니다.
+위 "프로젝트당 1회" 단계(vite.config 패치 + `onlyBuiltDependencies` + `dev:phone` 스크립트)는 `agent-plugin`의 `/ait:setup-phone-preview` 한 명령으로 자동화돼 있습니다. 이 README가 그 자동화의 명세서 역할을 하므로, 수동 셋업 단계가 줄어들어도 동작 모델 자체는 동일합니다.
 
 ## Device API 모드 시스템
 
@@ -483,7 +477,7 @@ mock 모드에서 카메라/앨범 API는 더미 이미지를 반환합니다.
 이로써 `getOperationalEnvironment() === 'toss'`로 게이트된 코드 경로를 토스 앱 없이 검증할 수 있습니다:
 
 1. Environment 탭에서 **환경(Environment)** 을 `toss`로 전환 (기본은 `sandbox` — toss 진입은 명시적 opt-in).
-2. 앱의 toss-gated 가드(예: sdk-example `useDisableIosSwipeGestureInToss`)가 실행되며 `setIosSwipeGestureEnabled({ isEnabled: false })`를 호출.
+2. 앱의 toss-gated 가드(예: `useDisableIosSwipeGestureInToss`)가 실행되며 `setIosSwipeGestureEnabled({ isEnabled: false })`를 호출.
 3. Navigation 섹션의 `iOS swipe-back` 값이 `미호출` → `disabled`로 실시간 전환되는 것을 패널에서 확인. `AIT.getMockState()`로도 `navigation.iosSwipeGestureEnabled`를 대조할 수 있습니다.
 
 ### Mock state preset library (Presets 탭)
@@ -506,7 +500,7 @@ mock 모드에서 카메라/앨범 API는 더미 이미지를 반환합니다.
 코드에서도 export됩니다:
 
 ```ts
-import { applyPreset, builtInPresets, saveUserPreset } from '@ait-co/devtools';
+import { applyPreset, builtInPresets, saveUserPreset } from '@apps-in-toss/devtools';
 
 // 내장 preset 적용
 const offline = builtInPresets.find((p) => p.id === 'offline')!;
@@ -522,12 +516,12 @@ saveUserPreset('My QA scenario', {
 
 ### Panel mount / dispose
 
-`@ait-co/devtools/panel`을 import하면 DOM ready 시 자동으로 마운트됩니다. 마운트는 idempotent — 같은 페이지에 여러 번 import되거나 `mount()`를 다시 불러도 토글 버튼은 하나만 떠 있습니다.
+`@apps-in-toss/devtools/panel`을 import하면 DOM ready 시 자동으로 마운트됩니다. 마운트는 idempotent — 같은 페이지에 여러 번 import되거나 `mount()`를 다시 불러도 토글 버튼은 하나만 떠 있습니다.
 
 HMR이나 SPA 라우팅에서 패널을 명시적으로 떼어내야 하는 경우 `disposePanel()`을 사용하세요:
 
 ```ts
-import { disposePanel, mount } from '@ait-co/devtools/panel';
+import { disposePanel, mount } from '@apps-in-toss/devtools/panel';
 
 disposePanel();  // 토글 / 패널 / inject된 <style> / 모든 listener 제거.
                   // 호출 전이거나 두 번 호출해도 안전.
@@ -584,7 +578,7 @@ Landscape로 전환하면:
   - `partner` (비게임 기본): 흰 배경 + 뒤로가기 / 앱 아이콘·이름 / ⋯ / ×. 콘텐츠를 nav bar 높이만큼 아래로 밀어냅니다.
   - `game`: 투명 배경 + ⋯ / × 만. 게임 캔버스 위에 떠 있어 콘텐츠를 밀어내지 않습니다 — 인게임 화면은 full-screen이 [출시 요건](https://developers-apps-in-toss.toss.im/checklist/app-game.html).
 - nav bar는 WebView(body) 좌표계의 **최상단(top 0)**에 앉습니다. 실기기에서 OS 노치는 WebView 밖(위쪽 status bar)이라 `env(safe-area-inset-top)`이 0이고, 콘텐츠 영역은 nav bar 바로 아래(= `SafeAreaInsets.get().top`)에서 시작하기 때문입니다 — 시뮬레이터는 이 스택(노치 status bar → nav bar → 콘텐츠)을 그대로 재현합니다.
-- `partner` WebView에서는 **이 nav bar 높이가 곧 `SafeAreaInsets.get().top`** 입니다. iPhone 15 Pro on-device relay 실측([devtools#190](https://github.com/apps-in-toss-community/devtools/issues/190))에서 `env(safe-area-inset-top)`은 0(노치는 WebView 뷰포트 밖)이고 `SafeAreaInsets.get().top`은 54px이었으며, 그 54px가 호스트 nav bar 높이였습니다. 즉 `partner` 앱은 콘텐츠 상단을 `insets.top`만큼만 보정하면 됩니다(별도 `+ navBarHeight` 불필요). `game`은 콘텐츠를 밀어내지 않으므로 top inset이 0입니다. 이 54px는 iOS partner에서 실측됐고 Android nav bar 높이는 같은 값을 잠정 적용합니다. SDK의 `webViewProps.type`은 `partner` / `game` 외에 `external`도 있습니다 (현재 패널은 앞 둘만 시뮬레이션).
+- `partner` WebView에서는 **이 nav bar 높이가 곧 `SafeAreaInsets.get().top`** 입니다. iPhone 15 Pro on-device relay 실측(devtools#190)에서 `env(safe-area-inset-top)`은 0(노치는 WebView 뷰포트 밖)이고 `SafeAreaInsets.get().top`은 54px이었으며, 그 54px가 호스트 nav bar 높이였습니다. 즉 `partner` 앱은 콘텐츠 상단을 `insets.top`만큼만 보정하면 됩니다(별도 `+ navBarHeight` 불필요). `game`은 콘텐츠를 밀어내지 않으므로 top inset이 0입니다. 이 54px는 iOS partner에서 실측됐고 Android nav bar 높이는 같은 값을 잠정 적용합니다. SDK의 `webViewProps.type`은 `partner` / `game` 외에 `external`도 있습니다 (현재 패널은 앞 둘만 시뮬레이션).
 
 ### 콘솔에서 직접 조작
 
@@ -827,8 +821,8 @@ vitest/jest에서 mock 라이브러리를 직접 import하여 테스트할 수 �
 
 ```ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { appLogin, Storage, getCurrentLocation, getNetworkStatus, openCamera, IAP } from '@ait-co/devtools/mock';
-import { aitState } from '@ait-co/devtools/mock';
+import { appLogin, Storage, getCurrentLocation, getNetworkStatus, openCamera, IAP } from '@apps-in-toss/devtools/mock';
+import { aitState } from '@apps-in-toss/devtools/mock';
 
 beforeEach(() => {
   aitState.reset(); // 매 테스트 전 상태 초기화
@@ -906,7 +900,7 @@ pnpm exec devtools-test 'src/**/*.ait.test.ts' \
 |---|---|
 | relay TOTP 시크릿 | 러너가 relay를 띄우기 전에 필수로 검사하며, 없으면 QR이 뜨기도 전에 exit 1 합니다. `pnpm dev:phone:cdp`(unplugin `tunnel.cdp` 옵션)를 한 번 띄우면 프로젝트 루트에 `.ait_relay`가 자동 생성되고, 없으면 `AIT_DEBUG_TOTP_SECRET`을 직접 설정하세요 (`openssl rand -hex 32`). `.ait_relay`를 찾는 디렉토리는 `--project-root`(생략 시 cwd)가 정합니다 |
 | dog-food 번들 | `ait build && ait deploy --scheme-only` → 출력된 `intoss-private://…?_deploymentId=…` URL이 `--scheme-url` 값 |
-| 미니앱 entry 한 줄 | `import '@ait-co/devtools/in-app/auto'` — attach + `window.__sdk` 브리지 설치 ([위 섹션](#on-device-디버깅-한-줄-설정)) |
+| 미니앱 entry 한 줄 | `import '@apps-in-toss/devtools/in-app/auto'` — attach + `window.__sdk` 브리지 설치 ([위 섹션](#on-device-디버깅-한-줄-설정)) |
 | 테스트 파일 | `*.ait.test.ts`. `describe`/`it`/`test`/`expect`는 러너가 글로벌로 주입하므로 import가 필요 없고, `@apps-in-toss/web-framework` import는 번들 시 `window.__sdk`로 리다이렉트됩니다 |
 
 ### 스캔할 QR은 대시보드 QR입니다
@@ -941,7 +935,7 @@ run-then-exit 모델입니다. 마지막 테스트 파일이 끝나면 러너는
 
 ## SDK 업데이트 대응
 
-devtools는 [`@apps-in-toss/web-framework`](https://www.npmjs.com/package/@apps-in-toss/web-framework)를 추적하고, [`sdk-example`](https://github.com/apps-in-toss-community/sdk-example)은 원본 SDK와 devtools를 모두 추적한다. 즉 새 SDK 버전이 나오면 (1) devtools가 mock/타입 시그니처를 따라잡고 → (2) sdk-example이 양쪽 새 버전을 동시에 반영하는 흐름. devtools 단독 PR이 sdk-example을 깨뜨리면 양쪽을 함께 본다.
+devtools는 [`@apps-in-toss/web-framework`](https://www.npmjs.com/package/@apps-in-toss/web-framework)를 추적한다. 새 SDK 버전이 나오면 devtools가 mock/타입 시그니처를 따라잡는 흐름이다.
 
 세 가지 메커니즘으로 SDK 변경에 안전하게 대응합니다:
 
@@ -957,12 +951,12 @@ type _AppLogin = Assert<typeof Mock.appLogin, typeof Original.appLogin>;
 
 ### 2. Proxy 트립와이어 (런타임 차단)
 
-`createMockProxy()`는 미구현 API 접근 시 즉시 `Error`를 throw합니다. mock에 없는 API가 실 SDK에는 있을 수 있어 "devtools에서는 잘 되는데 실제 SDK에서는 안 되는" 배포 사고를 원천 차단하기 위한 의도적 동작입니다. 누락된 API는 [이슈](https://github.com/apps-in-toss-community/devtools/issues)로 제보하거나 직접 mock을 추가해 주세요.
+`createMockProxy()`는 미구현 API 접근 시 즉시 `Error`를 throw합니다. mock에 없는 API가 실 SDK에는 있을 수 있어 "devtools에서는 잘 되는데 실제 SDK에서는 안 되는" 배포 사고를 원천 차단하기 위한 의도적 동작입니다. 누락된 API는 [이슈](https://github.com/toss/apps-in-toss-harness/issues)로 제보하거나 직접 mock을 추가해 주세요.
 
 ```
-[@ait-co/devtools] IAP.newMethod is not mocked. This API may exist in
+[@apps-in-toss/devtools] IAP.newMethod is not mocked. This API may exist in
 @apps-in-toss/web-framework, but devtools' mock does not cover it yet.
-Please file an issue: https://github.com/apps-in-toss-community/devtools/issues
+Please file an issue: https://github.com/toss/apps-in-toss-harness/issues
 ```
 
 ### 3. GitHub Actions 주간 CI
@@ -1025,18 +1019,18 @@ git config core.hooksPath .githooks
 
 ## Troubleshooting
 
-### `[@ait-co/devtools] XXX.method is not mocked` 에러가 날 때
+### `[@apps-in-toss/devtools] XXX.method is not mocked` 에러가 날 때
 
-사용 중인 SDK API가 아직 mock으로 구현되지 않았습니다. devtools는 "잘 되는 척" 배포를 막기 위해 미구현 API 접근 시 throw합니다. [이슈를 등록](https://github.com/apps-in-toss-community/devtools/issues)하거나 직접 mock을 추가한 뒤 다시 실행하세요.
+사용 중인 SDK API가 아직 mock으로 구현되지 않았습니다. devtools는 "잘 되는 척" 배포를 막기 위해 미구현 API 접근 시 throw합니다. [이슈를 등록](https://github.com/toss/apps-in-toss-harness/issues)하거나 직접 mock을 추가한 뒤 다시 실행하세요.
 
 ### DevTools Panel이 안 보일 때
 
 - 플러그인 옵션에서 `panel: false`로 설정하지 않았는지 확인
 - 수동 alias 설정을 사용 중이라면, 진입점 파일에 직접 import를 추가하세요:
   ```ts
-  import '@ait-co/devtools/panel';
+  import '@apps-in-toss/devtools/panel';
   ```
-- 플러그인은 파일명이 `main`, `index`, `entry`, `app` 중 하나인 진입점에만 자동 주입합니다 (대소문자 무시). 파일명이 이 패턴에 맞지 않으면 수동으로 `import '@ait-co/devtools/panel'`을 추가하세요.
+- 플러그인은 파일명이 `main`, `index`, `entry`, `app` 중 하나인 진입점에만 자동 주입합니다 (대소문자 무시). 파일명이 이 패턴에 맞지 않으면 수동으로 `import '@apps-in-toss/devtools/panel'`을 추가하세요.
 
 ### 서브패스 import는 mock되지 않음
 
@@ -1048,7 +1042,7 @@ Turbopack은 unplugin을 지원하지 않으므로, `next.config.js`에서 `reso
 
 ```ts
 // app/layout.tsx 또는 pages/_app.tsx
-import '@ait-co/devtools/panel';
+import '@apps-in-toss/devtools/panel';
 ```
 
 ### `devtools-mcp` — 이미 실행 중인 세션이 있을 때
@@ -1201,7 +1195,7 @@ tool surface를 공유합니다.
 
 ```ts
 // vite.config.ts
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default {
   plugins: [aitDevtools.vite({ mcp: true })],
@@ -1245,18 +1239,14 @@ export default {
 
 | Import path | 용도 |
 |---|---|
-| `@ait-co/devtools` 또는 `@ait-co/devtools/mock` | 모든 mock export (번들러 alias 대상) |
-| `@ait-co/devtools/panel` | Floating DevTools Panel (import 시 자동 마운트) |
-| `@ait-co/devtools/unplugin` | 번들러 플러그인 (.vite, .webpack, .rspack, .esbuild, .rollup) |
-| `@ait-co/devtools/mcp/server` | dev-mode MCP stdio server 함수 (Node.js) |
-| `@ait-co/devtools/mcp/cli` | `devtools-mcp` bin 진입점 (debug / dev 모드, Node.js) |
-| `@ait-co/devtools/in-app` | In-app debug attach — 런타임 gate(layer B·C) + Chii target.js 주입. 소비자가 `if (__DEBUG_BUILD__)`로 import를 감싸 release 빌드에서 DCE — dog-food 빌드 전용 |
-| `@ait-co/devtools/in-app/auto` | Self-gating side-effect entry — `import '@ait-co/devtools/in-app/auto'` 한 줄로 attach + SDK 브리지 설치. URL 파라미터(`?debug=1` / `?relay=`) 또는 DEV 빌드에서만 활성화, 일반 프로덕션 로드는 dormant. [위 섹션](#on-device-디버깅-한-줄-설정) 참고 |
+| `@apps-in-toss/devtools` 또는 `@apps-in-toss/devtools/mock` | 모든 mock export (번들러 alias 대상) |
+| `@apps-in-toss/devtools/panel` | Floating DevTools Panel (import 시 자동 마운트) |
+| `@apps-in-toss/devtools/unplugin` | 번들러 플러그인 (.vite, .webpack, .rspack, .esbuild, .rollup) |
+| `@apps-in-toss/devtools/mcp/server` | dev-mode MCP stdio server 함수 (Node.js) |
+| `@apps-in-toss/devtools/mcp/cli` | `devtools-mcp` bin 진입점 (debug / dev 모드, Node.js) |
+| `@apps-in-toss/devtools/in-app` | In-app debug attach — 런타임 gate(layer B·C) + Chii target.js 주입. 소비자가 `if (__DEBUG_BUILD__)`로 import를 감싸 release 빌드에서 DCE — dog-food 빌드 전용 |
+| `@apps-in-toss/devtools/in-app/auto` | Self-gating side-effect entry — `import '@apps-in-toss/devtools/in-app/auto'` 한 줄로 attach + SDK 브리지 설치. URL 파라미터(`?debug=1` / `?relay=`) 또는 DEV 빌드에서만 활성화, 일반 프로덕션 로드는 dormant. [위 섹션](#on-device-디버깅-한-줄-설정) 참고 |
 
 ## 라이센스
 
 BSD 3-Clause
-
----
-
-커뮤니티 오픈소스 프로젝트입니다.

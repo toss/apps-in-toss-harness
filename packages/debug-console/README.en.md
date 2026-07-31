@@ -1,8 +1,8 @@
-# @ait-co/debug-console
+# @apps-in-toss/debug-console
 
 [한국어](./README.md) · **English**
 
-[![npm](https://img.shields.io/npm/v/@ait-co/debug-console)](https://www.npmjs.com/package/@ait-co/debug-console)
+[![npm](https://img.shields.io/npm/v/@apps-in-toss/debug-console)](https://www.npmjs.com/package/@apps-in-toss/debug-console)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
 On-device attach + eruda console for Apps in Toss mini-apps. **The only package in this split that can enter a production bundle** — it has exactly one dependency, [`eruda`](https://github.com/liriliri/eruda), and zero peerDependencies, so it is completely agnostic to the SDK version (2.x/3.x) it ships alongside.
@@ -22,7 +22,7 @@ With no peerDependency, you can add this regardless of whether `@apps-in-toss/we
 Add a single line to your mini-app entry. With no debug activation signal present (`?debug=1` + `?relay=`, or a DEV build), it does nothing:
 
 ```ts
-import '@ait-co/debug-console/auto';
+import '@apps-in-toss/debug-console/auto';
 ```
 
 Once activated, it installs two things: (1) an on-device Chii target injection (remote CDP attach), and (2) `window.__sdk` / `window.__sdkCall` — a bridge letting an agent call any SDK API directly over the CDP relay.
@@ -31,18 +31,18 @@ Once activated, it installs two things: (1) an on-device Chii target injection (
 
 ```ts
 if (__DEBUG_BUILD__) {
-  import('@ait-co/debug-console').then((m) => m.maybeAttach());
+  import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());
 }
 ```
 
-Building the release with `define: { __DEBUG_BUILD__: 'false' }` lets the bundler dead-code-eliminate the entire `@ait-co/debug-console` graph.
+Building the release with `define: { __DEBUG_BUILD__: 'false' }` lets the bundler dead-code-eliminate the entire `@apps-in-toss/debug-console` graph.
 
 ### Bonus: standalone eruda console, no relay
 
 `mountEruda()` / `unmountEruda()` are exports you can call directly, independent of the gate above. To show only an in-page eruda console on the phone screen — no relay, no attach:
 
 ```ts
-import { mountEruda } from '@ait-co/debug-console';
+import { mountEruda } from '@apps-in-toss/debug-console';
 
 if (import.meta.env.DEV) {
   mountEruda();
@@ -53,14 +53,14 @@ if (import.meta.env.DEV) {
 
 | subpath | contents |
 |---|---|
-| `@ait-co/debug-console` | full API — `checkDebugGate`, `maybeAttach`, `mountEruda`/`unmountEruda`, gate types/helpers |
-| `@ait-co/debug-console/auto` | side-effect-only self-gating entry (usage example above) |
+| `@apps-in-toss/debug-console` | full API — `checkDebugGate`, `maybeAttach`, `mountEruda`/`unmountEruda`, gate types/helpers |
+| `@apps-in-toss/debug-console/auto` | side-effect-only self-gating entry (usage example above) |
 
 No bins are shipped.
 
-## Relationship with `@ait-co/devtools`
+## Relationship with `@apps-in-toss/devtools`
 
-`@ait-co/devtools` owns the mock SDK, the DevTools panel, and the unplugin (the browser dev environment, station 2), while this package owns the in-app half of real-device attach (station 3). If `@ait-co/debugger` is the host-side (PC) MCP daemon and CDP relay, `@ait-co/debug-console` is the phone-side (device) target that relay attaches to — the Chii target injection and the eruda console overlay. This split breaks what used to be a single `@ait-co/devtools` package holding all 8 feature surfaces into "browser dev environment" and "real-device debugging," and this package is the half that must keep the narrowest dependency surface of all — it is the only piece that can ship to production.
+`@apps-in-toss/devtools` owns the mock SDK, the DevTools panel, and the unplugin (the browser dev environment, station 2), while this package owns the in-app half of real-device attach (station 3). If `@apps-in-toss/debugger` is the host-side (PC) MCP daemon and CDP relay, `@apps-in-toss/debug-console` is the phone-side (device) target that relay attaches to — the Chii target injection and the eruda console overlay. This split breaks what used to be a single `@apps-in-toss/devtools` package holding all 8 feature surfaces into "browser dev environment" and "real-device debugging," and this package is the half that must keep the narrowest dependency surface of all — it is the only piece that can ship to production.
 
 ## Security scope
 
@@ -69,7 +69,3 @@ No bins are shipped.
 ## License
 
 BSD-3-Clause
-
----
-
-Community open-source project.

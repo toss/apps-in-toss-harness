@@ -6,7 +6,7 @@ Plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside codin
 
 ## Goal
 
-Ties together `@ait-co/devtools`, `sdk-example`, the docs MCP, and the console MCP into a single integrated experience. Slash commands available today:
+Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a single integrated experience. Slash commands available today:
 
 - `/ait:welcome` — confirm installation + point to the first station (`/ait:new`)
 - `/ait:new` — scaffold a new mini-app
