@@ -67,8 +67,13 @@ export const PROTECTED_LITERALS = [
   '@ait-co/devtools/in-app', // 분리 전(pre-split) legacy specifier — LEGACY_IN_APP_ID가 dedupe용으로 영구 인식하는 정확한 문자열. LEGACY-named const 대입 밖(예: 테스트 fixture 문자열 안에 리터럴로 등장)에서도 절대 리네임하면 안 된다 — 실측 근거: packages/devtools/src/__tests__/unplugin.test.ts의 "#817: 분리 전 specifier로 직접 배선한 소비자도 dedupe 대상이다" 테스트가 이 정확한 문자열을 fixture로 쓴다.
 ];
 
-/** 보존 목록 — 파일 전체를 건드리지 않는다 (경로가 이 목록에 매치되면 원본 그대로 반환). */
-const PRESERVED_FILE_PATTERNS = [
+/**
+ * 보존 목록 — 파일 전체를 건드리지 않는다 (경로가 이 목록에 매치되면 원본 그대로 반환).
+ *
+ * export하는 이유: `scripts/__tests__/upstream-doc-sync.test.mjs`가 이 목록과
+ * `docs/upstream-sync.md`의 손으로 적은 열거가 어긋나지 않는지 대조한다.
+ */
+export const PRESERVED_FILE_PATTERNS = [
   /(^|\/)CHANGELOG\.md$/, // 상류 릴리즈 히스토리 — 커뮤니티 저장소 시절 사실 기록
   /(^|\/)docs\/superpowers\//, // 설계 아카이브 (plans/specs, 날짜 기반)
   /(^|\/)meta\//, // 설계 아카이브 (재설계 기록 등)
