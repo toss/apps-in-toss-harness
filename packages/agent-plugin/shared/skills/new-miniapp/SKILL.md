@@ -33,7 +33,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패한다 —
   이 skill은 남의 도메인 이미지를 자동으로 채워 넣지 않는다(외부 URL이
   사용자 앱 아이콘으로 박힌 채 빌드가 조용히 통과해버리는 걸 막기 위해).
-  대신 후처리 C가 빈 값 옆에 안내 주석을 남기고, Step 7 완료 안내가
+  대신 후처리 C가 빈 값 옆에 안내 주석을 남기고, Step 8 완료 안내가
   `/ait:design`으로 아이콘을 만들어 채우도록 알린다.
 - `--sample` 없이 만든 프로젝트는 CLI(v0.1.3)가 예제 placeholder를 치환하지
   않고 남기며, 그대로 두면 **런타임에 앱 본체가 렌더되지 않는다** — 후처리 D가
@@ -58,7 +58,13 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 - `<app-name>` (필수): 사람이 읽는 이름 후보. 디렉토리/패키지 이름으로
   슬러그화된다 (kebab-case, 소문자). 공백·특수문자 포함 가능.
 - `--template <name>` (선택, default `react-ts`): `react-ts` | `react` |
-  `js` | `ts` — create-ait-app의 공개 템플릿 4종.
+  `js` | `ts` — Step 2에서 핀한 `create-ait-app@0.1.3`이 지원하는 템플릿
+  전부다(`src/templates.js`의 `TEMPLATE_IDS` 소스 실측). `--list-templates`
+  플래그와 `vue-ts`/`svelte`/`solid-ts` 템플릿은 upstream main(0.2.0)에서
+  추가된 것으로, 핀돼 있는 `0.1.3`에는 **없다** (`pnpm dlx
+  create-ait-app@0.1.3 --list-templates` 실행 시 알 수 없는 옵션으로도
+  처리되지 않고 interactive 프롬프트로 빠진다 — 실측 확인됨). 핀을 올리는
+  시점에 이 목록도 함께 재검증한다(harness#6).
 - `--tds` (선택): TDS(토스 디자인 시스템) 통합 변형. **`react-ts` 전용**
   (다른 템플릿에서는 CLI가 무시). `--template react-ts-tds` 직접 지정은
   CLI가 거부하므로 반드시 이 플래그 조합으로.
@@ -66,8 +72,12 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   페이지를 scaffold에 포함.
 - `--local` (선택): create-ait-app을 쓰지 않고 plugin 내장 `react-vite`
   템플릿을 복사한다. 오프라인/네트워크 제한 환경 폴백. 이 경로에서만
-  `--no-install`을 지원한다 (create-ait-app 경로는 CLI가 install을 강제해
-  생략 불가).
+  `--no-install`을 지원한다 — create-ait-app 경로는 CLI가 install을 강제해
+  생략 불가하다 (`@0.1.3` 소스 실측 — npm 배포 tarball과 `v0.1.3` 태그 모두
+  동일: `src/main.js`가 `installDependencies()`를 조건 없이 호출하고,
+  `--skip-install` 같은 스킵 플래그를 정의도 소비도 하지 않는다. upstream
+  main(0.2.0)은 이후 `--skip-install`을 추가했지만 Step 2의 핀은 `@0.1.3`이라
+  아직 적용되지 않는다 — 핀을 올리는 시점에 이 제약도 재검토한다).
 - `--no-devtools` (선택): 후처리 B(devtools 배선)를 건너뛴다 — mock 없이
   실기기/샌드박스 위주로 개발하려는 경우. 나중에 필요해지면
   `/ait:inject-devtools`로 언제든 배선할 수 있다.
@@ -84,8 +94,12 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 
 ## 의존
 
-- 호스트에 **Node 24+ + pnpm 11+** (create-ait-app `engines.node >=24` +
-  Vite). **Step 0이 실행 전 자동으로 검사·안내**하므로 수동 확인 불필요.
+- 호스트에 **Node 24+ + pnpm 11+** (Node 24+는 create-ait-app
+  `engines.node >=24` + Vite 요구사항. **pnpm 고정은 create-ait-app의
+  한계가 아니라 harness 자신의 규약**이다 — CLI 자체는 npm/yarn/pnpm 3종을
+  지원하지만(`--pm <name>`), 이 skill은 후속 `pnpm dev`/`pnpm --dir` 흐름과
+  통일하려고 항상 `--pm pnpm`으로 호출한다). **Step 0이 실행 전 자동으로
+  검사·안내**하므로 수동 확인 불필요.
 - **인터넷 필요** — `pnpm dlx`가 create-ait-app을 받고, CLI가 내부적으로
   `pnpm install` + `pnpm add @apps-in-toss/web-framework@latest` 2회 설치를
   실행한다. 오프라인이면 `--local` 폴백.
@@ -125,7 +139,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   한국어 안내를 준다. CLI에는 `--force`/overwrite가 없다.)
 
 `--local`이면 여기서 **`references/local-template.md`를 Read**해 그 절차(복사 +
-토큰 치환 + install + 안내)로 진행하고, 아래 2~5는 건너뛴다.
+토큰 치환 + install + 안내)로 진행하고, 아래 2~6은 건너뛴다.
 
 ### 2. scaffold — create-ait-app 비대화형 호출
 
@@ -148,9 +162,13 @@ pnpm dlx create-ait-app@0.1.3 <package_name> --inline --pm pnpm --template <temp
 - **생성 위치는 프로세스 cwd 기준** — CLI의 `--cwd` 플래그는 scaffold
   경로에서 무시된다(add-sample 전용). 다른 위치에 만들려면 그 디렉토리에서
   실행한다.
-- **`--skills`는 쓰지 않는다** — CLI가 프로젝트 루트 `CLAUDE.md`/`AGENTS.md`를
-  병합 없이 통째로 덮어써 harness 구성과 충돌한다. 에이전트용 지식 주입은
-  이 plugin의 skill들이 담당하므로 필요 없다.
+- **`--skills`는 쓰지 않는다** — `@0.1.3` 소스 실측(`src/skills.js`의
+  `writeAiSkills()`): `--skills --ai claude`(codex는 `--ai codex`) 조합이면
+  프로젝트 루트 `CLAUDE.md`(codex는 `AGENTS.md`)를 `fs.writeFileSync`로 병합
+  없이 통째로 덮어쓴다 — harness 구성과 충돌한다. 에이전트용 지식 주입은 이
+  plugin의 skill들이 담당하므로 필요 없다. (upstream main(0.2.0)은 이 로직을
+  외부 `skills` CLI 위임으로 교체해 `.claude/skills/`에만 쓰고 루트 파일은
+  건드리지 않지만, 핀은 `@0.1.3`이라 아직 적용되지 않는다.)
 - `pnpm dlx`를 쓴다 — `pnpm create`의 플래그 전달 방식 차이로 인한 오동작을
   피하고 인자를 그대로 CLI에 넘긴다.
 
@@ -166,7 +184,36 @@ CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니�
   하려던 설치(`pnpm install` → `pnpm add @apps-in-toss/web-framework@latest`)를
   수동으로 이어가는 회피를 안내한다.
 
-### 3. 후처리 A — dev 스크립트 무결성 (granite bin 검증)
+### 3. 후처리 0 — 버전 가드 (산출물 형상 확인)
+
+Step 2의 핀(`@0.1.3`)이 살아 있는 한 아래 후처리 A~D의 전제(`granite.config.ts`
+파일명·`brand.icon` 필드·`{{...}}` placeholder)는 결정적이다. 하지만 이 핀을
+올리는 날 그 전제가 조용히 깨진다 — upstream 0.2.x는 `granite.config.ts` 대신
+`apps-in-toss.config.ts`를 쓴다. 후처리를 시작하기 전에 산출물 형상이 기대와
+맞는지 먼저 확인한다:
+
+```bash
+test -f ./<package_name>/granite.config.ts && echo "형상 일치(0.1.x)" || echo "형상 불일치"
+```
+
+- **있으면** (0.1.x 형상) 통과 — 후처리 A로 진행.
+- **없으면** 아래 후처리 A~D를 진행하지 않고 즉시 중단한다. `granite.config.ts`가
+  없다는 건 핀(`@0.1.3`)과 실제 scaffold 산출물이 어긋났다는 신호이고, 아래
+  단계들은 전부 0.1.x 산출물 형상을 전제하므로 그대로 진행하면 잘못된 파일을
+  찾다 조용히 실패하거나 엉뚱한 파일을 건드릴 수 있다. 사용자에게 한 블록으로
+  보고하고 멈춘다:
+
+  ```
+  scaffold 산출물이 예상한 0.1.x 형상(granite.config.ts)과 다릅니다.
+  create-ait-app 핀(@0.1.3)과 실제 산출물이 어긋난 것으로 보입니다 —
+  harness#6(버전 가드)을 참조하세요. 이후 후처리를 진행하지 않고 여기서
+  중단합니다.
+  ```
+
+  (0.2.x용 후처리는 새로 작성하지 않는다 — plain 0.2.0은 이 skill 작성 시점
+  기준 npm에 미배포라 대상이 유동적이다. harness#41에 보류 기록.)
+
+### 4. 후처리 A — dev 스크립트 무결성 (granite bin 검증)
 
 템플릿의 `dev` 스크립트는 `granite dev`인데, `granite` bin은 강제 설치되는
 `@apps-in-toss/web-framework` 중 **2.x만 제공**한다(3.x는 `ait` bin뿐). CLI가
@@ -188,10 +235,10 @@ ls ./<package_name>/node_modules/.bin/granite
   `pnpm --dir ./<package_name> why @apps-in-toss/web-framework`)를 사용자에게
   보여준다.
 
-### 4. 후처리 B — devtools 배선 (브라우저 dev 활성화)
+### 5. 후처리 B — devtools 배선 (브라우저 dev 활성화)
 
 **`--no-devtools`가 지정됐으면 이 단계 전체를 건너뛴다** — devtools는 사용자
-의향에 따르는 선택 요소다. 건너뛴 경우 Step 7 완료 안내에서 `pnpm dev` 줄의
+의향에 따르는 선택 요소다. 건너뛴 경우 Step 8 완료 안내에서 `pnpm dev` 줄의
 설명을 조정하고 `/ait:inject-devtools` seam을 알린다.
 
 `inject` skill의 devtools facet과 같은 패턴을 이 자리에서 수행한다 (idempotent —
@@ -225,7 +272,7 @@ directory>/../inject/references/devtools.md**.
 `--sample`로 넣은 IAP/IAA 예제가 브라우저에서 "샌드박스앱/토스앱에서
 실행해주세요" alert만 띄운다.
 
-### 5. 후처리 C — brand.icon 안내 주석 + .gitignore
+### 6. 후처리 C — brand.icon 안내 주석 + .gitignore
 
 **brand.icon**: create-ait-app 템플릿의 `granite.config.ts`는 `brand.icon: ""`
 (빈 문자열)로 생성되는데, `brand.icon`은 필수 필드라 이 상태로는 `ait build`가
@@ -239,7 +286,7 @@ icon: ""  →  icon: "", // 앱 아이콘 https:// URL — /ait:design 으로 �
 ```
 
 (다른 필드는 건드리지 않는다. `brand.icon`이 비어 있으면 `ait build`가
-실패한다는 사실과 무엇을 해야 하는지는 Step 7 완료 안내 블록에서 알린다.)
+실패한다는 사실과 무엇을 해야 하는지는 Step 8 완료 안내 블록에서 알린다.)
 
 **.gitignore**: create-ait-app 템플릿에는 `.gitignore`가 없다. 없으면 생성:
 
@@ -258,7 +305,7 @@ dist/
 
 (`git init` 자체는 하지 않는다 — 사용자 결정. Out of scope 참조.)
 
-### 6. 후처리 D — 미치환 예제 placeholder 복구
+### 7. 후처리 D — 미치환 예제 placeholder 복구
 
 create-ait-app v0.1.3은 `--sample`을 주지 않으면(= 정본 호출) 예제 치환 단계를
 조기 반환해 **템플릿의 `{{…}}` placeholder를 그대로 남긴다** (v0.1.3
@@ -289,9 +336,10 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 > create-vite 산출물이라 placeholder 자체가 없고, TDS 경로는 App.tsx를 무조건
 > 재작성). 호출은 지금 `@0.1.3`으로 핀돼 있으므로(Step 2) 이 단계는 당분간
 > no-op이 되지 않는다 — 핀을 0.2.x로 올리는 시점에 이 단계와 함께 후처리 A/C의
-> `granite.config.ts` 전제를 재검토한다(harness#6).
+> `granite.config.ts` 전제를 재검토한다(harness#6). Step 3(버전 가드)이 그
+> 시점의 형상 불일치를 여기 도달하기 전에 미리 잡아준다.
 
-### 7. 다음 단계 안내 + dev 서버 기동
+### 8. 다음 단계 안내 + dev 서버 기동
 
 생성이 끝나면 한 블록으로 마무리:
 
@@ -321,6 +369,19 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 `# 브라우저 실행 (devtools 미배선 — SDK 호출은 실기기/샌드박스 필요)`로 바꾸고,
 그 아래에 `나중에 브라우저 mock 개발이 필요하면: /ait:inject-devtools` 한 줄을
 덧붙인다.
+
+`--sample` 없이 만들었으면(= 정본 호출) "배포 준비가 되면" 블록 아래에 한 줄을
+덧붙인다:
+
+```
+나중에 인앱결제/인앱광고 예제가 필요해지면:
+  cd <package_name> && pnpm dlx create-ait-app@0.1.3 add-sample --sample iap,iaa
+```
+
+(create-ait-app의 `add-sample` 서브커맨드 — `granite.config.ts`가 있는
+프로젝트에서만 동작하고, `--sample`을 생략하면 interactive checkbox 프롬프트로
+빠지므로 에이전트가 대신 실행해줄 땐 항상 명시한다. 자세한 제약은 Out of
+scope 참조.)
 
 #### dev 서버 자동 기동
 
@@ -356,7 +417,14 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   (`inject` skill의 devtools facet).
 - ❌ 기존 프로젝트에 IAP/IAA 샘플 추가 — create-ait-app의 `add-sample`
   서브커맨드가 brownfield를 지원한다 (`pnpm dlx create-ait-app@0.1.3
-  add-sample iap`). 이 skill은 greenfield 전용.
+  add-sample [directory] --sample iap,iaa`, `directory` 생략 시 기본값은
+  cwd `.`). `@0.1.3` 소스 실측(`src/detect-project.js`): 대상 디렉토리에
+  `granite.config.ts`가 없으면 즉시 거부한다("create-ait-app으로 생성한
+  프로젝트인지 확인해 주세요") — create-ait-app으로 만든 프로젝트에서만
+  동작한다. `--sample`(또는 positional `iap`/`iaa`)을 생략하면 interactive
+  checkbox 프롬프트로 빠지므로 비대화형 호출에는 항상 명시한다. 이 skill은
+  greenfield 전용이라 자동 호출하지 않는다 — 필요하면 Step 8 완료 안내의
+  명령을 그대로 쓴다.
 - ❌ Workspace 등록 / 멤버 초대 / billing — 콘솔 UI의 책임.
 - ❌ Git 초기화 — 사용자가 결정 (`.gitignore` 파일만 생성해 둔다).
 - ❌ create-ait-app 자체의 버그 수정 — upstream(toss/create-ait-app) 이슈로.
