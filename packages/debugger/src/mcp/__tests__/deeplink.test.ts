@@ -353,9 +353,9 @@ describe('buildLauncherAttachUrl', () => {
     it('normalizes a missing trailing slash on the override', () => {
       process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher';
       const out = buildLauncherAttachUrl(TUNNEL, WSS);
-      expect(
-        out.startsWith('https://toss.github.io/apps-in-toss-harness/launcher/?url='),
-      ).toBe(true);
+      expect(out.startsWith('https://toss.github.io/apps-in-toss-harness/launcher/?url=')).toBe(
+        true,
+      );
     });
 
     it('throws (does not silently fall back) for a non-https override', () => {
