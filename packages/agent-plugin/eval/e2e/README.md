@@ -209,7 +209,3 @@ stdout 요약 예:
 - **P2** — Docker sandbox + deploy-isolated opt-in(측정 전용 앱·`--profile`·throw 게이트).
 - **P3** — 멀티모델 매트릭스 자동화(opus/sonnet/haiku × Qwen × 시드 × N 일괄 + 비교 리포트) +
   추가 게이트웨이 어댑터(Codex 등) + (선택) effort 축. 이 단계에서 Inspect AI 재평가.
-
----
-
-커뮤니티 오픈소스 프로젝트입니다.

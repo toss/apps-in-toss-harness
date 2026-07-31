@@ -1,7 +1,7 @@
 {
   "name": "@apps-in-toss/agent-plugin",
   "version": "0.1.22",
-  "description": "Community plugin for building Apps in Toss mini-apps from inside AI coding agents (Claude Code first; Codex and others to follow)",
+  "description": "Plugin for building Apps in Toss mini-apps from inside AI coding agents (Claude Code first; Codex and others to follow)",
   "type": "module",
   "private": true,
   "engines": {
@@ -40,12 +40,13 @@
   "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
-    "url": "https://github.com/apps-in-toss-community/agent-plugin"
+    "url": "https://github.com/toss/apps-in-toss-harness",
+    "directory": "packages/agent-plugin"
   },
   "bugs": {
-    "url": "https://github.com/apps-in-toss-community/agent-plugin/issues"
+    "url": "https://github.com/toss/apps-in-toss-harness/issues"
   },
-  "homepage": "https://aitc.dev/",
+  "homepage": "https://github.com/toss/apps-in-toss-harness",
   "vitest": {
     "include": [
       "shared/**/*.test.ts",

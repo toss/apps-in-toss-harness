@@ -2,7 +2,7 @@
 
 **한국어** · [English](./README.en.md)
 
-AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테스트·배포까지 할 수 있게 해주는 커뮤니티 플러그인입니다. 현재 [Claude Code](https://claude.com/claude-code)를 지원하며, Codex 등 다른 에이전트는 후속 Phase에서 추가됩니다.
+AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테스트·배포까지 할 수 있게 해주는 플러그인입니다. 현재 [Claude Code](https://claude.com/claude-code)를 지원하며, Codex 등 다른 에이전트는 후속 Phase에서 추가됩니다.
 
 ## 목표
 
@@ -31,7 +31,7 @@ agent-plugin/
 │   ├── skills/              # SKILL.md 번들
 │   ├── commands/            # slash command 진입점 (얇은 래퍼)
 │   └── templates/           # 스캐폴딩 템플릿
-├── .claude-plugin/          # Claude Code plugin + marketplace manifest (Phase 1, 현재)
+├── .claude-plugin/          # Claude Code plugin manifest (Phase 1, 현재) — marketplace manifest는 repo 루트 정본
 └── .codex-plugin/           # Codex (Phase 3, 스펙 확정 후)
 ```
 
@@ -42,8 +42,8 @@ agent-plugin/
 Claude Code에서 marketplace를 추가하고 플러그인을 설치합니다:
 
 ```bash
-/plugin marketplace add apps-in-toss-community/agent-plugin
-/plugin install ait@aitc
+/plugin marketplace add toss/apps-in-toss-harness
+/plugin install ait@apps-in-toss
 ```
 
 설치 후 `/ait:` 명령(`/ait:new`, `/ait:debug` 등)을 사용할 수 있습니다. 플러그인 이름이 네임스페이스라 콜론 형태가 실제 명령이고, 공백 형태(`/ait new`)는 존재하지 않습니다.
@@ -64,8 +64,4 @@ git config core.hooksPath .githooks
 
 ## 현황
 
-전체 로드맵은 [organization landing page](https://aitc.dev/) 참조.
-
----
-
-커뮤니티 오픈소스 프로젝트입니다.
+전체 로드맵은 [`docs/roadmap.md`](../../docs/roadmap.md) 참조.

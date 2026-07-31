@@ -2,7 +2,7 @@
 
 [한국어](./README.md) · **English**
 
-Community plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside coding agents — currently supports [Claude Code](https://claude.com/claude-code). Codex and other agents are planned for later phases.
+Plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside coding agents — currently supports [Claude Code](https://claude.com/claude-code). Codex and other agents are planned for later phases.
 
 ## Goal
 
@@ -32,7 +32,7 @@ agent-plugin/
 │   ├── skills/              # SKILL.md bundles
 │   ├── commands/            # slash command entry points (thin wrappers)
 │   └── templates/           # scaffolding templates
-├── .claude-plugin/          # Claude Code plugin + marketplace manifest (Phase 1, current)
+├── .claude-plugin/          # Claude Code plugin manifest (Phase 1, current) — marketplace manifest lives at the repo root
 └── .codex-plugin/           # Codex (Phase 3, after spec is finalised)
 ```
 
@@ -43,8 +43,8 @@ agent-plugin/
 In Claude Code, add the marketplace and install the plugin:
 
 ```bash
-/plugin marketplace add apps-in-toss-community/agent-plugin
-/plugin install ait@aitc
+/plugin marketplace add toss/apps-in-toss-harness
+/plugin install ait@apps-in-toss
 ```
 
 After installation the `/ait:` commands (`/ait:new`, `/ait:debug`, etc.) become available. The plugin name is the namespace, so the colon form is the real command — a space form (`/ait new`) does not exist.
@@ -65,8 +65,4 @@ This is a developer convenience for fast feedback before push. CI runs the same 
 
 ## Status
 
-See the [organization landing page](https://aitc.dev/) for the full roadmap.
-
----
-
-Community open-source project.
+See [`docs/roadmap.md`](../../docs/roadmap.md) for the full roadmap.

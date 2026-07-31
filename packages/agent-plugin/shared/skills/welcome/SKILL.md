@@ -16,8 +16,8 @@ argument-hint: ''
 않는다. 이 skill은 그 station-0→1 hand-off를 메운다 — 설치 직후 사용자가
 harness 전체 흐름을 한눈에 보고 첫 station(`/ait:new`)으로 곧장 들어가게 한다.
 
-커뮤니티 오픈소스 플러그인이며, 빈 디렉토리부터 앱인토스 미니앱 출시까지
-에이전트를 떠나지 않고 완주하는 흐름을 `/ait` 명령으로 엮는다.
+빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주하는 흐름을
+`/ait` 명령으로 엮는다.
 
 ## 실행 순서
 
@@ -26,7 +26,7 @@ harness 전체 흐름을 한눈에 보고 첫 station(`/ait:new`)으로 곧장 �
 마무리한다:
 
 ```
-Apps in Toss Community 플러그인이 설치됐습니다. (커뮤니티 오픈소스)
+Apps in Toss 플러그인이 설치됐습니다.
 
 빈 디렉토리부터 미니앱 출시까지 에이전트 안에서 완주하는 흐름:
 
@@ -59,7 +59,7 @@ Apps in Toss Community 플러그인이 설치됐습니다. (커뮤니티 오픈�
 
 ## 참고
 
-- harness 전체 흐름·station map 정본: umbrella CLAUDE.md §1.1–§1.2
-- 각 station의 진척·blocker: GitHub Project `harness roadmap`
-  (github.com/orgs/apps-in-toss-community/projects/1)
+- harness 전체 흐름·station map 정본: `docs/roadmap.md` (repo 루트)
+- 각 station의 진척·blocker: milestone `MT — 공식 이관`
+  (github.com/toss/apps-in-toss-harness/milestone/1)
 - 주제별 문서는 docs MCP(`searchDocumentation`/`getPage`)로 조회한다.

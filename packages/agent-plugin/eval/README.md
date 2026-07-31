@@ -139,7 +139,7 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 
 | # | station | 명령 | 기대 산출물 | seam (다음 명령을 인쇄?) |
 |---|---|---|---|---|
-| 0 | install | `/plugin marketplace add apps-in-toss-community/agent-plugin` → `/plugin install` | `/ait *` 명령이 존재, `apps-in-toss-docs`/`apps-in-toss-console` MCP 서버가 목록에 기본 포함 | (플러그인 메커니즘) → `/ait:welcome` → `/ait:new` 안내 |
+| 0 | install | `/plugin marketplace add toss/apps-in-toss-harness` → `/plugin install` | `/ait *` 명령이 존재, `apps-in-toss-docs`/`apps-in-toss-console` MCP 서버가 목록에 기본 포함 | (플러그인 메커니즘) → `/ait:welcome` → `/ait:new` 안내 |
 | 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` (create-ait-app 산출물 + devtools 배선 + granite.config.ts 기본 포함) | ✅ `pnpm dev` → `/ait:design` → `ait build` → 콘솔 MCP(`miniapp_create`) 인쇄 |
 | 2 | dev | `cd demo-shop && pnpm dev` | 브라우저에서 devtools panel 과 함께 실행 | ✅ 회귀 의심 시 `/ait:debug` 로 분기 |
 | 3 | debug | `/ait:debug` | 환경 3겹 분기 안내(환경 1 브라우저 / 2 PWA / 3 MCP attach). candidate scheme URL 이 없으면 §5-B 가 `ait build` → 콘솔 MCP 로 직접 등록·업로드 | ✅ 환경에 맞는 다음 동작(`/ait:setup-phone-preview`/`/ait:setup-debugger` 등) 또는 5-C attach |
@@ -153,7 +153,7 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 - `debug`(§5-B)처럼 skill 이 내부에서 직접 콘솔 MCP 를 호출하는 경우, **관측 결과에 따라
   분기하는** seam 인가(예: 4046 lock·약관 미체결 → 에러를 그대로 전달하고 중단).
 - 출력 톤: 차분한 한 블록 마무리. 과한 이모지·방어적 disclaimer·헤더 직후 `>` blockquote 금지.
-- "공식(official)" / "powered by Toss" / 제휴 암시 표현이 산출물 어디에도 없는가(커뮤니티 OSS).
+- 산출물이 아직 npm 미배포·public 전환 준비 중이라는 현재 상태를 과장하지 않는가(예: 배포 완료·GA 단정 금지).
 
 ---
 
@@ -165,7 +165,3 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
   메운다. 실행법·결과 읽는 법은 [`e2e/README.md`](./e2e/README.md).
 - Inspect AI 는 슈트 B 의 P3(멀티모델 매트릭스 — opus/sonnet/haiku × 시드 × N 비교)에서
   재평가한다. P1(build-only·작은 N)은 신규 의존성 0 인 Agent SDK 직접 드라이버로 충분하다.
-
----
-
-커뮤니티 오픈소스 프로젝트입니다.
