@@ -961,13 +961,11 @@ type _AppLogin = Assert<typeof Mock.appLogin, typeof Original.appLogin>;
 Please file an issue: https://github.com/toss/apps-in-toss-harness/issues
 ```
 
-### 3. GitHub Actions 주간 CI
+### 3. SDK 버전 드리프트 확인 (`pnpm check-sdk-update`)
 
-`.github/workflows/check-sdk-update.yml`이 **매주 월요일** 자동으로:
+설치된 `@apps-in-toss/web-framework` 버전과 npm에 올라온 버전을 비교해, 다르면 업데이트 명령을 안내하고 **exit 1**로 끝난다. 업데이트나 타입 체크를 대신 해주지는 않는다 — 감지만 한다. (web-framework 3.0 프리릴리스 구간이라 `latest`가 아니라 `beta` dist-tag를 기준으로 본다. GA flip 시 `latest`로 되돌린다.)
 
-1. `@apps-in-toss/web-framework`의 새 버전 확인
-2. 최신 버전으로 업데이트 후 타입 체크 실행
-3. 새 버전 감지 시 자동으로 GitHub Issue 생성 (타입 에러 여부 포함)
+**자동 실행되지 않는다 — 손으로 돌린다.** 커뮤니티 repo에는 이걸 매주 월요일 돌리고 드리프트를 GitHub Issue로 여는 워크플로가 있었지만, 이 repo에는 그 워크플로가 없다: 루트 `.github/`는 harness 소유라 상류 스냅샷에서 통째로 제외된다(`scripts/sync-upstream.mjs`의 `EXCLUDE_ROOT_INFRA`). 주간 자동화를 되살릴지는 별도 결정 사항이다.
 
 ## Fidelity QA
 
