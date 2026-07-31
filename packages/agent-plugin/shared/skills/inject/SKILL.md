@@ -19,8 +19,8 @@ argument-hint: ''
 
 이미 `@apps-in-toss/web-framework`를 쓰는 기존 미니앱 프로젝트의 개발 환경을 확장한다.
 `new-miniapp`이 greenfield(빈 디렉토리)라면 이 skill은 **brownfield** — 기존 파일을 최소한으로
-수정하고, 이미 설정이 있으면 skip한다. 어느 facet이든 생성·수정하는 파일에서 "공식(official)",
-"토스가 제공하는", "powered by Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
+수정하고, 이미 설정이 있으면 skip한다. 어느 facet이든 생성·수정하는 파일에 과장·홍보성 문구를
+넣지 않는다.
 
 두 facet은 목적이 다르다:
 

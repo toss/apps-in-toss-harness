@@ -43,8 +43,8 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
 
 세 환경 모두 attach 후 `run_tests`로 미니앱 test case 파일(glob)을 그 환경에서 실행할 수 있다 — env1은 mock+local CDP, env2는 실기기 WebKit, env3는 실 토스 WebView에서 같은 테스트를 돌려 환경별 거동 차이를 본다. 상세는 `references/attach-tools.md`.
 
-생성·수정하는 모든 메시지에서 "공식(official)", "토스가 제공하는",
-"powered by Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
+생성·수정하는 모든 메시지에 과장·홍보성 문구를 넣지 않는다. 생성하는 안내는
+관찰·진단을 설명하는 최소한으로.
 
 ## 의존
 
@@ -289,8 +289,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   펼쳐 확인하도록 안내.
 - ❌ 미구현 mock의 throw를 "버그"로 오인. 의도된 동작이며 누락 API는 devtools
   이슈로 보고 안내.
-- ❌ 메시지에 "공식(official)", "토스가 제공하는", "powered by Toss" 등
-  제휴·후원·인증 암시 표현.
+- ❌ 메시지에 과장·홍보성 문구. 생성하는 안내는 관찰·진단을 설명하는 최소한으로.
 - ❌ `MCP_ENV` 기반 구버전 진입 방식에 의존. 환경 전환은 `start_debug({mode})`로
   런타임에 한다(상세는 `references/mode-switching.md`).
 - ❌ 환경 3 scheme URL을 얻으려 `ait deploy --api-key`/`--profile`(API 키 기반 직접

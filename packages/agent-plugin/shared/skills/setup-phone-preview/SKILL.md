@@ -26,7 +26,7 @@ Vite dev server가 뜰 때 Cloudflare quick tunnel을 자동으로 열고, 터�
 - 폰에서 launcher PWA를 홈 화면에 한 번 추가해두면 매일 QR 스캔만으로 새 tunnel URL에 접속된다.
 - `pnpm dev`(기존 명령)는 변경 없음 — tunnel은 `dev:phone`을 쓸 때만 켜진다.
 
-생성·수정하는 모든 파일에서 "공식(official)", "토스가 제공하는", "powered by Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
+생성·수정하는 모든 파일에 과장·홍보성 문구를 넣지 않는다. 생성하는 주석은 배선을 설명하는 최소한으로.
 
 ## 의존
 
@@ -364,8 +364,7 @@ setup-phone-preview 완료
 - ❌ `cloudflared`를 `devDependencies`에 직접 추가. `@apps-in-toss/devtools`가 이미
   `dependencies`로 가져온다. `pnpm-workspace.yaml`의 `allowBuilds` 허용만 하면 됨.
 - ❌ `package.json` JSON 주석 추가 (표준 JSON에 주석 불가).
-- ❌ 생성·수정하는 내용에 "공식(official)", "토스가 제공하는", "powered by Toss"
-  등 제휴·후원·인증 암시 표현.
+- ❌ 생성·수정하는 내용에 과장·홍보성 문구. 생성하는 주석은 배선을 설명하는 최소한으로.
 - ❌ idempotency 체크 없이 중복 적용 — 2회 실행 시 변경이 없어야 한다.
 
 ## 참고

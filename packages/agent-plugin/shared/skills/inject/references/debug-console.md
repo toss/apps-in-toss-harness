@@ -9,8 +9,8 @@ devtools의 MCP 데몬·test runner·on-device attach 표면이 별도 패키지
 `@apps-in-toss/debugger`(MCP 데몬, devDep/npx 전용)와 `@apps-in-toss/debug-console`(on-device
 attach + eruda) 2개 패키지로 나뉘었다.
 
-생성·수정하는 파일에서 "공식(official)", "토스가 제공하는", "powered by Toss" 등 제휴·후원·
-인증 암시 표현을 쓰지 않는다. 이 skill은 콘솔 인증을 요구하지 않는다 — 로컬 설치 작업이다.
+생성·수정하는 파일에 과장·홍보성 문구를 넣지 않는다. 생성하는 주석은 배선을 설명하는 최소한으로.
+이 skill은 콘솔 인증을 요구하지 않는다 — 로컬 설치 작업이다.
 
 ## 보안 스코프 (중요)
 
@@ -136,5 +136,4 @@ if (__DEBUG_BUILD__) {
 - ❌ `@apps-in-toss/devtools`·`@apps-in-toss/debugger`와 혼동 — 이 facet은 온디바이스 attach +
   eruda 전용이다. MCP 데몬 등록은 `/ait:setup-debugger`가 처리(`/ait:debug` 참조),
   브라우저 mock/panel은 `inject-devtools` facet.
-- ❌ 생성·수정하는 내용에 "공식(official)", "토스가 제공하는", "powered by Toss" 등
-  제휴·후원·인증 암시 표현.
+- ❌ 생성·수정하는 내용에 과장·홍보성 문구. 생성하는 주석은 배선을 설명하는 최소한으로.

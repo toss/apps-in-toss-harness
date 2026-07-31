@@ -47,8 +47,8 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 업로드는 console MCP 도구(`miniapp_create`/`bundle_upload`/
 `bundle_upload_complete`)의 책임 — 여기서 자동 호출하지 않는다.
 
-생성되는 README/UI/주석에서 "공식(official)", "토스가 제공하는", "powered by
-Toss" 등 제휴·후원·인증 암시 표현을 쓰지 않는다.
+생성되는 README/UI/주석에 과장·홍보성 문구를 넣지 않는다. 생성하는 주석은 배선을
+설명하는 최소한으로.
 
 ## 입력
 
@@ -359,8 +359,8 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   react-ts --tds` 조합으로.
 - ❌ `pnpm` 실패 시 npm/yarn으로 자동 fallback. 매니저 차이는 사용자가
   의식하고 결정해야 한다.
-- ❌ 생성된 프로젝트 어디에도 "공식(official) Toss …" / "powered by Toss" /
-  "토스가 제공하는" 표현.
+- ❌ 생성된 프로젝트에 과장·홍보성 문구 삽입. 생성하는 README/주석은 배선을
+  설명하는 최소한으로.
 - ❌ (`--local` 경로) JSX/TSX 안에 토큰을 두거나 템플릿 엔진 도입 —
   `references/local-template.md`의 토큰 규칙 참조.
 
