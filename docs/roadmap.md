@@ -78,7 +78,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 | 6 operate | 배포 후 상태·로그 조회가 에이전트 안에서 동작 | **상태 조회 MCP 실증** — `miniapp_get_status`·`bundle_list` 실호출 확인(단 `bundle_build_status`는 GW `-32000` 오류, 피드백 대상). 로그 조회는 콘솔 미공개 gap 유지 — on-device 관측은 debugger relay(#2)에서 해소 |
 | 7 plan | 아이디어 발화 → 계획 산출 + scaffold seam 인쇄 | 충족 |
 | 8 design | 등록 규격 이미지 자산 산출 + register seam 인쇄 | 충족 |
-| docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | **기본 포함 완료** (GitBook MCP live 확인) — skill 말미 deep-link 재편은 #4 잔여 |
+| docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | **완료** — 기본 포함(GitBook MCP live 확인)과 skill 말미 deep-link 재편 둘 다 실측 완료: `validate-plugin.mjs`의 A2/docs-link-banned(커뮤니티 링크 금지)·A2/docs-mcp-mention-required(docs MCP 언급 필수)가 8-skill 전수에 균일 강제(allowlist·exempt 모두 빈 Set) — `node scripts/validate-plugin.mjs` 0 error 실측(2026-07-31) |
 
 ## 3. 1.0 정의 (첫 GA)
 
@@ -112,7 +112,7 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 |---|---|
 | eval 슈트 A (promptfoo 라우팅) | 유지 — skill 목록 변경 시 함께 갱신 (validate 게이트가 동기화 강제) |
 | eval 슈트 B (e2e 완주 측정) | 유지 — 측정 여정은 scaffold 경로 전환에 이미 정합(#6 follow-up). 콘솔 게이트(aitcc 차단 패턴)는 MCP GW 전환(#3) 시 차단 대상을 재정의해야 함 |
-| skill 통일 규칙 (7항목 체크리스트) | 유지 — 단 docs deep-link 규칙(4항)은 GitBook 이관(#4)과 함께 "docs MCP 조회 안내"로 재정의 |
+| skill 통일 규칙 (7항목 체크리스트) | 유지 — docs deep-link 규칙(4항)은 GitBook 이관(#4)과 함께 "docs MCP 조회 안내"로 재정의 완료(A2/docs-link-banned·A2/docs-mcp-mention-required가 8-skill 전수 강제, 0 error 실측 — 위 §2 docs 행 참고) |
 | docs crosslink 검증 (커뮤니티 CI) | GitBook 이관(#4) 시 무의미 — 이관 시점에 sunset |
 | Deploy Key 용어·인증 모델 | 유지하되 MCP GW 인증 설계(#3)와 정합 재검토 — open question |
 
