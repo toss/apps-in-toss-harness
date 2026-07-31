@@ -2,7 +2,7 @@
 
 `@ait-co/devtools`가 브라우저에서 제공하는 SDK **mock**과, 실제 토스 앱 WebView 안에서 도는 **real** 환경의 동작 차이를 한곳에 모은 표다. 목표는 "브라우저에서 통과한 코드가 실폰에서 다르게 동작"하는 회귀를 mock 단계에서 잡는 것 — gap을 먼저 가시화해야 어디부터 좁힐지 우선순위를 정할 수 있다.
 
-이 문서는 **카탈로그(survey)일 뿐 구현이 아니다.** 각 행의 gap을 실제로 좁히는 작업은 별도 PR로 나뉘며, 그 우선순위 근거가 이 표다. 추적: [devtools#190](https://github.com/apps-in-toss-community/devtools/issues/190).
+이 문서는 **카탈로그(survey)일 뿐 구현이 아니다.** 각 행의 gap을 실제로 좁히는 작업은 별도 PR로 나뉘며, 그 우선순위 근거가 이 표다. 추적: devtools#190.
 
 ## 읽는 법
 
@@ -10,10 +10,10 @@
   - `🔴 inert` — mock이 호출은 받지만 **상태를 전혀 안 바꿔** 호출 전/후를 구분할 수 없다. real은 환경을 바꾸므로 toss-gated 코드가 브라우저에서 영영 안 돌거나, 부수효과를 대조할 수 없다. **gap이 가장 큼.**
   - `🟡 partial` — 동작은 하지만 real과 형태·타이밍·분기가 다르다. 보통 실용에 충분하나 edge case에서 갈린다.
   - `🟢 faithful` — mock이 real의 계약(반환 shape·상태 전이)을 충실히 재현. 남은 차이는 native 런타임 자체(실제 결제 UI, 실제 카메라)뿐.
-- **관측 가능?** — 호출 결과가 `AIT.getMockState`(패널·MCP로 read)에 반영되는가. `AIT.getMockState`는 `aitState.state`를 그대로 반환하므로, **state slice에 쓰는 API만** 에이전트가 호출 후 환경 변화를 관측할 수 있다. `✓ sdkCallLog`는 영역 4 ([#195](https://github.com/apps-in-toss-community/devtools/issues/195)) 구현으로 추가된 `AIT.getSdkCallHistory` 관측을 뜻한다 — state가 안 바뀌는 inert API도 **호출 자체**를 패널 Analytics → Calls 뷰에서 🔴 뱃지로 확인하고, MCP `AIT.getSdkCallHistory`로 에이전트가 읽을 수 있다.
+- **관측 가능?** — 호출 결과가 `AIT.getMockState`(패널·MCP로 read)에 반영되는가. `AIT.getMockState`는 `aitState.state`를 그대로 반환하므로, **state slice에 쓰는 API만** 에이전트가 호출 후 환경 변화를 관측할 수 있다. `✓ sdkCallLog`는 영역 4 (devtools#195) 구현으로 추가된 `AIT.getSdkCallHistory` 관측을 뜻한다 — state가 안 바뀌는 inert API도 **호출 자체**를 패널 Analytics → Calls 뷰에서 🔴 뱃지로 확인하고, MCP `AIT.getSdkCallHistory`로 에이전트가 읽을 수 있다.
 - 코드 위치는 `src/mock/` 기준 상대 경로.
 
-이 표의 출발점은 [devtools#171](https://github.com/apps-in-toss-community/devtools/issues/171) on-device relay 세션(2026-05-25)에서 실폰(`AppsInToss TossApp/5.261.0`)에 attach해 실측한 분기들이다.
+이 표의 출발점은 devtools#171 on-device relay 세션(2026-05-25)에서 실폰(`AppsInToss TossApp/5.261.0`)에 attach해 실측한 분기들이다.
 
 ---
 
@@ -128,7 +128,7 @@ iPhone 15 Pro 실 web-relevant 스펙(devtools#190 relay 실측): CSS viewport *
 | `closeView` | `window.history.back()` | 미니앱 뷰 종료 | 🟡 partial | ✗ | 브라우저에선 히스토리 뒤로. 실제 종료(앱 컨테이너 dismiss)와 의미 다름. |
 | `openURL` | `window.open(_, '_blank')` | 외부 브라우저/딥링크 | 🟡 partial | ✗ | 새 탭. 토스 in-app 브라우저 동작과 다름. |
 | `share` | `navigator.share` 있으면 위임, 없으면 log | 네이티브 공유 시트 | 🟡 partial | ✗ | 브라우저 Web Share에 의존. |
-| `getTossShareLink` | `https://toss.im/share/mock<path>` 고정 | 실제 공유 단축 URL | 🟡 partial | ✗ | 형태만 흉내, 실 링크 아님. scheme 없는 bare path(`/some/path`)는 실기기와 동일하게 `EXECUTION_ERROR`로 reject한다([#780](https://github.com/apps-in-toss-community/devtools/issues/780)). |
+| `getTossShareLink` | `https://toss.im/share/mock<path>` 고정 | 실제 공유 단축 URL | 🟡 partial | ✗ | 형태만 흉내, 실 링크 아님. scheme 없는 bare path(`/some/path`)는 실기기와 동일하게 `EXECUTION_ERROR`로 reject한다(devtools#780). |
 | `getNetworkStatus` | mode-aware (`mock`/`web`) | 실 네트워크 상태 | 🟡 partial | ✓ | web mode는 `navigator.connection`으로 추정(`device/network.ts`). WIFI/5G/WWAN 감지 불가 — Network Information API 한계. |
 | `getServerTime` | `Date.now()` | 토스 서버 시각 | 🟡 partial | ✗ | 로컬 시각. 서버 시각 skew 미반영. |
 | `isMinVersionSupported` | `appVersion` state로 계산 | 실 앱 버전 비교 | 🟢 faithful | (state 의존) | 로직 충실. 입력값(`appVersion` default)에만 의존. |
@@ -176,7 +176,7 @@ iPhone 15 Pro 실 web-relevant 스펙(devtools#190 relay 실측): CSS viewport *
 |---|---|---|---|---|---|
 | `GoogleAdMob.loadAppsInTossAdMob` | 200ms 후 `forceNoFill`이면 error, 아니면 `isLoaded=true` + `loaded` 이벤트 | 실 AdMob 로드 | 🟢 faithful | ✓ sdkCallLog | 패널 `forceNoFill` 토글로 no-fill 시험. 서버 측 지면(placement) 조회 단계는 모델링되지 않는다 — `adGroupId`는 판정에 쓰이지 않는다. 실기기의 지면 조회 실패(`PLACEMENT_ID_FETCH_FAILED`)는 `failureModes.loadAdMob` 다이얼로만 재현 가능하며, 다이얼 미설정 시 mock의 load 성공이 실기기에서 광고가 실제로 나간다는 신호는 아니다. |
 | `GoogleAdMob.showAppsInTossAdMob` | `isLoaded` 체크 후 requested→show→impression→reward→dismissed 시퀀스 emit | 실 광고 노출 + 리워드 | 🟢 faithful | ✓ sdkCallLog | 이벤트 타임라인 재현. reward는 `state.ads.rewardUnitType`/`rewardAmount`로 파라미터화 (#196). |
-| `GoogleAdMob.isAppsInTossAdMobLoaded` | `ads.isLoaded` 반환 | 실 로드 상태 | 🟢 faithful | ✓ sdkCallLog | 상태 기반. `adGroupId`가 빈 문자열/공백뿐이면 실기기와 동일하게 `INVALID_REQUEST`로 reject한다(필드 자체가 없는 호출은 하위호환으로 통과, [#780](https://github.com/apps-in-toss-community/devtools/issues/780)). |
+| `GoogleAdMob.isAppsInTossAdMobLoaded` | `ads.isLoaded` 반환 | 실 로드 상태 | 🟢 faithful | ✓ sdkCallLog | 상태 기반. `adGroupId`가 빈 문자열/공백뿐이면 실기기와 동일하게 `INVALID_REQUEST`로 reject한다(필드 자체가 없는 호출은 하위호환으로 통과, devtools#780). |
 | `TossAds.initialize` | `onInitialized` 발화. `forceNoFill=true`이면 `onInitializationFailed` 발화 (#196) | 실 SDK 초기화 | 🟢 faithful | ✓ sdkCallLog | 콜백 발화 완성. 패널 Load 버튼이 initialize를 통해 `isLoaded=true` + `loaded` 이벤트 기록. |
 | `TossAds.attach` | DOM에 placeholder div 삽입 | 실 광고 렌더 | 🟡 partial | ✓ sdkCallLog | 시각적 placeholder. 실 광고 콘텐츠 아님. |
 | `TossAds.attachBanner` | DOM에 placeholder 삽입 + `BannerSlotCallbacks` 발화(onAdRendered/onAdImpression 기본; forceNoFill이면 onNoFill/onAdFailedToRender). AttachBannerOptions(theme/tone/variant) 스타일 반영. 반환 `{destroy}`가 실제 `el.remove()` (#196) | 실 광고 렌더 + 콜백 | 🟢 faithful | ✓ sdkCallLog | 패널 TossAds 배너 섹션에서 Render/No-fill/Click/Destroy 버튼으로 결정론적 발화. |
@@ -240,7 +240,7 @@ iPhone 15 Pro 실 web-relevant 스펙(devtools#190 relay 실측): CSS viewport *
 |---|---|---|---|---|---|
 | `getClipboardText` / `setClipboardText` | mode 분기: `mock`(state) / `web`(`navigator.clipboard`, default) | 네이티브 클립보드 | 🟢 faithful | ✓ (mock mode) | web mode는 브라우저 권한 프롬프트·HTTPS 필요. permission gate 부착. |
 | `fetchContacts` | `contacts` state slice 페이지네이션 + `contains` 필터 | 실 주소록 | 🟢 faithful | ✓ | 패널 contacts 편집. offset/size/query 충실. |
-| `generateHapticFeedback` | `analyticsLog` 기록 + 10종 타입→`navigator.vibrate` 패턴 매핑(best-effort) + `sdkCallLog` 🟡 기록(hapticType + vibrated) + 패널 Device 탭 마지막 haptic 행·트리거 버튼 | 실 햅틱 진동 | 🟡 partial | ✓ sdkCallLog | 진동 자체는 native API라 브라우저 표현이 다름. `navigator.vibrate` 지원 여부에 따라 실제 진동 여부(`vibrated: boolean`)가 sdkCallLog에 기록되어 관측 가능. ([#197](https://github.com/apps-in-toss-community/devtools/issues/197)) `HapticFeedbackType` union 밖의 알 수 없는 `type`은 실기기와 동일하게 `EXECUTION_ERROR`로 reject한다([#780](https://github.com/apps-in-toss-community/devtools/issues/780)). |
+| `generateHapticFeedback` | `analyticsLog` 기록 + 10종 타입→`navigator.vibrate` 패턴 매핑(best-effort) + `sdkCallLog` 🟡 기록(hapticType + vibrated) + 패널 Device 탭 마지막 haptic 행·트리거 버튼 | 실 햅틱 진동 | 🟡 partial | ✓ sdkCallLog | 진동 자체는 native API라 브라우저 표현이 다름. `navigator.vibrate` 지원 여부에 따라 실제 진동 여부(`vibrated: boolean`)가 sdkCallLog에 기록되어 관측 가능. (devtools#197) `HapticFeedbackType` union 밖의 알 수 없는 `type`은 실기기와 동일하게 `EXECUTION_ERROR`로 reject한다(devtools#780). |
 | `saveBase64Data` | `<a download>` 트리거(브라우저 다운로드) | 네이티브 파일 저장 | 🟡 partial | ✗ | 브라우저 다운로드로 근사. 저장 위치 다름. |
 | `openPDFViewer` | `await Promise.resolve()` 후 `'CLOSE'` | 네이티브 PDF 뷰어 | 🔴 inert | ✗ | 즉시 CLOSE 반환, 실제 뷰어 없음. 권한·모드 분기 없음. |
 

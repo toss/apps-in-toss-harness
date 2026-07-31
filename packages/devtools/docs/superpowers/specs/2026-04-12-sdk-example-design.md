@@ -1,5 +1,7 @@
 # sdk-example 설계 스펙
 
+> **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+
 ## 개요
 
 `@apps-in-toss/web-framework` SDK의 모든 API를 인터랙티브하게 테스트할 수 있는 API 레퍼런스 앱.

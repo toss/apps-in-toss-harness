@@ -2,7 +2,7 @@
 
 이 문서는 실기기 토스 앱 WebView에서 crash가 발생했을 때 **메인테이너가 원인을 추적하기 위해 동원할 수 있는 데이터 소스와 절차**를 정리한다. 2026-05-28 `setDeviceOrientation` 시그니처 mismatch 사례를 계기로 작성됐다.
 
-설계 정본(환경 3겹 모델, relay TOTP 인증 아키텍처): umbrella `meta/three-environments-fidelity.md` (private repo, 메인테이너 internal 문서)
+설계 정본(환경 3겹 모델, relay TOTP 인증 아키텍처): [`docs/design/three-environments-fidelity.md`](../../../docs/design/three-environments-fidelity.md) (이 저장소 내부 정본)
 
 ---
 
@@ -258,13 +258,9 @@ root-cause prevention은 call_sdk arg validation (#270) 및 SDK-level 인자 검
 
 | 이슈 | 내용 | 관계 |
 |---|---|---|
-| [#264](https://github.com/apps-in-toss-community/devtools/issues/264) | call_sdk arg validation — 인자 검증으로 crash 예방 | root-cause prevention |
-| [#265](https://github.com/apps-in-toss-community/devtools/issues/265) | `list_pages.crashDetectedAt` — page-level crash 감지 | 이 문서 §2 단계 1 |
-| [#267](https://github.com/apps-in-toss-community/devtools/issues/267) | `list_exceptions` — JS Runtime.exceptionThrown ring buffer | 이 문서 §2 단계 2 |
-| [#270](https://github.com/apps-in-toss-community/devtools/issues/270) | call_sdk validation 구현 | §6 예방 계층 |
+| devtools#264 | call_sdk arg validation — 인자 검증으로 crash 예방 | root-cause prevention |
+| devtools#265 | `list_pages.crashDetectedAt` — page-level crash 감지 | 이 문서 §2 단계 1 |
+| devtools#267 | `list_exceptions` — JS Runtime.exceptionThrown ring buffer | 이 문서 §2 단계 2 |
+| devtools#270 | call_sdk validation 구현 | §6 예방 계층 |
 | [`docs/dogfood-relay-loop.md`](./dogfood-relay-loop.md) | relay 루프 운영 가이드 (tunnel/attach 복구 포함) | crash 아닌 연결 문제 트러블슈팅 |
 | [`scripts/redact-crash-log.sh`](../scripts/redact-crash-log.sh) | `.ips` redact 스크립트 | 이 문서 §5 |
-
----
-
-커뮤니티 오픈소스 프로젝트입니다.

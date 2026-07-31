@@ -8,8 +8,8 @@
 - `devtools-mcp` 실행 후 `start_debug({mode: 'relay-staging'})` 호출 (debug 모드)
   - MCP 기동: `npx @ait-co/devtools devtools-mcp`
   - 그런 다음 Claude Code에서: `start_debug({mode: 'relay-staging'})`
-- dogfood bundle deploy: `ait build && ait deploy --scheme-only`
-- deep-link: `intoss-private://aitc-sdk-example?_deploymentId=<uuid>&debug=1&relay=<wss>`
+- dogfood bundle 준비: `RELEASE_CHANNEL=dogfood ait build` → console MCP `miniapp_create`(신규 등록 시만)/`bundle_upload`/`bundle_upload_complete`(정본: `packages/agent-plugin/shared/skills/debug/SKILL.md` §5-B)
+- deep-link: `intoss-private://<app-id>?_deploymentId=<uuid>&debug=1&relay=<wss>`
 - 진입 경로: QR 스캔 (단일 정식 경로 — `test-push` 폐기됨)
 
 > 참고 — `devtools-mcp` 기동 직후 `start_debug({mode: 'relay-staging'})`를 호출하면 relay connection이 준비된다.
@@ -39,8 +39,8 @@ list_pages → measure_safe_area → call_sdk(getOperationalEnvironment)
 
 ## attach 절차
 
-1. `ait deploy --scheme-only` → scheme URL 획득
-2. `start_attach(scheme_url)` 호출 — QR 생성 + 폰 attach까지 한 번에 (기본으로 attach될 때까지 대기, `wait_timeout_seconds`로 조절)
+1. `RELEASE_CHANNEL=dogfood ait build` → console MCP `bundle_upload`/`bundle_upload_complete` → scheme URL 획득
+2. `start_attach({mode: 'relay-staging', scheme_url})` 호출 — QR 생성 + 폰 attach까지 한 번에 (기본으로 attach될 때까지 대기, `wait_timeout_seconds`로 조절)
 3. QR 스캔 → 토스 앱이 dogfood bundle 로드 + relay attach
 4. attach 완료 시 `start_attach`이 그대로 페이지 목록을 반환 — 이후 도구 사용
 

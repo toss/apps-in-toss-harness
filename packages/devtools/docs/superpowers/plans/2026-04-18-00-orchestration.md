@@ -1,5 +1,7 @@
 # Orchestration: 4 PRs for E2E & SDK Compat
 
+> **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+
 이 문서는 개별 PR plan을 **어떻게 엮어 실행할지** 지시한다. 각 PR의 세부 Task는 해당 plan 파일을 참고.
 
 **Spec**: [`../specs/2026-04-18-e2e-and-sdk-compat-design.md`](../specs/2026-04-18-e2e-and-sdk-compat-design.md)

@@ -1,5 +1,7 @@
 # PR C1: Peer Range Lock + Proxy Throw + 정책 문서 Implementation Plan
 
+> **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `@apps-in-toss/web-framework` peer range를 `>=2.4.0 <2.4.8`로 좁게 잠그고, `src/mock/proxy.ts`의 미구현 API fallback을 `console.warn` no-op에서 `throw`로 전환하며, README/CLAUDE.md에 새 지원 정책을 명문화한다.

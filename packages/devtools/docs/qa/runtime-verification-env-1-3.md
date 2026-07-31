@@ -1,10 +1,12 @@
 # 런타임 검증 가이드 — 환경 1·3
 
-> 이 가이드는 `start_debug(mode)` 단일 진입 모델(#348/#356/#358)을 기준으로 환경 1(로컬 Chromium), 환경 3(intoss-private dogfood relay)의 acceptance 체크리스트를 담는다.
+> 이 가이드는 `start_debug(mode)` 단일 진입 모델(devtools#348/#356/#358)을 기준으로 환경 1(로컬 Chromium), 환경 3(intoss-private dogfood relay)의 acceptance 체크리스트를 담는다.
 >
 > 환경 3은 BLOCK-phone — 실 iPhone이 있어야 완주할 수 있다. 환경 1 섹션은 실기기 없이 자율 검증 가능.
 >
 > **환경 2(AITC Sandbox PWA)는 이 가이드 범위 밖이다** — 진입 메커니즘이 다르다(아래 핵심 모델 참고). 절차·acceptance는 [`docs/env2-pwa-acceptance.md`](../env2-pwa-acceptance.md)가 정본. **폰 세션 순서는 환경 2를 먼저** 돈다 — 토스 앱·검수가 불필요해 마찰이 낮고, CDP relay 경로의 절반을 더 싼 환경에서 먼저 검증한 뒤 환경 3(dogfood relay)으로 넘어간다.
+>
+> **레거시 QA 절차 — harness 좌표로 갱신됨.** §"환경 3" 섹션은 원래 커뮤니티 dog-food 좌표(miniAppId `31146`)와 `aitcc` CLI를 전제로 작성됐다. harness dogfood 대상은 miniAppId `58955`(`ait-harness-e2e`, 워크스페이스 `59` — `docs/roadmap.md` station 5)이고, 배포·상태 조회는 console MCP(`apps-in-toss-console`)로 전환됐다. 아래는 그 전환을 반영해 갱신했다 — 정확한 최신 호출 시퀀스는 `packages/agent-plugin/shared/skills/debug/SKILL.md` §5-B·5-C가 정본. aitcc에 결합돼 harness 절차로 완전히 옮기지 못한 구간은 "console MCP 기반 재작성 필요"로 표시했다.
 
 ## 핵심 모델 — `start_debug(mode)` 단일 진입
 
@@ -80,17 +82,23 @@ start_debug({mode: 'local-browser'})
 ### 준비물
 
 - 실 iPhone 1대 (토스 앱 설치, dogfood 빌드 진입 가능한 계정)
-- 데스크톱: Claude Code 세션 + `aitcc` 로그인된 상태
-- 31146 `aitcc app status` → `locked: false` 확인 (BLOCK-31146 해제 상태)
+- 데스크톱: Claude Code 세션 + console MCP(`apps-in-toss-console`) OAuth 인가 완료 상태
+- `58955`(`ait-harness-e2e`) → REVIEW lock 미해제 상태 확인. `aitcc app status`에 대응하는 console MCP 조회(`miniapp_get_status` 추정)는 응답 필드 미확인 — **console MCP 기반 재작성 필요**
 
 ### 1. dogfood 번들 배포
 
 ```bash
-cd ~/Projects/github.com/apps-in-toss-community/sdk-example
-ait build
-ait deploy --scheme-only
-# 출력: intoss-private://aitc-sdk-example?_deploymentId=<uuid>
+cd <대상 미니앱 프로젝트 루트>
+RELEASE_CHANNEL=dogfood ait build
 ```
+
+이어서 console MCP `miniapp_create`(신규 등록 시만) → `bundle_upload` → `bundle_upload_complete`로 업로드한다(harness dogfood는 `58955` 단일 앱 update 모드로 재사용 — 신규 등록 불필요). 업로드 완료 응답:
+
+```
+# intoss-private://<app-id>?_deploymentId=<uuid>
+```
+
+정확한 호출 시퀀스·파라미터는 `packages/agent-plugin/shared/skills/debug/SKILL.md` §5-B가 정본.
 
 ### 2. MCP 기동 + staging 진입 (env 3)
 
@@ -119,7 +127,7 @@ start_debug({mode: 'relay-staging'})
 ### 3. QR 발급 → 폰에서 토스 앱 cold-load
 
 ```
-start_attach({scheme_url: "intoss-private://aitc-sdk-example?_deploymentId=<uuid>"})
+start_attach({mode: 'relay-staging', scheme_url: "intoss-private://<app-id>?_deploymentId=<uuid>"})
 → QR PNG 자동 열림 + attachUrl 출력
 ```
 
@@ -179,11 +187,11 @@ start_debug({mode: 'local-browser'})
 ## SECRET-HANDLING
 
 - TOTP secret 값과 `at=<code>` 모두 출력 금지
-- aitcc 쿠키/TBIZAUTH 출력 금지
+- console MCP OAuth 세션 토큰·쿠키 출력 금지
 - 응답 redact: `at=`, `Authorization`, `Cookie`, deploymentId(첫 8자만 남기기)
 
 ---
 
 ## 운영팀 처리 대기 시
 
-`errorCode: 4046` (REVIEW lock)이 떨어지면 31146 update mode를 강제하지 말 것. 운영팀 처리 trail로 두고 다음 세션 대기 (umbrella §3).
+REVIEW lock류 에러가 떨어지면 `58955`(`ait-harness-e2e`) update mode를 강제하지 말 것. 운영팀 처리 trail로 두고 다음 세션 대기(`docs/roadmap.md` station 5). (`aitcc` 시절의 `errorCode: 4046`에 대응하는 console MCP 에러 코드는 미확인 — console MCP 기반 재작성 필요.)

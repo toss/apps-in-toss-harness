@@ -1,5 +1,7 @@
 # PR C2: SDK Compat Matrix Implementation Plan
 
+> **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** PR CI에 `compat-check` matrix job을 추가해, 지원 범위의 양 끝 버전(`2.4.0`, `2.4.7`) 모두에서 `pnpm typecheck`가 통과하는지 게이팅한다.

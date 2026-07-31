@@ -1,5 +1,7 @@
 # devtools 자기완결 E2E Fixture Design
 
+> **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+
 > **대체 이력**: 이 spec은 앞서 작성된 `2026-04-18-e2e-testid-contract-design.md`(sdk-example에 testid 계약을 부여해 consumer로 쓰는 방향)를 대체한다. 브레인스토밍 중 "devtools 회귀 테스트가 다른 repo UI에 의존하는 것은 결합도가 과하다"는 판단으로 방향 전환. 이전 spec은 plan 단계에서 삭제된다.
 
 ## 1. Purpose

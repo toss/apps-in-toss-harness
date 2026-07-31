@@ -1,5 +1,7 @@
 # Production debug surface — AI-loop via CDP (Chii) + 3-layer gate
 
+> **이관 이전 설계 아카이브 — 현재 harness 절차 아님.** 이 spec은 (§Phase 5) oidc-bridge Workers relay 패턴 재사용, `debug-relay` 패키지를 별도 repo 또는 oidc-bridge-cloud 옆에 두는 안, metrics-ingest와의 비교, 커뮤니티 umbrella TODO backlog 갱신을 앞으로의 계획처럼 다루지만, 이 harness에서는 이미 다른 경로로 귀결됐다: Phase 1–4(MVP — CDP/Chii relay + 3-layer gate + TOTP)는 devtools/debugger에 구현·출하됐고 현재 운영 절차는 [`docs/dogfood-relay-loop.md`](../../dogfood-relay-loop.md)·`packages/agent-plugin/shared/skills/debug/SKILL.md`가 정본이다. Phase 5의 전제였던 oidc-bridge는 harness 이관 방침상 제거 대상(auth station 재정의, `docs/roadmap.md` 참고)이라 그 옵션 자체가 소거됐고, metrics-ingest는 조직 차원에서 폐기됐다. 아래 본문은 작성 시점(2026-05-18~27)의 경로·이슈 표기·umbrella 언급을 그대로 보존한다.
+
 **작성일**: 2026-05-18 (초안), 2026-05-19 (개정: AI-loop 우선 재정렬 + Chii/CDP 채택 + 3-layer gate), 2026-05-27 (개정: OQ6 RESOLVED — test-push Layer C 미전파, QR/deep-link 단일 경로 명문화)
 **상태**: 설계 (구현 전)
 **관련**: umbrella TODO "Debugging MCP Server" backlog, devtools#130 (dev-mode MCP spike), sdk-example v0.1.1 dog-food 회귀

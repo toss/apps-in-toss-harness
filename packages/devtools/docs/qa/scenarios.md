@@ -228,10 +228,11 @@ npx -y @ait-co/devtools devtools-mcp
 # 2. relay-staging(env 3)으로 진입 (MCP 세션에서) — 입력 mode: 'relay-staging'
 # start_debug({mode: 'relay-staging'})
 
-# 3. dogfood bundle deploy
-ait build
-ait deploy --scheme-only
-# → intoss-private://aitc-sdk-example?_deploymentId=<uuid> 출력
+# 3. dogfood bundle 준비 + 배포
+RELEASE_CHANNEL=dogfood ait build
+# 이어서 console MCP miniapp_create(신규 등록 시만) → bundle_upload → bundle_upload_complete
+# → intoss-private://<app-id>?_deploymentId=<uuid> 응답 (harness dogfood: 58955 `ait-harness-e2e`, ws 59)
+# 시퀀스 정본: packages/agent-plugin/shared/skills/debug/SKILL.md §5-B
 
 # 4. relay URL 포함 deep-link 생성
 # start_attach 도구로 scheme URL + debug=1&relay=<wss> 생성
@@ -243,7 +244,7 @@ ait deploy --scheme-only
 ### 검증 명령
 
 ```
-1. start_attach(scheme_url)   # QR 생성 + 폰 attach까지 한 번에 (기본 대기)
+1. start_attach({mode: 'relay-staging', scheme_url})   # QR 생성 + 폰 attach까지 한 번에 (기본 대기)
 2. list_pages
 3. measure_safe_area
 4. call_sdk("getOperationalEnvironment", [])
@@ -255,7 +256,7 @@ ait deploy --scheme-only
 
 ```json
 {
-  "pages": [{ "url": "intoss-private://aitc-sdk-example?_deploymentId=<uuid>", "lastSeenAt": "<iso8601>" }],
+  "pages": [{ "url": "intoss-private://<app-id>?_deploymentId=<uuid>", "lastSeenAt": "<iso8601>" }],
   "tunnel": { "up": true },
   "singleAttachModel": true
 }
@@ -303,7 +304,7 @@ ait deploy --scheme-only
 | 증상 | 원인 | 처리 |
 |---|---|---|
 | `list_pages` 빈 배열 | relay attach 미완료 | `start_attach`이 attach까지 대기하므로 QR 재스캔(필요 시 `wait_timeout_seconds` 상향) |
-| `call_sdk` `ok: false` | dogfood bundle이 아닌 일반 bundle | `ait deploy` 재실행 후 deep-link 갱신 |
+| `call_sdk` `ok: false` | dogfood bundle이 아닌 일반 bundle | `RELEASE_CHANNEL=dogfood ait build` + console MCP `bundle_upload`/`bundle_upload_complete` 재실행 후 deep-link 갱신 |
 | `sdkInsets.top` 0 | non-dogfood 경로 (bridge 없음) | 환경 3 진입 경로(QR/deep-link) 확인 |
 | TOTP 인증 실패 | `AIT_DEBUG_TOTP_SECRET` 미설정 또는 불일치 | relay 서버와 동일 시크릿 확인 |
 
@@ -320,7 +321,7 @@ ait deploy --scheme-only
 | 2 (AITC Sandbox PWA) | cloudflared 터널 URL + QR 출력 | `env(safe-area-inset-*)` 실값이 양수 (실기기 WebKit 검증) | `getOperationalEnvironment()` mock 응답 반환 (`'toss' \| 'sandbox'`) | — |
 | 3 (intoss dev relay) | `pages[]`, `tunnel.up: true`, intoss-private URL | `source: "relay-dev"`, `sdkInsetsSource: "window.__sdk"` | `ok: true`, `value` scalar string | — |
 
-통과 후 이 표의 "통과 일자"를 채우고, [#291](https://github.com/apps-in-toss-community/devtools/issues/291)의 체크리스트 항목을 닫는다.
+통과 후 이 표의 "통과 일자"를 채우고, 필요하면 이 harness 저장소에 QA 통과 기록 이슈를 남긴다. (이 체크리스트의 원 출처: 커뮤니티 devtools#291 — 이 저장소에는 대응 이슈가 없으므로 커뮤니티 org 이슈를 닫는 조작은 하지 않는다.)
 
 ---
 
@@ -339,7 +340,3 @@ WSS_URL=wss://... pnpm qa:fidelity --scenario-parity --runner=both --diff
 - `--scenario-parity`: `list_pages`, `measure_safe_area`, `call_sdk(getOperationalEnvironment)` 3종 schema 검증 probe 활성화
 - `WSS_URL` 없으면 relay probe는 skip (CI 안전)
 - 의도된 diff(source, sdkInsetsSource, userAgent, sdkInsets.top 등)는 `whitelist.json`에 reason과 함께 등록
-
----
-
-커뮤니티 오픈소스 프로젝트입니다.

@@ -1,5 +1,7 @@
 # PR B: PR CI E2E Gating Implementation Plan
 
+> **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** PR CI에 E2E job을 추가해, sdk-example auto-clone 기반 Playwright 스위트를 모든 PR에서 게이팅한다.
