@@ -2,9 +2,9 @@
 name: inject
 description: |
   Patch an existing Apps in Toss mini-app's build setup. Two facets:
-  `/ait:inject-devtools` adds the `@ait-co/devtools` unplugin for browser dev
+  `/ait:inject-devtools` adds the `@apps-in-toss/devtools` unplugin for browser dev
   ("기존 Vite 프로젝트에 devtools 붙여줘"); `/ait:inject-debug-console` installs
-  `@ait-co/debug-console` (on-device attach + eruda) as a dependency. Idempotent,
+  `@apps-in-toss/debug-console` (on-device attach + eruda) as a dependency. Idempotent,
   minimal edits. This skill only INSTALLS packages into a build setup — it never
   diagnoses a running app. "폰에서 이상하게 동작하는데 디버깅하고 싶어" / "라이브
   상태를 보고 싶어" is `debug`, not this.
@@ -48,8 +48,9 @@ dev 전용이다.
 
 `@ait-co/debug-console`을 **runtime dependency**로 설치하고, 진입점에 self-gating
 `import '@ait-co/debug-console/auto'`를 멱등하게 삽입한다. 이 패키지는 예전
-`@ait-co/devtools`의 `./in-app` export였다 — devtools의 MCP 데몬·on-device attach 표면이
-`debugger` repo(`@ait-co/debugger` + `@ait-co/debug-console`)로 분리되면서 나뉘었다.
+`@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP 데몬·on-device attach
+표면이 `debugger` 패키지(`@apps-in-toss/debugger` + `@apps-in-toss/debug-console`)로
+분리되면서 나뉘었다.
 **보안 스코프**: 두 패키지 중 프로덕션 미니앱 번들에 실제로 들어갈 수 있는 유일한
 패키지라 `dependencies`로 설치한다(devtools는 devDep 전용) — 설치돼 있지
 않으면 attach 코드가 번들에 구조적으로 들어갈 수 없다.
@@ -104,5 +105,5 @@ dev 전용이다.
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`
 - debug-console facet 상세: `<이 skill의 base directory>/references/debug-console.md`
 - 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 panel·CDP relay 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 on-device 디버깅), `setup-phone-preview` (실기기 WebKit 미리보기 병행). 설정 완료 후 콘솔 등록·업로드는 console MCP 도구가 담당한다.
-- `@ait-co/devtools`(mock+panel+unplugin, 브라우저 dev 전용): https://github.com/apps-in-toss-community/devtools · live demo: https://devtools.aitc.dev/
-- `@ait-co/debug-console`(on-device attach + eruda) · `@ait-co/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/apps-in-toss-community/debugger
+- `@apps-in-toss/devtools`(mock+panel+unplugin, 브라우저 dev 전용): https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
+- `@apps-in-toss/debug-console`(on-device attach + eruda) · `@apps-in-toss/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger

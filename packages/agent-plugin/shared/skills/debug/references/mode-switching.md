@@ -13,7 +13,7 @@
 ## `start_debug` vs `start_attach`
 
 **attach까지 한 번에 하려면 `start_attach`**, 환경만 전환하고 싶으면 `start_debug`를 쓴다.
-`start_attach`는 `start_debug`의 mode 전환 동작을 흡수해 편의로 제공한다 — 이미 그 모드면 전환을 생략하고 바로 attach 경로를 발급한다. `start_debug`는 attach 없이 환경만 전환하는 단독 용도로 MCP 데몬(`@ait-co/debugger`)에 계속 존재한다.
+`start_attach`는 `start_debug`의 mode 전환 동작을 흡수해 편의로 제공한다 — 이미 그 모드면 전환을 생략하고 바로 attach 경로를 발급한다. `start_debug`는 attach 없이 환경만 전환하는 단독 용도로 MCP 데몬(`@apps-in-toss/debugger`)에 계속 존재한다.
 
 `ait-devtools` 데몬은 세션에 로드되면 계속 떠 있고, 환경 진입은 **서버 재구동 없이** MCP 도구로
 런타임에 결정한다. 프로젝트 `.mcp.json`이 등록하는 기본

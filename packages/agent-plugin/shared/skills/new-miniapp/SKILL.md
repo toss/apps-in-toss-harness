@@ -3,7 +3,7 @@ name: new-miniapp
 description: |
   Scaffold a new Apps in Toss mini-app by driving the official
   `create-ait-app` CLI non-interactively (`--inline`), then post-wiring
-  `@ait-co/devtools` (mock SDK + panel) so `pnpm dev` runs in a plain
+  `@apps-in-toss/devtools` (mock SDK + panel) so `pnpm dev` runs in a plain
   browser immediately. Supports `--tds` and `--sample iap,iaa`
   passthrough. Falls back to the bundled react-vite template with
   `--local` (offline); `--no-devtools` skips the devtools wiring.
@@ -24,7 +24,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   호출해 만든다 — 템플릿 4종(`react-ts` 기본 · `react` · `js` · `ts`),
   `--tds`(TDS 컴포넌트 홈 + provider), `--sample iap,iaa`(인앱결제·인앱광고
   예제)를 그대로 쓸 수 있다.
-- scaffold 직후 이 skill이 **`@ait-co/devtools`를 후처리로 배선**한다 —
+- scaffold 직후 이 skill이 **`@apps-in-toss/devtools`를 후처리로 배선**한다 —
   create-ait-app 템플릿에는 SDK mock이 없어 브라우저에서 SDK 호출이 실패하는데
   (샘플 코드가 "샌드박스앱/토스앱에서 실행해주세요" alert를 띄우는 구조),
   이 후처리 덕에 토스 앱 없이 브라우저에서 바로 개발할 수 있다(`pnpm dev` 즉시 실행).
@@ -371,7 +371,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 - 공식 스캐폴더: https://github.com/toss/create-ait-app — 템플릿 5종(내부
   react-ts-tds 포함), IAP/IAA 샘플, brownfield `add-sample` 서브커맨드.
   이 skill의 호출 규칙·후처리 근거는 harness#6 gap 분석(§C 함정 10건).
-- devtools (mock + panel + unplugin): https://github.com/apps-in-toss-community/devtools
+- devtools (mock + panel + unplugin): https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
 - 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
   getPage)로 조회한다.
 - `--local` 폴백 템플릿 정책: `shared/templates/README.md` (react-vite는 폴백

@@ -1,6 +1,6 @@
 # devtools facet — `/ait:inject-devtools` 상세
 
-이미 `@apps-in-toss/web-framework`를 사용하는 기존 프로젝트에 `@ait-co/devtools` unplugin을
+이미 `@apps-in-toss/web-framework`를 사용하는 기존 프로젝트에 `@apps-in-toss/devtools` unplugin을
 추가해, 토스 앱 없이 브라우저에서 개발·테스트할 수 있게 한다. brownfield 진입점 — 기존
 파일을 최소한으로 수정하고, 이미 설정이 있으면 skip한다. `/ait:inject-devtools`는 인자를
 받지 않는다.
@@ -210,8 +210,7 @@ module.exports = {
   - 진입점 파일명이 위 패턴과 다르면 패널이 자동 주입되지 않을 수 있습니다. 그럴 때만 진입점에 수동으로 추가하세요:
       import '@ait-co/devtools/panel';
   - devtools는 NODE_ENV=development 에서만 활성화됩니다 (production 빌드엔 미포함).
-  - 문서: https://github.com/apps-in-toss-community/devtools
-  - 커뮤니티: https://aitc.dev/
+  - 문서: https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
 ```
 
 ## devtools facet 하지 말아야 할 것

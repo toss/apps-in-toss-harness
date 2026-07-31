@@ -6,7 +6,7 @@
 
 - React 19 + Vite + TypeScript (strict)
 - [`@apps-in-toss/web-framework`](https://www.npmjs.com/package/@apps-in-toss/web-framework) — 미니앱 SDK
-- [`@ait-co/devtools`](https://github.com/apps-in-toss-community/devtools) —
+- `@ait-co/devtools` —
   브라우저에서 SDK API를 mock해 토스 앱 없이 개발할 수 있게 해주는 dev 전용 도구.
   Production 빌드에서는 자동으로 비활성화됩니다.
 
@@ -46,8 +46,3 @@ ait build
   개발 중에는 devtools가 자동으로 mock으로 대체합니다.
 - 처음 배포 전에 콘솔에 워크스페이스/앱이 등록되어 있는지
   콘솔 MCP 도구(`miniapp_get_status`)로 확인하세요.
-
-## 참고
-
-- 커뮤니티 SDK 레퍼런스 앱: <https://sdk-example.aitc.dev/>
-- 커뮤니티 docs: <https://docs.aitc.dev/>

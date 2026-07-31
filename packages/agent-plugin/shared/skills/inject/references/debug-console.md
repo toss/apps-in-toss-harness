@@ -1,22 +1,22 @@
 # debug-console facet — `/ait:inject-debug-console` 상세
 
-기존 앱인토스 미니앱 프로젝트에 `@ait-co/debug-console`을 설치해, on-device 디버깅
+기존 앱인토스 미니앱 프로젝트에 `@apps-in-toss/debug-console`을 설치해, on-device 디버깅
 (환경 3 — intoss-private candidate)에 attach 표면을 남긴다. `/ait:inject-debug-console`는
 인자를 받지 않는다.
 
-`@ait-co/debug-console`은 예전 `@ait-co/devtools`의 `./in-app` export였다 — devtools의
-MCP 데몬·test runner·on-device attach 표면이 별도 repo(`debugger`)로 분리되면서
-`@ait-co/debugger`(MCP 데몬, devDep/npx 전용)와 `@ait-co/debug-console`(on-device attach +
-eruda) 2개 패키지로 나뉘었다.
+`@apps-in-toss/debug-console`은 예전 `@apps-in-toss/devtools`의 `./in-app` export였다 —
+devtools의 MCP 데몬·test runner·on-device attach 표면이 별도 패키지(`debugger`)로 분리되면서
+`@apps-in-toss/debugger`(MCP 데몬, devDep/npx 전용)와 `@apps-in-toss/debug-console`(on-device
+attach + eruda) 2개 패키지로 나뉘었다.
 
 생성·수정하는 파일에서 "공식(official)", "토스가 제공하는", "powered by Toss" 등 제휴·후원·
 인증 암시 표현을 쓰지 않는다. 이 skill은 콘솔 인증을 요구하지 않는다 — 로컬 설치 작업이다.
 
 ## 보안 스코프 (중요)
 
-`@ait-co/debug-console`은 **프로덕션 미니앱 번들에 실제로 들어갈 수 있는 유일한 디버그
-패키지**다 — `@ait-co/devtools`(mock+panel+unplugin)와 `@ait-co/debugger`(MCP 데몬)는
-둘 다 devDep/npx 전용이라 번들에 유입되지 않는다. 보안 스코프가 이 패키지 하나로
+`@apps-in-toss/debug-console`은 **프로덕션 미니앱 번들에 실제로 들어갈 수 있는 유일한 디버그
+패키지**다 — `@apps-in-toss/devtools`(mock+panel+unplugin)와 `@apps-in-toss/debugger`(MCP
+데몬)는 둘 다 devDep/npx 전용이라 번들에 유입되지 않는다. 보안 스코프가 이 패키지 하나로
 격리된 이유이기도 하다: 설치돼 있지 않으면 attach 코드가 번들에 구조적으로 들어갈 수
 없다 — attach 표면 유무가 "설치 여부"로 결정되므로, 프로덕션에 attach 코드를 남기고
 싶지 않다면 이 skill을 실행하지 않으면 된다.
@@ -125,7 +125,7 @@ if (__DEBUG_BUILD__) {
   RELEASE_CHANNEL=dogfood ait build   # candidate 빌드에 attach 표면 포함
   /ait:debug                          # 환경 3 QR attach로 on-device 디버깅
 
-참고: https://github.com/apps-in-toss-community/debugger
+참고: https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
 ```
 
 ## debug-console facet 하지 말아야 할 것
@@ -133,7 +133,7 @@ if (__DEBUG_BUILD__) {
 - ❌ `dependencies` 대신 `devDependencies`에 설치 — 프로덕션 번들에 포함돼야 하는
   유일한 패키지다.
 - ❌ 진입점 이외 파일에 자동 import 삽입.
-- ❌ `@ait-co/devtools`·`@ait-co/debugger`와 혼동 — 이 facet은 온디바이스 attach +
+- ❌ `@apps-in-toss/devtools`·`@apps-in-toss/debugger`와 혼동 — 이 facet은 온디바이스 attach +
   eruda 전용이다. MCP 데몬 등록은 `/ait:setup-debugger`가 처리(`/ait:debug` 참조),
   브라우저 mock/panel은 `inject-devtools` facet.
 - ❌ 생성·수정하는 내용에 "공식(official)", "토스가 제공하는", "powered by Toss" 등

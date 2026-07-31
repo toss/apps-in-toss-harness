@@ -212,4 +212,3 @@ SDK 도메인 (필요)
   수행한다 — 인가는 `/mcp`에서 `apps-in-toss-console` 1회 승인(브라우저 OAuth).
 - 주제별 가이드(권한 패턴·로그인 흐름·IAP 결제 흐름 등)는 docs MCP
   (`searchDocumentation`/`getPage`)로 조회한다.
-- SDK 도메인 18종을 인터랙티브하게 확인: https://sdk-example.aitc.dev/

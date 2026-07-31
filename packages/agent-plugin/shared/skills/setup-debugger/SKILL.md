@@ -1,7 +1,7 @@
 ---
 name: setup-debugger
 description: |
-  Wire the `ait-devtools` debug MCP server (`@ait-co/debugger`) into the
+  Wire the `ait-devtools` debug MCP server (`@apps-in-toss/debugger`) into the
   current project's `.mcp.json` (project scope, opt-in) so `/ait:debug` can
   run on-device CDP relay attach (environments 2·3). Idempotent JSON merge —
   preserves other server entries, never renames the `ait-devtools` key.
@@ -101,7 +101,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 - ❌ MCP 서버 구현·기동 — 서버는 `@ait-co/debugger`가 제공하고, 기동은 Claude Code가
   `.mcp.json`을 읽어 한다.
 - ❌ 환경 2 터널 인프라 배선(`tunnel:{cdp:true}` + `dev:phone:cdp`) — `/ait:setup-phone-preview`.
-- ❌ 환경 3 attach 표면 설치(`@ait-co/debug-console` `dependencies`) — `/ait:inject-debug-console`.
+- ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debug-console` `dependencies`) — `/ait:inject-debug-console`.
 - ❌ user/global scope MCP 등록 — 디버깅은 프로젝트 전제라 프로젝트 scope(`.mcp.json`)만.
 
 ## 하지 말아야 할 것
@@ -129,7 +129,7 @@ QR)·환경 3(relay-staging QR) attach를 진행한다. 환경 2가 처음이면
 
 - 짝 skill: `debug` (이 배선을 소비하는 on-device 디버깅), `setup-phone-preview`
   (환경 2 터널 인프라), `inject` (debug-console facet — 환경 3 attach 표면 설치).
-- MCP 데몬 패키지: `@ait-co/debugger`(`debugger`·`debugger-test` bin):
-  https://github.com/apps-in-toss-community/debugger
+- MCP 데몬 패키지: `@apps-in-toss/debugger`(`debugger`·`debugger-test` bin):
+  https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
 - on-device CDP relay 디버깅 구조·진입 경로는 docs MCP(`searchDocumentation`/
   `getPage`)로 조회한다.

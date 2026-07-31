@@ -15,7 +15,7 @@ argument-hint: ''
 
 `/ait:setup-phone-preview` 한 번으로 **실기기(폰) 미리보기** 환경을 준비한다.
 
-devtools `tunnel` 옵션([`@ait-co/devtools@^0.1.19`](https://github.com/apps-in-toss-community/devtools))은
+devtools `tunnel` 옵션([`@ait-co/devtools@^0.1.19`](https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools))은
 Vite dev server가 뜰 때 Cloudflare quick tunnel을 자동으로 열고, 터미널에
 `*.trycloudflare.com` URL + ASCII QR을 출력한다. 이 URL을 launcher PWA
 (`https://devtools.aitc.dev/launcher/`) 안에서 열면 폰 홈 화면에 고정된
@@ -345,7 +345,7 @@ setup-phone-preview 완료
 
 ## Out of scope (이 skill이 하지 않는 것)
 
-- ❌ `@ait-co/devtools` 신규 설치 — `/ait:inject-devtools` (`inject` skill의 devtools facet).
+- ❌ `@apps-in-toss/devtools` 신규 설치 — `/ait:inject-devtools` (`inject` skill의 devtools facet).
 - ❌ Next.js / Rspack / Webpack 프로젝트 — Vite 전용. 다른 빌드 도구는 cloudflared CLI 직접 사용.
 - ❌ 실제 tunnel URL 확인·연결 테스트 — `pnpm dev:phone` 직접 실행 후 확인.
 - ❌ launcher PWA 홈화면 추가 자동화 — OS gesture 필요, 수동.
@@ -361,7 +361,7 @@ setup-phone-preview 완료
   `tunnel: process.env.AIT_TUNNEL ? { cdp: !!process.env.AIT_TUNNEL_CDP } : false`로
   env-gate. (`pnpm dev`에서는 tunnel이 꺼져야 하고, `AIT_TUNNEL_CDP` 없이는 CDP relay도
   뜨면 안 됨.)
-- ❌ `cloudflared`를 `devDependencies`에 직접 추가. `@ait-co/devtools`가 이미
+- ❌ `cloudflared`를 `devDependencies`에 직접 추가. `@apps-in-toss/devtools`가 이미
   `dependencies`로 가져온다. `pnpm-workspace.yaml`의 `allowBuilds` 허용만 하면 됨.
 - ❌ `package.json` JSON 주석 추가 (표준 JSON에 주석 불가).
 - ❌ 생성·수정하는 내용에 "공식(official)", "토스가 제공하는", "powered by Toss"
@@ -372,10 +372,6 @@ setup-phone-preview 완료
 
 - 실기기 PWA 미리보기(환경 2)와 dev 환경 fidelity 사다리 등 주제별 가이드는
   docs MCP(`searchDocumentation`/`getPage`)로 조회한다.
-- 짝 skill: `inject-devtools` (`@ait-co/devtools` 신규 설치 + vite.config 기본 설정 — `setup-phone-preview`보다 먼저 실행), `debug` (이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅, §5-B가 환경 3 candidate 등록·업로드까지 처리).
-- devtools tunnel 구현 (PR #131): https://github.com/apps-in-toss-community/devtools/pull/131
-- sdk-example wiring 사례 (PR #59): https://github.com/apps-in-toss-community/sdk-example/pull/59
-- devtools README "Run on a real phone" 섹션: https://github.com/apps-in-toss-community/devtools
+- 짝 skill: `inject-devtools` (`@apps-in-toss/devtools` 신규 설치 + vite.config 기본 설정 — `setup-phone-preview`보다 먼저 실행), `debug` (이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅, §5-B가 환경 3 candidate 등록·업로드까지 처리).
 - launcher PWA: https://devtools.aitc.dev/launcher/
 - cloudflared quick tunnel 문서: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/
-- 커뮤니티: https://aitc.dev/

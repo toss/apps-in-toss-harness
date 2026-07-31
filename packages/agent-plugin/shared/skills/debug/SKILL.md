@@ -25,7 +25,7 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
 | 3. intoss-private relay dev | 실기기 토스 앱 WebView(dogfood) + CDP relay | 5 — `start_attach({mode:'relay-staging', scheme_url})` 1호출 QR attach |
 
 - **환경 1**은 지금 바로, 의존 없이 쓴다:
-  - `@ait-co/devtools`의 floating panel — mock 상태(권한·위치·IAP·이벤트 등)를
+  - `@apps-in-toss/devtools`의 floating panel — mock 상태(권한·위치·IAP·이벤트 등)를
     실시간 관찰·조작 (12개 탭). 증상별로 어느 탭을 볼지는 `references/panel-tabs.md` 참조.
   - `window.__ait` — 런타임 mock SDK 상태 객체. 콘솔이나 에이전트가 직접 읽는다.
   - 브라우저 기본 DevTools — console / network / sources.
@@ -53,10 +53,10 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
   가이드는 진행 가능).
 - **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동 안내.
 - **환경 1**: 에이전트가 필요 시 dev 서버를 자동 기동한다(아래 2-A 사전 기동 블록).
-- **환경 2·3**: `ait-devtools` MCP 서버(`@ait-co/debugger`)가 세션에 로드돼 있어야 한다 —
+- **환경 2·3**: `ait-devtools` MCP 서버(`@apps-in-toss/debugger`)가 세션에 로드돼 있어야 한다 —
   프로젝트 `.mcp.json`에 배선돼 있지 않으면 `/ait:setup-debugger`를 먼저 안내한다(opt-in).
 - **환경 2**: 이 skill이 `pnpm dev:phone:cdp`를 자동으로 기동한다(`dev:phone:cdp` 스크립트가 없으면 먼저 `/ait:setup-phone-preview` 안내).
-- **환경 3**: candidate 빌드에 `@ait-co/debug-console`이 `dependencies`로 설치돼 있어야 attach 표면이 남는다(없으면 `/ait:inject-debug-console` 먼저 안내 — `inject` skill의 debug-console facet).
+- **환경 3**: candidate 빌드에 `@apps-in-toss/debug-console`이 `dependencies`로 설치돼 있어야 attach 표면이 남는다(없으면 `/ait:inject-debug-console` 먼저 안내 — `inject` skill의 debug-console facet).
 
 > 이 skill은 콘솔 인증을 요구하지 않는다. 브라우저 디버깅은 로컬 전용.
 
@@ -323,15 +323,13 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 ## 참고
 
 - 상세가 필요하면 Read <이 skill의 base directory>/references/panel-tabs.md (환경 1 패널 탭별 관찰 지점), references/mode-switching.md (`start_debug`/`start_attach` mode 내부 동작·fallback), references/attach-tools.md (attach 후 13종 도구 + `run_tests` 상세 + SECRET-HANDLING).
-- 짝 skill: `inject-devtools` (panel 설정), `inject-debug-console` (환경 3 candidate 빌드에 attach 표면 설치 — `@ait-co/debug-console` `dependencies`), `setup-phone-preview` (환경 2(AITC Sandbox App (PWA)) 인프라 배선 — `tunnel:{cdp:true}` + cloudflared 터널 기동. `/ait:debug` relay-sandbox의 선행 단계).
+- 짝 skill: `inject-devtools` (panel 설정), `inject-debug-console` (환경 3 candidate 빌드에 attach 표면 설치 — `@apps-in-toss/debug-console` `dependencies`), `setup-phone-preview` (환경 2(AITC Sandbox App (PWA)) 인프라 배선 — `tunnel:{cdp:true}` + cloudflared 터널 기동. `/ait:debug` relay-sandbox의 선행 단계).
 - 환경 3겹 × fidelity 설계 정본: umbrella `meta/three-environments-fidelity.md` (§1 환경 모델, §5 동적 도구 등록, §7 CDP 단일 transport).
-- 환경 3 진입 시나리오 + QR relay 흐름: https://github.com/apps-in-toss-community/devtools/blob/main/docs/scenarios/env-3.md
-- dogfood relay 루프 (candidate 빌드 → QR 스캔 → attach → 관측 사이클): https://github.com/apps-in-toss-community/devtools/blob/main/docs/dogfood-relay-loop.md
-- devtools (mock + panel + unplugin, 브라우저 dev 전용): https://github.com/apps-in-toss-community/devtools
-- devtools live demo: https://devtools.aitc.dev/
-- on-device debug MCP 데몬(`start_debug`/`start_attach` 등 attach 도구): `@ait-co/debugger`(`/mcp/server` + `/mcp/cli` exports, `debugger`·`debugger-test` bin) — `/ait:setup-debugger`가 배선한 프로젝트 `.mcp.json`의 `mcpServers."ait-devtools"`가 `npx -y -p @ait-co/debugger debugger`로 기동. server key `ait-devtools`는 유지하되 실제 데몬 패키지는 `@ait-co/debugger`다(Phase 3 분리, 이전에는 devtools repo의 `devtools-mcp` bin이었다): https://github.com/apps-in-toss-community/debugger
-- on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + eruda): `@ait-co/debug-console`(`.` + `/auto` exports) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 미니앱 `dependencies`로 별도 설치해야 한다. 설치·와이어업은 `/ait:inject-debug-console` (`inject` skill의 debug-console facet)이 담당한다.
-- env-2 부트스트랩 설계 근거 (approach B): https://github.com/apps-in-toss-community/devtools/issues/428
+- 환경 3 진입 시나리오 + QR relay 흐름: https://github.com/toss/apps-in-toss-harness/blob/main/packages/devtools/docs/scenarios/env-3.md
+- dogfood relay 루프 (candidate 빌드 → QR 스캔 → attach → 관측 사이클): https://github.com/toss/apps-in-toss-harness/blob/main/packages/devtools/docs/dogfood-relay-loop.md
+- devtools (mock + panel + unplugin, 브라우저 dev 전용): https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
+- on-device debug MCP 데몬(`start_debug`/`start_attach` 등 attach 도구): `@apps-in-toss/debugger`(`/mcp/server` + `/mcp/cli` exports, `debugger`·`debugger-test` bin) — `/ait:setup-debugger`가 배선한 프로젝트 `.mcp.json`의 `mcpServers."ait-devtools"`가 `npx -y -p @ait-co/debugger debugger`로 기동. server key `ait-devtools`는 유지하되 실제 데몬 패키지는 `@apps-in-toss/debugger`다(Phase 3 분리, 이전에는 devtools repo의 `devtools-mcp` bin이었다): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
+- on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + eruda): `@apps-in-toss/debug-console`(`.` + `/auto` exports) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 미니앱 `dependencies`로 별도 설치해야 한다. 설치·와이어업은 `/ait:inject-debug-console` (`inject` skill의 debug-console facet)이 담당한다.
 - lifecycle 디버깅(swipe-back 등), on-device CDP relay 디버깅 구조·진입 경로,
   relay TOTP 인증(터널 URL 유출 차단) 등은 docs MCP(`searchDocumentation`/
   `getPage`)로 조회한다.
