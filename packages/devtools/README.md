@@ -1065,6 +1065,8 @@ npx @apps-in-toss/devtools devtools-mcp --target=local --force
 
 `--takeover`도 `--force`의 alias로 동일하게 동작합니다.
 
+이미 종료된 세션인데도 같은 에러가 계속 나면 락 파일이 남은 것입니다 — 에러 메시지가 인쇄하는 경로를 그대로 지우면 됩니다(`rm "<락 파일 경로>"`).
+
 ## MCP Server
 
 AI 코딩 에이전트(Claude Code, Cursor 등)가 [MCP(Model Context Protocol)](https://modelcontextprotocol.io/)를
