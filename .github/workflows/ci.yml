@@ -18,5 +18,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
+      # devtools·debugger의 `src/mcp/dashboard.generated.ts`는 빌드 산출물이면서
+      # 커밋된다. `pnpm build`가 매번 재생성하므로 손수정본을 커밋해도 런타임엔
+      # 영향이 없고, 그래서 아무도 안 보면 조용히 어긋난 채 남는다. 두 패키지가
+      # 이미 갖고 있던 `check:dashboard-html-fresh`를 여기서 실제로 돌린다.
+      # `--if-present`를 일부러 쓰지 않는다 — 두 패키지가 모두 스크립트를 잃으면
+      # pnpm이 ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT로 실패한다(게이트가 사문화되면
+      # 조용히 통과하는 대신 소리를 낸다).
+      - run: pnpm -r check:dashboard-html-fresh
       - run: pnpm typecheck
       - run: pnpm test
