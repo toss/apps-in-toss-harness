@@ -30,7 +30,7 @@ import { mkdtemp, rm, mkdir, readdir, readFile, writeFile, stat, unlink } from '
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeFile } from './normalize-upstream.mjs';
+import { normalizeFile, TEXT_LIKE_EXTENSIONS } from './normalize-upstream.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -323,9 +323,10 @@ async function runNormalize(pkgName, write) {
   const files = await listFilesRecursive(targetDir);
   let changed = 0;
   for (const f of files) {
-    const ext = f.split('.').pop();
     const isLicense = f.endsWith('/LICENSE') || f === 'LICENSE';
-    if (!isLicense && !['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'md', 'txt', 'yaml', 'yml'].includes(ext)) continue;
+    // normalize-upstream.mjs의 TEXT_LIKE_EXTENSIONS를 그대로 재사용 — 이 목록이
+    // 여기서만 따로 하드코딩돼 있던 것(.sh 누락 등)이 #21의 원인 중 하나였다.
+    if (!isLicense && !TEXT_LIKE_EXTENSIONS.has(`.${f.split('.').pop()}`)) continue;
     const result = await normalizeFile(join(targetDir, f), { write });
     if (result.changed) changed += 1;
   }

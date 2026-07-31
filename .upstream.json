@@ -22,15 +22,39 @@
       "lastImportedRef": "0834f986185e13af4b5ca1eb724bd7661f4d5101",
       "lastImportedAt": "2026-07-30T23:40:22+09:00",
       "mode": "snapshot",
-      "localOnly": ["README.md", "README.en.md"],
-      "_localOnly_comment": "harness 커밋 89f3e33(2026-07-31, 'README 설치·import 스코프 불일치 해소 + 미배포 명시')가 설치 명령을 @apps-in-toss/*로 손으로 통일하고 '아직 npm 미배포' 문구를 추가했다 — 상류 community README는 여전히 @ait-co/*라, localOnly 없이 재동기화하면 이 수동 수정이 조용히 사라진다.",
-      "dropUpstreamPaths": [
-        "e2e/shim-composition.test.ts"
+      "localOnly": [
+        "README.md",
+        "README.en.md",
+        "docs/superpowers/plans/2026-04-10-mock-panel-split.md",
+        "docs/superpowers/plans/2026-04-12-sdk-example.md",
+        "docs/superpowers/plans/2026-04-18-00-orchestration.md",
+        "docs/superpowers/plans/2026-04-18-B-ci-e2e-gating.md",
+        "docs/superpowers/plans/2026-04-18-C1-peer-range-and-proxy-throw.md",
+        "docs/superpowers/plans/2026-04-18-C2-sdk-compat-matrix.md",
+        "docs/superpowers/plans/2026-04-18-e2e-fixture.md",
+        "docs/superpowers/specs/2026-04-12-sdk-example-design.md",
+        "docs/superpowers/specs/2026-04-18-e2e-and-sdk-compat-design.md",
+        "docs/superpowers/specs/2026-04-18-e2e-fixture-design.md",
+        "docs/superpowers/specs/2026-05-18-in-app-debug-mcp.md",
+        "meta/env3-test-execution-redesign.md",
+        "e2e/fixture/public/letterbox-probe/index.html",
+        "e2e/fixture/public/letterbox-probe/fullscreen/manifest.webmanifest",
+        "docs/pages-deploy-verification.md",
+        "src/shared/launcher-url.ts"
       ],
-      "_dropUpstreamPaths_comment": "polyfill×mock 합성 e2e 테스트 — 2026-07-31 harness의 polyfill 절단(CLAUDE.md 참조)으로 함께 제거됨. 상류 devtools repo는 폐기하지 않았으므로 재동기화 시 되살아나지 않게 명시적으로 계속 제외한다. polyfill을 다시 들이는 결정이 나기 전까지 유지."
+      "_localOnly_comment": "harness 커밋 89f3e33(2026-07-31, 'README 설치·import 스코프 불일치 해소 + 미배포 명시')가 설치 명령을 @apps-in-toss/*로 손으로 통일하고 '아직 npm 미배포' 문구를 추가했다 — 상류 community README는 여전히 @ait-co/*라, localOnly 없이 재동기화하면 이 수동 수정이 조용히 사라진다. docs/superpowers/**·meta/**(11+1개 파일, 커밋 bc666f0)는 normalize-upstream.mjs의 PRESERVED_FILE_PATTERNS로 정규화만 건너뛸 뿐 snapshot 덮어쓰기는 막지 않는다 — 아카이브 배너·umbrella 참조 제거가 다음 sync에 사라지지 않게 여기서도 명시한다(#21). letterbox-probe/index.html·fullscreen/manifest.webmanifest(커밋 fa71d36)는 '커뮤니티 오픈소스' 문구가 표준 DISCLAIMER_SENTENCES와 다른 축약형이거나 HTML 구조 제거(<div class=\"footer\">…</div> 통째 삭제)를 동반해 정규화 규칙으로 안전하게 일반화할 수 없다고 판단 — 대신 파일 단위로 고정한다(docs/upstream-sync.md '수동 확인 필요' 절 참고). docs/pages-deploy-verification.md·src/shared/launcher-url.ts는 상류에 대응 파일이 없는 harness 전용 신규 파일(2026-07-31 GitHub Pages 배포·launcher URL 단일화 작업) — localOnly가 없으면 상류에 없다는 이유만으로 다음 snapshot sync가 통째로 삭제한다.",
+      "dropUpstreamPaths": [
+        "e2e/shim-composition.test.ts",
+        "e2e/fixture/public/CNAME",
+        "e2e/fixture/public/llms.txt",
+        "e2e/fixture/public/robots.txt",
+        "e2e/fixture/public/sitemap.xml",
+        "e2e/fixture/public/og/image.png"
+      ],
+      "_dropUpstreamPaths_comment": "polyfill×mock 합성 e2e 테스트 — 2026-07-31 harness의 polyfill 절단(CLAUDE.md 참조)으로 함께 제거됨. 상류 devtools repo는 폐기하지 않았으므로 재동기화 시 되살아나지 않게 명시적으로 계속 제외한다. polyfill을 다시 들이는 결정이 나기 전까지 유지. e2e/fixture/public/{CNAME,llms.txt,robots.txt,sitemap.xml,og/image.png}는 커밋 33771c1이 지웠지만 .upstream.json에 기록하지 않아 다음 snapshot sync가 되살리는 구멍이었다(#21) — CNAME이 되살아나면 GitHub Pages 배포가 커뮤니티 도메인을 커스텀 도메인으로 주장하고, llms.txt/robots.txt/sitemap.xml도 커뮤니티 도메인 좌표를 공개 서빙한다. og/image.png는 처음엔 localOnly(하네스 버전이 이겨야 한다) 후보로 보였지만, e2e/fixture/vite.config.ts의 copyOgImage 플러그인이 이미 단일 소스 packages/devtools/assets/og/image.png를 빌드 시점에 dist/og/image.png로 복사하도록 되어 있어(1b72b14 머지) public/ 아래에 두 번째 사본을 두면 build:og 재실행 시 조용히 drift만 생긴다 — 그래서 다섯 개 전부 dropUpstreamPaths다."
     },
     "debugger": {
-      "_comment": "snapshot 모드 — 상류 debugger repo의 packages/debugger 서브디렉토리만 추출(이미 서브디렉토리 단위라 repo-root 인프라 파일은 애초에 포함되지 않는다). debugger repo 자체는 pnpm workspace라 3패키지(debugger/debug-console/internal-protocol)가 같은 repo·같은 ref를 공유한다.",
+      "_comment": "snapshot 모드 — 상류 debugger repo의 packages/debugger 서브디렉토리만 추출. sync-upstream.mjs의 EXCLUDE_ROOT_INFRA는 upstream.path === '.'인 패키지(devtools)에만 적용되므로 여기선 애초에 발화하지 않지만, .gitignore·biome.json은 그것과 무관하게 초기 벤더링(커밋 1432504) 때 community debugger repo의 **repo-root** 설정을 packages/<sub> 서브트리 '안으로' 손으로 복사해 넣은 것이다(harness 각 패키지가 독립적으로 lint/git 무시 규칙을 가져야 해서) — 그래서 packages/debugger/ 서브트리를 재추출해도 이 두 파일은 상류에 존재하지 않는다(#21에서 확인, localOnly 참고). debugger repo 자체는 pnpm workspace라 3패키지(debugger/debug-console/internal-protocol)가 같은 repo·같은 ref를 공유한다.",
       "upstream": {
         "owner": "apps-in-toss-community",
         "repo": "debugger",
@@ -39,8 +63,8 @@
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "snapshot",
-      "localOnly": ["README.md", "README.en.md"],
-      "_localOnly_comment": "harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유.",
+      "localOnly": ["README.md", "README.en.md", ".gitignore", "biome.json"],
+      "_localOnly_comment": "README.md/README.en.md: harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유. .gitignore/biome.json: community debugger repo의 repo-root 전용 설정이라 packages/debugger 서브트리 추출에는 애초에 나타나지 않는다(#21) — localOnly 없이 재동기화하면 '상류에 없다'는 이유만으로 다음 snapshot sync가 통째로 삭제해 lint/git-ignore 설정을 잃는다.",
       "dropUpstreamPaths": []
     },
     "debug-console": {
@@ -53,8 +77,8 @@
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "snapshot",
-      "localOnly": ["README.md", "README.en.md"],
-      "_localOnly_comment": "harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유.",
+      "localOnly": ["README.md", "README.en.md", ".gitignore", "biome.json"],
+      "_localOnly_comment": "README.md/README.en.md: harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유. .gitignore/biome.json: debugger 항목의 _localOnly_comment와 동일한 사유(repo-root 전용 설정을 서브트리에 손으로 복사).",
       "dropUpstreamPaths": []
     },
     "internal-protocol": {
@@ -67,7 +91,8 @@
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "snapshot",
-      "localOnly": [],
+      "localOnly": [".gitignore", "biome.json"],
+      "_localOnly_comment": "README 없음(이 패키지만 처음부터 미보유). .gitignore/biome.json: debugger 항목의 _localOnly_comment와 동일한 사유(repo-root 전용 설정을 서브트리에 손으로 복사) — #21.",
       "dropUpstreamPaths": []
     }
   }

@@ -8,13 +8,14 @@
  * 재적용하는 순수 텍스트 변환기. Node 내장 모듈만 사용한다 — 의존성 추가 없음.
  *
  * 설계 원칙 (docs/upstream-sync.md에 상세):
- *   - 규칙은 파일 전체가 아니라 "줄" 단위로 문맥을 분류한다. 실측 근거: 이
- *     harness가 devtools/debugger를 처음 벤더링할 때 사람이 직접 한 리네임이
- *     정확히 이 분류를 따랐다 (harness 커밋 edd5743 "리네임으로 실제 깨지는
- *     함수형 참조만 최소 수정 — 내부 식별자·prose는 유지", 1432504 "실제
- *     import문 17건은 리네임, 주석 언급 6건은 미변경"). 이 스크립트는 그
- *     사람의 판단을 최대한 규칙화한 것이지 완벽한 AST 이해는 아니다 — 애매한
- *     줄은 보수적으로(치환 안 함) 처리하고 dry-run 리포트로 사람이 검토한다.
+ *   - 규칙은 파일 전체가 아니라 "줄" 단위로 문맥을 분류한다. 스코프(@ait-co/*)
+ *     치환은 LEGACY 명명 상수·external-target 콘텐츠·install 문맥(npm 미배포라
+ *     블록)만 보수적으로 예외 처리하고 그 외(functional import/pkgjson/const는
+ *     물론 prose·주석·JSDoc까지)는 전부 @apps-in-toss/*로 치환한다 — 실측 근거:
+ *     harness 커밋 33771c1(전면 스코프 sweep, #21)이 예외 없이 이 정책을
+ *     적용했다. 이 스크립트는 그 판단을 최대한 규칙화한 것이지 완벽한 AST
+ *     이해는 아니다 — 애매한 줄은 보수적으로(치환 안 함) 처리하고 dry-run
+ *     리포트로 사람이 검토한다.
  *   - 모든 규칙은 멱등이다: 규칙의 매치 패턴은 "치환 전" 형태만 잡고, 치환
  *     결과는 같은 패턴으로 다시 매치되지 않는다. 두 번 돌려도 결과가 같다.
  *   - `--dry-run`이 기본. `--write`를 줘야 실제로 파일을 고친다.
@@ -118,15 +119,17 @@ function makeCounter() {
 //
 // 문맥별로 세 갈래:
 //   functional  — import/require/resolve 특정자, package.json 의존성 키,
-//                 LEGACY가 아닌 상수 리터럴 대입. 로컬 pnpm workspace가
-//                 실제로 이 이름으로 해석되므로 기본 치환.
+//                 LEGACY가 아닌 상수 리터럴 대입, 그리고 그 외 prose/주석/
+//                 JSDoc 언급까지 전부 포함(#21 — 커밋 33771c1 전면 스코프
+//                 sweep 실측 반영). 기본 치환.
 //   install     — 설치 명령(npm/npx/pnpm/yarn/bun), npm 레지스트리 URL,
 //                 설치 감지 grep 문자열. 대상 패키지가 아직 @apps-in-toss로
 //                 npm 배포되지 않아 지금 바꾸면 실제로 깨진다 — 기본 skip,
 //                 NORMALIZE_SCOPE_INSTALL=1로 켠다 (blockedUntilPublished).
-//   preserve    — LEGACY 명명 상수(과거 스펙 감지용, 영구 보존), 그 외
-//                 prose/주석/JSDoc 언급. 실측 전례(harness edd5743/1432504
-//                 커밋)가 이 두 그룹을 리네임하지 않았다.
+//   preserve    — LEGACY 명명 상수(과거 스펙 감지용)만 영구 보존한다. 그
+//                 외에는 더 이상 예외가 없다 — "애매하면 보존"이 아니라
+//                 "애매하면 컨텍스트 규칙(LEGACY/external-target/install)에
+//                 먼저 걸리는지"가 기준이다.
 // ---------------------------------------------------------------------------
 
 const SCOPE_ALT = SCOPED_PACKAGES.join('|');
@@ -231,8 +234,31 @@ function normalizeScopeLine(line, opts) {
     return { line, category: 'install-blocked' };
   }
 
-  // 6) 그 외 (prose/주석/JSDoc/브랜딩 카피) — 영구 보존.
-  return { line, category: 'prose-preserved' };
+  // 6) 그 외 (prose/주석/JSDoc/브랜딩 카피) — 파일 종류로 갈린다.
+  //
+  // 코드/스크립트/설정(.ts/.tsx/.js/.jsx/.mjs/.cjs/.sh/.json 등, 마크다운 제외):
+  // functional과 동일하게 치환한다. 실측 근거: 커밋 33771c1(전면 스코프 sweep)의
+  // 실제 변경 파일 목록(git show --stat 33771c1)이 src/**·scripts/**·설정 파일의
+  // 주석·JSDoc·문자열 리터럴 안 @ait-co/* 언급을 예외 없이 치환했다(#21).
+  //
+  // 마크다운 문서(.md): 계속 보존한다. 같은 33771c1의 변경 파일 목록에 일반
+  // docs/*.md 안내·QA·회고 문서는 단 하나도 없다 — 그 커밋이 새로 추가한
+  // docs/design/*.md 2개는 "처음부터 새 스코프로 작성된 신규 파일"이지 기존
+  // 프로즈를 치환한 사례가 아니다. 실측으로 이 사실을 확인한 계기: 이 규칙을
+  // 마크다운까지 일괄 적용해 packages/ 전체 dry-run을 돌려보니
+  // packages/devtools/docs/release-readiness-0.1.0.md(과거 PR #67 커밋 메시지를
+  // 그대로 인용하는 회고 문서 — 그 시점엔 실제로 @ait-co/devtools였다)를 포함한
+  // devtools 문서 4개와, packages/agent-plugin(애초에 hardfork라 이 sync
+  // 파이프라인이 관리하지 않는 패키지)의 CLAUDE.md·SKILL.md 6개가 "변경 필요"로
+  // 잡혔다 — 전부 정규화 대상 확장자가 코드까지 넓어지며 생긴 오탐이지 sync 갭이
+  // 아니다. 마크다운에 이 규칙을 적용하면 (a) 역사적 인용을 소급 왜곡하거나
+  // (b) 이 스크립트가 관리하지 않는 패키지(agent-plugin) 내용을 건드리자고
+  // 제안하게 된다 — 그래서 .md는 이 지점에서 계속 보존한다
+  // (docs/upstream-sync.md "수동 확인이 필요한 항목" 참고, #21).
+  if (opts.isMarkdown) {
+    return { line, category: 'prose-preserved-md' };
+  }
+  return { line: renameScopeInMatch(line), category: 'prose-renamed' };
 }
 
 // ---------------------------------------------------------------------------
@@ -334,20 +360,29 @@ function normalizeDocsDeeplinks(content, counter) {
 const DISCLAIMER_SENTENCES = ['커뮤니티 오픈소스 프로젝트입니다.', 'Community open-source project.'];
 const NOT_AFFILIATED_SENTENCE = 'This project is not affiliated with Toss or Viva Republica.';
 
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // README 푸터 형태: "…\n\n---\n\n<disclaimer>\n" — 앞뒤 빈 줄·구분선까지 함께
 // 제거해 dangling "---"이나 이중 공백줄이 남지 않게 한다. 파일 끝(disclaimer가
 // 파일의 마지막 내용)에서만 매치한다 — 실측 전례가 항상 "## 라이센스" 다음의
 // 파일 최종 블록이었다.
-const FOOTER_BLOCK_RE = new RegExp(
-  `\\n+---\\n+(?:${DISCLAIMER_SENTENCES.map((s) => s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')).join('|')})\\n*$`,
-);
+const FOOTER_BLOCK_RE = new RegExp(`\\n+---\\n+(?:${DISCLAIMER_SENTENCES.map(escapeRegExp).join('|')})\\n*$`);
 
 /** 마크다운 리스트 불릿(-,*,+ + 공백) 접두를 벗겨서 문장 비교를 가능하게 한다. */
 function stripListBullet(line) {
   return line.replace(/^\s*[-*+]\s+/, '');
 }
 
-function normalizeBranding(content, counter) {
+// disclaimer 문장이 줄 전체가 아니라 더 큰 줄(HTML 태그 안, JSON 문자열 값 안)에
+// 끼어 있는 경우 — 문장 앞의 공백 1개까지 함께 지워 "...probe. 커뮤니티 오픈소스
+// 프로젝트입니다." 같은 꼬리를 "...probe."로 만든다. 아래 whole-line 필터(표준
+// README 리스트 항목)와 상호보완적: 그쪽은 줄 전체가 정확히 문장과 같을 때,
+// 이건 문장이 다른 텍스트에 묻혀 있을 때를 잡는다.
+const EMBEDDED_DISCLAIMER_RE = new RegExp(`[ \\t]*(?:${DISCLAIMER_SENTENCES.map(escapeRegExp).join('|')})`, 'g');
+
+function normalizeBranding(content, counter, opts = {}) {
   let out = content;
 
   const beforeFooter = out;
@@ -366,6 +401,30 @@ function normalizeBranding(content, counter) {
       return true;
     })
     .join('\n');
+
+  // 그 외 — 문장이 줄 일부로 묻혀 있는 경우(예: JSON description 필드, HTML 태그
+  // 안 인라인 텍스트). 위 필터는 트림 후 줄 전체가 문장과 "정확히 같을 때"만
+  // 잡으므로, 같은 줄에 다른 내용이 더 있으면 여기서 보충한다. 마크다운은
+  // 제외한다 — 실측 근거: packages/agent-plugin/CLAUDE.md가 "과거 커뮤니티
+  // disclaimer(\"커뮤니티 오픈소스 프로젝트입니다.\" 등)는 넣지 않는다"처럼
+  // 이 문장을 "실제 disclaimer로 존재"가 아니라 "예시로 인용"하는 프로즈를
+  // 갖고 있다 — 줄 일부 매치로 이 인용을 지우면 문장이 깨진다(#21). 이 규칙이
+  // 원래 겨냥한 대상(letterbox-probe의 HTML div·webmanifest description 필드)은
+  // 애초에 TEXT_LIKE_EXTENSIONS에 .html/.webmanifest가 없어 이 함수까지 도달하지
+  // 않는다 — 그 케이스는 .upstream.json의 localOnly로 처리한다
+  // (docs/upstream-sync.md "수동 확인이 필요한 항목" 참고).
+  if (!opts.isMarkdown) {
+    out = out
+      .split('\n')
+      .map((line) => {
+        if (!EMBEDDED_DISCLAIMER_RE.test(line)) return line;
+        EMBEDDED_DISCLAIMER_RE.lastIndex = 0;
+        const next = line.replace(EMBEDDED_DISCLAIMER_RE, '');
+        if (next !== line) counter.bump('branding-embedded-removed');
+        return next;
+      })
+      .join('\n');
+  }
 
   // 'Open Source Community' 카피 문구 — 이미 같은 소스에 쓰이는 중립 표현
   // 'Apps in Toss'로 대체(새 카피를 지어내지 않고 기존 표현 재사용).
@@ -393,6 +452,40 @@ function normalizeLicense(content, filePath, counter) {
 }
 
 // ---------------------------------------------------------------------------
+// 규칙 6 — package.json의 homepage 필드: 커뮤니티(npm 미배포 URL·*.aitc.dev) →
+//          harness GitHub repo
+//
+// 실측 근거(#21): harness 커밋 acffd8c("package.json repository/homepage와
+// LICENSE Copyright를 harness로 정정")가 devtools/debugger/debug-console
+// 3개 패키지의 package.json `homepage` 필드를 손으로 고쳤다 — devtools는
+// 커뮤니티 자체 호스팅 도메인(`https://devtools.aitc.dev/`)에서, debugger·
+// debug-console은 아직 배포되지 않은 npm 패키지 URL(`https://www.npmjs.com/
+// package/@ait-co/...`)에서, 전부 `https://github.com/toss/apps-in-toss-harness`
+// (harness monorepo 루트)로. 같은 커밋이 고친 `repository.url`/`bugs.url`은
+// github.com/apps-in-toss-community/* 형태라 이미 있는 규칙 2(normalizeGithubLinks)가
+// 재적용 가능하지만, `homepage`는 매번 다른 도메인(npm 레지스트리 또는
+// 패키지 자체 사이트)에서 시작해 도착지만 harness로 고정되는 특수 케이스라
+// 별도 규칙이 필요하다 — LICENSE Copyright(규칙 5)와 정확히 같은 패턴(값을
+// 통째로 harness 고정값으로 스왑)이라 여기 나란히 둔다. 대상은 SCOPED_PACKAGES
+// 4개의 package.json만(internal-protocol은 private:true라 homepage 필드
+// 자체가 없어 매치되지 않는다 — 무해한 no-op).
+// ---------------------------------------------------------------------------
+
+const HARNESS_HOMEPAGE = `https://github.com/${HARNESS_OWNER}/${HARNESS_REPO}`;
+const PACKAGE_JSON_SCOPED_PATH_RE = new RegExp(`(^|/)packages/(?:${SCOPE_ALT})/package\\.json$`);
+const HOMEPAGE_FIELD_RE = /^(\s*"homepage"\s*:\s*)"([^"]*)"/m;
+
+function normalizePackageHomepage(content, filePath, counter) {
+  if (!PACKAGE_JSON_SCOPED_PATH_RE.test(toPosix(filePath))) return content;
+  const match = content.match(HOMEPAGE_FIELD_RE);
+  if (!match) return content;
+  const [whole, prefix, currentUrl] = match;
+  if (currentUrl === HARNESS_HOMEPAGE) return content; // 이미 harness 값 — no-op(멱등).
+  counter.bump('package-homepage-harness');
+  return content.replace(whole, `${prefix}"${HARNESS_HOMEPAGE}"`);
+}
+
+// ---------------------------------------------------------------------------
 // 공개 API
 // ---------------------------------------------------------------------------
 
@@ -407,6 +500,14 @@ export const RULES = [
       'npm 스코프 @ait-co/{devtools,debugger,debug-console,internal-protocol} → @apps-in-toss/* — import/require/resolve 특정자, package.json 의존성 키, non-LEGACY 상수 리터럴 (pnpm workspace로 실제 해석되는 문맥).',
   },
   {
+    id: 'scope-prose',
+    category: 'scope',
+    defaultEnabled: true,
+    envVar: null,
+    description:
+      'scope-functional/scope-install/scope-preserve/scope-external-target 어디에도 해당하지 않는 나머지(산문·주석·JSDoc의 스코프 언급) 중 코드/스크립트/설정 파일(마크다운 제외)은 @apps-in-toss/*로 치환한다. 실측 근거: 커밋 33771c1(전면 스코프 sweep)의 실제 변경 파일 목록이 src/**·scripts/**·설정 파일만 포함하고 일반 docs/*.md는 하나도 포함하지 않는다(#21) — 그래서 마크다운(.md)은 이 규칙에서 제외하고 계속 보존한다(과거 회고 문서의 역사적 인용 왜곡 방지, agent-plugin처럼 이 파이프라인이 관리하지 않는 패키지 오탐 방지). 과거엔 이 문맥 전체를 영구 보존했으나(구 이름 scope-preserve의 prose 축), 재실행할 때마다 33771c1의 코드 sweep을 부분적으로 되돌리는 회귀를 낳았다.',
+  },
+  {
     id: 'scope-install',
     category: 'scope',
     defaultEnabled: false,
@@ -419,8 +520,7 @@ export const RULES = [
     category: 'scope',
     defaultEnabled: true,
     envVar: null,
-    description:
-      'LEGACY 명명 상수(과거 스펙 감지용, 영구 보존)와 prose/주석/JSDoc 언급은 어떤 설정에서도 치환하지 않는다.',
+    description: 'LEGACY 명명 상수(과거 스펙 감지용)는 어떤 설정에서도 치환하지 않고 영구 보존한다.',
   },
   {
     id: 'scope-external-target',
@@ -465,7 +565,7 @@ export const RULES = [
     defaultEnabled: true,
     envVar: null,
     description:
-      '"커뮤니티 오픈소스 프로젝트입니다."/"Community open-source project."/"not affiliated with Toss or Viva Republica" 문장 제거, "Open Source Community" 카피 중립화.',
+      '"커뮤니티 오픈소스 프로젝트입니다."/"Community open-source project."/"not affiliated with Toss or Viva Republica" 문장 제거(줄 전체가 정확히 일치할 때: README 리스트 항목 등, 마크다운 포함), 같은 문장이 더 큰 줄에 묻혀 있을 때도 그 부분만 제거(JSON 문자열 값·HTML 인라인 텍스트 등, #21) — 단 이 "묻힌 문장" 보충 패스는 마크다운은 제외한다(문서가 이 문장을 실례가 아니라 인용/설명으로 언급하는 프로즈와 충돌, #21). "Open Source Community" 카피 중립화. .html/.webmanifest 자체는 아직 정규화 대상 확장자가 아니다 — docs/upstream-sync.md "수동 확인이 필요한 항목" 참고.',
   },
   {
     id: 'license-copyright',
@@ -473,6 +573,14 @@ export const RULES = [
     defaultEnabled: true,
     envVar: null,
     description: 'LICENSE 파일의 "Copyright (c) <year>, DaveDev42" → "Copyright (c) <year> Viva Republica, Inc." (BSD-3 본문 불변).',
+  },
+  {
+    id: 'package-homepage-harness',
+    category: 'metadata',
+    defaultEnabled: true,
+    envVar: null,
+    description:
+      'SCOPED_PACKAGES(devtools/debugger/debug-console/internal-protocol) package.json의 "homepage" 필드를 harness repo URL(https://github.com/toss/apps-in-toss-harness)로 고정. 실측 근거: 커밋 acffd8c가 npm 미배포 URL(@ait-co/* npmjs.com)·커뮤니티 자체 도메인(devtools.aitc.dev)에서 harness URL로 손으로 정정했다(#21) — LICENSE Copyright(license-copyright)와 같은 "값을 harness 고정값으로 스왑" 패턴. repository.url/bugs.url은 github.com/apps-in-toss-community/* 형태라 github-link-rewrite가 이미 커버한다.',
   },
 ];
 
@@ -491,13 +599,16 @@ export function normalizeContent(content, ctx) {
 
   let out = content;
 
+  // 마크다운 문서는 6단계(prose)에서 계속 보존 — normalizeScopeLine 6단계 주석 참고(#21).
+  const isMarkdown = extname(toPosix(filePath)) === '.md';
+
   // 스코프 치환은 코드/JSON/마크다운 어디든 줄 단위로 동작.
   const allowScopeInstall = env.NORMALIZE_SCOPE_INSTALL === '1';
   const externalTarget = isExternalTargetContent(filePath);
   out = out
     .split('\n')
     .map((line) => {
-      const { line: nextLine, category } = normalizeScopeLine(line, { allowScopeInstall, externalTarget });
+      const { line: nextLine, category } = normalizeScopeLine(line, { allowScopeInstall, externalTarget, isMarkdown });
       if (category) counter.bump(`scope:${category}`);
       return nextLine;
     })
@@ -505,8 +616,9 @@ export function normalizeContent(content, ctx) {
 
   out = normalizeGithubLinks(out, counter);
   out = normalizeDocsDeeplinks(out, counter);
-  out = normalizeBranding(out, counter);
+  out = normalizeBranding(out, counter, { isMarkdown });
   out = normalizeLicense(out, filePath, counter);
+  out = normalizePackageHomepage(out, filePath, counter);
 
   return { content: out, counts: counter.counts, preserved: false };
 }
@@ -550,7 +662,13 @@ async function walkFiles(root) {
   return results;
 }
 
-const TEXT_LIKE_EXTENSIONS = new Set([...CODE_EXTENSIONS, '.json', '.md', '.txt', '.mjs', '.cjs', '.yaml', '.yml']);
+// .sh 포함 — 실측 근거: 커밋 33771c1이 .sh 스크립트(scripts/check-*.sh 등)의
+// @ait-co/* 언급에도 스코프 sweep을 적용했다. .html/.webmanifest는 의도적으로
+// 제외한다 — docs/upstream-sync.md "수동 확인이 필요한 항목" 참고(#21).
+// sync-upstream.mjs의 runNormalize도 이 목록을 그대로 import해서 쓴다 — 두 층이
+// 각자 다른 확장자 목록을 들고 있던 것 자체가 #21의 근본 원인 중 하나였다(.sh가
+// 한쪽에만 빠져 있어도 아무도 알아채지 못했다).
+export const TEXT_LIKE_EXTENSIONS = new Set([...CODE_EXTENSIONS, '.json', '.md', '.txt', '.mjs', '.cjs', '.yaml', '.yml', '.sh']);
 
 async function collectTargets(paths) {
   const targets = [];
