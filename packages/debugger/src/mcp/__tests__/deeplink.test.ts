@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildDeepLinkAttachUrl,
   buildLauncherAttachUrl,
+  resolveLauncherUrl,
   validateSchemeAuthority,
 } from '../deeplink.js';
 
@@ -323,6 +324,118 @@ describe('buildLauncherAttachUrl', () => {
     const withoutOpts = buildLauncherAttachUrl(TUNNEL, WSS, '654321');
     const withSelfdebugFalse = buildLauncherAttachUrl(TUNNEL, WSS, '654321', { selfdebug: false });
     expect(withSelfdebugFalse).toBe(withoutOpts);
+  });
+
+  // ---------------------------------------------------------------------------
+  // AIT_LAUNCHER_URL override (issue #19)
+  // ---------------------------------------------------------------------------
+
+  describe('AIT_LAUNCHER_URL override (#19)', () => {
+    const prevEnv = process.env.AIT_LAUNCHER_URL;
+
+    afterEach(() => {
+      if (prevEnv === undefined) {
+        delete process.env.AIT_LAUNCHER_URL;
+      } else {
+        process.env.AIT_LAUNCHER_URL = prevEnv;
+      }
+    });
+
+    it('uses the overridden host when AIT_LAUNCHER_URL is set', () => {
+      process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
+      const out = buildLauncherAttachUrl(TUNNEL, WSS);
+      expect(out.startsWith('https://toss.github.io/apps-in-toss-harness/launcher/?url=')).toBe(
+        true,
+      );
+      expect(out).not.toContain('devtools.aitc.dev');
+    });
+
+    it('normalizes a missing trailing slash on the override', () => {
+      process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher';
+      const out = buildLauncherAttachUrl(TUNNEL, WSS);
+      expect(
+        out.startsWith('https://toss.github.io/apps-in-toss-harness/launcher/?url='),
+      ).toBe(true);
+    });
+
+    it('throws (does not silently fall back) for a non-https override', () => {
+      process.env.AIT_LAUNCHER_URL = 'http://insecure.example.com/launcher/';
+      expect(() => buildLauncherAttachUrl(TUNNEL, WSS)).toThrow(/https:\/\//);
+    });
+
+    it('throws for an unparsable override', () => {
+      process.env.AIT_LAUNCHER_URL = 'not a url';
+      expect(() => buildLauncherAttachUrl(TUNNEL, WSS)).toThrow(/AIT_LAUNCHER_URL/);
+    });
+
+    it('empty string is treated as unset (default host, no throw)', () => {
+      process.env.AIT_LAUNCHER_URL = '';
+      const out = buildLauncherAttachUrl(TUNNEL, WSS);
+      expect(out.startsWith(LAUNCHER_BASE)).toBe(true);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLauncherUrl — AIT_LAUNCHER_URL override contract (issue #19)
+// ---------------------------------------------------------------------------
+
+describe('resolveLauncherUrl (#19)', () => {
+  const prevEnv = process.env.AIT_LAUNCHER_URL;
+
+  afterEach(() => {
+    if (prevEnv === undefined) {
+      delete process.env.AIT_LAUNCHER_URL;
+    } else {
+      process.env.AIT_LAUNCHER_URL = prevEnv;
+    }
+  });
+
+  it('returns the default LAUNCHER_URL and overridden:false when unset', () => {
+    delete process.env.AIT_LAUNCHER_URL;
+    expect(resolveLauncherUrl()).toEqual({ url: LAUNCHER_BASE, overridden: false });
+  });
+
+  it('returns the default and overridden:false when set to whitespace only', () => {
+    process.env.AIT_LAUNCHER_URL = '   ';
+    expect(resolveLauncherUrl()).toEqual({ url: LAUNCHER_BASE, overridden: false });
+  });
+
+  it('returns the override untouched when it already ends in /', () => {
+    process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
+    expect(resolveLauncherUrl()).toEqual({
+      url: 'https://toss.github.io/apps-in-toss-harness/launcher/',
+      overridden: true,
+    });
+  });
+
+  it('appends a trailing slash when the override lacks one', () => {
+    process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher';
+    expect(resolveLauncherUrl()).toEqual({
+      url: 'https://toss.github.io/apps-in-toss-harness/launcher/',
+      overridden: true,
+    });
+  });
+
+  it('accepts a bare https origin (gets a trailing slash)', () => {
+    process.env.AIT_LAUNCHER_URL = 'https://example.com';
+    expect(resolveLauncherUrl()).toEqual({ url: 'https://example.com/', overridden: true });
+  });
+
+  it('throws for a non-https scheme (http)', () => {
+    process.env.AIT_LAUNCHER_URL = 'http://example.com/launcher/';
+    expect(() => resolveLauncherUrl()).toThrow(/https:\/\//);
+  });
+
+  it('throws for a non-https scheme (ftp) and names the offending value', () => {
+    process.env.AIT_LAUNCHER_URL = 'ftp://example.com/launcher/';
+    expect(() => resolveLauncherUrl()).toThrow(/AIT_LAUNCHER_URL/);
+    expect(() => resolveLauncherUrl()).toThrow(/ftp:\/\/example\.com\/launcher\//);
+  });
+
+  it('throws for an unparsable URL', () => {
+    process.env.AIT_LAUNCHER_URL = 'not a url';
+    expect(() => resolveLauncherUrl()).toThrow(/AIT_LAUNCHER_URL/);
   });
 });
 

@@ -30,6 +30,7 @@
  * Node-only.
  */
 
+import { resolveLauncherUrl } from '../shared/launcher-url.js';
 import type { CdpConnection } from './cdp-connection.js';
 import {
   buildDeepLinkAttachUrl,
@@ -635,7 +636,17 @@ export async function renderAndMaybeWait(
   const header =
     'This tool result is shown to the user directly — do NOT re-print the QR below in your reply (it wastes output tokens). Just tell the user to scan the QR in this output (Ctrl+O to expand if collapsed).\n\n' +
     '테스트가 끝날 때까지 앱을 화면 앞에 유지하세요 — 백그라운드로 전환하면 디버그 세션이 끊어집니다.';
-  const warningPrefix = authorityWarning ? `⚠️  scheme_url 경고: ${authorityWarning}\n\n` : '';
+  const authorityNotice = authorityWarning ? `⚠️  scheme_url 경고: ${authorityWarning}\n\n` : '';
+  // issue #19: env-2 (launcher) attach reads AIT_LAUNCHER_URL. Surface the
+  // override in the tool result too — the launcher host rides inside
+  // `attachUrl` regardless, but this makes it impossible to miss. Already
+  // resolved once above (mintAttachUrl → buildLauncherAttachUrl), so a second
+  // call here is guaranteed not to throw (same env, same result).
+  const resolvedLauncher = parts.kind === 'launcher' ? resolveLauncherUrl() : undefined;
+  const launcherUrlNotice = resolvedLauncher?.overridden
+    ? `⚠️  AIT_LAUNCHER_URL override active — using ${resolvedLauncher.url}\n\n`
+    : '';
+  const warningPrefix = authorityNotice + launcherUrlNotice;
   const guiAvailable = canOpenBrowserFn();
 
   /** Builds the totp object surfaced in results (fresh expiresAt + reminted). */

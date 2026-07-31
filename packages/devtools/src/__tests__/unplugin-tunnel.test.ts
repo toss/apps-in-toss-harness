@@ -209,6 +209,45 @@ describe('buildLauncherDeepLink', () => {
     expect(parsed.searchParams.get('navBarTransparent')).toBe('1');
     expect(parsed.searchParams.get('navBarTheme')).toBe('dark');
   });
+
+  // ---------------------------------------------------------------------------
+  // AIT_LAUNCHER_URL override (issue #19)
+  // ---------------------------------------------------------------------------
+
+  describe('AIT_LAUNCHER_URL override (#19)', () => {
+    const prevEnv = process.env.AIT_LAUNCHER_URL;
+
+    afterEach(() => {
+      if (prevEnv === undefined) {
+        delete process.env.AIT_LAUNCHER_URL;
+      } else {
+        process.env.AIT_LAUNCHER_URL = prevEnv;
+      }
+    });
+
+    it('uses the overridden host instead of the default', () => {
+      process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
+      const deepLink = buildLauncherDeepLink('https://abc-def.trycloudflare.com');
+      expect(deepLink).toBe(
+        'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Fabc-def.trycloudflare.com',
+      );
+      expect(deepLink).not.toContain('devtools.aitc.dev');
+    });
+
+    it('throws for a non-https override (does not silently fall back)', () => {
+      process.env.AIT_LAUNCHER_URL = 'http://insecure.example.com/launcher/';
+      expect(() => buildLauncherDeepLink('https://abc-def.trycloudflare.com')).toThrow(
+        /https:\/\//,
+      );
+    });
+
+    it('unset (default) is byte-identical to pre-#19 output', () => {
+      delete process.env.AIT_LAUNCHER_URL;
+      expect(buildLauncherDeepLink('https://abc-def.trycloudflare.com')).toBe(
+        'https://devtools.aitc.dev/launcher/?url=https%3A%2F%2Fabc-def.trycloudflare.com',
+      );
+    });
+  });
 });
 
 describe('printTunnelBanner', () => {
@@ -261,6 +300,51 @@ describe('printTunnelBanner', () => {
       log: (m) => out.push(m),
     });
     expect(out.join('\n')).not.toContain('CDP');
+  });
+
+  // ---------------------------------------------------------------------------
+  // AIT_LAUNCHER_URL override (issue #19) — banner must call out an active
+  // override so a stale/wrong launcher host is never silently used.
+  // ---------------------------------------------------------------------------
+
+  describe('AIT_LAUNCHER_URL override (#19)', () => {
+    const prevEnv = process.env.AIT_LAUNCHER_URL;
+
+    afterEach(() => {
+      if (prevEnv === undefined) {
+        delete process.env.AIT_LAUNCHER_URL;
+      } else {
+        process.env.AIT_LAUNCHER_URL = prevEnv;
+      }
+    });
+
+    it('prints an override notice line + the overridden install URL when set', async () => {
+      process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
+      const out: string[] = [];
+      await printTunnelBanner('https://abc-def.trycloudflare.com', {
+        log: (m) => out.push(m),
+      });
+      const joined = out.join('\n');
+      expect(joined).toContain('AIT_LAUNCHER_URL override active');
+      expect(joined).toContain('https://toss.github.io/apps-in-toss-harness/launcher/');
+      expect(joined).not.toContain('devtools.aitc.dev');
+    });
+
+    it('does not print an override notice when unset (default behavior unchanged)', async () => {
+      delete process.env.AIT_LAUNCHER_URL;
+      const out: string[] = [];
+      await printTunnelBanner('https://abc-def.trycloudflare.com', {
+        log: (m) => out.push(m),
+      });
+      expect(out.join('\n')).not.toContain('AIT_LAUNCHER_URL override active');
+    });
+
+    it('rejects (throws) instead of silently starting the banner for an invalid override', async () => {
+      process.env.AIT_LAUNCHER_URL = 'not-a-url';
+      await expect(
+        printTunnelBanner('https://abc-def.trycloudflare.com', { log: () => {} }),
+      ).rejects.toThrow(/AIT_LAUNCHER_URL/);
+    });
   });
 });
 

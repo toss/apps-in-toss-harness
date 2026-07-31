@@ -13,7 +13,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { LAUNCHER_URL } from '../shared/launcher-url.js';
+import { resolveLauncherUrl } from '../shared/launcher-url.js';
 import { DEBUGGER_DEV_BRIDGE_ID } from './optional-peers.js';
 
 /** Matches the public URL cloudflared prints for an unauthenticated quick tunnel. */
@@ -138,6 +138,13 @@ export interface BuildLauncherDeepLinkOptions {
  *
  * Back-compat: the second argument may also be a plain string (`relayWssUrl`)
  * for callers that haven't migrated to the options object yet.
+ *
+ * The launcher base URL defaults to `https://devtools.aitc.dev/launcher/` and
+ * is overridable via `AIT_LAUNCHER_URL` (issue #19) — see
+ * {@link resolveLauncherUrl}.
+ *
+ * @throws When `AIT_LAUNCHER_URL` is set to an invalid value — see
+ *   {@link resolveLauncherUrl}.
  */
 export function buildLauncherDeepLink(
   tunnelUrl: string,
@@ -147,7 +154,8 @@ export function buildLauncherDeepLink(
   const opts: BuildLauncherDeepLinkOptions =
     typeof optsOrRelay === 'string' ? { relayWssUrl: optsOrRelay } : (optsOrRelay ?? {});
 
-  const base = `${LAUNCHER_URL}?url=${encodeURIComponent(tunnelUrl)}`;
+  const { url: launcherUrl } = resolveLauncherUrl();
+  const base = `${launcherUrl}?url=${encodeURIComponent(tunnelUrl)}`;
   let url = base;
   if (opts.relayWssUrl) {
     url += `&debug=1&relay=${encodeURIComponent(opts.relayWssUrl)}`;
@@ -172,12 +180,20 @@ export function buildLauncherDeepLink(
  * QR encoding a launcher deep-link, and a one-line note that quick tunnels are
  * ephemeral, unauthenticated and not for production. Pure w.r.t. side effects
  * other than the injected `log` sink and `qrcode-terminal` — unit-tested.
+ *
+ * When `AIT_LAUNCHER_URL` overrides the default launcher host (issue #19), an
+ * extra banner line names the override so a stale/wrong host is never silently
+ * used — see {@link resolveLauncherUrl}.
+ *
+ * @throws When `AIT_LAUNCHER_URL` is set to an invalid value — see
+ *   {@link resolveLauncherUrl}.
  */
 export async function printTunnelBanner(
   url: string,
   opts: PrintTunnelBannerOptions = {},
 ): Promise<void> {
   const log = opts.log ?? ((m: string) => console.log(m));
+  const { url: launcherUrl, overridden: launcherUrlOverridden } = resolveLauncherUrl();
   const deepLink = buildLauncherDeepLink(url, {
     relayWssUrl: opts.relayWssUrl,
     name: opts.name,
@@ -190,7 +206,10 @@ export async function printTunnelBanner(
     '  ┌─ @apps-in-toss/devtools · live tunnel ────────────────────────────',
     `  │  ${url}`,
     '  │',
-    `  │  Install the launcher PWA once:  ${LAUNCHER_URL}`,
+    ...(launcherUrlOverridden
+      ? [`  │  AIT_LAUNCHER_URL override active — using ${launcherUrl}`, '  │']
+      : []),
+    `  │  Install the launcher PWA once:  ${launcherUrl}`,
     '  │  Then scan the QR below — it opens the launcher directly',
     '  │  into this tunnel URL (no manual paste needed).',
     ...(opts.relayWssUrl

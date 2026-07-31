@@ -4,9 +4,66 @@
  * This package's single declaration — `@apps-in-toss/devtools` holds its own
  * copy in `src/shared/launcher-url.ts` (shared there between its `mcp/` and
  * `unplugin/` layers without crossing this package's boundary). Keep the two
- * packages' values in sync when the URL changes.
+ * packages' values — and {@link resolveLauncherUrl}'s override contract below
+ * — in sync when either changes.
  */
 const LAUNCHER_URL = 'https://devtools.aitc.dev/launcher/';
+
+/** Result of {@link resolveLauncherUrl}. */
+export interface ResolvedLauncherUrl {
+  /** The launcher base URL to use, always ending in `/`. */
+  url: string;
+  /** `true` when `AIT_LAUNCHER_URL` supplied the value (validated + normalized into `url`). */
+  overridden: boolean;
+}
+
+/**
+ * Resolves the launcher base URL, honoring the `AIT_LAUNCHER_URL` env override
+ * (issue #19). Mirrors `@apps-in-toss/devtools`'s `src/shared/launcher-url.ts`
+ * `resolveLauncherUrl` byte-for-byte — see that file's JSDoc for the full
+ * rationale (breaking the chicken-and-egg cycle of issue #11's launcher
+ * re-hosting). Keep both copies in sync when either changes.
+ *
+ * Read at CALL TIME (not module load) so tests and callers can set/unset the
+ * env var per-case, mirroring the existing `AIT_TUNNEL_BASE_URL`/
+ * `AIT_DEVTOOLS_URL` override pattern in this codebase.
+ *
+ * - Unset / empty (after trim) → returns {@link LAUNCHER_URL} unchanged,
+ *   `overridden: false`. Byte-identical to pre-#19 behavior.
+ * - Set → validated as an absolute URL with the `https://` scheme ONLY;
+ *   invalid values THROW (never a silent fallback to the default) because the
+ *   launcher frames a dev-server tunnel URL in a full-viewport iframe.
+ * - The resolved override is normalized to end in `/`.
+ *
+ * @throws {Error} when `AIT_LAUNCHER_URL` is set to a non-`https://` or
+ *   unparsable value.
+ */
+export function resolveLauncherUrl(): ResolvedLauncherUrl {
+  const raw = process.env.AIT_LAUNCHER_URL?.trim();
+  if (raw === undefined || raw === '') {
+    return { url: LAUNCHER_URL, overridden: false };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      `AIT_LAUNCHER_URL이 올바른 URL이 아닙니다: "${raw}". ` +
+        'https://로 시작하는 절대 URL을 지정하세요 ' +
+        '(예: https://toss.github.io/apps-in-toss-harness/launcher/).',
+    );
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(
+      `AIT_LAUNCHER_URL은 https:// 스킴만 허용합니다 — 받은 값: "${raw}" (스킴: ${parsed.protocol}). ` +
+        'launcher는 개발 서버 터널 URL을 프레임하는 면이라 다른 스킴을 조용히 받아들이지 않습니다.',
+    );
+  }
+
+  const url = raw.endsWith('/') ? raw : `${raw}/`;
+  return { url, overridden: true };
+}
 
 /**
  * Optional metadata that enriches the launcher deep-link (#498).
@@ -44,11 +101,12 @@ export interface LauncherAttachUrlOpts {
 /**
  * Builds a launcher PWA deep-link for env-2 MCP-attach (issue #378).
  *
- * The launcher at {@link LAUNCHER_URL} renders tunnelUrl in a full-viewport
- * iframe. `&debug=1&relay=<wssUrl>` is forwarded onto the iframe src so the
- * framed page's in-app debug gate (Layer C) is satisfied and a Chii target.js
- * is injected. `&at=<totpCode>` is added only when a code is provided (same
- * conditional as {@link buildDeepLinkAttachUrl}).
+ * The launcher (default `https://devtools.aitc.dev/launcher/`, overridable via
+ * `AIT_LAUNCHER_URL` — see {@link resolveLauncherUrl}, issue #19) renders
+ * tunnelUrl in a full-viewport iframe. `&debug=1&relay=<wssUrl>` is forwarded
+ * onto the iframe src so the framed page's in-app debug gate (Layer C) is
+ * satisfied and a Chii target.js is injected. `&at=<totpCode>` is added only
+ * when a code is provided (same conditional as {@link buildDeepLinkAttachUrl}).
  *
  * When `opts.name` is given (non-blank), it is added as `&name=` so the
  * launcher partner bar shows the app name instead of the generic default (#498).
@@ -73,6 +131,8 @@ export interface LauncherAttachUrlOpts {
  *   (#498, #543).
  * @returns The launcher deep-link URL with `?url=<enc>&debug=1&relay=<enc>
  *   [&at=<code>][&name=<enc>][&icon=<enc>][&selfdebug=1]` params.
+ * @throws When `AIT_LAUNCHER_URL` is set to an invalid value — see
+ *   {@link resolveLauncherUrl}.
  */
 export function buildLauncherAttachUrl(
   tunnelUrl: string,
@@ -80,8 +140,9 @@ export function buildLauncherAttachUrl(
   totpCode?: string,
   opts?: LauncherAttachUrlOpts,
 ): string {
+  const { url: launcherUrl } = resolveLauncherUrl();
   let url =
-    `${LAUNCHER_URL}?url=${encodeURIComponent(tunnelUrl)}` +
+    `${launcherUrl}?url=${encodeURIComponent(tunnelUrl)}` +
     `&debug=1&relay=${encodeURIComponent(wssUrl)}`;
   if (totpCode !== undefined && totpCode !== '') {
     url += `&at=${encodeURIComponent(totpCode)}`;

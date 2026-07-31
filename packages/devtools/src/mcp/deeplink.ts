@@ -1,4 +1,4 @@
-import { LAUNCHER_URL } from '../shared/launcher-url.js';
+import { resolveLauncherUrl } from '../shared/launcher-url.js';
 
 /**
  * Optional metadata that enriches the launcher deep-link (#498).
@@ -36,11 +36,12 @@ export interface LauncherAttachUrlOpts {
 /**
  * Builds a launcher PWA deep-link for env-2 MCP-attach (issue #378).
  *
- * The launcher at {@link LAUNCHER_URL} renders tunnelUrl in a full-viewport
- * iframe. `&debug=1&relay=<wssUrl>` is forwarded onto the iframe src so the
- * framed page's in-app debug gate (Layer C) is satisfied and a Chii target.js
- * is injected. `&at=<totpCode>` is added only when a code is provided (same
- * conditional as {@link buildDeepLinkAttachUrl}).
+ * The launcher (default `https://devtools.aitc.dev/launcher/`, overridable via
+ * `AIT_LAUNCHER_URL` — see {@link resolveLauncherUrl}, issue #19) renders
+ * tunnelUrl in a full-viewport iframe. `&debug=1&relay=<wssUrl>` is forwarded
+ * onto the iframe src so the framed page's in-app debug gate (Layer C) is
+ * satisfied and a Chii target.js is injected. `&at=<totpCode>` is added only
+ * when a code is provided (same conditional as {@link buildDeepLinkAttachUrl}).
  *
  * When `opts.name` is given (non-blank), it is added as `&name=` so the
  * launcher partner bar shows the app name instead of the generic default (#498).
@@ -65,6 +66,8 @@ export interface LauncherAttachUrlOpts {
  *   (#498, #543).
  * @returns The launcher deep-link URL with `?url=<enc>&debug=1&relay=<enc>
  *   [&at=<code>][&name=<enc>][&icon=<enc>][&selfdebug=1]` params.
+ * @throws When `AIT_LAUNCHER_URL` is set to an invalid value — see
+ *   {@link resolveLauncherUrl}.
  */
 export function buildLauncherAttachUrl(
   tunnelUrl: string,
@@ -72,8 +75,9 @@ export function buildLauncherAttachUrl(
   totpCode?: string,
   opts?: LauncherAttachUrlOpts,
 ): string {
+  const { url: launcherUrl } = resolveLauncherUrl();
   let url =
-    `${LAUNCHER_URL}?url=${encodeURIComponent(tunnelUrl)}` +
+    `${launcherUrl}?url=${encodeURIComponent(tunnelUrl)}` +
     `&debug=1&relay=${encodeURIComponent(wssUrl)}`;
   if (totpCode !== undefined && totpCode !== '') {
     url += `&at=${encodeURIComponent(totpCode)}`;
