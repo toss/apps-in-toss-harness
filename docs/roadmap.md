@@ -1,8 +1,13 @@
 # 로드맵 — 공식 harness 기준 station map과 1.0 정의
 
-> **상태: draft** (harness#7). 확정 전까지 이 문서는 제안이다 — open question으로
-> 표시된 항목은 결정권자 확인이 필요하다. 진척 추적은 milestone
-> [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1)이 담당한다.
+> **상태: 부분 확정** (harness#7). §1~§4(station map·station별 AC·1.0 정의·
+> cross-cutting 자산 거취)는 확정됐다 — 이슈 작성자가 "이 확정은 §5의 open
+> question 5건과 독립적으로 가능하다"고 명시했다(harness#7 코멘트,
+> 2026-07-31). 미확정은 두 가지뿐이다: **§5 open question**(그중 4·5는 이미
+> 해소/잠정 확정 — §5 참고, 나머지 1·2·3은 각자의 게이트 대기)과 **§3 1.0
+> 조건4의 "배포" 정의 재확정**(검수·릴리즈를 포함하는지). 진척 추적은
+> milestone [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1)이
+> 담당한다.
 
 이 harness의 목표는 하나다: **개발자가 AI 코딩 에이전트 안에서, 빈 디렉토리부터
 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주하는 것.** 이 문서는 그 완주
@@ -70,7 +75,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 | Station | AC (공식 harness 기준) | 현재 상태 |
 |---|---|---|
 | 0 install | public repo에서 플러그인 설치 → 에이전트 세션에 `/ait:*` 명령·skill 노출 (e2e 드라이버의 init assert와 같은 기준) | **설치 형상 로컬 실증 완료**(2026-07-30) — SDK plugin 로드에서 `ait:*` 명령·skill 전부 노출 + plugin 경유 MCP 2종 등록: docs **connected**(tool 4종)·console **needs-auth**(`/mcp` 대화형 인가 대기, 설계대로). marketplace 해석(`add` → 루트 manifest → 상대 source)·public 경로 실증은 #8 대기 |
-| 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족** (#6 — clean-room 스모크로 `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구) |
+| 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족(clean-room 스모크 기준)** — `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구(#6). **단 upstream `create-ait-app`이 스키마를 재작성 중**(실측 2026-07-31): npm `latest`는 여전히 0.1.3(`granite.config.ts`+eslint 산출)이지만 upstream main은 이미 0.2.0(`apps-in-toss.config.ts`+oxlint+`pnpm-workspace.yaml` 산출)으로 바뀌어 있다 — 이 스키마 교체 대응은 #6 잔여 |
 | 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
 | 4 auth | (재정의 후 확정) 공식 로그인 경로 문서 + 레퍼런스 배선 1회 실증 | **잠정** — #5 재정의 대기 |
