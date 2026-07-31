@@ -77,11 +77,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/apps-in-toss-community/debugger",
+    "url": "https://github.com/toss/apps-in-toss-harness",
     "directory": "packages/debug-console"
   },
-  "homepage": "https://www.npmjs.com/package/@ait-co/debug-console",
   "bugs": {
-    "url": "https://github.com/apps-in-toss-community/debugger/issues"
-  }
+    "url": "https://github.com/toss/apps-in-toss-harness/issues"
+  },
+  "homepage": "https://github.com/toss/apps-in-toss-harness"
 }

@@ -155,10 +155,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/apps-in-toss-community/devtools"
+    "url": "https://github.com/toss/apps-in-toss-harness",
+    "directory": "packages/devtools"
   },
-  "homepage": "https://devtools.aitc.dev/",
   "bugs": {
-    "url": "https://github.com/apps-in-toss-community/devtools/issues"
-  }
+    "url": "https://github.com/toss/apps-in-toss-harness/issues"
+  },
+  "homepage": "https://github.com/toss/apps-in-toss-harness"
 }

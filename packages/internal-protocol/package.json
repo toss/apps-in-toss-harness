@@ -2,7 +2,7 @@
   "name": "@apps-in-toss/internal-protocol",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared device<->host wire-protocol source for @ait-co/debugger and @ait-co/debug-console — workspace-internal only, never published; consumed as raw TypeScript by sibling packages' bundlers.",
+  "description": "Shared device<->host wire-protocol source for @apps-in-toss/debugger and @apps-in-toss/debug-console — workspace-internal only, never published; consumed as raw TypeScript by sibling packages' bundlers.",
   "type": "module",
   "sideEffects": false,
   "exports": {
