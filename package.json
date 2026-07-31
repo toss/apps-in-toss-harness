@@ -10,6 +10,7 @@
     "test": "pnpm -r test && pnpm test:scripts",
     "test:scripts": "node --test \"scripts/__tests__/**/*.test.mjs\"",
     "build": "pnpm -r --if-present build",
+    "check:pack-manifests": "node scripts/check-pack-manifests.mjs",
     "typecheck": "pnpm -r --if-present typecheck"
   }
 }
