@@ -5,7 +5,7 @@
  *
  * Mode families (#468): the scan steps + troubleshooting checklist differ per
  * session mode, so TWO chrome variants are precompiled per locale:
- *   - `sandbox` — env 2 (relay-mobile, AITC Sandbox PWA): launcher PWA flow.
+ *   - `sandbox` — env 2 (relay-mobile, Sandbox PWA): launcher PWA flow.
  *     No Toss app / `_deploymentId` concepts — the deployment label row is
  *     omitted entirely.
  *   - `intoss`  — env 3 (relay-dev): Toss app deep-link flow.

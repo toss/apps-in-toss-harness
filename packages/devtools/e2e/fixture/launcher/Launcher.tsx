@@ -1,4 +1,4 @@
-// AITC DevTools Launcher — client-side React component.
+// Apps in Toss DevTools Launcher — client-side React component.
 //
 // This file holds the full UI of the launcher PWA. The stable shell
 // (devtools.aitc.dev/launcher/) is installed once; it keeps the chromeless

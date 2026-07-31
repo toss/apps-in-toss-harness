@@ -213,7 +213,7 @@ SDK가 JS-level에서 `Error`를 throw. 이 exception이 catch되지 않고 nati
 ```json
 {
   "id": "page-001",
-  "title": "aitc-sdk-example",
+  "title": "ait-harness-e2e",
   "crashDetectedAt": "2026-05-28T10:23:01.500Z"
 }
 ```

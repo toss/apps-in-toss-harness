@@ -1,5 +1,5 @@
 /**
- * URL of the AITC Sandbox launcher PWA.
+ * URL of the Sandbox launcher PWA.
  *
  * Single source of truth for both `src/mcp/deeplink.ts` (env-2 MCP attach) and
  * `src/unplugin/tunnel.ts` (`dev:phone` QR banner) — both routes must point at

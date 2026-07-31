@@ -1,7 +1,7 @@
 /**
  * env-2 postMessage bridges (#484, #510).
  *
- * In the AITC Sandbox PWA (env 2) the dev app runs inside the launcher's
+ * In the Sandbox PWA (env 2) the dev app runs inside the launcher's
  * full-viewport `<iframe>`. The launcher is the top-level document, so its
  * `env(safe-area-inset-*)` measurement is the ground truth for the real device
  * geometry. The framed page's mock would otherwise report a synthetic preset
@@ -172,7 +172,7 @@ export const ENV2_COMPENSATION_CSS = 'body { margin-top: calc(-1 * env(safe-area
  *
  * ### Why this is needed
  *
- * In env 2 (AITC Sandbox PWA) the launcher frames the mini-app in a
+ * In env 2 (Sandbox PWA) the launcher frames the mini-app in a
  * full-bleed `<iframe>` whose top edge is already positioned BELOW the
  * launcher's partner bar (at `env(safe-area-inset-top) + 54px`). However,
  * inside the cross-origin child iframe, CSS `env(safe-area-inset-top)` STILL

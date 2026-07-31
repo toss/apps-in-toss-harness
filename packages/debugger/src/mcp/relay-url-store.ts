@@ -1,7 +1,7 @@
 /**
  * Project-local ephemeral URL store (#424).
  *
- * Environment-2 ("AITC Sandbox PWA") cold-start requires two ephemeral URLs:
+ * Environment-2 ("Sandbox PWA") cold-start requires two ephemeral URLs:
  *   - `relayBaseUrl` — the CDP relay's https base (was `AIT_RELAY_BASE_URL`)
  *   - `tunnelBaseUrl` — the app's https tunnel base (was `AIT_TUNNEL_BASE_URL`)
  *

@@ -1,4 +1,4 @@
-# 시나리오 2 — AITC Sandbox PWA (환경 2) acceptance 절차
+# 시나리오 2 — Sandbox PWA (환경 2) acceptance 절차
 
 > 대상: 실기기 Safari/WebKit + installable PWA(`devtools.aitc.dev/launcher/`) + cloudflared 터널.
 > HMR O (cloudflared quick tunnel). CDP relay는 opt-in(`tunnel: { cdp: true }`) — 켜면 실기기 WebKit 위에서 DOM·콘솔·예외·`measure_safe_area` 관측이 열린다. `call_sdk`는 환경 2에서 mock을 친다(실 SDK는 환경 3).

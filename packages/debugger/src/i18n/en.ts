@@ -43,7 +43,7 @@ export const en: Record<StringKey, string> = {
   'attach.steps.section': 'How to scan',
   'attach.faq.section': 'Troubleshooting checklist',
   'attach.url.section': 'URL (fallback)',
-  'attach.mode.sandbox': 'env 2 — AITC Sandbox App (PWA)',
+  'attach.mode.sandbox': 'env 2 — Sandbox App (PWA)',
   'attach.mode.intossDev': 'env 3 — intoss-private relay dev',
   'attach.sandbox.step1':
     'Launch the launcher PWA icon on your home screen (if the Safari address bar is visible, it is not standalone).',

@@ -59,7 +59,7 @@ export interface RelayConnectionFactoryOptions {
    */
   schemeUrl: string;
   /**
-   * env-2 (AITC Sandbox PWA) attach mode (devtools#774). When `true`, `open()`
+   * env-2 (Sandbox PWA) attach mode (devtools#774). When `true`, `open()`
    * builds the attach URL as a **launcher deep-link**
    * (`buildLauncherAttachUrl(appUrl, wssUrl, totp)` — the same env-2 path the
    * MCP daemon takes via `prepareAttach(deps, 'relay-mobile', …)`, issue #378)
@@ -168,7 +168,7 @@ export interface RelayConnectionFactoryOptions {
 
 /**
  * Builds a {@link RelayConnectionFactory} that opens a standalone relay
- * connection for env 3 (intoss-private scheme, default) or env 2 (AITC Sandbox
+ * connection for env 3 (intoss-private scheme, default) or env 2 (Sandbox
  * PWA launcher deep-link, when `opts.attachLauncher` is set — devtools#774).
  *
  * `open()` performs the full attach lifecycle and BLOCKS while a human scans

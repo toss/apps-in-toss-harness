@@ -4,7 +4,7 @@
 >
 > 환경 3은 BLOCK-phone — 실 iPhone이 있어야 완주할 수 있다. 환경 1 섹션은 실기기 없이 자율 검증 가능.
 >
-> **환경 2(AITC Sandbox PWA)는 이 가이드 범위 밖이다** — 진입 메커니즘이 다르다(아래 핵심 모델 참고). 절차·acceptance는 [`docs/env2-pwa-acceptance.md`](../env2-pwa-acceptance.md)가 정본. **폰 세션 순서는 환경 2를 먼저** 돈다 — 토스 앱·검수가 불필요해 마찰이 낮고, CDP relay 경로의 절반을 더 싼 환경에서 먼저 검증한 뒤 환경 3(dogfood relay)으로 넘어간다.
+> **환경 2(Sandbox PWA)는 이 가이드 범위 밖이다** — 진입 메커니즘이 다르다(아래 핵심 모델 참고). 절차·acceptance는 [`docs/env2-pwa-acceptance.md`](../env2-pwa-acceptance.md)가 정본. **폰 세션 순서는 환경 2를 먼저** 돈다 — 토스 앱·검수가 불필요해 마찰이 낮고, CDP relay 경로의 절반을 더 싼 환경에서 먼저 검증한 뒤 환경 3(dogfood relay)으로 넘어간다.
 >
 > **레거시 QA 절차 — harness 좌표로 갱신됨.** §"환경 3" 섹션은 원래 커뮤니티 dog-food 좌표(miniAppId `31146`)와 `aitcc` CLI를 전제로 작성됐다. harness dogfood 대상은 miniAppId `58955`(`ait-harness-e2e`, 워크스페이스 `59` — `docs/roadmap.md` station 5)이고, 배포·상태 조회는 console MCP(`apps-in-toss-console`)로 전환됐다. 아래는 그 전환을 반영해 갱신했다 — 정확한 최신 호출 시퀀스는 `packages/agent-plugin/shared/skills/debug/SKILL.md` §5-B·5-C가 정본. aitcc에 결합돼 harness 절차로 완전히 옮기지 못한 구간은 "console MCP 기반 재작성 필요"로 표시했다.
 

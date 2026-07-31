@@ -3,7 +3,7 @@
 // heavy top-level imports (same pattern as entry.ts / letterbox.ts). Launcher.tsx
 // reads the live query string + viewport from the DOM and feeds them in.
 //
-// Background: environment 2 (AITC Sandbox PWA) frames an ephemeral tunnel URL in
+// Background: environment 2 (Sandbox PWA) frames an ephemeral tunnel URL in
 // a full-viewport iframe. Before #495 the framed app was full-bleed under the OS
 // status bar, with no emulation of the real toss mini-app host chrome. This
 // module models that host chrome so the launcher's own shell reproduces the two

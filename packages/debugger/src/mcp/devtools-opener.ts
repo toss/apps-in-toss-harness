@@ -43,7 +43,7 @@
  *
  * PWA (WebKit) caveat:
  *   The Chii relay injects a chobitsu CDP shim into WebKit-based runtimes (env 2
- *   AITC Sandbox PWA). The DevTools frontend will connect and most panels work.
+ *   Sandbox PWA). The DevTools frontend will connect and most panels work.
  *   However, WebKit does not expose the full CDP domain set that V8/Blink does,
  *   so some panels (Network, Layers) may appear empty or show limited data.
  *   This is a WebKit runtime constraint, not a relay or devtools-opener issue.

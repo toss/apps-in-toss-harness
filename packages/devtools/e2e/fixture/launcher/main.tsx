@@ -1,4 +1,4 @@
-// AITC DevTools Launcher — entry point.
+// Apps in Toss DevTools Launcher — entry point.
 //
 // Side-effect: registers the <pwa-install> custom element. The library
 // handles the cross-browser install dialog itself (Android Chrome

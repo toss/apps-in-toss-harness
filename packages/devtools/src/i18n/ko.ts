@@ -238,7 +238,7 @@ export const ko = {
   'attach.url.section': 'URL (fallback)',
 
   // qr-http-server — attach page mode 라벨 (환경 가시화, #468)
-  'attach.mode.sandbox': '환경 2 — AITC Sandbox App (PWA)',
+  'attach.mode.sandbox': '환경 2 — Sandbox App (PWA)',
   'attach.mode.intossDev': '환경 3 — intoss-private relay dev',
 
   // attach page — sandbox family (환경 2: launcher PWA, 토스 앱·_deploymentId 개념 없음)
@@ -279,7 +279,7 @@ export const ko = {
   'attach.intoss.faq.totp':
     '<strong>TOTP gate Layer C가 비활성인 경우</strong> — relay 서버에 <code>AIT_DEBUG_TOTP_SECRET</code>이 설정돼 있는지 확인',
   // Launcher PWA
-  'launcher.title': 'AITC DevTools Launcher',
+  'launcher.title': 'Apps in Toss DevTools Launcher',
   'launcher.description': '터미널 QR을 스캔하거나 URL을 입력하세요.',
   'launcher.installCta': '폰에 런처 설치하기',
   'launcher.urlPlaceholder': 'https://example.trycloudflare.com',

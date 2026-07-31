@@ -1,6 +1,6 @@
 {
-  "name": "AITC DevTools Launcher",
-  "short_name": "AITC Launcher",
+  "name": "Apps in Toss DevTools Launcher",
+  "short_name": "AIT Launcher",
   "description": "Open an Apps In Toss dev server tunnel full-screen on a real phone.",
   "start_url": "./",
   "scope": "./",

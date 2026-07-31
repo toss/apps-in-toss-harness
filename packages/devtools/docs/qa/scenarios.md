@@ -1,6 +1,6 @@
 # 3 시나리오 수동 QA 체크리스트
 
-M1 acceptance 기준: 환경 1(로컬 브라우저), 환경 3(intoss relay dev)에서 `list_pages → measure_safe_area → call_sdk(getOperationalEnvironment)` 3종 MCP 도구 호출이 동일 JSON envelope(schema 평행성)로 응답해야 한다. 환경 2(AITC Sandbox PWA)는 MCP relay 대상이 아니므로 별도 acceptance 기준을 따른다 — cloudflared 터널 기동 + 실기기 Safari/WebKit에서 `env(safe-area-inset-*)` 실값 관측.
+M1 acceptance 기준: 환경 1(로컬 브라우저), 환경 3(intoss relay dev)에서 `list_pages → measure_safe_area → call_sdk(getOperationalEnvironment)` 3종 MCP 도구 호출이 동일 JSON envelope(schema 평행성)로 응답해야 한다. 환경 2(Sandbox PWA)는 MCP relay 대상이 아니므로 별도 acceptance 기준을 따른다 — cloudflared 터널 기동 + 실기기 Safari/WebKit에서 `env(safe-area-inset-*)` 실값 관측.
 
 이 문서는 각 환경 진입 절차, 검증 명령, 예상 응답, 실패 처리를 체크리스트로 정리한다. 각 시나리오의 상세 절차는 `docs/scenarios/env-{1,2,3}.md`를 함께 참조한다.
 
@@ -154,7 +154,7 @@ npx -y @ait-co/devtools devtools-mcp --target=local
 
 ---
 
-## 시나리오 2 — AITC Sandbox PWA (환경 2)
+## 시나리오 2 — Sandbox PWA (환경 2)
 
 상세 절차: [`docs/scenarios/env-2.md`](../scenarios/env-2.md)
 
@@ -318,7 +318,7 @@ RELEASE_CHANNEL=dogfood ait build
 |---|---|---|---|---|
 | 1a (로컬 브라우저, `--mode=dev`) | `pages[]`, `tunnel.up: false`, `devMode: true` | `source: "mock-vite"` | `ok: true`, `value` scalar string (mock state 폴링, dogfood 불필요) | — |
 | 1b (로컬 브라우저, `--target=local`) | `pages[]`, `tunnel.up: false` | `source: "mock"` | non-dogfood fixture: `ok: false` 예상 / dogfood fixture: `ok: true`, `value` scalar | — |
-| 2 (AITC Sandbox PWA) | cloudflared 터널 URL + QR 출력 | `env(safe-area-inset-*)` 실값이 양수 (실기기 WebKit 검증) | `getOperationalEnvironment()` mock 응답 반환 (`'toss' \| 'sandbox'`) | — |
+| 2 (Sandbox PWA) | cloudflared 터널 URL + QR 출력 | `env(safe-area-inset-*)` 실값이 양수 (실기기 WebKit 검증) | `getOperationalEnvironment()` mock 응답 반환 (`'toss' \| 'sandbox'`) | — |
 | 3 (intoss dev relay) | `pages[]`, `tunnel.up: true`, intoss-private URL | `source: "relay-dev"`, `sdkInsetsSource: "window.__sdk"` | `ok: true`, `value` scalar string | — |
 
 통과 후 이 표의 "통과 일자"를 채우고, 필요하면 이 harness 저장소에 QA 통과 기록 이슈를 남긴다. (이 체크리스트의 원 출처: 커뮤니티 devtools#291 — 이 저장소에는 대응 이슈가 없으므로 커뮤니티 org 이슈를 닫는 조작은 하지 않는다.)
