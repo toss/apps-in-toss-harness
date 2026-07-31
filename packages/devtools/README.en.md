@@ -472,6 +472,16 @@ When using the plugin, the panel is auto-injected into your entry point file. Cl
 
 > **Prompt mode auto-open**: When an API set to prompt mode is called, the Panel automatically opens the Device tab and shows the input UI.
 
+### Trying toss-gated behaviour in dev (Environment + Navigation)
+
+Some no-op APIs that only fire through the native bridge in a real Toss WebView (e.g. `setIosSwipeGestureEnabled`) are reflected by the mock as observable state holding their **last call value**. The **Navigation** section of the Environment tab shows this value read-only.
+
+That lets you verify code paths gated on `getOperationalEnvironment() === 'toss'` without the Toss app:
+
+1. Switch **Environment** to `toss` in the Environment tab (the default is `sandbox` — entering `toss` is an explicit opt-in).
+2. Your app's toss-gated guard (e.g. `useDisableIosSwipeGestureInToss`) runs and calls `setIosSwipeGestureEnabled({ isEnabled: false })`.
+3. Watch the `iOS swipe-back` value in the Navigation section flip from `not called` to `disabled` live in the panel. You can also cross-check `navigation.iosSwipeGestureEnabled` via `AIT.getMockState()`.
+
 ### Mock state preset library (Presets tab)
 
 When a scenario requires multiple mock keys to be in a specific state simultaneously (e.g. "IAP `NETWORK_ERROR` + payment fail when offline"), instead of setting them manually each time you can apply the whole set with one click. Applied presets show a ✓ indicator; if any key defined by the preset changes, the indicator automatically clears (keys not defined by the preset are not compared).
@@ -1035,6 +1045,26 @@ Since Turbopack doesn't support unplugin, use `resolveAlias` in `next.config.js`
 // app/layout.tsx or pages/_app.tsx
 import '@apps-in-toss/devtools/panel';
 ```
+
+### `devtools-mcp` — when a session is already running
+
+Starting a second `devtools-mcp` prints `A debug server is already running (PID <pid>)` to stderr, along with the existing relay URL.
+
+How to recover:
+
+```bash
+# Stop the existing session directly
+kill <PID>
+
+# Or take it over with --force
+npx @apps-in-toss/devtools devtools-mcp --force
+# In local mode:
+npx @apps-in-toss/devtools devtools-mcp --target=local --force
+```
+
+`--takeover` is an alias for `--force` and behaves identically.
+
+If the session is already stopped but the same error persists, a stale lock file is left behind — remove the path the error message prints (`rm "<lock file path>"`).
 
 ## MCP Server
 
