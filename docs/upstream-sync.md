@@ -305,10 +305,15 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
 
   두 클래스를 등록한 뒤 남은 잔여 drift는 devtools 42건 / debugger 21건 /
   debug-console 5건 / internal-protocol 1건, 합계 **69건**(잔재 마커 46건)이다
-  — 표본 조사 결과 전부 `@ait-co` 스코프 토큰이나 disclaimer 문장과 무관한
-  손질이었다: dogfood 호스트네임/앱 id 교체, `RELEASE_CHANNEL=dogfood` 같은
-  빌드 플래그 추가, MCP 도구 시그니처 변경(`start_attach`에 `mode` 파라미터
-  추가 등), `AITC Sandbox PWA` → `Sandbox PWA` 같은 표기 변경. 이 69건은
+  — 표본 조사 결과 전부 **`scope-*`·`branding-neutralize` 규칙으로는 재현할 수
+  없는** 손질이었다: dogfood 호스트네임/앱 id 교체, `RELEASE_CHANNEL=dogfood`
+  같은 빌드 플래그 추가, MCP 도구 시그니처 변경(`start_attach`에 `mode`
+  파라미터 추가 등), `AITC Sandbox PWA` → `Sandbox PWA` 같은 표기 변경.
+  **"잔재가 없다"는 뜻이 아니다** — 잔재 마커 46건이 그대로 남아 있고, 그 대부분은
+  `aitc.dev` 도메인·`AITC` 브랜드처럼 스코프 토큰도 disclaimer 문장도 아닌
+  값들이라 위 규칙표의 어느 항목에도 걸리지 않는다. 즉 이 69건은 다음
+  `--write`에서 브랜드·도메인 손질이 되돌아가고, 정규화가 그걸 다시 고쳐주지도
+  않는다. 이 69건은
   **이 문서가 규칙화하지 않기로 의도적으로 남겨 둔 나머지**다 — 개별
   `localOnly` 등록은 #25가 다루는 모드 결정(snapshot 유지 vs hardfork 전환)과
   함께 판단한다. 규칙화하면 "일반화 가능한 패턴"이 아니라 "그 시점 하나의
