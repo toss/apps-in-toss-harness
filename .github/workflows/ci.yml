@@ -34,6 +34,9 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # 발행 manifest phantom 의존 게이트(#18, PR #37). npm 버전은 불변이라
+      # 첫 배포 전이 유일한 차단 시점 — baseline에 없는 새 위반이 나오면 실패한다.
+      - run: pnpm check:pack-manifests
       # mock SDK 정합성 회귀 게이트. devtools README가 "CI는 이걸 자동 실행한다"고
       # 적어 두지만 실제로는 이 repo 어디에서도 안 돌고 있었다 — 커뮤니티 repo의
       # 워크플로에만 있었고, 루트 `.github/`는 EXCLUDE_ROOT_INFRA로 상류 스냅샷에서
