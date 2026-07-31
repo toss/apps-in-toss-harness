@@ -9,6 +9,8 @@
 
    상수(`LAUNCHER_URL`)는 아직 그대로 둔 채(5번 전제 — 이 스모크가 통과하기 전에는 바꾸지 않는다), `AIT_LAUNCHER_URL` env override로 attach QR/deep-link가 새 launcher 호스트를 가리키게 만든다. 손으로 QR의 URL을 고치는 우회는 성립하지 않는다 — attach deep-link에는 회전하는 TOTP `at=` 파라미터가 실려 있어 재현 가능한 검증이 안 된다(#19 본문 참고).
 
+   **`AIT_LAUNCHER_URL`에는 launcher의 base URL만 넣는다** — 예: `https://toss.github.io/apps-in-toss-harness/launcher/`. `?url=…&debug=1&relay=…&at=…`가 붙은 attach deep-link 전체(도구가 발급한 QR URL이나 `start_attach` 응답에서 복사한 값)를 그대로 붙여넣지 않는다 — 그 문자열엔 회전하는 TOTP 값이 섞여 있고, 쿼리스트링·프래그먼트가 있는 값은 `resolveLauncherUrl`이 (그 값을 에러 메시지에 되뱉지 않고) 즉시 거부한다.
+
    - **경로 A — env 2 `dev:phone` QR 배너** (`packages/devtools`):
      ```bash
      AIT_LAUNCHER_URL=https://toss.github.io/apps-in-toss-harness/launcher/ pnpm dev:phone

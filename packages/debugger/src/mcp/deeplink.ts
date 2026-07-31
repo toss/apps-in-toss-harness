@@ -30,13 +30,23 @@ export interface ResolvedLauncherUrl {
  *
  * - Unset / empty (after trim) → returns {@link LAUNCHER_URL} unchanged,
  *   `overridden: false`. Byte-identical to pre-#19 behavior.
- * - Set → validated as an absolute URL with the `https://` scheme ONLY;
- *   invalid values THROW (never a silent fallback to the default) because the
- *   launcher frames a dev-server tunnel URL in a full-viewport iframe.
- * - The resolved override is normalized to end in `/`.
+ * - Set → validated as an absolute **base** URL with the `https://` scheme
+ *   ONLY, and with no query string or fragment; invalid values THROW (never a
+ *   silent fallback to the default) because the launcher frames a dev-server
+ *   tunnel URL in a full-viewport iframe.
+ * - The query/fragment rejection is a SECRET-HANDLING guard: the most natural
+ *   misuse here is pasting a full attach deep-link (`…/launcher/?url=…&at=
+ *   <TOTP>`) instead of the base URL, which would otherwise leak the rotating
+ *   TOTP value into whatever prints the resolved URL (QR banner, MCP attach
+ *   response). None of the thrown messages echo the raw env value back, for
+ *   the same reason. See `@apps-in-toss/devtools`'s `src/shared/launcher-url.ts`
+ *   JSDoc for the full rationale.
+ * - The resolved override is normalized (from the parsed `origin`/`pathname`,
+ *   not raw string surgery) to end in `/`.
  *
- * @throws {Error} when `AIT_LAUNCHER_URL` is set to a non-`https://` or
- *   unparsable value.
+ * @throws {Error} when `AIT_LAUNCHER_URL` is set to a non-`https://`,
+ *   unparsable, or query-string/fragment-bearing value. The error message
+ *   never includes the raw value.
  */
 export function resolveLauncherUrl(): ResolvedLauncherUrl {
   const raw = process.env.AIT_LAUNCHER_URL?.trim();
@@ -48,20 +58,35 @@ export function resolveLauncherUrl(): ResolvedLauncherUrl {
   try {
     parsed = new URL(raw);
   } catch {
+    // Do not echo `raw` here — an unparsable value's contents are exactly
+    // the kind of thing (e.g. a mis-pasted deep-link fragment) this
+    // validation exists to keep out of logs.
     throw new Error(
-      `AIT_LAUNCHER_URL이 올바른 URL이 아닙니다: "${raw}". ` +
+      'AIT_LAUNCHER_URL이 올바른 URL이 아닙니다. ' +
         'https://로 시작하는 절대 URL을 지정하세요 ' +
         '(예: https://toss.github.io/apps-in-toss-harness/launcher/).',
     );
   }
   if (parsed.protocol !== 'https:') {
     throw new Error(
-      `AIT_LAUNCHER_URL은 https:// 스킴만 허용합니다 — 받은 값: "${raw}" (스킴: ${parsed.protocol}). ` +
+      `AIT_LAUNCHER_URL은 https:// 스킴만 허용합니다 — 받은 스킴: ${parsed.protocol}. ` +
         'launcher는 개발 서버 터널 URL을 프레임하는 면이라 다른 스킴을 조용히 받아들이지 않습니다.',
     );
   }
+  if (parsed.search !== '' || parsed.hash !== '') {
+    // Reject rather than strip: silently dropping the query/hash would let a
+    // pasted-in attach deep-link (which carries `at=<TOTP>`) "work" while
+    // hiding from the caller that they gave the wrong kind of value.
+    throw new Error(
+      'AIT_LAUNCHER_URL에는 쿼리스트링이나 프래그먼트를 포함할 수 없습니다 — launcher의 ' +
+        'base URL만 지정하세요 (예: https://toss.github.io/apps-in-toss-harness/launcher/). ' +
+        'attach deep-link 전체(대시보드/QR에 뜨는 ?url=…&at=… 붙은 URL)를 그대로 붙여넣지 ' +
+        '마세요 — 회전하는 TOTP 값이 섞여 들어갑니다.',
+    );
+  }
 
-  const url = raw.endsWith('/') ? raw : `${raw}/`;
+  const normalizedPath = parsed.pathname.endsWith('/') ? parsed.pathname : `${parsed.pathname}/`;
+  const url = `${parsed.origin}${normalizedPath}`;
   return { url, overridden: true };
 }
 

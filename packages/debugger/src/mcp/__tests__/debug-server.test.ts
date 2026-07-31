@@ -2299,6 +2299,54 @@ describe('onAttachUrlBuilt — AttachUrlParts stored, fresh TOTP re-minted on ge
     }
   });
 
+  it('start_attach(relay-mobile) rejects a query-bearing AIT_LAUNCHER_URL (e.g. a pasted attach deep-link) without leaking it in the tool error', async () => {
+    const server = createDebugServer({
+      connection: attachedConn('https://app.trycloudflare.com/'),
+      aitSource: new FakeAitSource(),
+      getTunnelStatus: () => tunnelUp,
+      getEnvironment: () => 'relay-mobile',
+      getEnvironmentReason: () => 'test',
+      totpSecret: SECRET,
+    });
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await client.connect(clientTransport);
+
+    const prevTunnel = process.env.AIT_TUNNEL_BASE_URL;
+    const prevLauncher = process.env.AIT_LAUNCHER_URL;
+    process.env.AIT_TUNNEL_BASE_URL = 'https://app.trycloudflare.com';
+    // SECRET-HANDLING regression (#19 review): this is the shape someone gets
+    // by copy-pasting a real attach deep-link into the env var instead of the
+    // launcher's base URL — the rotating TOTP `at=` value must never surface
+    // in the MCP tool error text.
+    process.env.AIT_LAUNCHER_URL =
+      'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Ftunnel.example.com&debug=1&relay=wss%3A%2F%2Frelay.example.com&at=123456';
+    try {
+      const result = await client.callTool({ name: 'start_attach', arguments: {} });
+      expect(result.isError).toBe(true);
+      const content = result.content as Array<{ type: string; text?: string }>;
+      const text = content[0]?.text ?? '';
+      expect(text).toContain('AIT_LAUNCHER_URL');
+      expect(text).not.toContain('at=123456');
+      expect(text).not.toContain('123456');
+      expect(text).not.toContain('relay.example.com');
+      expect(text).not.toContain('tunnel.example.com');
+    } finally {
+      if (prevTunnel === undefined) {
+        delete process.env.AIT_TUNNEL_BASE_URL;
+      } else {
+        process.env.AIT_TUNNEL_BASE_URL = prevTunnel;
+      }
+      if (prevLauncher === undefined) {
+        delete process.env.AIT_LAUNCHER_URL;
+      } else {
+        process.env.AIT_LAUNCHER_URL = prevLauncher;
+      }
+    }
+  });
+
   it('getDashboardState returns null attachUrl when no onAttachUrlBuilt has fired (no-secret case)', async () => {
     // When no secret is set and no start_attach has been called, the dashboard
     // attachUrl is null (rebuildAttachUrl is never called).
