@@ -9,8 +9,8 @@
 경로를 station(정규 마디)으로 정의하고, 각 station의 acceptance criteria(AC)와
 1.0(첫 GA)의 판정 기준을 적는다.
 
-이 station map은 [`apps-in-toss-community`](https://github.com/apps-in-toss-community)
-조직의 9-station map을 승계하되, 공식 이관의 pivot을 반영해 재정의한 것이다 —
+이 station map은 커뮤니티 org `apps-in-toss-community`의 9-station map을 하드카피해
+공식 이관의 pivot을 반영해 재정의한 것이다 —
 console 축은 CLI 리버스엔지니어링 대신 서버 API의 MCP Gateway 노출(#3),
 docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 공식 로그인
 경로(#5), scaffold 축은 `create-ait-app` 소비(#6, 완료).
@@ -21,8 +21,8 @@ docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 공
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — public flip(#8) 전제. 커뮤니티 marketplace와의 병존/폐기는 open question |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
-| 2 | dev | `pnpm dev` | devtools (2차 이관 대기, #2) | 구조 유지 — devtools는 opt-in 프로젝트 devDependency, `/ait:new`가 기본 배선. 패키지 스코프만 `@apps-in-toss/*`로 전환 |
-| 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (2차 이관 대기, #2) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
+| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 잔여는 스코프·URL 전환) | 구조 유지 — devtools는 opt-in 프로젝트 devDependency, `/ait:new`가 기본 배선. 패키지 스코프만 `@apps-in-toss/*`로 전환 |
+| 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
 | 4 | auth | (재정의 대상) | 공식 로그인 경로 (#5) | oidc-bridge/-cloud 제거 — `appLogin` + 공식 백엔드 검증 경로로 station 자체를 재정의. 실체 확정 전까지 이 station의 AC는 잠정 |
 | 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
 | 6 | operate | console MCP `miniapp_get_status`·`bundle_list` | console MCP GW (#3) + debugger relay | station 5와 같은 전환. logs의 on-device 관측은 debugger relay(#2)가 담당 |
@@ -85,8 +85,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 커뮤니티 로드맵의 "9 station 전부 GREEN" 기준을 공식 표면 기준으로 재작성한다.
 **1.0 = 아래 5개 조건의 동시 충족:**
 
-1. **정본 전환 완료** — repo public + 첫 `@apps-in-toss/*` npm 배포 + 정본 전환
-   선언 (#8).
+1. **public 전환 완료** — repo public + 첫 `@apps-in-toss/*` npm 배포 (#8).
 2. **공식 표면만으로 완주 가능** — station 0~8의 정규 경로에 커뮤니티 잔재
    의존이 없다: `@ait-co/*` 패키지, 커뮤니티 도메인 링크, oidc-bridge 경로가
    정규 흐름에서 제거됨. (과도기 허용 항목이 전부 소거된 상태.)
@@ -100,9 +99,12 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 5. **측정 가능** — eval 슈트 A(라우팅 정합)·B(완주·비용·분산)가 공식 형상에서
    통과·측정되고 baseline epoch가 갱신됨.
 
-**과도기(pre-1.0) 허용**: aitcc(콘솔 CLI)·커뮤니티 docs deep-link·`@ait-co/*`
-devtools 소비는 각 축(#2·#3·#4)이 대체를 완성할 때까지 정규 경로에 남는 것을
-허용한다 — 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다.
+**과도기(pre-1.0) 허용 — 소거 경로 명시**: aitcc(콘솔 CLI)·커뮤니티 docs
+deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 남는 것을 허용한다.
+`@ait-co/*` devtools 소비의 소거 경로는 커뮤니티 결합 절단 배치(B1-B9, 하드카피 후
+스코프·링크·브랜딩을 harness 정본으로 정규화하는 작업)다 — 설치·실행 경로의
+스코프 치환만 D1(`@apps-in-toss/{devtools,debugger,debug-console}` npm 미배포)
+해소 시점까지 보류된다. 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다.
 
 ## 4. Cross-cutting 자산 거취
 

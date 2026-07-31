@@ -1,27 +1,25 @@
 # CLAUDE.md — apps-in-toss-harness monorepo
 
-앱인토스 미니앱용 AI 에이전트 harness의 **토스 공식** monorepo. `apps-in-toss-community` 조직의 도구들을 단계적으로 이관받는 중이다. 현재 상태는 정직하게: **repo는 public 전환 준비 중(private staging)이고 `@apps-in-toss/*` npm 패키지는 아직 미배포**다.
+앱인토스 미니앱용 AI 에이전트 harness의 **토스 공식** monorepo. `apps-in-toss-community` 조직에서 하드카피 완료 — 이 repo가 agent-plugin·devtools·debugger·debug-console·internal-protocol 5개 패키지의 정본이며 커뮤니티 org와의 연관관계는 끊겼다. public 전환·npm 배포는 별개로 진행 중이며, 현재 상태는 정직하게: **repo는 public 전환 준비 중(private staging)이고 `@apps-in-toss/*` npm 패키지는 아직 미배포**다.
 
 ## 첫걸음 (세션 시작 시)
 
 1. `docs/roadmap.md`(station map·1.0 정의)와 milestone `MT — 공식 이관`의 open 이슈를 확인해 현재 위치를 잡는다 — `gh api repos/toss/apps-in-toss-harness/issues`.
 2. 패키지를 수정하기 전에 해당 패키지의 `CLAUDE.md`를 `Read`로 먼저 읽는다(예: `packages/agent-plugin/CLAUDE.md`). 루트 이 파일은 자동 로드되지만 패키지 파일은 아니다.
 
-## 정본 규칙 (이관 기간 — 가장 중요)
+## 정본 규칙 (가장 중요)
 
-**public 전환 + 첫 `@apps-in-toss/*` npm 배포 전까지, 각 패키지의 정본은 커뮤니티 원 repo다.** 이 repo의 `packages/*`는 plain-copy 스냅샷 staging이다. **예외 — `packages/agent-plugin`은 hardfork 완료로 이 repo가 정본이다** (aitcc 트리밍·manifest 재작성·`/ait:<verb>` rename이 이 repo에서 수행됨). 커뮤니티 `agent-plugin`의 재스냅샷으로 덮지 마라 — 커뮤니티 쪽 개별 개선을 가져올 땐 선별 cherry-pick만. 스냅샷 staging 원칙은 나머지 4패키지(devtools·debugger·debug-console·internal-protocol)에만 적용된다.
+**agent-plugin·devtools·debugger·debug-console·internal-protocol 전부 이 repo가 정본이다.** 커뮤니티 org(`apps-in-toss-community`)에서 하드카피 완료했고 연관관계는 끊겼다 — 1회성 하드카피이며 이후 반복 동기화·plain-copy staging은 없다. 수정은 전부 `packages/<name>`에서 직접 한다.
 
-- 패키지 내용 수정 요청이 오면: 원 repo(`~/devtools`, `~/debugger` — debugger repo가 debugger·debug-console·internal-protocol 3패키지의 원본)에서 작업하는 게 맞는지 먼저 확인하라(`agent-plugin`은 예외 — 이 repo가 정본이므로 그대로 여기서 작업한다). 이 repo에서 직접 고치는 건 monorepo 통합 자체(루트 설정, manifest 타깃 아키텍처 재작성, 패키지 rename)와 `agent-plugin` 자체 변경에 한정한다.
-- 커뮤니티 쪽 변경은 재스냅샷(`git archive HEAD | tar -x`)으로 따라온다 — 양쪽 동시 수정(이중 유지보수)을 만들지 마라.
 - **커뮤니티 org(`apps-in-toss-community`)에는 어떤 쓰기도 하지 않는다.** 이 머신의 Block-PublicGithub 프록시가 비-toss GitHub 쓰기를 차단하며, 우회하지 않는다. 읽기(clone·조회)는 가능하다. 이관 관련 커밋·이슈·PR은 전부 이 repo에만 만든다.
-- 정본 전환(이 repo가 정본이 되는 시점)은 public flip + 첫 배포와 함께 명시적으로 선언된다.
+- **상류(커뮤니티) 개선 수신**: 커뮤니티 repo는 더 이상 정본이 아니지만 개선은 계속되므로, `scripts/sync-upstream.mjs`가 일방향으로 import하고 정규화 스크립트가 절단 규칙(스코프·링크·브랜딩)을 재적용한다. **수동으로 커뮤니티 코드를 복사하지 마라.**
 - **`polyfill`은 이 monorepo의 산출물이 아니다.** `packages/polyfill`은 harness 목표(콘솔 MCP·docs MCP 기본 포함, create-ait-app scaffolding, devtools/debugger opt-in)에 없어 제거됐다(2026-07-31) — 패키지 자체, devtools의 devDependency, polyfill×mock 합성 e2e 테스트를 모두 절단했다. 커뮤니티 npm 패키지(`@ait-co/*`)에 다시 의존하는 형태로 재도입하지 마라.
 
 ## 이관 추적 (정본)
 
 추적의 single source of truth는 milestone **`MT — 공식 이관`**이다. 이슈 번호 범위는 여기 고정하지 않는다 — 신규 이슈가 계속 추가되므로(실측 2026-07-31 기준 #1~#9, 그중 #9는 생성 당일 종료) 최신 현황은 `gh api repos/toss/apps-in-toss-harness/issues?milestone=1&state=all`로 조회한다. 서술형 설계·AC는 `docs/roadmap.md`, 진행 기록은 각 이슈 코멘트.
 
-- 완료된 축: **#1** 타깃 아키텍처 — remote 축(docs·console MCP manifest 기본 포함) + opt-in 축(devtools·debugger는 skill 배선) 완료, aitcc 전제 skill 트리밍으로 **8-skill 체제** 확정(#1에 기록). **#2** devtools·debugger 4패키지 스냅샷 이관 완료(#2에 기록). 콘솔 E2E 완주 실증 완료(아래 dog-food).
+- 완료된 축: **#1** 타깃 아키텍처 — remote 축(docs·console MCP manifest 기본 포함) + opt-in 축(devtools·debugger는 skill 배선) 완료, aitcc 전제 skill 트리밍으로 **8-skill 체제** 확정(#1에 기록). **#2** devtools·debugger 4패키지 하드카피 이관 완료, 잔여는 스코프·URL 전환(#2에 기록). 콘솔 E2E 완주 실증 완료(아래 dog-food).
 - 남은 게이트(전부 Dave 결정 대기): **#6** create-ait-app upstream Slack 조율, **#7** 로드맵 확정, **#8** public flip. 이 셋은 세션이 임의로 밀고 나가지 않는다.
 
 ## 구조

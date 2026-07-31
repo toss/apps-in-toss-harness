@@ -6,13 +6,13 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We're in the process of migrating tools scattered across the `apps-in-toss-community` organization into this monorepo, and we're currently in private staging. Until the public switch-over and the first `@apps-in-toss/*` npm publish, the community org repos remain canonical. `devtools`, `debugger`, and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
+We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all five packages — agent-plugin, devtools, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. We're currently in private staging, ahead of the public switch-over, and `@apps-in-toss/*` npm packages haven't been published yet. `devtools`, `debugger`, and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
 
 ## Quick start
 
 You'll need Node 24+, pnpm 11.17.0 (pinned via the root `package.json`'s `packageManager`), and an Apps in Toss console account.
 
-> This repo is still in private staging. The two commands below only work if you have access to this repo — if you don't, the community org repos are currently canonical, as noted in "Status" above.
+> This repo is still in private staging. The two commands below only work if you have access to this repo — until the public switch-over, there's no way in if you don't have access.
 
 From Claude Code, enter the harness with these two commands:
 

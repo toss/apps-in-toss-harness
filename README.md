@@ -6,13 +6,13 @@ AI 코딩 에이전트(Claude Code 등) 안에서, 빈 디렉토리부터 앱인
 
 ## 상태
 
-`apps-in-toss-community` 조직에 흩어져 있던 도구들을 이 monorepo로 이관하는 중이며, 지금은 private staging 단계입니다. public 전환과 첫 `@apps-in-toss/*` npm 배포 전까지는 커뮤니티 조직 repo가 정본입니다. `packages/` 아래 `devtools`·`debugger`·`debug-console`은 `publishConfig`에 공개 배포가 설정돼 있지만 아직 npm 레지스트리에 배포되지 않았습니다.
+`apps-in-toss-community` 조직에 흩어져 있던 도구들을 하드카피해 이 monorepo가 agent-plugin·devtools·debugger·debug-console·internal-protocol 5개 패키지 전부의 정본이 됐습니다 — 커뮤니티 org와의 연관관계는 끊겼습니다. 지금은 public 전환 준비 중(private staging) 단계이고, `@apps-in-toss/*` npm 패키지는 아직 미배포입니다. `packages/` 아래 `devtools`·`debugger`·`debug-console`은 `publishConfig`에 공개 배포가 설정돼 있지만 아직 npm 레지스트리에 배포되지 않았습니다.
 
 ## 빠른 시작
 
 준비물은 Node 24 이상, pnpm 11.17.0(루트 `package.json`의 `packageManager`로 고정), 그리고 앱인토스 콘솔 계정입니다.
 
-> 이 repo는 아직 private staging 단계입니다. 아래 두 명령은 이 repo에 접근 권한이 있는 경우에만 동작합니다. 접근 권한이 없다면 위 "상태" 절에서 안내한 대로 커뮤니티 조직 repo가 현재 정본이니 그쪽을 참고하세요.
+> 이 repo는 아직 private staging 단계입니다. 아래 두 명령은 이 repo에 접근 권한이 있는 경우에만 동작합니다. public 전환 전까지는 접근 권한이 없는 경우 진입할 방법이 없습니다.
 
 Claude Code에서 아래 두 명령으로 harness에 진입합니다.
 
