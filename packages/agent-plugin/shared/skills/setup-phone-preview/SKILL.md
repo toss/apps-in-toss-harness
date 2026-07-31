@@ -336,7 +336,7 @@ setup-phone-preview 완료
   - tunnel은 pnpm dev에는 영향 없습니다 (AIT_TUNNEL=1 일 때만 켜짐).
   - 환경 2에서 실 SDK 호출(call_sdk/evaluate)은 불가합니다 (mock SDK).
     실 토스 WebView fidelity가 필요하면 환경 3: /ait:debug (§5-B가 candidate 빌드·등록·업로드까지 처리).
-  - 환경 3겹 설계: umbrella CLAUDE.md §1.1 + meta/three-environments-fidelity.md
+  - 환경 3겹 설계: https://github.com/toss/apps-in-toss-harness/blob/main/docs/design/three-environments-fidelity.md
 ```
 
 영어권 사용자에게는 같은 정보를 영어로 제공한다.

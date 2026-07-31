@@ -2,7 +2,7 @@
 name: debug
 description: |
   Debug an Apps in Toss mini-app across three environments — local browser
-  (devtools panel, `window.__ait`, browser DevTools), AITC Sandbox PWA
+  (devtools panel, `window.__ait`, browser DevTools), Sandbox PWA
   (real-device WebKit via `ait-devtools` MCP relay-sandbox attach), and
   on-device intoss-private candidate (relay-staging QR attach). Branches by
   what it observes. Triggered by `/ait:debug` (no args). Distinct from
@@ -16,12 +16,12 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
 ## 목적
 
 `/ait:debug`는 미니앱을 **세 겹의 환경**에서 디버깅하는 경로를 안내한다. 한 명령이
-관찰 결과에 따라 환경을 분기한다 (umbrella `CLAUDE.md` §1.1 환경 3겹 모델):
+관찰 결과에 따라 환경을 분기한다 (환경 3겹 모델: https://github.com/toss/apps-in-toss-harness/blob/main/docs/design/three-environments-fidelity.md):
 
 | 환경 | 실행 면 | 이 skill의 경로 |
 |---|---|---|
 | 1. 로컬 브라우저 | desktop Chromium + mock SDK + Panel | 2-A/2-B/3 — panel · `window.__ait` · 브라우저 DevTools |
-| 2. AITC Sandbox App (PWA) | 실기기 Safari/WebKit + installable PWA(`devtools.aitc.dev/launcher/`) + cloudflared 터널 | 5 — `start_attach({mode:'relay-sandbox'})` 1호출 QR attach (mock SDK; CDP는 실 WebKit; `setup-phone-preview`로 `dev:phone:cdp` 스크립트 + CDP relay 배선 선행, 이 skill이 dev 서버 기동 자동화) |
+| 2. Sandbox App (PWA) | 실기기 Safari/WebKit + installable PWA(`devtools.aitc.dev/launcher/`) + cloudflared 터널 | 5 — `start_attach({mode:'relay-sandbox'})` 1호출 QR attach (mock SDK; CDP는 실 WebKit; `setup-phone-preview`로 `dev:phone:cdp` 스크립트 + CDP relay 배선 선행, 이 skill이 dev 서버 기동 자동화) |
 | 3. intoss-private relay dev | 실기기 토스 앱 WebView(dogfood) + CDP relay | 5 — `start_attach({mode:'relay-staging', scheme_url})` 1호출 QR attach |
 
 - **환경 1**은 지금 바로, 의존 없이 쓴다:
@@ -175,7 +175,7 @@ CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
 
 폰 디버깅은 두 환경 중 하나다. 사용자가 어느 환경을 보는지로 가른다:
 
-- **환경 2 (AITC Sandbox App (PWA))** — 토스 앱·검수 없이 실기기 WebKit 엔진을 볼 수 있는
+- **환경 2 (Sandbox App (PWA))** — 토스 앱·검수 없이 실기기 WebKit 엔진을 볼 수 있는
   launcher PWA(`devtools.aitc.dev/launcher/`). 전제: `/ait:setup-phone-preview`가 `vite.config`에
   tunnel 옵션(`tunnel: process.env.AIT_TUNNEL ? { cdp: !!process.env.AIT_TUNNEL_CDP } : false`)을
   주입하고 `dev:phone:cdp` 스크립트를 추가해야 한다(안 돼 있으면 먼저 실행). 이 skill이
@@ -302,7 +302,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   `/ait:setup-debugger`로 프로젝트 `.mcp.json`에 등록하고 서버 연결 후 다시 `/ait:debug`.
 - **환경 1에서 재현·진단 끝** → 수정은 에이전트의 일반 편집 흐름으로. 브라우저에서
   재현되지 않고 실기기 엔진 fidelity가 의심되면 먼저 `/ait:setup-phone-preview`로
-  환경 2(AITC Sandbox App (PWA))를 배선한다(토스 앱 deploy 불필요, 실기기 WebKit 엔진
+  환경 2(Sandbox App (PWA))를 배선한다(토스 앱 deploy 불필요, 실기기 WebKit 엔진
   확인 가능). 배선 후 `/ait:debug`를 다시 실행하면 이 skill이 `pnpm dev:phone:cdp`를
   자동 기동하고 `start_attach({mode:'relay-sandbox'})` 1호출로 5-C relay-sandbox 경로를 진행한다.
   실 SDK fidelity(토스 WebView·네이티브 브리지)가 필요한 회귀라면 환경 3으로:
@@ -322,8 +322,8 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 ## 참고
 
 - 상세가 필요하면 Read <이 skill의 base directory>/references/panel-tabs.md (환경 1 패널 탭별 관찰 지점), references/mode-switching.md (`start_debug`/`start_attach` mode 내부 동작·fallback), references/attach-tools.md (attach 후 13종 도구 + `run_tests` 상세 + SECRET-HANDLING).
-- 짝 skill: `inject-devtools` (panel 설정), `inject-debug-console` (환경 3 candidate 빌드에 attach 표면 설치 — `@apps-in-toss/debug-console` `dependencies`), `setup-phone-preview` (환경 2(AITC Sandbox App (PWA)) 인프라 배선 — `tunnel:{cdp:true}` + cloudflared 터널 기동. `/ait:debug` relay-sandbox의 선행 단계).
-- 환경 3겹 × fidelity 설계 정본: umbrella `meta/three-environments-fidelity.md` (§1 환경 모델, §5 동적 도구 등록, §7 CDP 단일 transport).
+- 짝 skill: `inject-devtools` (panel 설정), `inject-debug-console` (환경 3 candidate 빌드에 attach 표면 설치 — `@apps-in-toss/debug-console` `dependencies`), `setup-phone-preview` (환경 2(Sandbox App (PWA)) 인프라 배선 — `tunnel:{cdp:true}` + cloudflared 터널 기동. `/ait:debug` relay-sandbox의 선행 단계).
+- 환경 3겹 × fidelity 설계 정본: https://github.com/toss/apps-in-toss-harness/blob/main/docs/design/three-environments-fidelity.md (§1 환경 모델, §5 동적 도구 등록, §7 CDP 단일 transport).
 - 환경 3 진입 시나리오 + QR relay 흐름: https://github.com/toss/apps-in-toss-harness/blob/main/packages/devtools/docs/scenarios/env-3.md
 - dogfood relay 루프 (candidate 빌드 → QR 스캔 → attach → 관측 사이클): https://github.com/toss/apps-in-toss-harness/blob/main/packages/devtools/docs/dogfood-relay-loop.md
 - devtools (mock + panel + unplugin, 브라우저 dev 전용): https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
@@ -332,4 +332,4 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 - lifecycle 디버깅(swipe-back 등), on-device CDP relay 디버깅 구조·진입 경로,
   relay TOTP 인증(터널 URL 유출 차단) 등은 docs MCP(`searchDocumentation`/
   `getPage`)로 조회한다.
-- 환경 3겹 설계: umbrella CLAUDE.md §1.1 + meta/three-environments-fidelity.md
+- 환경 3겹 설계: https://github.com/toss/apps-in-toss-harness/blob/main/docs/design/three-environments-fidelity.md
