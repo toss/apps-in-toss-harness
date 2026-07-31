@@ -41,6 +41,7 @@
         "e2e/fixture/public/letterbox-probe/fullscreen/manifest.webmanifest",
         "docs/pages-deploy-verification.md",
         "src/shared/launcher-url.ts",
+        "src/shared/launcher-url.test.ts",
         "e2e/fixture/index.html",
         "assets/og/image.png",
         "e2e/fixture/vite.config.ts",
