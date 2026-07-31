@@ -11,9 +11,17 @@
  *   node scripts/sync-upstream.mjs --package devtools [--ref <sha|branch>] [--write]
  *   node scripts/sync-upstream.mjs --package all [--write]
  *   node scripts/sync-upstream.mjs --package agent-plugin [--ref <sha>]   # hardfork → patch만
+ *   node scripts/sync-upstream.mjs --package devtools --write --allow-delete
+ *     # 상류에서 파일이 사라져 로컬 삭제가 필요할 때만 명시적으로 추가하는 플래그.
  *
  * 기본은 --dry-run(=--write 미지정)이다: 실제로 아무것도 쓰지 않고 무엇이
  * 바뀔지 리포트만 출력한다.
+ *
+ * 삭제 가드(#25): --write 모드에서 localOnly에 없는 파일이 삭제 대상으로
+ * 걸리면(=상류엔 없는데 로컬엔 있는, localOnly로 보호되지 않은 파일) --write는
+ * 그 즉시 아무것도 쓰지 않고 exit 1로 멈춘다. 그 파일이 하네스 손수정이면
+ * .upstream.json의 localOnly에 등록하고, 상류에서 정말 사라진 게 맞으면
+ * --allow-delete를 추가해 다시 실행한다.
  *
  * mode별 동작 (.upstream.json의 packages.<name>.mode):
  *   snapshot  — 상류가 정본. 추출본으로 packages/<name>을 덮어쓴다. repo-root
@@ -211,10 +219,37 @@ function isExcludedRootInfra(relPath, upstreamPath) {
 }
 
 // ---------------------------------------------------------------------------
+// 삭제 가드 (#25) — 모드(snapshot/hardfork) 결정과 무관하게 항상 옳은 안전망.
+// localOnly에 등록되지 않은 하네스 손수정 파일이 다음 --write 때 조용히
+// 사라지는 사고("#21 사고")를 막는다. 순수 함수로 분리해 단위 테스트한다
+// (scripts/__tests__/sync-upstream.test.mjs가 이 함수를 직접 import한다).
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {{ toDeleteCount: number, write: boolean, allowDelete: boolean }} params
+ * @returns {{ proceed: boolean, reason: string }}
+ */
+export function decideDeleteGate({ toDeleteCount, write, allowDelete }) {
+  if (!write) {
+    return { proceed: true, reason: 'dry-run — 아무것도 쓰지 않으므로 항상 진행' };
+  }
+  if (toDeleteCount === 0) {
+    return { proceed: true, reason: '삭제 대상 없음' };
+  }
+  if (allowDelete) {
+    return { proceed: true, reason: '--allow-delete 지정됨 — 삭제 진행' };
+  }
+  return {
+    proceed: false,
+    reason: `삭제 대상 ${toDeleteCount}건인데 --allow-delete 미지정 — 중단`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // snapshot 모드 반영
 // ---------------------------------------------------------------------------
 
-async function applySnapshot(pkgName, pkgCfg, extractRoot, write) {
+async function applySnapshot(pkgName, pkgCfg, extractRoot, write, allowDelete) {
   const targetDir = join(REPO_ROOT, 'packages', pkgName);
   const localOnly = new Set(pkgCfg.localOnly ?? []);
   const dropUpstream = new Set(pkgCfg.dropUpstreamPaths ?? []);
@@ -256,7 +291,21 @@ async function applySnapshot(pkgName, pkgCfg, extractRoot, write) {
 
   if (!write) {
     for (const f of toDelete) log(`    [dry-run] 삭제됨(상류에서 사라짐): ${f}`);
-    return { changedFiles: toAddOrUpdate.length + toDelete.length, depsChanged };
+    return { changedFiles: toAddOrUpdate.length + toDelete.length, depsChanged, blocked: false };
+  }
+
+  // 삭제 가드: 파일을 쓰기 시작하기 전에 걸어야 한다 — 추가/갱신만 반영하고
+  // 삭제에서 멈추면 트리가 어중간해진다. 그래서 toAddOrUpdate 반영 루프보다
+  // 먼저 검사한다.
+  const gate = decideDeleteGate({ toDeleteCount: toDelete.length, write, allowDelete });
+  if (!gate.proceed) {
+    console.error(`  삭제 가드 발동 — 아무것도 쓰지 않았다 (${gate.reason}).`);
+    console.error('  삭제 예정 파일:');
+    for (const f of toDelete) console.error(`    - ${f}`);
+    console.error(
+      '  이 파일들이 하네스 손수정이면 .upstream.json의 localOnly에 등록해라. 상류에서 정말 사라진 게 맞으면 --allow-delete로 다시 실행해라.',
+    );
+    return { changedFiles: 0, depsChanged, blocked: true };
   }
 
   for (const f of toAddOrUpdate) {
@@ -269,7 +318,7 @@ async function applySnapshot(pkgName, pkgCfg, extractRoot, write) {
     await unlink(join(targetDir, f)).catch(() => {});
   }
 
-  return { changedFiles: toAddOrUpdate.length + toDelete.length, depsChanged };
+  return { changedFiles: toAddOrUpdate.length + toDelete.length, depsChanged, blocked: false };
 }
 
 async function copyFile(src, dest) {
@@ -343,13 +392,14 @@ async function runNormalize(pkgName, write) {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { write: false, packages: [], ref: null };
+  const args = { write: false, packages: [], ref: null, allowDelete: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--write') args.write = true;
     else if (a === '--dry-run') args.write = false;
     else if (a === '--package') args.packages.push(argv[++i]);
     else if (a === '--ref') args.ref = argv[++i];
+    else if (a === '--allow-delete') args.allowDelete = true;
     else if (a.startsWith('--package=')) args.packages.push(a.slice('--package='.length));
     else if (a.startsWith('--ref=')) args.ref = a.slice('--ref='.length);
   }
@@ -367,6 +417,10 @@ async function main() {
     console.error(`알 수 없는 패키지: ${unknown.join(', ')} (가능: ${allNames.join(', ')})`);
     process.exitCode = 1;
     return;
+  }
+
+  if (args.allowDelete && !args.write) {
+    warn('--allow-delete는 --write 없이는 아무 효과가 없다(dry-run은 항상 진행) — 무시한다.');
   }
 
   log(`모드: ${args.write ? 'write' : 'dry-run'}, 대상: ${requested.join(', ')}`);
@@ -398,7 +452,11 @@ async function main() {
       }
 
       if (pkgCfg.mode === 'snapshot') {
-        const { depsChanged } = await applySnapshot(pkgName, pkgCfg, extractDir, args.write);
+        const { depsChanged, blocked } = await applySnapshot(pkgName, pkgCfg, extractDir, args.write, args.allowDelete);
+        if (blocked) {
+          process.exitCode = 1;
+          continue; // 삭제 가드 발동 — 이 패키지는 아무것도 반영하지 않았다(normalize도 skip).
+        }
         await runNormalize(pkgName, args.write);
 
         if (args.write) {
