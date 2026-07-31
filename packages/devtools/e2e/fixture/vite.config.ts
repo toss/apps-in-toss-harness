@@ -19,8 +19,17 @@ for (const p of [mockDist, panelDist]) {
   }
 }
 
+// Pages deploy base path override (e.g. '/apps-in-toss-harness/' when the
+// fixture — including the launcher PWA under /launcher/ — is published to a
+// GitHub Pages *project* site instead of a custom-domain root). Defaults to
+// '/' so local e2e builds/tests (`pnpm e2e:build`, `pnpm test:e2e`) are
+// unaffected. Set via the deploy workflow only — do not hardcode a non-root
+// value here.
+const base = process.env.AIT_FIXTURE_BASE_PATH || '/';
+
 export default defineConfig({
   root: __dirname,
+  base,
   resolve: {
     alias: {
       // Bypass rolldown resolveId limitation: alias directly to built mock file.
