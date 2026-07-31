@@ -1,0 +1,71 @@
+{
+  "_comment": "일방향 vendored import 파이프라인 상태 파일. 각 packages/<name>이 apps-in-toss-community 조직의 어느 repo/path에서, 어느 ref까지 반영됐는지 기록한다. 갱신은 scripts/sync-upstream.mjs가 --write(비-dry-run) 성공 시 자동으로 한다 — 사람이 손으로 lastImportedRef/lastImportedAt을 고치지 마라(스크립트 실행 결과와 어긋나면 다음 sync가 잘못된 범위를 가져온다). mode 설명: 'snapshot'은 상류를 정본으로 통째로 덮어쓸 수 있는 패키지(devtools/debugger/debug-console/internal-protocol), 'hardfork'는 이 repo에서 이미 갈라져 나가 자동 덮어쓰기가 금지된 패키지(agent-plugin) — 새 상류 커밋은 patch로만 사람이 선별 cherry-pick한다. 자세한 절차는 docs/upstream-sync.md.",
+  "packages": {
+    "agent-plugin": {
+      "_comment": "hardfork 완료 (skill 7종 제거, /ait:<verb> rename, manifest 재작성 — 이 repo가 정본). 상류 재스냅샷 금지, 선별 cherry-pick만. lastImportedRef는 하드포크의 베이스가 된 커밋(harness commit d456387 'chore: monorepo 골격 + 1차 스냅샷').",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "agent-plugin",
+        "path": "."
+      },
+      "lastImportedRef": "fcfbec98d178b9f6abbda1f24f7172f6ebbd725a",
+      "lastImportedAt": "2026-07-28T14:01:27+09:00",
+      "mode": "hardfork"
+    },
+    "devtools": {
+      "_comment": "snapshot 모드 — 상류가 정본, git archive로 통째로 덮어쓰기 가능. npm scope는 normalize-upstream.mjs가 @apps-in-toss/*로 재적용. upstream.path가 '.'(repo 전체)라 sync-upstream.mjs가 repo-root 전용 인프라 파일(.github/.githooks/.claude/CLAUDE.md/lockfile/workspace.yaml 등)을 자동 제외한다.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "devtools",
+        "path": "."
+      },
+      "lastImportedRef": "0834f986185e13af4b5ca1eb724bd7661f4d5101",
+      "lastImportedAt": "2026-07-30T23:40:22+09:00",
+      "mode": "snapshot",
+      "localOnly": [],
+      "dropUpstreamPaths": [
+        "e2e/shim-composition.test.ts"
+      ],
+      "_dropUpstreamPaths_comment": "polyfill×mock 합성 e2e 테스트 — 2026-07-31 harness의 polyfill 절단(CLAUDE.md 참조)으로 함께 제거됨. 상류 devtools repo는 폐기하지 않았으므로 재동기화 시 되살아나지 않게 명시적으로 계속 제외한다. polyfill을 다시 들이는 결정이 나기 전까지 유지."
+    },
+    "debugger": {
+      "_comment": "snapshot 모드 — 상류 debugger repo의 packages/debugger 서브디렉토리만 추출(이미 서브디렉토리 단위라 repo-root 인프라 파일은 애초에 포함되지 않는다). debugger repo 자체는 pnpm workspace라 3패키지(debugger/debug-console/internal-protocol)가 같은 repo·같은 ref를 공유한다.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "debugger",
+        "path": "packages/debugger"
+      },
+      "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
+      "lastImportedAt": "2026-07-30T23:40:40+09:00",
+      "mode": "snapshot",
+      "localOnly": [],
+      "dropUpstreamPaths": []
+    },
+    "debug-console": {
+      "_comment": "snapshot 모드 — 상류 debugger repo의 packages/debug-console 서브디렉토리.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "debugger",
+        "path": "packages/debug-console"
+      },
+      "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
+      "lastImportedAt": "2026-07-30T23:40:40+09:00",
+      "mode": "snapshot",
+      "localOnly": [],
+      "dropUpstreamPaths": []
+    },
+    "internal-protocol": {
+      "_comment": "snapshot 모드 — 상류 debugger repo의 packages/internal-protocol 서브디렉토리.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "debugger",
+        "path": "packages/internal-protocol"
+      },
+      "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
+      "lastImportedAt": "2026-07-30T23:40:40+09:00",
+      "mode": "snapshot",
+      "localOnly": [],
+      "dropUpstreamPaths": []
+    }
+  }
+}
