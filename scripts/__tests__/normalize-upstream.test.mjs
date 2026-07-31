@@ -13,6 +13,7 @@ import {
   isExternalTargetContent,
   PROTECTED_LITERALS,
   SCOPED_PACKAGES,
+  TEXT_LIKE_EXTENSIONS,
 } from '../normalize-upstream.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,17 +130,72 @@ describe('scope rename — install/registry paths (blockedUntilPublished)', () =
   }
 });
 
-describe('scope rename — prose/comments (permanent preserve, matches real precedent)', () => {
-  test('JSDoc comment mention is not renamed', () => {
+describe('scope rename — prose/comments in code files (renamed, #21)', () => {
+  // 실측 근거: git show --stat 33771c1(전면 스코프 sweep)의 실제 변경 파일
+  // 목록이 src/**·scripts/**·설정 파일의 주석/JSDoc 안 @ait-co/* 언급까지
+  // 예외 없이 치환했다 — 예전엔 이 문맥을 영구 보존('prose-preserved')했지만,
+  // 그 결과 정규화기가 재실행될 때마다 손으로 한 sweep을 부분적으로
+  // 되돌렸다(#21). 지금은 '치환' 기본값이고, 마크다운만 예외다(아래 describe).
+  test('JSDoc comment mention in a .ts file IS renamed', () => {
     const src = ` * OPTIONAL peerDependencies of \`@ait-co/devtools\`:\n`;
     const { content, counts } = norm(src, 'src/unplugin/optional-peers.ts');
-    assert.equal(content, src);
-    assert.equal(counts['scope:prose-preserved'], 1);
+    assert.equal(content, ` * OPTIONAL peerDependencies of \`@apps-in-toss/devtools\`:\n`);
+    assert.equal(counts['scope:prose-renamed'], 1);
   });
 
+  test('a .sh script comment mention IS renamed — real regression: check-debug-surface-absent.sh (#21)', () => {
+    // 실측 근거: 커밋 33771c1이 scripts/check-debug-surface-absent.sh 같은 .sh
+    // 파일의 주석 안 @ait-co/* 언급도 치환했다. .sh는 원래
+    // TEXT_LIKE_EXTENSIONS에 없어서(normalize-upstream.mjs CLI와
+    // sync-upstream.mjs의 runNormalize가 각자 다른 확장자 목록을 하드코딩)
+    // 이 파일 자체가 스캔 대상에서 빠져 있었다 — 그 갭이 #21의 원인 중 하나.
+    const src = '# checks that the debug surface (@ait-co/debug-console) is absent from the release bundle\n';
+    const { content, counts } = norm(src, 'packages/debugger/scripts/check-debug-surface-absent.sh');
+    assert.match(content, /@apps-in-toss\/debug-console/);
+    assert.equal(counts['scope:prose-renamed'], 1);
+  });
+
+  test('a .json (non-package.json) comment-like string mention IS renamed', () => {
+    const src = '{\n  "description": "wraps @ait-co/devtools for local dev"\n}\n';
+    const { content, counts } = norm(src, 'packages/devtools/tsconfig.json');
+    assert.match(content, /@apps-in-toss\/devtools/);
+    assert.equal(counts['scope:prose-renamed'], 1);
+  });
+});
+
+describe('scope rename — prose in markdown documentation (preserved, #21)', () => {
+  // 실측 근거: 같은 커밋 33771c1의 변경 파일 목록에 일반 docs/*.md 안내·회고
+  // 문서는 단 하나도 없다 — 코드 sweep과 달리 마크다운 프로즈는 애초에 손대지
+  // 않았다. 마크다운까지 일괄 치환하면 (a) release-readiness-0.1.0.md처럼
+  // 과거 PR 커밋 메시지를 인용하는 회고 문서의 역사적 사실을 소급 왜곡하고,
+  // (b) agent-plugin(hardfork — 이 sync 파이프라인이 관리하지 않음)의
+  // CLAUDE.md/SKILL.md까지 "변경 필요"로 잘못 잡는다 — 둘 다 실측으로 재현해
+  // 확인한 사고다(#21).
   test('README narrative mention is not renamed even with the install flag', () => {
     const src = '이 패키지는 `@ait-co/devtools`의 optional peer로 동작합니다.\n';
-    const { content } = norm(src, 'README.md', { NORMALIZE_SCOPE_INSTALL: '1' });
+    const { content, counts } = norm(src, 'README.md', { NORMALIZE_SCOPE_INSTALL: '1' });
+    assert.equal(content, src);
+    assert.equal(counts['scope:prose-preserved-md'], 1);
+  });
+
+  test('a retrospective doc quoting a historical PR commit message is not renamed — real regression: release-readiness-0.1.0.md (#21)', () => {
+    const src =
+      '> **0.1.0 태그가 없는 이유**: (`#67` `fix(unplugin): resolve @ait-co/devtools/mock to an absolute path`)\n';
+    const { content, counts } = norm(src, 'packages/devtools/docs/release-readiness-0.1.0.md');
+    assert.equal(content, src, 'must not retroactively rewrite a quoted historical commit message');
+    assert.equal(counts['scope:prose-preserved-md'], 1);
+  });
+
+  test('agent-plugin (hardfork, not managed by this pipeline) markdown mentions are not renamed — real regression (#21)', () => {
+    const src = '| `@ait-co/debugger` | MCP 디버그 데몬 + 테스트 러너 |\n';
+    const { content, counts } = norm(src, 'packages/agent-plugin/CLAUDE.md');
+    assert.equal(content, src);
+    assert.equal(counts['scope:prose-preserved-md'], 1);
+  });
+
+  test('an .mdx-adjacent code-fenced import inside markdown is still preserved by default (whole-file .md gate, not fence-aware)', () => {
+    const src = "```ts\nimport '@ait-co/devtools/panel';\n```\n";
+    const { content } = norm(src, 'packages/agent-plugin/shared/skills/debug/references/panel-tabs.md');
     assert.equal(content, src);
   });
 });
@@ -264,6 +320,72 @@ describe('branding neutralization', () => {
     const { content, counts } = norm(src, 'scripts/build-og-image.tsx');
     assert.match(content, /eyebrow: 'Apps in Toss',/);
     assert.equal(counts['branding-eyebrow-neutralized'], 1);
+  });
+
+  test('a disclaimer sentence embedded mid-line (not the whole line) is also stripped in non-markdown files — real regression: letterbox-probe manifest/HTML (#21)', () => {
+    // 실측 대상 파일(e2e/fixture/public/letterbox-probe/index.html의 <div> 안,
+    // fullscreen/manifest.webmanifest의 JSON description 필드)은 .html/.webmanifest가
+    // TEXT_LIKE_EXTENSIONS에 없어 실제로는 이 함수까지 도달하지 않는다(그래서
+    // .upstream.json의 localOnly로 별도 고정했다) — 이 테스트는 그 도달 자체가
+    // 아니라, 함수가 "줄 일부에 묻힌 문장"을 실제로 지울 수 있는지(비-마크다운
+    // 파일에 한해)를 단위 수준에서 고정한다.
+    const src = '{\n  "description": "letterbox probe. 커뮤니티 오픈소스 프로젝트입니다."\n}\n';
+    const { content, counts } = norm(src, 'scripts/fixture-manifest.json');
+    assert.equal(content, '{\n  "description": "letterbox probe."\n}\n');
+    assert.equal(counts['branding-embedded-removed'], 1);
+  });
+
+  test('a disclaimer sentence quoted as an example inside markdown prose is NOT stripped — real regression: agent-plugin/CLAUDE.md (#21)', () => {
+    // 실측 근거: packages/agent-plugin/CLAUDE.md가 "과거 커뮤니티
+    // disclaimer(\"커뮤니티 오픈소스 프로젝트입니다.\" 등)는 넣지 않는다"처럼
+    // 이 문장을 실제 disclaimer로 "포함"이 아니라 예시로 "인용"하는 프로즈를
+    // 갖고 있다 — 마크다운에서 줄-일부 매치로 이 인용을 지우면 문장이 깨진다.
+    const src = '과거 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다.\n';
+    const { content, counts } = norm(src, 'packages/agent-plugin/CLAUDE.md');
+    assert.equal(content, src, 'must not corrupt a markdown sentence that quotes the disclaimer as an example');
+    assert.equal(counts['branding-embedded-removed'], undefined);
+  });
+});
+
+describe('package.json "homepage" field pinned to harness repo (#21)', () => {
+  // 실측 근거: 커밋 acffd8c가 devtools/debugger/debug-console package.json의
+  // homepage 필드를 손으로 harness GitHub URL로 정정했다(devtools는 커뮤니티
+  // 자체 도메인 devtools.aitc.dev에서, debugger/debug-console은 미배포 npm
+  // URL에서) — 어떤 규칙도 이걸 캡처하지 못해 다음 snapshot sync가 조용히
+  // 되돌릴 수 있는 gap이었다.
+  test('an npmjs.com homepage URL (debugger/debug-console pattern) is rewritten to the harness repo', () => {
+    const src = '{\n  "name": "@apps-in-toss/debugger",\n  "homepage": "https://www.npmjs.com/package/@ait-co/debugger",\n  "bugs": {}\n}\n';
+    const { content, counts } = norm(src, 'packages/debugger/package.json');
+    assert.match(content, /"homepage": "https:\/\/github\.com\/toss\/apps-in-toss-harness"/);
+    assert.equal(counts['package-homepage-harness'], 1);
+  });
+
+  test('a community-domain homepage URL (devtools pattern) is rewritten to the harness repo', () => {
+    const src = '{\n  "name": "@apps-in-toss/devtools",\n  "homepage": "https://devtools.aitc.dev/"\n}\n';
+    const { content, counts } = norm(src, 'packages/devtools/package.json');
+    assert.match(content, /"homepage": "https:\/\/github\.com\/toss\/apps-in-toss-harness"/);
+    assert.equal(counts['package-homepage-harness'], 1);
+  });
+
+  test('an already-correct homepage is left untouched (idempotent, no phantom count)', () => {
+    const src = '{\n  "name": "@apps-in-toss/debugger",\n  "homepage": "https://github.com/toss/apps-in-toss-harness"\n}\n';
+    const { content, counts } = norm(src, 'packages/debugger/package.json');
+    assert.equal(content, src);
+    assert.equal(counts['package-homepage-harness'], undefined);
+  });
+
+  test('package.json outside SCOPED_PACKAGES (e.g. agent-plugin, a hardfork package) is not touched by this rule', () => {
+    const src = '{\n  "name": "@apps-in-toss/agent-plugin",\n  "homepage": "https://www.npmjs.com/package/@ait-co/agent-plugin"\n}\n';
+    const { content, counts } = norm(src, 'packages/agent-plugin/package.json');
+    assert.equal(content, src);
+    assert.equal(counts['package-homepage-harness'], undefined);
+  });
+
+  test('a homepage field elsewhere in the file (not package.json basename) is not touched', () => {
+    const src = '{\n  "homepage": "https://www.npmjs.com/package/@ait-co/debugger"\n}\n';
+    const { content, counts } = norm(src, 'packages/debugger/some-other-file.json');
+    assert.equal(content, src);
+    assert.equal(counts['package-homepage-harness'], undefined);
   });
 });
 
@@ -393,6 +515,28 @@ describe('scope rename — external-target content (scaffold templates + inject 
     const { content, counts } = norm(src, 'packages/devtools/vite.config.ts');
     assert.equal(content, "import aitDevtools from '@apps-in-toss/devtools/unplugin';\n");
     assert.equal(counts['scope:functional-import'], 1);
+  });
+});
+
+describe('TEXT_LIKE_EXTENSIONS — shared allowlist between normalize-upstream.mjs CLI and sync-upstream.mjs runNormalize (#21)', () => {
+  // 실측 근거: 예전엔 normalize-upstream.mjs의 CLI collectTargets()와
+  // sync-upstream.mjs의 runNormalize()가 각자 다른 확장자 목록을 하드코딩했고,
+  // 둘 다 .sh를 빠뜨렸다 — 두 layer가 서로 다른 목록을 들고 있던 것 자체가
+  // #21의 원인 중 하나였다(하나만 고쳐선 다른 쪽이 여전히 갭). 지금은
+  // sync-upstream.mjs가 이 export를 그대로 import해서 쓴다(단일 출처).
+  test('.sh is included', () => {
+    assert.equal(TEXT_LIKE_EXTENSIONS.has('.sh'), true);
+  });
+
+  test('.html and .webmanifest are deliberately NOT included (see docs/upstream-sync.md "수동 확인이 필요한 항목")', () => {
+    assert.equal(TEXT_LIKE_EXTENSIONS.has('.html'), false);
+    assert.equal(TEXT_LIKE_EXTENSIONS.has('.webmanifest'), false);
+  });
+
+  test('core code/doc extensions remain included', () => {
+    for (const ext of ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.yaml', '.yml']) {
+      assert.equal(TEXT_LIKE_EXTENSIONS.has(ext), true, `expected ${ext} to be text-like`);
+    }
   });
 });
 
