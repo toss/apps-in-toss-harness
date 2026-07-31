@@ -948,9 +948,14 @@ export function Launcher(): React.JSX.Element {
     // dual-attach. Without `selfdebug=1` this call is a cheap no-op.
     maybeAttachSelf();
 
-    // Service worker registration (non-fatal)
+    // Service worker registration (non-fatal). Both the scriptURL and scope
+    // are resolved by the browser relative to the current document URL (not
+    // build-time base), so plain relative paths work whether this page is
+    // served at the origin root or under a Pages project sub-path — the max
+    // allowed scope for a script at '<any-base>/launcher/sw.js' is
+    // '<any-base>/launcher/' anyway, which is exactly what we request.
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/launcher/sw.js', { scope: '/launcher/' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
     }
 
     const deepLinked = consumeDeepLinkUrl();
@@ -1431,6 +1436,10 @@ export function Launcher(): React.JSX.Element {
           Both manual-* flags leave control entirely in our hands (CTA click → showDialog),
           which is the UX we want. disable-install-description was previously masking the
           iOS how-to illustration — removing it restores the library's native iOS guidance.
+
+          manifest-url is relative: @khmyznikov/pwa-install's fetchAndProcessManifest()
+          resolves it via fetch() against document.baseURI at runtime, so a relative path
+          is base-path-safe without needing a build-time constant.
         */}
         <pwa-install
           ref={(el: PwaInstallElement | null) => {
@@ -1438,7 +1447,7 @@ export function Launcher(): React.JSX.Element {
           }}
           id="pwa-install"
           data-testid="launcher-install-prompt"
-          manifest-url="/launcher/manifest.webmanifest"
+          manifest-url="./manifest.webmanifest"
           name={t('launcher.title')}
           description={t('launcher.description')}
           manual-apple="true"

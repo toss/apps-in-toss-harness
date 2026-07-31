@@ -1,0 +1,67 @@
+name: Deploy fixture to Pages
+
+# workflow_dispatch only, intentionally — see packages/devtools/docs/pages-deploy-verification.md.
+# GitHub Pages is not enabled for this repo yet (has_pages: false). Do not add a
+# `push` trigger until Pages is enabled from the repo admin UI, or every push
+# will fail with a Pages-not-configured error. Enabling Pages is a maintainer
+# decision (issue #11) tracked separately from this workflow file.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Reads current Pages configuration (custom domain vs. project sub-path)
+      # so the fixture can be built with the right base path. enablement
+      # defaults to false — this step never turns Pages on by itself.
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      # Builds every workspace package, not just devtools — the launcher
+      # fixture (e2e/fixture/main.tsx) dynamically imports
+      # @apps-in-toss/debug-console, whose dist/ must already exist.
+      - run: pnpm build
+
+      - run: pnpm --filter @apps-in-toss/devtools e2e:build
+        env:
+          # base_path is '' (custom domain root) or '/<repo-name>' (project
+          # Pages site, no trailing slash) — Vite's `base` must end in '/'.
+          AIT_FIXTURE_BASE_PATH: ${{ steps.pages.outputs.base_path }}/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: packages/devtools/e2e/fixture/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
