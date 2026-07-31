@@ -9,15 +9,17 @@
 
 ## 설치
 
+아직 npm에 배포되지 않았습니다. 배포 전까지는 이 monorepo 워크스페이스 안에서 사용합니다.
+
 ```sh
-pnpm add -D @ait-co/debugger
+pnpm add -D @apps-in-toss/debugger
 ```
 
-설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@ait-co/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx @ait-co/debugger`는 동작하지 않는다:
+설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@apps-in-toss/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx @apps-in-toss/debugger`는 동작하지 않는다:
 
 ```sh
-npx -p @ait-co/debugger debugger
-npx -p @ait-co/debugger debugger-test --help
+npx -p @apps-in-toss/debugger debugger
+npx -p @apps-in-toss/debugger debugger-test --help
 ```
 
 ## 사용
@@ -31,7 +33,7 @@ npx -p @ait-co/debugger debugger-test --help
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "@ait-co/debugger", "debugger"]
+      "args": ["-p", "@apps-in-toss/debugger", "debugger"]
     }
   }
 }
@@ -40,7 +42,7 @@ npx -p @ait-co/debugger debugger-test --help
 기본 동작은 `--mode=debug --target=relay`(실기기 attach)다. 로컬 브라우저만 붙일 때는 `--target=local`을 쓰고, 대상 dev 서버 주소는 로컬 루프백만 사용한다:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @ait-co/debugger debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @apps-in-toss/debugger debugger --target=local
 ```
 
 ### Test runner (`debugger-test`)
@@ -48,7 +50,7 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @ait-co/debugger debugger --target
 실기기 토스 앱 WebView에서 테스트 파일을 실행한다. `--scheme-url`은 `ait deploy --scheme-only`(별개 CLI, 아래 참조)가 출력하는 `intoss-private://` URL을 그대로 받는다:
 
 ```sh
-npx -p @ait-co/debugger debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p @apps-in-toss/debugger debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 `test-runner` 설정 헬퍼는 서브패스로 import한다:

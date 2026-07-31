@@ -27,7 +27,7 @@
 데스크탑 Chrome에서 mock SDK + DevTools 패널로 개발합니다. 토스 앱·폰 없이 즉시 시작.
 
 ```bash
-pnpm add -D @ait-co/devtools
+pnpm add -D @apps-in-toss/devtools
 # vite.config.ts에 unplugin 추가 → pnpm dev
 ```
 
@@ -115,10 +115,12 @@ cloudflared quick tunnel은 수 시간 후 drop될 수 있습니다. `devtools-m
 
 ## 설치
 
+아직 npm에 배포되지 않았습니다. 배포 전까지는 이 monorepo 워크스페이스 안에서 사용합니다.
+
 ```bash
-npm install -D @ait-co/devtools
+npm install -D @apps-in-toss/devtools
 # 또는
-pnpm add -D @ait-co/devtools
+pnpm add -D @apps-in-toss/devtools
 ```
 
 ### 두 채널 — stable과 beta
@@ -127,8 +129,8 @@ devtools는 같은 코드에서 두 개의 npm dist-tag를 동시에 운영합�
 
 | 채널 | 설치 | web-framework peer |
 |---|---|---|
-| **stable** (`latest`, 기본) | `pnpm add -D @ait-co/devtools` | `>=2.6.0 <3.0.0` (2.x) |
-| **beta** | `pnpm add -D @ait-co/devtools@beta` | `>=3.0.0-beta <4.0.0` (3.0 라인) |
+| **stable** (`latest`, 기본) | `pnpm add -D @apps-in-toss/devtools` | `>=2.6.0 <3.0.0` (2.x) |
+| **beta** | `pnpm add -D @apps-in-toss/devtools@beta` | `>=3.0.0-beta <4.0.0` (3.0 라인) |
 
 - web-framework **2.x**를 쓰면 위 기본 설치(stable)면 됩니다.
 - web-framework **3.0.0-beta** 프리릴리즈를 쓰면 `@beta` 채널을 설치하세요. 이 채널은 main push마다 자동 publish되는 스냅샷(`0.0.0-beta-<datetime>-<sha>`)이라 버전을 핀하기 어려우니 `@beta` 태그로 설치하는 걸 권장합니다.
@@ -143,7 +145,7 @@ devtools는 같은 코드에서 두 개의 npm dist-tag를 동시에 운영합�
 on-device CDP 디버깅(환경 2의 `tunnel: { cdp: true }`, 환경 3의 relay attach)을 쓰려면 디버깅 패키지 두 개를 추가로 설치하세요:
 
 ```bash
-pnpm add -D @ait-co/debugger @ait-co/debug-console
+pnpm add -D @apps-in-toss/debugger @apps-in-toss/debug-console
 ```
 
 | 패키지 | 역할 | 번들 반입 |
@@ -1056,9 +1058,9 @@ import '@apps-in-toss/devtools/panel';
 kill <PID>
 
 # 또는 --force 플래그로 기존 세션을 종료하고 takeover
-npx @ait-co/devtools devtools-mcp --force
+npx @apps-in-toss/devtools devtools-mcp --force
 # local 모드라면:
-npx @ait-co/devtools devtools-mcp --target=local --force
+npx @apps-in-toss/devtools devtools-mcp --target=local --force
 ```
 
 `--takeover`도 `--force`의 alias로 동일하게 동작합니다.
@@ -1099,7 +1101,7 @@ AI 코딩 에이전트(Claude Code, Cursor 등)가 [MCP(Model Context Protocol)]
      "mcpServers": {
        "ait-debug": {
          "command": "npx",
-         "args": ["-y", "@ait-co/devtools", "devtools-mcp"],
+         "args": ["-y", "@apps-in-toss/devtools", "devtools-mcp"],
          "env": {
            "AIT_RELAY_BASE_URL": "https://<B>.trycloudflare.com",
            "AIT_TUNNEL_BASE_URL": "https://<A>.trycloudflare.com"

@@ -9,15 +9,17 @@ Remote-debugging infrastructure for Apps in Toss mini-apps — the MCP debugging
 
 ## Install
 
+Not yet published to npm. Until it is, use it inside this monorepo workspace.
+
 ```sh
-pnpm add -D @ait-co/debugger
+pnpm add -D @apps-in-toss/debugger
 ```
 
-To run without installing, use `npx`. **The package name (`@ait-co/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx @ait-co/debugger` will not work:
+To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx @apps-in-toss/debugger` will not work:
 
 ```sh
-npx -p @ait-co/debugger debugger
-npx -p @ait-co/debugger debugger-test --help
+npx -p @apps-in-toss/debugger debugger
+npx -p @apps-in-toss/debugger debugger-test --help
 ```
 
 ## Usage
@@ -31,7 +33,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "@ait-co/debugger", "debugger"]
+      "args": ["-p", "@apps-in-toss/debugger", "debugger"]
     }
   }
 }
@@ -40,7 +42,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
 The default is `--mode=debug --target=relay` (real-device attach). For attaching a local browser only, use `--target=local`, and point the target dev server at a loopback address only:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @ait-co/debugger debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @apps-in-toss/debugger debugger --target=local
 ```
 
 ### Test runner (`debugger-test`)
@@ -48,7 +50,7 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @ait-co/debugger debugger --target
 Runs test files against a real device's Toss app WebView. `--scheme-url` takes the `intoss-private://` URL printed by `ait deploy --scheme-only` (a different CLI — see below) as-is:
 
 ```sh
-npx -p @ait-co/debugger debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p @apps-in-toss/debugger debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 Import the `test-runner` config helper via its subpath:

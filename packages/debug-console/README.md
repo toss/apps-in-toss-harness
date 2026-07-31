@@ -9,8 +9,10 @@
 
 ## 설치
 
+아직 npm에 배포되지 않았습니다. 배포 전까지는 이 monorepo 워크스페이스 안에서 사용합니다.
+
 ```sh
-pnpm add @ait-co/debug-console
+pnpm add @apps-in-toss/debug-console
 ```
 
 peerDependency가 없으므로 `@apps-in-toss/web-framework`의 설치 여부·버전과 무관하게 그대로 추가할 수 있다. SDK 브릿지(아래 `window.__sdk`)는 런타임에 동적 import로 SDK 존재 여부를 probe하며, SDK가 없으면 조용히 스킵된다.

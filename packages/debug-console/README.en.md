@@ -9,8 +9,10 @@ On-device attach + eruda console for Apps in Toss mini-apps. **The only package 
 
 ## Install
 
+Not yet published to npm. Until it is, use it inside this monorepo workspace.
+
 ```sh
-pnpm add @ait-co/debug-console
+pnpm add @apps-in-toss/debug-console
 ```
 
 With no peerDependency, you can add this regardless of whether `@apps-in-toss/web-framework` is installed or which version it is. The SDK bridge (`window.__sdk` below) probes for the SDK at runtime via a dynamic import and silently skips itself when the SDK is absent.

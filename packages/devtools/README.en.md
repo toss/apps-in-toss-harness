@@ -27,7 +27,7 @@ There are three runtime environments. Pick the card that fits your situation and
 Develop with the mock SDK + DevTools panel in desktop Chrome. No Toss app or phone needed.
 
 ```bash
-pnpm add -D @ait-co/devtools
+pnpm add -D @apps-in-toss/devtools
 # add the unplugin to vite.config.ts → pnpm dev
 ```
 
@@ -115,10 +115,12 @@ When `AIT_DEBUG_TOTP_SECRET` is set, `start_attach` automatically splices the cu
 
 ## Install
 
+Not yet published to npm. Until it is, use it inside this monorepo workspace.
+
 ```bash
-npm install -D @ait-co/devtools
+npm install -D @apps-in-toss/devtools
 # or
-pnpm add -D @ait-co/devtools
+pnpm add -D @apps-in-toss/devtools
 ```
 
 ### Two channels — stable and beta
@@ -127,8 +129,8 @@ devtools runs two npm dist-tags off the same code at once. Pick the channel that
 
 | Channel | Install | web-framework peer |
 |---|---|---|
-| **stable** (`latest`, default) | `pnpm add -D @ait-co/devtools` | `>=2.6.0 <3.0.0` (2.x) |
-| **beta** | `pnpm add -D @ait-co/devtools@beta` | `>=3.0.0-beta <4.0.0` (3.0 line) |
+| **stable** (`latest`, default) | `pnpm add -D @apps-in-toss/devtools` | `>=2.6.0 <3.0.0` (2.x) |
+| **beta** | `pnpm add -D @apps-in-toss/devtools@beta` | `>=3.0.0-beta <4.0.0` (3.0 line) |
 
 - On web-framework **2.x**, the default install (stable) is all you need.
 - On the web-framework **3.0.0-beta** pre-release, install the `@beta` channel. It is a snapshot auto-published on every main push (`0.0.0-beta-<datetime>-<sha>`), so the versions are hard to pin — install with the `@beta` tag.
@@ -143,7 +145,7 @@ When 3.0 ships GA, the stable `latest` peer moves up to the 3.0 line and the bet
 For on-device CDP debugging — `tunnel: { cdp: true }` on environment 2, or relay attach on environment 3 — install the two debugging packages as well:
 
 ```bash
-pnpm add -D @ait-co/debugger @ait-co/debug-console
+pnpm add -D @apps-in-toss/debugger @apps-in-toss/debug-console
 ```
 
 | Package | Role | Can enter a bundle |
@@ -1069,7 +1071,7 @@ Debug on a real phone using Safari/WebKit without Toss review. The Vite dev serv
      "mcpServers": {
        "ait-debug": {
          "command": "npx",
-         "args": ["-y", "@ait-co/devtools", "devtools-mcp"],
+         "args": ["-y", "@apps-in-toss/devtools", "devtools-mcp"],
          "env": {
            "AIT_RELAY_BASE_URL": "https://<B>.trycloudflare.com",
            "AIT_TUNNEL_BASE_URL": "https://<A>.trycloudflare.com"
