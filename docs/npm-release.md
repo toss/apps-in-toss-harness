@@ -64,6 +64,23 @@ npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 �
   — 그 경로는 `dry_run: false`(실배포)에서 처음 실증된다. §2의 2번(첫
   실배포는 의존 없는 `debug-console` 하나로)이 이 잔여 리스크를 좁히는
   역할도 한다.
+- **`prepublishOnly`는 이 경로에서 발화하지 않는다 — 안전장치를 거기 두지 마라.**
+  워크플로는 `pnpm pack`으로 tarball을 만들고 `npm publish <tarball>`로 올린다
+  (§4 위쪽의 pnpm/npm 역할 분담 참고). 실측으로 확인한 lifecycle 발화표:
+
+  | 명령 | `prepublishOnly` | `prepack` |
+  |---|---|---|
+  | `pnpm pack` | ✗ | ✓ |
+  | `npm publish <tarball>` | ✗ | ✗ |
+  | `npm publish .` (디렉터리 기준) | ✓ | ✓ |
+
+  즉 `packages/devtools/package.json`의 `prepublishOnly` 체인은 **이 워크플로
+  경로에서 한 번도 돌지 않는다.** 그 체인이 부르던 `build`·`typecheck`·`test`는
+  워크플로가 별도 스텝으로 이미 돌리므로 공백이 아니지만,
+  `check:mcp-react-free`·`check:test-runner-dist`·`check:debug-surface-absent`는
+  그렇지 않아서 **CI(`ci.yml`)에서 직접 돌린다.** 새 발행 전 검사를 추가할 때도
+  `prepublishOnly`가 아니라 `ci.yml`에 넣어라 — `prepublishOnly`는 사람이
+  디렉터리에서 손으로 publish하는 경우의 최후 방어선으로만 남겨 둔다.
 
 ## 5. 배포 성사 후 후속 작업
 
