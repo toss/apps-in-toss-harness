@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { LAUNCHER_URL, resolveLauncherUrl } from '../../shared/launcher-url.js';
 import {
   buildDeepLinkAttachUrl,
   buildLauncherAttachUrl,
@@ -7,6 +8,20 @@ import {
 
 const RELAY = 'wss://abc-def.trycloudflare.com';
 const RELAY_WITH_PATH = 'wss://abc-def.trycloudflare.com/relay';
+
+/**
+ * Calls `fn`, asserts it throws, and returns the thrown error's message —
+ * used by the #19 SECRET-HANDLING tests to inspect message content without
+ * depending on `expect.unreachable`.
+ */
+function getThrownMessage(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (err) {
+    return (err as Error).message;
+  }
+  throw new Error('expected function to throw, but it did not');
+}
 
 describe('buildDeepLinkAttachUrl', () => {
   it('appends debug=1 and relay to a scheme URL that already has _deploymentId', () => {
@@ -323,6 +338,153 @@ describe('buildLauncherAttachUrl', () => {
     const withoutOpts = buildLauncherAttachUrl(TUNNEL, WSS, '654321');
     const withSelfdebugFalse = buildLauncherAttachUrl(TUNNEL, WSS, '654321', { selfdebug: false });
     expect(withSelfdebugFalse).toBe(withoutOpts);
+  });
+
+  // ---------------------------------------------------------------------------
+  // AIT_LAUNCHER_URL override (issue #19)
+  // ---------------------------------------------------------------------------
+
+  describe('AIT_LAUNCHER_URL override (#19)', () => {
+    const prevEnv = process.env.AIT_LAUNCHER_URL;
+
+    afterEach(() => {
+      if (prevEnv === undefined) {
+        delete process.env.AIT_LAUNCHER_URL;
+      } else {
+        process.env.AIT_LAUNCHER_URL = prevEnv;
+      }
+    });
+
+    it('uses the overridden host when AIT_LAUNCHER_URL is set', () => {
+      process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
+      const out = buildLauncherAttachUrl(TUNNEL, WSS);
+      expect(out.startsWith('https://toss.github.io/apps-in-toss-harness/launcher/?url=')).toBe(
+        true,
+      );
+      expect(out).not.toContain('devtools.aitc.dev');
+    });
+
+    it('normalizes a missing trailing slash on the override', () => {
+      process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher';
+      const out = buildLauncherAttachUrl(TUNNEL, WSS);
+      expect(out.startsWith('https://toss.github.io/apps-in-toss-harness/launcher/?url=')).toBe(
+        true,
+      );
+    });
+
+    it('throws (does not silently fall back) for a non-https override', () => {
+      process.env.AIT_LAUNCHER_URL = 'http://insecure.example.com/launcher/';
+      expect(() => buildLauncherAttachUrl(TUNNEL, WSS)).toThrow(/https:\/\//);
+    });
+
+    it('throws for an unparsable override', () => {
+      process.env.AIT_LAUNCHER_URL = 'not a url';
+      expect(() => buildLauncherAttachUrl(TUNNEL, WSS)).toThrow(/AIT_LAUNCHER_URL/);
+    });
+
+    it('empty string is treated as unset (default host, no throw)', () => {
+      process.env.AIT_LAUNCHER_URL = '';
+      const out = buildLauncherAttachUrl(TUNNEL, WSS);
+      expect(out.startsWith(LAUNCHER_BASE)).toBe(true);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLauncherUrl — AIT_LAUNCHER_URL override contract (issue #19)
+// ---------------------------------------------------------------------------
+
+describe('resolveLauncherUrl (#19)', () => {
+  const prevEnv = process.env.AIT_LAUNCHER_URL;
+
+  afterEach(() => {
+    if (prevEnv === undefined) {
+      delete process.env.AIT_LAUNCHER_URL;
+    } else {
+      process.env.AIT_LAUNCHER_URL = prevEnv;
+    }
+  });
+
+  it('returns the default LAUNCHER_URL and overridden:false when unset', () => {
+    delete process.env.AIT_LAUNCHER_URL;
+    expect(resolveLauncherUrl()).toEqual({ url: LAUNCHER_URL, overridden: false });
+  });
+
+  it('returns the default and overridden:false when set to whitespace only', () => {
+    process.env.AIT_LAUNCHER_URL = '   ';
+    expect(resolveLauncherUrl()).toEqual({ url: LAUNCHER_URL, overridden: false });
+  });
+
+  it('returns the override untouched when it already ends in /', () => {
+    process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
+    expect(resolveLauncherUrl()).toEqual({
+      url: 'https://toss.github.io/apps-in-toss-harness/launcher/',
+      overridden: true,
+    });
+  });
+
+  it('appends a trailing slash when the override lacks one', () => {
+    process.env.AIT_LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher';
+    expect(resolveLauncherUrl()).toEqual({
+      url: 'https://toss.github.io/apps-in-toss-harness/launcher/',
+      overridden: true,
+    });
+  });
+
+  it('accepts a bare https origin (gets a trailing slash)', () => {
+    process.env.AIT_LAUNCHER_URL = 'https://example.com';
+    expect(resolveLauncherUrl()).toEqual({ url: 'https://example.com/', overridden: true });
+  });
+
+  it('throws for a non-https scheme (http)', () => {
+    process.env.AIT_LAUNCHER_URL = 'http://example.com/launcher/';
+    expect(() => resolveLauncherUrl()).toThrow(/https:\/\//);
+  });
+
+  it('throws for a non-https scheme (ftp) and names the offending scheme, not the raw value', () => {
+    process.env.AIT_LAUNCHER_URL = 'ftp://example.com/launcher/';
+    expect(() => resolveLauncherUrl()).toThrow(/AIT_LAUNCHER_URL/);
+    expect(() => resolveLauncherUrl()).toThrow(/ftp:/);
+    // SECRET-HANDLING: the message names the bad scheme but never echoes the
+    // raw value back (see #19 review — a raw value could itself carry
+    // sensitive query data even in a scheme-violation case).
+    const message = getThrownMessage(resolveLauncherUrl);
+    expect(message).not.toContain('example.com');
+  });
+
+  it('throws for an unparsable URL', () => {
+    process.env.AIT_LAUNCHER_URL = 'not a url';
+    expect(() => resolveLauncherUrl()).toThrow(/AIT_LAUNCHER_URL/);
+  });
+
+  it('throws for an unparsable URL without echoing the raw value', () => {
+    process.env.AIT_LAUNCHER_URL = 'not a url with secret-looking at=123456';
+    const message = getThrownMessage(resolveLauncherUrl);
+    expect(message).not.toContain('secret-looking');
+    expect(message).not.toContain('123456');
+  });
+
+  it('rejects a value carrying a query string (e.g. a pasted attach deep-link) and does not echo it', () => {
+    process.env.AIT_LAUNCHER_URL =
+      'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Ftunnel.example.com&debug=1&relay=wss%3A%2F%2Frelay.example.com&at=123456';
+    expect(() => resolveLauncherUrl()).toThrow(/AIT_LAUNCHER_URL/);
+    expect(() => resolveLauncherUrl()).toThrow(/쿼리스트링|프래그먼트/);
+    // SECRET-HANDLING: this is the exact shape of a real attach deep-link
+    // (carries the rotating TOTP `at=` param) — the error must not leak it.
+    const message = getThrownMessage(resolveLauncherUrl);
+    expect(message).not.toContain('at=123456');
+    expect(message).not.toContain('123456');
+    expect(message).not.toContain('relay.example.com');
+    expect(message).not.toContain('tunnel.example.com');
+  });
+
+  it('rejects a value carrying a fragment', () => {
+    process.env.AIT_LAUNCHER_URL =
+      'https://toss.github.io/apps-in-toss-harness/launcher/#at=123456';
+    expect(() => resolveLauncherUrl()).toThrow(/AIT_LAUNCHER_URL/);
+    expect(() => resolveLauncherUrl()).toThrow(/쿼리스트링|프래그먼트/);
+    const message = getThrownMessage(resolveLauncherUrl);
+    expect(message).not.toContain('123456');
   });
 });
 
