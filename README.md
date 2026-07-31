@@ -6,7 +6,7 @@ AI 코딩 에이전트(Claude Code 등) 안에서, 빈 디렉토리부터 앱인
 
 ## 상태
 
-`apps-in-toss-community` 조직에 흩어져 있던 도구들을 이 monorepo로 이관하는 중이며, 지금은 private staging 단계입니다. public 전환과 첫 `@apps-in-toss/*` npm 배포 전까지는 커뮤니티 조직 repo가 정본입니다. `packages/` 아래 `devtools`·`polyfill`·`debugger`·`debug-console`은 `publishConfig`에 공개 배포가 설정돼 있지만 아직 npm 레지스트리에 배포되지 않았습니다.
+`apps-in-toss-community` 조직에 흩어져 있던 도구들을 이 monorepo로 이관하는 중이며, 지금은 private staging 단계입니다. public 전환과 첫 `@apps-in-toss/*` npm 배포 전까지는 커뮤니티 조직 repo가 정본입니다. `packages/` 아래 `devtools`·`debugger`·`debug-console`은 `publishConfig`에 공개 배포가 설정돼 있지만 아직 npm 레지스트리에 배포되지 않았습니다.
 
 ## 빠른 시작
 
@@ -47,7 +47,6 @@ Claude Code에서 아래 두 명령으로 harness에 진입합니다.
 | `/ait:plan [requirements]` | 자연어 요구사항을 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리 (분석만, `/ait:new`로 hand-off) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]` | `create-ait-app`을 비대화형으로 구동해 미니앱을 scaffold하고 devtools(mock SDK + panel)를 후처리 배선 (greenfield 전용) | 1. scaffold |
 | `/ait:inject-devtools` | 기존 프로젝트 빌드 설정에 devtools unplugin을 추가 (brownfield) | 2. dev |
-| `/ait:inject-polyfill [--entry <path>]` | 기존 프로젝트를 polyfill 모드로 마이그레이션 — 표준 Web API 호출을 런타임에 SDK로 라우팅 | 2. dev |
 | `/ait:inject-debug-console` | `debug-console`(on-device attach + eruda)을 dependencies로 설치하고 self-gating import 배선 — 프로덕션 번들에 들어갈 수 있는 유일한 디버그 패키지 | 2. dev / 3. debug |
 | `/ait:setup-phone-preview` | quick-tunnel + launcher PWA 플로우를 배선해 실기기(WebKit)에서 dev 서버를 미리보기 | 2. dev |
 | `/ait:setup-debugger` | 디버그 MCP 서버(`debugger`)를 프로젝트 `.mcp.json`에 opt-in으로 배선 | 3. debug |
@@ -70,13 +69,12 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 
 ## 구성
 
-pnpm 워크스페이스로 관리되는 6개 패키지입니다.
+pnpm 워크스페이스로 관리되는 5개 패키지입니다.
 
 | 패키지 | 디렉터리 | 역할 | 배포 |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Claude Code용 에이전트 플러그인 — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
 | `@apps-in-toss/devtools` | `packages/devtools` | mock SDK + floating devtools panel + 범용 번들러 플러그인 | npm 미배포 |
-| `@apps-in-toss/polyfill` | `packages/polyfill` | 표준 Web API를 SDK로 런타임 라우팅하는 polyfill | npm 미배포 |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | npm 미배포 |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | on-device attach + eruda 콘솔 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | npm 미배포 |
 | `@apps-in-toss/internal-protocol` | `packages/internal-protocol` | `debugger`·`debug-console`이 공유하는 device↔host wire-protocol 소스 | 워크스페이스 내부 전용, 배포 대상 아님 |
