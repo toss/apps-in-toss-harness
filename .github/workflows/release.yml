@@ -42,6 +42,75 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # 아래 두 스텝(패키지 결정 + 입력 검증)은 checkout·pnpm install도 필요
+      # 없다 — 되돌릴 수 없는 액션이니 잘못된 입력은 CI 시간을 쓰기 전에
+      # 최대한 빨리 걸러낸다(fail fast). 게이트(lint/build/typecheck/test)는
+      # 몇 분씩 걸리므로, 그 전에 막을 수 있는 실수는 여기서 막는다.
+      - name: Resolve target packages
+        id: plan
+        env:
+          PACKAGE_INPUT: ${{ inputs.package }}
+        run: |
+          case "$PACKAGE_INPUT" in
+            all) echo "packages=debug-console debugger devtools" >> "$GITHUB_OUTPUT" ;;
+            debug-console) echo "packages=debug-console" >> "$GITHUB_OUTPUT" ;;
+            debugger) echo "packages=debugger" >> "$GITHUB_OUTPUT" ;;
+            devtools) echo "packages=devtools" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::unknown package input: ${PACKAGE_INPUT}"
+              exit 1
+              ;;
+          esac
+
+      # 되돌릴 수 없는 액션에 걸맞은 3개 가드:
+      #   1) dry-run은 fail-closed다 — 정확히 "false"일 때만 실배포, 그 외
+      #      (예상 못한 값 포함)는 dry-run이거나 아예 job을 실패시킨다.
+      #      "조용히 실배포"보다 "명시적으로 멈춤"이 안전하다.
+      #   2) dist_tag는 화이트리스트로 검증하고 "latest" 직행은 거부한다 —
+      #      이 워크플로는 항상 next 같은 비-latest 태그로만 배포하고,
+      #      latest 승격은 별도의 수동 `npm dist-tag add`로만 한다
+      #      (docs/npm-release.md §4). 자동화 경로에 latest를 열어두면
+      #      "먼저 next로 검증 후 승격" 규율이 강제되지 않는다.
+      #   3) 실배포는 main 브랜치에서만 허용한다 — 리뷰 안 된 피처 브랜치의
+      #      코드가 그대로 npm에 올라가는 걸 막는다. dry-run은 이 워크플로
+      #      자체를 테스트하는 방법이므로 아무 브랜치에서나 허용한다.
+      - name: Validate inputs
+        id: validate
+        env:
+          DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          case "$DRY_RUN" in
+            false)
+              real_publish=true
+              dry_run_flag=""
+              ;;
+            true)
+              real_publish=false
+              dry_run_flag="--dry-run"
+              ;;
+            *)
+              echo "::error::dry_run must be exactly 'true' or 'false', got: '${DRY_RUN}' — refusing to proceed"
+              exit 1
+              ;;
+          esac
+          echo "real_publish=${real_publish}" >> "$GITHUB_OUTPUT"
+          echo "dry_run_flag=${dry_run_flag}" >> "$GITHUB_OUTPUT"
+
+          if [ "$DIST_TAG" = "latest" ]; then
+            echo "::error::dist_tag 'latest' is not allowed via this workflow. Publish to a non-latest tag (e.g. 'next') first, verify install, then promote manually: npm dist-tag add <pkg>@<version> latest. See docs/npm-release.md."
+            exit 1
+          fi
+          if ! [[ "$DIST_TAG" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "::error::dist_tag '${DIST_TAG}' does not match ^[a-z][a-z0-9-]*\$ — refusing to proceed"
+            exit 1
+          fi
+
+          if [ "$real_publish" = "true" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::real publish is only allowed from refs/heads/main (current: ${GITHUB_REF}). Re-run with dry_run: true to test from a feature branch."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
@@ -57,6 +126,10 @@ jobs:
       # npm trusted publishing(OIDC)은 npm CLI >= 11.5.1 (Node >= 22.14.0)이
       # 필요하다. .nvmrc의 Node 버전에 번들된 npm이 이보다 낮을 수 있으니 명시적으로
       # 올린다. (공식 가이드: https://docs.npmjs.com/trusted-publishers)
+      # 버전을 pin하지 않는 이유: npm 공식 가이드가 이 형태(latest)를 그대로 쓰고,
+      # pin하면 OIDC 관련 개선이 나와도 이 워크플로가 못 따라간다 — 공급망
+      # 관점에서는 pin이 더 안전하지만, install 대상이 npm 공식 CLI 자체이고
+      # trusted publishing이 아직 성숙 중인 기능이라 최신 추종을 택했다.
       - name: Ensure npm CLI supports trusted publishing (OIDC)
         run: |
           npm install --global npm@latest
@@ -77,27 +150,15 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-      - name: Resolve target packages
-        id: plan
-        run: |
-          case "${{ inputs.package }}" in
-            all) echo "packages=debug-console debugger devtools" >> "$GITHUB_OUTPUT" ;;
-            debug-console) echo "packages=debug-console" >> "$GITHUB_OUTPUT" ;;
-            debugger) echo "packages=debugger" >> "$GITHUB_OUTPUT" ;;
-            devtools) echo "packages=devtools" >> "$GITHUB_OUTPUT" ;;
-            *)
-              echo "::error::unknown package input: ${{ inputs.package }}"
-              exit 1
-              ;;
-          esac
-
       # @apps-in-toss/agent-plugin과 @apps-in-toss/internal-protocol은 private: true라
       # workflow_dispatch의 package 선택지에 애초에 없다(구조적 배제). pnpm publish
       # 자체도 private 패키지를 거부하지만, 실수로 이 경계가 흐트러지는 것을 막기
       # 위해 여기서도 명시적으로 한 번 더 확인한다.
       - name: Guard against private packages
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
         run: |
-          for pkg in ${{ steps.plan.outputs.packages }}; do
+          for pkg in $TARGET_PACKAGES; do
             is_private="$(node -p "require('./packages/${pkg}/package.json').private === true")"
             if [ "$is_private" = "true" ]; then
               echo "::error::packages/${pkg} is private:true — refusing to publish"
@@ -111,12 +172,22 @@ jobs:
       # publishing(OIDC)을 지원하지 않는다(npm CLI 11.5.1+ 전용 기능). 그래서
       # "pnpm pack으로 정확한 tarball을 만들고 npm publish로 그 tarball을 올린다"는
       # 하이브리드 경로를 쓴다 — 두 도구의 강점만 취한다.
+      #
+      # inputs.*는 여기서 셸에 직접 보간하지 않는다 — env로 넘겨 "$VAR"로
+      # 참조한다. `${{ inputs.dist_tag }}`를 run: 블록에 텍스트로 그대로 박으면
+      # GitHub가 bash 파싱 전에 치환하므로, dist_tag에 따옴표를 닫고 명령을
+      # 이어붙이는 값이 들어오면 이 job이 쥔 OIDC publish 자격까지 노출될 수
+      # 있다(이 job의 트리거 권한은 repo write라 외부 공격면은 아니지만, 되돌릴
+      # 수 없는 액션이라 방어적으로 막는다).
       - name: Pack and publish
         env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+          DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN_FLAG: ${{ steps.validate.outputs.dry_run_flag }}
           NPM_CONFIG_PROVENANCE: 'true'
         run: |
           mkdir -p "$GITHUB_WORKSPACE/release-tarballs"
-          for pkg in ${{ steps.plan.outputs.packages }}; do
+          for pkg in $TARGET_PACKAGES; do
             echo "::group::${pkg}"
             (
               cd "packages/${pkg}"
@@ -125,9 +196,9 @@ jobs:
             tarball="$(ls "$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-*.tgz)"
             echo "tarball: ${tarball}"
 
-            publish_args=(publish "${tarball}" --tag "${{ inputs.dist_tag }}" --access public --provenance)
-            if [ "${{ inputs.dry_run }}" = "true" ]; then
-              publish_args+=(--dry-run)
+            publish_args=(publish "${tarball}" --tag "$DIST_TAG" --access public --provenance)
+            if [ -n "$DRY_RUN_FLAG" ]; then
+              publish_args+=("$DRY_RUN_FLAG")
             fi
 
             npm "${publish_args[@]}"
@@ -136,13 +207,17 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+          DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           {
             echo "### npm release"
             echo ""
-            echo "- packages: ${{ steps.plan.outputs.packages }}"
-            echo "- dist-tag: ${{ inputs.dist_tag }}"
-            echo "- dry-run: ${{ inputs.dry_run }}"
+            echo "- packages: ${TARGET_PACKAGES}"
+            echo "- dist-tag: ${DIST_TAG}"
+            echo "- dry-run: ${DRY_RUN}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # NODE_AUTH_TOKEN(GitHub secret) 폴백 — OIDC trusted publishing이 npmjs.com에
