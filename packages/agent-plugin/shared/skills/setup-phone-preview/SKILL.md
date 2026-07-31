@@ -372,7 +372,7 @@ setup-phone-preview 완료
 
 - 실기기 PWA 미리보기(환경 2)와 dev 환경 fidelity 사다리 등 주제별 가이드는
   docs MCP(`searchDocumentation`/`getPage`)로 조회한다.
-- 짝 skill: `inject-devtools` (`@ait-co/devtools` 신규 설치 + vite.config 기본 설정 — `setup-phone-preview`보다 먼저 실행), `inject-polyfill` (polyfill 병행 사용 시), `debug` (이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅, §5-B가 환경 3 candidate 등록·업로드까지 처리).
+- 짝 skill: `inject-devtools` (`@ait-co/devtools` 신규 설치 + vite.config 기본 설정 — `setup-phone-preview`보다 먼저 실행), `debug` (이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅, §5-B가 환경 3 candidate 등록·업로드까지 처리).
 - devtools tunnel 구현 (PR #131): https://github.com/apps-in-toss-community/devtools/pull/131
 - sdk-example wiring 사례 (PR #59): https://github.com/apps-in-toss-community/sdk-example/pull/59
 - devtools README "Run on a real phone" 섹션: https://github.com/apps-in-toss-community/devtools

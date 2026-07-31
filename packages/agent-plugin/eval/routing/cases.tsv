@@ -5,6 +5,7 @@
 # 두 파일이 갈라지면 promptfooconfig.yaml이 정본이다 — 여기로 다시 옮긴다.
 # aitcc 전제 skill 4종(register/deploy/status/setup-bundle) + 불필요 skill 3종
 # (docs/auth-setup/changeset) 제거로 23케이스 → 13케이스로 재편(harness aitcc 정리).
+# inject skill의 polyfill facet 제거(공식 harness 스코프 밖 패키지)로 13케이스 → 12케이스로 재편.
 #
 # --- POSITIVE ---
 01-new-1	+new-miniapp	앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로.
@@ -12,12 +13,11 @@
 03-plan	+plan	위치 기반 쿠폰 미니앱을 만들 건데, 필요한 SDK 도메인이랑 권한이랑 약관을 먼저 정리해줘
 04-design	+design	Figma 디자인을 앱인토스 미니앱 UX 제약에 맞추고 등록용 이미지 에셋 만들어줘
 05-inject-devtools	+inject	이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어
-06-inject-polyfill	+inject	표준 Web API로 코드를 쓸 수 있게 앱인토스 polyfill 모드로 마이그레이션해줘
-07-inject-debug-console	+inject	실기기 candidate 빌드에서 디버그 콘솔로 attach할 수 있게 debug-console 패키지 설치해줘
-08-phone-preview	+setup-phone-preview	개발 중인 미니앱을 실제 폰에서 미리 보고 싶은데 터널 셋업 해줘
-09-setup-debugger	+setup-debugger	온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘
-10-debug	+debug	미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어
+06-inject-debug-console	+inject	실기기 candidate 빌드에서 디버그 콘솔로 attach할 수 있게 debug-console 패키지 설치해줘
+07-phone-preview	+setup-phone-preview	개발 중인 미니앱을 실제 폰에서 미리 보고 싶은데 터널 셋업 해줘
+08-setup-debugger	+setup-debugger	온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘
+09-debug	+debug	미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어
 # --- NEGATIVE CONTROL ---
-11-neg-refactor	-new-miniapp,inject,design	이 React 컴포넌트 리팩토링해줘. props 너무 많아.
-12-neg-algo	-new-miniapp,plan	파이썬으로 피보나치 함수 짜줘.
-13-neg-npm-build	-new-miniapp	이 프로젝트 그냥 npm run build 한 번 돌려줘.
+10-neg-refactor	-new-miniapp,inject,design	이 React 컴포넌트 리팩토링해줘. props 너무 많아.
+11-neg-algo	-new-miniapp,plan	파이썬으로 피보나치 함수 짜줘.
+12-neg-npm-build	-new-miniapp	이 프로젝트 그냥 npm run build 한 번 돌려줘.

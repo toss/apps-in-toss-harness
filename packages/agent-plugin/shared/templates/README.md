@@ -12,8 +12,8 @@ token-contract 검사도 함께 재편).
 |---|---|---|---|
 | `react-vite/` | 기본 React 19 + Vite + `@ait-co/devtools` dev-dep | `devtools` 0.1.x npm | ✅ `--local` 폴백 전용 |
 
-(react-vite-polyfill·react-vite-supabase 계획은 철회 — 해당 변형은
-create-ait-app의 옵션/샘플로 upstream 조율한다.)
+(react-vite-supabase 계획은 철회 — 해당 변형은 create-ait-app의 옵션/샘플로
+upstream 조율한다.)
 
 ## 원칙
 

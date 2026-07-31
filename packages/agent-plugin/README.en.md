@@ -6,13 +6,13 @@ Plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside codin
 
 ## Goal
 
-Ties together `@ait-co/devtools`, `sdk-example`, `@ait-co/polyfill`, the docs MCP, and the console MCP into a single integrated experience. Slash commands available today:
+Ties together `@ait-co/devtools`, `sdk-example`, the docs MCP, and the console MCP into a single integrated experience. Slash commands available today:
 
 - `/ait:welcome` — confirm installation + point to the first station (`/ait:new`)
 - `/ait:new` — scaffold a new mini-app
 - `/ait:plan` — plan SDK domains/permissions/terms before scaffolding
 - `/ait:design` — turn Figma designs into registration image assets
-- `/ait:inject-devtools` / `/ait:inject-polyfill` / `/ait:inject-debug-console` — inject config into an existing project
+- `/ait:inject-devtools` / `/ait:inject-debug-console` — inject config into an existing project
 - `/ait:setup-phone-preview` — real-device preview tunnel (Cloudflare quick-tunnel + launcher PWA)
 - `/ait:setup-debugger` — wire the on-device debug MCP server into the project's `.mcp.json`
 - `/ait:debug` — live-state debugging guidance (browser devtools panel · `window.__ait` · on-device CDP relay)

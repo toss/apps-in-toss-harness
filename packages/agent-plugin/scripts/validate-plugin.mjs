@@ -433,25 +433,26 @@ const DOCS_MCP_MENTION_RE = /docs MCP/;
 // shared/commands/ 전수를 열거한다. 변경 시 이 상수도 함께 갱신.
 // ---------------------------------------------------------------------------
 
-// 10개 command stub → 8개 skill 매핑. aitcc 전제 skill 4종(register/deploy/status/
+// 9개 command stub → 8개 skill 매핑. aitcc 전제 skill 4종(register/deploy/status/
 // setup-bundle) + 대응 facet stub(ait-register·ait-deploy·ait-status·ait-setup-bundle·
 // deploy-key·logs) 은 콘솔 MCP(`apps-in-toss-console`) 기본 포함으로 제거됐다(등록=
 // miniapp_create, 번들 업로드=bundle_upload/bundle_upload_complete, 상태=
 // miniapp_get_status). 불필요 skill 3종(docs/auth-setup/changeset) + 대응 stub도
 // 함께 제거됐다 — docs 는 docs MCP(`apps-in-toss-docs`)가, auth-setup 은 oidc 제거
 // 방침이, changeset 은 harness-external 메인테이너 도구 정리가 근거다(harness
-// aitcc 정리 — 19→10 command, 15→8 skill).
+// aitcc 정리 — 19→10 command, 15→8 skill). 이후 polyfill facet 이 공식 harness
+// 스코프 밖 패키지(monorepo 에서 제거된 `polyfill`)를 안내한다는 이유로 제거되면서
+// 10→9로 한 번 더 줄었다(skill 수는 무변 — inject 는 남은 2 facet 으로 계속 존재).
 // 병합 1건만 남는다(command 표면은 무변경):
-//   ait-inject-devtools      → inject  (inject-devtools+inject-polyfill+inject-debug-console
-//   ait-inject-polyfill      → inject   3-facet 병합: 셋 다 기존 프로젝트 빌드 셋업 패치 —
-//   ait-inject-debug-console → inject   병합 skill 이름은 중립적 `inject`)
+//   ait-inject-devtools      → inject  (inject-devtools+inject-debug-console 2-facet
+//   ait-inject-debug-console → inject   병합: 둘 다 기존 프로젝트 빌드 셋업 패치 —
+//                                        병합 skill 이름은 중립적 `inject`)
 // 병합 skill 의 secondary-facet command stub (primary 는 skill 과 같은 verb — inject
-// 는 대응 primary stub 이 없어 3개 모두 secondary 취급).
+// 는 대응 primary stub 이 없어 2개 모두 secondary 취급).
 // 이 stub 들은 argument-hint sync 검사에서 면제된다 — 병합 skill 은 hint 를
 // 하나만 가지므로 secondary facet 의 hint 와는 본질적으로 어긋나기 때문.
 const MERGED_SECONDARY_FACET_CMDS = new Set([
   'inject-devtools.md', // → inject
-  'inject-polyfill.md', // → inject
   'inject-debug-console.md', // → inject
 ]);
 
@@ -465,7 +466,6 @@ const EXPECTED_CMD_TO_SKILL = {
   'welcome.md': 'welcome',
   'inject-debug-console.md': 'inject',
   'inject-devtools.md': 'inject',
-  'inject-polyfill.md': 'inject',
   'new.md': 'new-miniapp',
 };
 

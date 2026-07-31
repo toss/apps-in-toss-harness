@@ -6,13 +6,13 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 
 ## 목표
 
-`@ait-co/devtools`, `sdk-example`, `@ait-co/polyfill`, docs MCP, 콘솔 MCP를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
+`@ait-co/devtools`, `sdk-example`, docs MCP, 콘솔 MCP를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
 
 - `/ait:welcome` — 설치 확인 + 첫 station(`/ait:new`) 안내
 - `/ait:new` — 새 미니앱 스캐폴딩
 - `/ait:plan` — SDK 도메인/권한/약관 기획 (스캐폴드 전 분석)
 - `/ait:design` — Figma 디자인 → 등록용 이미지 에셋
-- `/ait:inject-devtools` / `/ait:inject-polyfill` / `/ait:inject-debug-console` — 기존 프로젝트에 설정 주입
+- `/ait:inject-devtools` / `/ait:inject-debug-console` — 기존 프로젝트에 설정 주입
 - `/ait:setup-phone-preview` — 실기기 미리보기 터널(Cloudflare quick-tunnel + launcher PWA)
 - `/ait:setup-debugger` — on-device 디버그 MCP 서버를 프로젝트 `.mcp.json`에 배선
 - `/ait:debug` — 라이브 상태 디버깅 안내 (브라우저 devtools 패널 · `window.__ait` · 실기기 on-device CDP relay)

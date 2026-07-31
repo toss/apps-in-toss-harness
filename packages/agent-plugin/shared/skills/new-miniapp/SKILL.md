@@ -367,7 +367,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 ## 참고
 
 - 짝 skill: `inject` (devtools facet — 기존 프로젝트에 devtools 추가,
-  polyfill facet — 표준 Web API 모드), `design` (등록 이미지 자산 생성).
+  debug-console facet — on-device attach 패키지 설치), `design` (등록 이미지 자산 생성).
 - 공식 스캐폴더: https://github.com/toss/create-ait-app — 템플릿 5종(내부
   react-ts-tds 포함), IAP/IAA 샘플, brownfield `add-sample` 서브커맨드.
   이 skill의 호출 규칙·후처리 근거는 harness#6 gap 분석(§C 함정 10건).

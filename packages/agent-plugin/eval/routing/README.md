@@ -11,18 +11,18 @@
 | 인증 | `ANTHROPIC_API_KEY` 필요 | 불필요 (구독 세션 그대로) |
 | skill을 얹는 방식 | project skill (`fixture/.claude/skills`) | **플러그인** (`--plugin-dir`) |
 | skill 이름 | `plan`, `design` … | `ait:plan`, `ait:design` … |
-| command stub 10개 | 목록에 **없음** | 목록에 **함께 오름** |
+| command stub 9개 | 목록에 **없음** | 목록에 **함께 오름** |
 
 세 번째~다섯 번째 행이 핵심이다. 실제 사용자는 `/plugin install`로 얹으므로
-skill이 `ait:` 네임스페이스에 들어가고 `shared/commands/` 10개가 **같은 목록에
+skill이 `ait:` 네임스페이스에 들어가고 `shared/commands/` 9개가 **같은 목록에
 함께** 오른다. promptfoo fixture는 그 형상을 재현하지 않는다 — 아무도 쓰지 않는
 형상을 재고 있었던 셈이고, 과거 실제로 두 형상의 측정값이 갈린 사례가 있었다
 (issue #275, 2026-07-27 측정 — 당시 `03-plan`은 project 형상 5/5 vs 설치 형상
 0/5(`docs`로 샘), `09-auth`는 5/5 vs 2/5였다). **`docs`·`auth-setup` 두 skill은
-그 뒤 harness aitcc 정리로 제거됐고 케이스 번호도 23→13으로 재편돼, 위 구체
-수치·id는 더 이상 현재 `cases.tsv`에 대응하지 않는다** — 다만 project 형상과
-설치 형상의 측정값이 갈릴 수 있다는 근거 자체(왜 이 하네스가 따로 필요한가)는
-유효하다.
+그 뒤 harness aitcc 정리로 제거됐고 케이스 번호도 23→13으로, inject skill의
+polyfill facet 제거로 다시 13→12로 재편돼, 위 구체 수치·id는 더 이상 현재
+`cases.tsv`에 대응하지 않는다** — 다만 project 형상과 설치 형상의 측정값이
+갈릴 수 있다는 근거 자체(왜 이 하네스가 따로 필요한가)는 유효하다.
 
 **그러므로 라우팅 회귀는 이 하네스로 판정한다.** promptfoo 쪽은 케이스 정본과
 schema 검증용으로 남는다 — 케이스를 고칠 땐 `promptfooconfig.yaml`을 먼저 고치고
@@ -31,7 +31,7 @@ schema 검증용으로 남는다 — 케이스를 고칠 땐 `promptfooconfig.ya
 ## 실행
 
 ```bash
-bash eval/routing/run.sh          # 전체 13케이스 × 1회
+bash eval/routing/run.sh          # 전체 12케이스 × 1회
 bash eval/routing/run.sh 5        # 전체 × 5회 (flaky 판별용)
 bash eval/routing/run.sh 5 03 09  # id가 03·09로 시작하는 것만 × 5회
 ```
@@ -48,9 +48,9 @@ bash eval/routing/run.sh 5 03 09  # id가 03·09로 시작하는 것만 × 5회
 | 2026-07-27 | `claude-sonnet-4-5` | 23케이스 × 3회 = **69/69 통과** (불완전 케이스 0) — harness aitcc 정리(23→13케이스) 이전 기록, 참고용 보존 |
 
 같은 날 수정 전 설치 형상은 `03-plan` 0/5, `09-auth` 2/5였다 (issue #275, 두 케이스 모두
-당시 번호 — `auth-setup` skill은 이후 제거됐다). **aitcc 정리 이후 13케이스 기준의 새
-측정은 아직 없다** — 이 스크립트가 라이브 API 호출이라 이 세션에서 직접 돌리지 않았다.
-다음에 이 스크립트를 돌리는 사람이 이 표에 새 행을 추가한다.
+당시 번호 — `auth-setup` skill은 이후 제거됐다). **aitcc 정리(13케이스) 이후, 또 polyfill
+facet 제거(12케이스) 이후의 새 측정은 아직 없다** — 이 스크립트가 라이브 API 호출이라 이
+세션에서 직접 돌리지 않았다. 다음에 이 스크립트를 돌리는 사람이 이 표에 새 행을 추가한다.
 
 ## 판정 방식
 
