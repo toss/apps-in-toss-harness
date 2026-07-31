@@ -9,7 +9,7 @@
  * switch away to a healthy tab.
  *
  * The fallback markup (`.ait-panel-tab-error` + the `panel.tabError` string) and
- * the `console.error('[@ait-co/devtools] Error rendering tab "<id>":', err)` log
+ * the `console.error('[@apps-in-toss/devtools] Error rendering tab "<id>":', err)` log
  * are preserved verbatim from the vanilla implementation so the existing unit
  * test (`src/__tests__/panel.test.ts`) and the locale catalog keep working.
  */
@@ -35,7 +35,7 @@ export class TabErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(err: unknown): void {
-    console.error(`[@ait-co/devtools] Error rendering tab "${this.props.tab}":`, err);
+    console.error(`[@apps-in-toss/devtools] Error rendering tab "${this.props.tab}":`, err);
   }
 
   render(): ReactNode {

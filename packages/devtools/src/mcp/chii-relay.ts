@@ -50,7 +50,7 @@
  *   screenshot, shoulder-surfing) but does not have the shared TOTP secret.
  *   Rotating 6-digit code makes the URL stale after 30 s.
  *   A determined attacker who extracts the secret from the dogfood bundle can
- *   still compute valid codes; that is out of scope (see umbrella CLAUDE.md §4).
+ *   still compute valid codes; that is out of scope (see docs/design/mcp-strategy.md).
  *
  * SECRET-HANDLING: The secret value and computed TOTP codes MUST NOT appear
  *   in any log, error message, or process output. `verifyAuth` is a black-box

@@ -4,7 +4,7 @@
 # The in-app debug surface — Chii target.js injection AND the eruda console it
 # pulls in — must be PHYSICALLY ABSENT (zero bytes) from a release consumer
 # bundle, not merely gated at runtime. A consumer guards its
-# `import('@ait-co/devtools/in-app')` with `if (__DEBUG_BUILD__) { … }`; a
+# `import('@apps-in-toss/debug-console')` with `if (__DEBUG_BUILD__) { … }`; a
 # release build defines `__DEBUG_BUILD__: false`, and the bundler
 # dead-code-eliminates the whole in-app graph. This script is the mechanical
 # proof of that, plus a check that eruda never leaks into the MCP daemon bundles.

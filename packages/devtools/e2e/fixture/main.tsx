@@ -1,6 +1,6 @@
-// E2E fixture consumer app for @ait-co/devtools — React 19 rendering.
+// E2E fixture consumer app for @apps-in-toss/devtools — React 19 rendering.
 //
-// NOTE: @ait-co/devtools/panel MUST remain the very first import in this file.
+// NOTE: @apps-in-toss/devtools/panel MUST remain the very first import in this file.
 // Panel mounts and initialises aitState before any mock API call runs at module
 // evaluation time. Do NOT let a linter's organizeImports reorder it below the
 // SDK block.
@@ -17,7 +17,7 @@ import '@apps-in-toss/devtools/panel';
 // development / Playwright e2e, localhost is blocked — see
 // e2e/launcher-cdp.test.ts for the documented manual residue.
 //
-// #817: the attach package is `@ait-co/debug-console` — the optional peer the
+// #817: the attach package is `@apps-in-toss/debug-console` — the optional peer the
 // unplugin injects for a normal consumer. This fixture keeps the wiring explicit
 // (see the note above), so it names the same package a consumer would get.
 if (typeof window !== 'undefined') {

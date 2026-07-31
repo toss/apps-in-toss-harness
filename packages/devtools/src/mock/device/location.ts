@@ -40,7 +40,7 @@ async function getCurrentLocationMock(): Promise<MockLocation> {
 async function getCurrentLocationWeb(): Promise<MockLocation> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
-      console.warn('[@ait-co/devtools] Geolocation API not available, falling back to mock');
+      console.warn('[@apps-in-toss/devtools] Geolocation API not available, falling back to mock');
       resolve(buildLocation());
       return;
     }
@@ -59,7 +59,7 @@ async function getCurrentLocationWeb(): Promise<MockLocation> {
         });
       },
       () => {
-        console.warn('[@ait-co/devtools] Geolocation failed, falling back to mock');
+        console.warn('[@apps-in-toss/devtools] Geolocation failed, falling back to mock');
         resolve(buildLocation());
       },
     );
@@ -106,7 +106,7 @@ function startUpdateLocationMock(eventParams: StartUpdateLocationEventParams): (
 function startUpdateLocationWeb(eventParams: StartUpdateLocationEventParams): () => void {
   const { onEvent, onError } = eventParams;
   if (!navigator.geolocation) {
-    console.warn('[@ait-co/devtools] Geolocation API not available, falling back to mock');
+    console.warn('[@apps-in-toss/devtools] Geolocation API not available, falling back to mock');
     return startUpdateLocationMock(eventParams);
   }
   const watchId = navigator.geolocation.watchPosition(

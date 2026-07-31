@@ -320,7 +320,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'If a Runtime.exceptionThrown event was observed within [callStart-50ms, callEnd+200ms], ' +
       'the result also includes `recentException` for crash triage. ' +
       'Returns a clear error if window.__sdkCall is not available — on relay (env 3/4) ' +
-      'that means a non-dog-food bundle (redeploy via `ait build && aitcc app deploy`); ' +
+      'that means a non-dog-food bundle (redeploy via `RELEASE_CHANNEL=dogfood ait build` then ' +
+      "the console MCP's `bundle_upload`/`bundle_upload_complete`); " +
       'on local (--target=local, env 1) it means the dev bridge is not installed ' +
       '(start the dev server with `pnpm dev`).\n\n' +
       'SECURITY: method name, args, and result value are not redacted — never include secrets.\n\n' +
@@ -456,7 +457,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'is attached, and a full diagnostic snapshot — in one call. Use this any time to answer ' +
       '"what mode am I in right now?" or "why is this not working?" without chaining tools. ' +
       'Fields: mcpVersion (MCP SDK version), ' +
-      'devtoolsVersion (@ait-co/debugger package version), tunnel (up/wssUrl/pid/startedAt), ' +
+      'devtoolsVersion (@apps-in-toss/debugger package version), tunnel (up/wssUrl/pid/startedAt), ' +
       'pages (list_pages result + lastSeenAt stats), lastAttachAt, lastDetachAt, ' +
       'recentErrors (last N server-side errors, PII/secret redacted), ' +
       'authRejects ({count, lastAt} — relay TOTP 401 rejections, secret-free; count > 0 with empty pages ' +
@@ -1815,7 +1816,7 @@ export interface NextRecommendedAction {
 export interface DiagnosticsResult {
   /** `@modelcontextprotocol/sdk` package version string. */
   mcpVersion: string | null;
-  /** `@ait-co/debugger` package version string. */
+  /** `@apps-in-toss/debugger` package version string. */
   devtoolsVersion: string | null;
   /** Tunnel state including lock-file pid/startedAt. */
   tunnel: DiagnosticsTunnelInfo;
@@ -2052,7 +2053,7 @@ export async function readMcpSdkVersion(): Promise<string | null> {
 }
 
 /**
- * Returns the `@ait-co/debugger` package version injected at build time via
+ * Returns the `@apps-in-toss/debugger` package version injected at build time via
  * the `__VERSION__` define. Returns `null` when the global is absent (e.g. in
  * some test environments that skip the build step).
  */

@@ -1,5 +1,5 @@
 /**
- * @ait-co/devtools 중앙 상태 관리
+ * @apps-in-toss/devtools 중앙 상태 관리
  * DevTools Panel과 mock 구현체가 이 상태를 공유한다.
  */
 
@@ -369,7 +369,8 @@ const DEFAULT_STATE: AitDevtoolsState = {
     network: 'mock',
     // 'mock' so the clipboard mock is self-contained. With 'web' the mock
     // calls `navigator.clipboard.readText()` directly, which — when paired
-    // with `@ait-co/polyfill` — recurses: polyfill routes `navigator.clipboard`
+    // with an external polyfill library that shims standard Web APIs onto
+    // the SDK — recurses: the polyfill routes `navigator.clipboard`
     // back to the SDK's `getClipboardText`, which is this mock, which calls
     // `navigator.clipboard.readText`, … Users who want true browser
     // clipboard integration can flip this to 'web' from the panel.
@@ -519,8 +520,8 @@ export class AitStateManager {
 }
 
 // `tsdown.config.ts`는 mock/panel/unplugin entry를 별도 config object로 빌드한다
-// ("every entry is self-contained"). 그 결과 소비자가 두 entry(예: `@ait-co/devtools` +
-// `@ait-co/devtools/panel`)를 동시에 import하면 `state.ts`가 entry별로 따로 번들되어
+// ("every entry is self-contained"). 그 결과 소비자가 두 entry(예: `@apps-in-toss/devtools` +
+// `@apps-in-toss/devtools/panel`)를 동시에 import하면 `state.ts`가 entry별로 따로 번들되어
 // `AitStateManager` 인스턴스가 entry당 1개씩 만들어진다. panel이 toggle한 state는
 // mock SDK가 보는 state와 다른 인스턴스가 되어 모든 토글이 비기능이 된다.
 //

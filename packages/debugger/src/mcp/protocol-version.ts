@@ -1,7 +1,7 @@
 /**
  * Daemon half of the attach version handshake.
  *
- * The device (`@ait-co/debug-console`) pings the relay's handshake path with
+ * The device (`@apps-in-toss/debug-console`) pings the relay's handshake path with
  * its build-time `__VERSION__` immediately before it injects `target.js`. This
  * module records what came back and answers one question: are the two halves of
  * the device↔host protocol a mutually tested pair?

@@ -114,7 +114,7 @@ export const IAP = createMockProxy('IAP', {
   createOneTimePurchaseOrder(params: IapCreateOneTimePurchaseOrderOptions): () => void {
     const sku = params.options.sku ?? params.options.productId ?? '';
     handlePurchase(sku, params.options.processProductGrant, params.onEvent, params.onError).catch(
-      (e) => console.error('[@ait-co/devtools] IAP unexpected error:', e),
+      (e) => console.error('[@apps-in-toss/devtools] IAP unexpected error:', e),
     );
     return () => {};
   },
@@ -125,7 +125,7 @@ export const IAP = createMockProxy('IAP', {
       params.options.processProductGrant,
       params.onEvent,
       params.onError,
-    ).catch((e) => console.error('[@ait-co/devtools] IAP unexpected error:', e));
+    ).catch((e) => console.error('[@apps-in-toss/devtools] IAP unexpected error:', e));
     return () => {};
   },
 
@@ -233,7 +233,7 @@ export async function checkoutPayment(options: {
   params: { payToken: string };
 }): Promise<{ success: boolean; reason?: string }> {
   const { nextResult, failReason } = aitState.state.payment;
-  console.log('[@ait-co/devtools] checkoutPayment:', options.params.payToken);
+  console.log('[@apps-in-toss/devtools] checkoutPayment:', options.params.payToken);
 
   if (aitState.state.failureModes.softResolve?.checkoutPayment) {
     // env3 미프로비저닝 soft-resolve: { false: …, reason: … }. `{ false: … }`는
@@ -266,7 +266,7 @@ export const requestTossPayPaysBilling = Object.assign(
     params: { wrappedToken: string };
   }): Promise<{ success: boolean; reason?: string } | undefined> {
     const { nextResult, failReason } = aitState.state.payment;
-    console.log('[@ait-co/devtools] requestTossPayPaysBilling:', options.params.wrappedToken);
+    console.log('[@apps-in-toss/devtools] requestTossPayPaysBilling:', options.params.wrappedToken);
 
     if (aitState.state.failureModes.softResolve?.requestTossPayPaysBilling) {
       // env3 미프로비저닝 soft-resolve: { false: …, reason: … } (valueKeys=['false','reason'],

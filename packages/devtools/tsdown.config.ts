@@ -34,7 +34,7 @@ const mcpSdkVersion = ((): string | null => {
 //
 // Note: there is no `__DEBUG_BUILD__` define here. That constant belongs to
 // the CONSUMER's build, not this package's. The consumer guards its
-// `import('@ait-co/devtools/in-app')` call site with `if (__DEBUG_BUILD__)`,
+// `import('@apps-in-toss/devtools/in-app')` call site with `if (__DEBUG_BUILD__)`,
 // and its own bundler folds the constant + DCEs the import for release builds.
 // A `__DEBUG_BUILD__` define in this config would bake a fixed value into the
 // shipped package and is therefore meaningless — see src/in-app/gate.ts.
@@ -88,7 +88,7 @@ export default defineConfig([
   },
   {
     // Self-gating side-effect entry. Consumers add one line to their app entry:
-    //   import '@ait-co/devtools/in-app/auto';
+    //   import '@apps-in-toss/devtools/in-app/auto';
     // The entry self-gates on URL params + DEV flag and, when the gate passes,
     // calls maybeAttach() and installs the SDK bridge (window.__sdk/__sdkCall).
     // @apps-in-toss/web-framework is an optional peer — resolved via dynamic

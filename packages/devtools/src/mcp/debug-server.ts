@@ -1,5 +1,5 @@
 /**
- * @ait-co/devtools debug-mode MCP server (stdio).
+ * @apps-in-toss/devtools debug-mode MCP server (stdio).
  *
  * Lets an AI coding agent attach to a running mini-app (real Toss WebView, or a
  * browser in dev mode) and read its console/network/DOM/screenshot over CDP plus

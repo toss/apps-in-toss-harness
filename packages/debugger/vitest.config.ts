@@ -18,7 +18,8 @@ export default defineConfig({
     onConsoleLog(log: string) {
       // Fail-silent paths log package-prefixed debug lines on purpose; keep
       // them out of the test report.
-      if (log.includes('[@ait-co/devtools]') || log.includes('[@ait-co/debugger]')) return false;
+      if (log.includes('[@apps-in-toss/devtools]') || log.includes('[@apps-in-toss/debugger]'))
+        return false;
     },
   },
 });

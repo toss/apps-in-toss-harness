@@ -1,5 +1,5 @@
 /**
- * @ait-co/debugger dev-mode MCP server (stdio).
+ * @apps-in-toss/debugger dev-mode MCP server (stdio).
  *
  * Exposes the live browser mock state from a running Vite dev server to AI
  * coding agents via the Model Context Protocol (MCP).
@@ -96,7 +96,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Returns the devtools mock state snapshot (window.__ait) from the running browser session — ' +
       'environment, permissions, location, auth, network, IAP, and more. Read-only. ' +
-      'Requires the Vite dev server running with the @ait-co/devtools unplugin option `mcp: true`. ' +
+      'Requires the Vite dev server running with the @apps-in-toss/devtools unplugin option `mcp: true`. ' +
       'Same tool as in debug mode, where the in-app side reports it over the AIT domain.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
@@ -206,7 +206,7 @@ const DEV_TOOL_DEFINITIONS = [
       'NOT available in dev-mode — requires a live cloudflared relay (Tier B, relay-only). ' +
       'To use this tool: restart the MCP server with `--mode=debug` (or omit --mode) and set ' +
       'MCP_ENV=relay, then call start_attach to generate the QR for phone scanning. ' +
-      'See: https://docs.aitc.dev/guides/debug-relay',
+      'See: docs MCP (apps-in-toss-docs) searchDocumentation for "debug relay".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -586,7 +586,7 @@ export function createDevServer(deps: CreateDevServerDeps = {}): Server {
       const message = err instanceof Error ? err.message : String(err);
       return mcpError(
         `${name} 실패: ${message}\n` +
-          'Vite dev 서버가 @ait-co/devtools unplugin `mcp: true` 옵션으로 실행 중인지 확인하세요. ' +
+          'Vite dev 서버가 @apps-in-toss/devtools unplugin `mcp: true` 옵션으로 실행 중인지 확인하세요. ' +
           'AIT_DEVTOOLS_URL 환경변수가 올바르게 설정됐는지도 확인하세요.',
       );
     }

@@ -353,6 +353,6 @@ export async function injectDebugIndicator(
     });
   } catch (err) {
     // Badge injection is informational UI — swallow and log; never propagate.
-    console.debug('[@ait-co/devtools] debug indicator inject skipped:', err);
+    console.debug('[@apps-in-toss/devtools] debug indicator inject skipped:', err);
   }
 }

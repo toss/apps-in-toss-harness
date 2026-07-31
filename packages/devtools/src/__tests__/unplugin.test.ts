@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import aitDevtoolsPlugin from '../unplugin/index.js';
 
 const FRAMEWORK_ID = '@apps-in-toss/web-framework';
-// `resolveId` now returns the absolute file path of `@ait-co/devtools/mock` so
+// `resolveId` now returns the absolute file path of `@apps-in-toss/devtools/mock` so
 // bundlers can load it directly; when `import.meta.resolve` fails (e.g. in a
 // test environment where the subpath isn't yet published as a dist file) the
 // implementation falls back to the bare specifier.
@@ -236,7 +236,7 @@ describe('unplugin: transform', () => {
 });
 
 describe('unplugin: in-app attach 자동 주입 (#465)', () => {
-  it('dev 모드에서 in-app snippet을 자동 주입한다 (#817: @ait-co/debug-console)', () => {
+  it('dev 모드에서 in-app snippet을 자동 주입한다 (#817: @apps-in-toss/debug-console)', () => {
     vi.stubEnv('NODE_ENV', 'development');
     const hooks = getRawHooks();
     const result = hooks.transform('console.log("hello");');

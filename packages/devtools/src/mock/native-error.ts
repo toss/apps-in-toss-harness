@@ -19,7 +19,7 @@
  * 같은 shape을 이미 CI 러너 쪽에서 재현하고 있다(devtools#740) — 이 모듈은 그
  * shape을 mock 소비자 표면(`src/mock/**`)에 대해 재사용 가능한 형태로 옮긴 것이다.
  * 두 모듈은 레이어가 다르다: test-runner 쪽은 env3 blocking-call 인터셉터(빌드에
- * 안 실림, CI 전용), 이쪽은 `@ait-co/devtools` 소비자가 `pnpm dev`에서 실제로
+ * 안 실림, CI 전용), 이쪽은 `@apps-in-toss/devtools` 소비자가 `pnpm dev`에서 실제로
  * import하는 mock 런타임이다 — 서로 import하지 않는다(devtools#740이 test-runner
  * 전용 모듈임을 명시).
  */

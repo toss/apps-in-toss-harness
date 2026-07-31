@@ -34,8 +34,8 @@
  * Runs entirely on the PAGE side (browser-compatible, no Node APIs) — this
  * file is bundled into the injected IIFE by `bundle.ts`'s `sdkRedirectPlugin`,
  * mirroring how `runtime.ts` is bundled. It is imported ONLY from the
- * test-runner (never from `sdk-example/src` — boilerplate cleanliness,
- * umbrella §1.4: this is maintainer/runner infrastructure, not something a
+ * test-runner (never from `sdk-example/src` — boilerplate cleanliness —
+ * this is maintainer/runner infrastructure, not something a
  * mini-app developer's shipped code should carry).
  *
  * SECRET-HANDLING: fixtures below are hand-derived summaries of the captured

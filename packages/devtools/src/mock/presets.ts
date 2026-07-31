@@ -134,7 +134,7 @@ function pickKnownKeys<T extends object>(
     }
   }
   if (dropped.length > 0) {
-    console.warn(`[@ait-co/devtools] Preset dropped unknown keys: ${dropped.join(', ')}`);
+    console.warn(`[@apps-in-toss/devtools] Preset dropped unknown keys: ${dropped.join(', ')}`);
   }
   return out;
 }

@@ -18,7 +18,7 @@
  *   "anyone with the URL" to "URL + bundle extraction + live TOTP calculation".
  *   Casual URL leaks (Slack paste, QR screenshot, shoulder-surfing) are
  *   blocked; deliberate reverse engineering is not. See threat model in
- *   src/mcp/chii-relay.ts and umbrella CLAUDE.md §4.
+ *   src/mcp/chii-relay.ts and docs/design/mcp-strategy.md.
  *
  * SECRET-HANDLING: secret values and computed codes MUST NOT appear in any
  * log, error message, or string visible outside this module. Only boolean
@@ -140,7 +140,7 @@ export const RELAY_AUTH_SECRET_MISSING_MESSAGE = [
   '발급: openssl rand -hex 32',
   '데몬은 start_debug의 projectRoot 인자로 받은 디렉토리에서 .ait_relay 파일을 읽어 이 시크릿을 채웁니다.',
   '프로젝트에서 pnpm dev:phone:cdp를 한 번 띄우면 unplugin이 .ait_relay를 자동 생성하니(tunnel.cdp 옵션 필요), projectRoot를 전달하세요.',
-  '자세히: https://docs.aitc.dev/guides/relay-auth-totp',
+  '자세히: docs MCP(apps-in-toss-docs)의 searchDocumentation으로 "relay auth totp" 조회.',
 ].join('\n');
 
 /**

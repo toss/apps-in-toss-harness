@@ -436,7 +436,7 @@ function userFactoryPlugin(absPath: string): esbuild.Plugin {
  * An ABSOLUTE path is returned deliberately: esbuild loads it as a literal file
  * read, bypassing Node module resolution entirely, so this works identically in
  * the npx-daemon context (its own dist tree) and the consumer-CLI context
- * (the mini-app's installed @ait-co/devtools dist) — neither needs the package
+ * (the mini-app's installed @apps-in-toss/devtools dist) — neither needs the package
  * to be node-resolvable from the caller.
  *
  * @param moduleName - The leaf module's basename without extension, e.g.

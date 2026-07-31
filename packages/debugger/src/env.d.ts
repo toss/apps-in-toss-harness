@@ -3,7 +3,7 @@
  *
  * This is the host half of the attach version handshake: the daemon compares it
  * with the version the device reports on `/ait-attach` (see
- * `@ait-co/internal-protocol/attach-handshake`).
+ * `@apps-in-toss/internal-protocol/attach-handshake`).
  */
 declare const __VERSION__: string;
 

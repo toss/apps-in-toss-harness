@@ -2,8 +2,8 @@
  * The `window.__ait_bridge` snapshot shape and the event/global names the
  * device publishes it under.
  *
- * The device (`@ait-co/debug-console`) writes the snapshot; the daemon
- * (`@ait-co/debugger`) reads it back field-by-field from inside a CDP
+ * The device (`@apps-in-toss/debug-console`) writes the snapshot; the daemon
+ * (`@apps-in-toss/debugger`) reads it back field-by-field from inside a CDP
  * `Runtime.evaluate` source string it assembles as text. There is therefore no
  * compile-time link between writer and reader — the daemon's use of the
  * interface is type-only (erased entirely) and its use of the name constants is

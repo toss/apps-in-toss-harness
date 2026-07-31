@@ -5,7 +5,7 @@ import pkg from './package.json' with { type: 'json' };
 // __VERSION__` — `define` only rewrites the bare token, and a property access
 // would silently read `undefined`). It is the device half of the attach version
 // handshake: `attach.ts` reports it to the relay so the daemon can name a
-// device↔host skew. Keep this define and `@ait-co/debugger`'s in lockstep —
+// device↔host skew. Keep this define and `@apps-in-toss/debugger`'s in lockstep —
 // they are released as a Changesets `fixed` pair.
 const define = {
   __VERSION__: JSON.stringify(pkg.version),
@@ -20,9 +20,9 @@ const define = {
 const external = ['@apps-in-toss/web-framework'];
 
 // This package is the only one in the split that can enter a consumer's
-// production bundle (see CLAUDE.md invariants), so — like @ait-co/polyfill —
-// it ships dual ESM + CJS so `require('@ait-co/debug-console/auto')` works
-// under CommonJS bundlers/hosts too.
+// production bundle (see CLAUDE.md invariants), so — like an external
+// polyfill library — it ships dual ESM + CJS so `require('@apps-in-toss/debug-console/auto')`
+// works under CommonJS bundlers/hosts too.
 // `package.json` exports expect `.js` (ESM) and `.cjs` (CJS) extensions, so
 // override tsdown's default `.mjs` / `.cjs` mapping under `"type": "module"`.
 const outExtensions: Options['outExtensions'] = ({ format }) => {
@@ -33,7 +33,7 @@ const outExtensions: Options['outExtensions'] = ({ format }) => {
 const common = {
   // `eager` runs declaration emit through tsc instead of the isolated-
   // declarations fast path. `gate.ts` and `bridge-observer.ts` re-export
-  // symbols that originate in `@ait-co/internal-protocol`, whose entries are
+  // symbols that originate in `@apps-in-toss/internal-protocol`, whose entries are
   // raw `.ts` files; the fast path cannot emit across that boundary (it warns
   // "Failed to emit declaration file") and silently drops the re-export lines,
   // after which the rollup fails on every symbol `index.ts` forwards through
@@ -57,7 +57,7 @@ export default defineConfig([
   },
   {
     ...common,
-    // Side-effect entry: `import '@ait-co/debug-console/auto'` attaches the
+    // Side-effect entry: `import '@apps-in-toss/debug-console/auto'` attaches the
     // on-device console without the consumer wiring `attach()` themselves.
     entry: { auto: 'src/auto.ts' },
     format: ['esm', 'cjs'],

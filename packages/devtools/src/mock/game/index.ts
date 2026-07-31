@@ -22,7 +22,7 @@ import { aitState } from '../state.js';
 export async function grantPromotionReward(
   params: GrantPromotionRewardParams,
 ): Promise<GrantPromotionRewardResponse> {
-  console.log('[@ait-co/devtools] grantPromotionReward:', params.params);
+  console.log('[@apps-in-toss/devtools] grantPromotionReward:', params.params);
   if (aitState.state.failureModes.softResolve?.grantPromotionReward) {
     // env3 미등록 promotion soft-resolve 재현: { errorCode, message }.
     // 선언 타입 { key }와 다른 off-contract shape라 cast가 불가피하다 — 실기기가
@@ -40,7 +40,7 @@ export async function grantPromotionReward(
 export async function grantPromotionRewardForGame(
   params: GrantPromotionRewardParams,
 ): Promise<GrantPromotionRewardResponse> {
-  console.log('[@ait-co/devtools] grantPromotionRewardForGame:', params.params);
+  console.log('[@apps-in-toss/devtools] grantPromotionRewardForGame:', params.params);
   if (aitState.state.failureModes.softResolve?.grantPromotionRewardForGame) {
     // env3 미등록 promotion soft-resolve 재현: { errorCode, message }.
     // 선언 타입 { key }와 다른 off-contract shape라 cast가 불가피하다 — 실기기가
@@ -88,7 +88,7 @@ export async function getGameCenterGameProfile(): Promise<
 }
 
 export async function openGameCenterLeaderboard(): Promise<void> {
-  console.log('[@ait-co/devtools] openGameCenterLeaderboard (no-op in browser)');
+  console.log('[@apps-in-toss/devtools] openGameCenterLeaderboard (no-op in browser)');
 }
 
 export function contactsViral(params: {

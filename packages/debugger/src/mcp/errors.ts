@@ -136,7 +136,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
   return mcpError(
     `${prefix}window.__sdkCall이 주입되지 않았습니다 (dog-food 빌드가 아닙니다). ` +
       'dog-food 채널(intoss-private)로 재배포 후 QR을 다시 스캔하세요: ' +
-      '`ait build && aitcc app deploy`.',
+      '`RELEASE_CHANNEL=dogfood ait build` 후 console MCP(`bundle_upload`/`bundle_upload_complete`)로 업로드.',
   );
 }
 
@@ -145,7 +145,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
 /* -------------------------------------------------------------------------- */
 
 /**
- * device(`@ait-co/debug-console`)와 host(`@ait-co/debugger`)의 빌드 버전이
+ * device(`@apps-in-toss/debug-console`)와 host(`@apps-in-toss/debugger`)의 빌드 버전이
  * 어긋났을 때의 에러.
  *
  * 두 패키지는 Changesets `fixed` 쌍이라 같은 버전 = "상호 테스트된 조합"이다.
@@ -157,8 +157,8 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * SECRET-HANDLING: 버전 문자열 2개만 싣는다. relay `wss://` URL·터널 호스트·
  * TOTP 코드는 이 메시지에 절대 들어가지 않는다.
  *
- * @param deviceVersion - 기기가 보고한 `@ait-co/debug-console` 버전.
- * @param hostVersion   - 데몬 자신의 `@ait-co/debugger` 버전.
+ * @param deviceVersion - 기기가 보고한 `@apps-in-toss/debug-console` 버전.
+ * @param hostVersion   - 데몬 자신의 `@apps-in-toss/debugger` 버전.
  */
 export function protocolVersionMismatchError(
   deviceVersion: string,
@@ -166,9 +166,9 @@ export function protocolVersionMismatchError(
 ): McpErrorResult {
   return mcpError(
     `device↔host 프로토콜 버전 불일치: ` +
-      `기기의 @ait-co/debug-console은 ${deviceVersion}, 데몬의 @ait-co/debugger는 ${hostVersion}입니다. ` +
+      `기기의 @apps-in-toss/debug-console은 ${deviceVersion}, 데몬의 @apps-in-toss/debugger는 ${hostVersion}입니다. ` +
       '두 패키지는 같은 버전으로만 상호 테스트됩니다 — attach는 성공해도 인디케이터·브리지 스냅샷 등이 ' +
-      '조용히 어긋날 수 있습니다. 미니앱의 @ait-co/debug-console을 ' +
+      '조용히 어긋날 수 있습니다. 미니앱의 @apps-in-toss/debug-console을 ' +
       `${hostVersion}으로 맞춰 재배포하거나, 데몬을 ${deviceVersion}으로 실행하세요.`,
   );
 }

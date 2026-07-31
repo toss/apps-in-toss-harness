@@ -11,7 +11,7 @@
  * indicator renders empty, a field reads `undefined`, a close frame goes
  * unrecognised. Nothing in the stack says why.
  *
- * Changesets `fixed` keeps `@ait-co/debugger` and `@ait-co/debug-console` on
+ * Changesets `fixed` keeps `@apps-in-toss/debugger` and `@apps-in-toss/debug-console` on
  * one version number, so "same version" is exactly "mutually tested pair". What
  * `fixed` cannot do is stop a consumer from installing a skewed pair. This
  * handshake turns that skew from a silent misbehaviour into one diagnostic
@@ -66,7 +66,7 @@ export interface ProtocolVersionCheck {
  * any difference at all means the consumer assembled a combination that was
  * never tested together. Semver-range logic would only blur that.
  *
- * @param device - Version reported by `@ait-co/debug-console`, if any.
+ * @param device - Version reported by `@apps-in-toss/debug-console`, if any.
  * @param host - The daemon's own `__VERSION__`, if any.
  */
 export function compareProtocolVersions(

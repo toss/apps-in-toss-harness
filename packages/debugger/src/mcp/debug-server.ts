@@ -1,5 +1,5 @@
 /**
- * @ait-co/debugger debug-mode MCP server (stdio).
+ * @apps-in-toss/debugger debug-mode MCP server (stdio).
  *
  * Lets an AI coding agent attach to a running mini-app (real Toss WebView, or a
  * browser in dev mode) and read its console/network/DOM/screenshot over CDP plus
@@ -44,8 +44,8 @@
 
 // The host allowlist is shared with the device-side gate. Before the split this
 // was `import … from '../in-app/gate.js'` — the daemon reaching into the
-// browser tree. That reverse edge would now be a hard `@ait-co/debugger` →
-// `@ait-co/debug-console` dependency, which is exactly what the split forbids:
+// browser tree. That reverse edge would now be a hard `@apps-in-toss/debugger` →
+// `@apps-in-toss/debug-console` dependency, which is exactly what the split forbids:
 // it would put `eruda` in the daemon's install graph while the bundle grep
 // still passed. The predicate lives in the shared protocol package instead and
 // is inlined into both bundles at build time.

@@ -360,9 +360,9 @@ describe('start_attach — protocol version skew', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
-    expect(text).toContain('@ait-co/debug-console');
+    expect(text).toContain('@apps-in-toss/debug-console');
     expect(text).toContain('0.1.0');
-    expect(text).toContain('@ait-co/debugger');
+    expect(text).toContain('@apps-in-toss/debugger');
     expect(text).toContain('0.2.0');
     // SECRET-HANDLING: the diagnostic carries two version strings and nothing
     // else — no relay URL, tunnel host, or auth code may ride along.

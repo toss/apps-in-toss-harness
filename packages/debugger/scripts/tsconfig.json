@@ -5,7 +5,7 @@
   // here — never in src/ (see check-mcp-react-free.sh).
   //
   // Deliberately does NOT sweep scripts/debug-absence-fixture/: that fixture
-  // dynamic-imports the sibling @ait-co/debug-console package, whose dist/
+  // dynamic-imports the sibling @apps-in-toss/debug-console package, whose dist/
   // types only exist after `pnpm build` — a static tsc pass run before build
   // (as `pnpm typecheck` is in CI) would fail to resolve it. The fixture's
   // correctness is verified at runtime by check-debug-surface-absent.sh's

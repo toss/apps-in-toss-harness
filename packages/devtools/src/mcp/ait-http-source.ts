@@ -58,7 +58,7 @@ export class HttpAitSource implements AitSource {
     if (!res.ok) {
       throw new Error(
         `Failed to fetch mock state from ${this.stateEndpoint}: HTTP ${res.status} ${res.statusText}. ` +
-          'Ensure the Vite dev server is running with the @ait-co/devtools unplugin option `mcp: true`.',
+          'Ensure the Vite dev server is running with the @apps-in-toss/devtools unplugin option `mcp: true`.',
       );
     }
     const body = await res.json();

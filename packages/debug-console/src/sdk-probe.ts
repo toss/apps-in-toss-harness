@@ -17,8 +17,8 @@
  * check on the export we actually want, and silence when either step fails. The
  * SDK is a devDependency here purely so `tsc` and the unit tests can resolve the
  * specifier; the bundle marks it external so it is never inlined. That makes a
- * 2.x↔3.x GA flip a no-op for this package — the same shape `@ait-co/polyfill`'s
- * `loadTossSdk()` uses.
+ * 2.x↔3.x GA flip a no-op for this package — the same shape an external
+ * polyfill library's `loadTossSdk()` uses.
  *
  * SECRET-HANDLING: nothing here reads or logs a relay URL, a tunnel host, or an
  * auth code. Failures are swallowed; the only thing ever printed is a package-
@@ -103,7 +103,7 @@ export async function callTossSdk(name: string, ...args: unknown[]): Promise<boo
     await fn(...args);
     return true;
   } catch (err) {
-    console.debug(`[@ait-co/debug-console] ${name} failed:`, err);
+    console.debug(`[@apps-in-toss/debug-console] ${name} failed:`, err);
     return false;
   }
 }
@@ -128,12 +128,12 @@ export function callTossSdkNow(name: string, ...args: unknown[]): boolean {
     const result: unknown = fn(...args);
     if (result instanceof Promise) {
       result.catch((err: unknown) => {
-        console.debug(`[@ait-co/debug-console] ${name} failed:`, err);
+        console.debug(`[@apps-in-toss/debug-console] ${name} failed:`, err);
       });
     }
     return true;
   } catch (err) {
-    console.debug(`[@ait-co/debug-console] ${name} failed:`, err);
+    console.debug(`[@apps-in-toss/debug-console] ${name} failed:`, err);
     return false;
   }
 }

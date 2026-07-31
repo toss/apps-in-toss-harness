@@ -15,7 +15,7 @@
 
 import { aitState } from './state.js';
 
-const ISSUES_URL = 'https://github.com/apps-in-toss-community/devtools/issues';
+const ISSUES_URL = 'https://github.com/toss/apps-in-toss-harness/issues';
 
 /**
  * SDK에 존재하나 mock이 아직 없는 것으로 확인된 이름 목록.
@@ -43,7 +43,7 @@ export function createMockProxy<T extends Record<string, unknown>>(
       if (KNOWN_UNIMPLEMENTED.has(name)) {
         return (...args: unknown[]): undefined => {
           console.warn(
-            `[@ait-co/devtools] ${moduleName}.${name} is known-unimplemented (🔴 inert). ` +
+            `[@apps-in-toss/devtools] ${moduleName}.${name} is known-unimplemented (🔴 inert). ` +
               `Returning undefined. Please file or upvote an issue: ${ISSUES_URL}`,
           );
           aitState.logSdkCall({
@@ -59,7 +59,7 @@ export function createMockProxy<T extends Record<string, unknown>>(
       }
 
       throw new Error(
-        `[@ait-co/devtools] ${moduleName}.${prop} is not mocked. ` +
+        `[@apps-in-toss/devtools] ${moduleName}.${prop} is not mocked. ` +
           `This API may exist in @apps-in-toss/web-framework, ` +
           `but devtools' mock does not cover it yet. ` +
           `Please file an issue: ${ISSUES_URL}`,

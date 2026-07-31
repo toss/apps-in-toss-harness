@@ -1,5 +1,5 @@
 /**
- * Unit tests for the `@ait-co/devtools/in-app/auto` self-gating side-effect
+ * Unit tests for the `@apps-in-toss/devtools/in-app/auto` self-gating side-effect
  * entry (`src/in-app/auto.ts`).
  *
  * Covers:

@@ -10,12 +10,12 @@ import { aitState } from '../state.js';
 import type { NetworkStatus } from '../types.js';
 
 export async function closeView(): Promise<void> {
-  console.log('[@ait-co/devtools] closeView called');
+  console.log('[@apps-in-toss/devtools] closeView called');
   window.history.back();
 }
 
 export async function openURL(url: string): Promise<void> {
-  console.log('[@ait-co/devtools] openURL:', url);
+  console.log('[@apps-in-toss/devtools] openURL:', url);
   window.open(url, '_blank');
 }
 
@@ -24,7 +24,7 @@ export async function share(message: { message: string }): Promise<void> {
     await navigator.share({ text: message.message });
     return;
   }
-  console.log('[@ait-co/devtools] share:', message.message);
+  console.log('[@apps-in-toss/devtools] share:', message.message);
 }
 
 // RFC 3986 scheme 문법(ALPHA *(ALPHA / DIGIT / "+" / "-" / ".") ":")만 확인한다 — 특정
@@ -49,7 +49,7 @@ export async function getTossShareLink(path: string, _ogImageUrl?: string): Prom
 }
 
 export async function setIosSwipeGestureEnabled(options: { isEnabled: boolean }): Promise<void> {
-  console.log('[@ait-co/devtools] setIosSwipeGestureEnabled:', options.isEnabled);
+  console.log('[@apps-in-toss/devtools] setIosSwipeGestureEnabled:', options.isEnabled);
   // real(토스 WebView)에선 이 호출이 native bridge로 발화한다(devtools#171 실측). mock은
   // 그 "마지막 호출값"을 관측 가능한 state로 mirror해, toss-gated 가드(예: sdk-example
   // useDisableIosSwipeGestureInToss)가 실제로 돌았는지를 AIT.getMockState로 대조할 수 있게 한다.
@@ -61,7 +61,7 @@ export async function setDeviceOrientation(options: {
 }): Promise<void> {
   const current = aitState.state.viewport.orientation;
   if (current === 'auto') {
-    console.log('[@ait-co/devtools] setDeviceOrientation:', options.type);
+    console.log('[@apps-in-toss/devtools] setDeviceOrientation:', options.type);
     // appOrientation은 Panel이 'auto'일 때 effective orientation을 결정하는 별도 필드.
     // viewport.orientation은 사용자 의도이므로 SDK가 임의로 덮어쓰지 않는다 — 그래야
     // 앱이 같은 방향으로 여러 번 호출해도 매번 정상 반영된다.
@@ -69,7 +69,7 @@ export async function setDeviceOrientation(options: {
     return;
   }
   console.warn(
-    `[@ait-co/devtools] setDeviceOrientation(${options.type}) ignored — Panel is forcing "${current}". Change the Viewport tab's orientation to "auto" to let the app control rotation.`,
+    `[@apps-in-toss/devtools] setDeviceOrientation(${options.type}) ignored — Panel is forcing "${current}". Change the Viewport tab's orientation to "auto" to let the app control rotation.`,
   );
 }
 
@@ -77,7 +77,7 @@ export const setScreenAwakeMode = observe(
   'setScreenAwakeMode',
   'inert',
   async (options: { enabled: boolean }): Promise<{ enabled: boolean }> => {
-    console.log('[@ait-co/devtools] setScreenAwakeMode:', options.enabled);
+    console.log('[@apps-in-toss/devtools] setScreenAwakeMode:', options.enabled);
     return { enabled: options.enabled };
   },
 );
@@ -86,13 +86,13 @@ export const setSecureScreen = observe(
   'setSecureScreen',
   'inert',
   async (options: { enabled: boolean }): Promise<{ enabled: boolean }> => {
-    console.log('[@ait-co/devtools] setSecureScreen:', options.enabled);
+    console.log('[@apps-in-toss/devtools] setSecureScreen:', options.enabled);
     return { enabled: options.enabled };
   },
 );
 
 const _requestReviewImpl = observe('requestReview', 'inert', async (): Promise<void> => {
-  console.log('[@ait-co/devtools] requestReview called');
+  console.log('[@apps-in-toss/devtools] requestReview called');
 });
 export const requestReview: typeof _requestReviewImpl & { isSupported: () => boolean } =
   _requestReviewImpl as typeof _requestReviewImpl & { isSupported: () => boolean };

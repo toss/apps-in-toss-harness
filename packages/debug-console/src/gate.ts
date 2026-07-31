@@ -10,7 +10,7 @@
  * entirely by the consumer's `if (__DEBUG_BUILD__) { … }` guard around the
  * import site (see sdk-example `src/main.tsx`). `__DEBUG_BUILD__` is a
  * consumer-build-time constant; a release consumer build folds it to `false`
- * and dead-code-eliminates the whole import of `@ait-co/debug-console`, so
+ * and dead-code-eliminates the whole import of `@apps-in-toss/debug-console`, so
  * this code is simply absent from release bundles. A pre-built npm package
  * cannot re-check that flag — it was already baked at devtools' own publish
  * time — so any `isDebugBuild` check inside this function would be permanently

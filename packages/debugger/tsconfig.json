@@ -10,7 +10,7 @@
     "types": ["node"],
     // Relaxed relative to the workspace baseline, for this package only.
     //
-    // This package is vendored wholesale from `@ait-co/devtools`, which
+    // This package is vendored wholesale from `@apps-in-toss/devtools`, which
     // compiled under plain `strict`. Both flags below are clean in
     // `debug-console` and `internal-protocol` and stay on there; turning them
     // on for the vendored half means ~110 rewrites at index and

@@ -76,10 +76,10 @@ export function waitForPromptResponse<T>(type: string): Promise<T> {
       const panelMounted = !!document.querySelector('.ait-panel');
       const hint = panelMounted
         ? 'Please provide input via the DevTools panel.'
-        : 'Is @ait-co/devtools/panel imported?';
+        : 'Is @apps-in-toss/devtools/panel imported?';
       reject(
         new Error(
-          `[@ait-co/devtools] Prompt timeout for "${type}" after ${PROMPT_TIMEOUT_MS / 1000}s. ${hint}`,
+          `[@apps-in-toss/devtools] Prompt timeout for "${type}" after ${PROMPT_TIMEOUT_MS / 1000}s. ${hint}`,
         ),
       );
     }, PROMPT_TIMEOUT_MS);
@@ -91,7 +91,7 @@ export function waitForPromptResponse<T>(type: string): Promise<T> {
 
     const cancelHandler = () => {
       cleanup();
-      reject(new Error(`[@ait-co/devtools] Prompt cancelled for "${type}"`));
+      reject(new Error(`[@apps-in-toss/devtools] Prompt cancelled for "${type}"`));
     };
 
     window.addEventListener(eventName, handler);

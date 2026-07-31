@@ -477,7 +477,7 @@ function renderNavBar(displayName: string, type: AitNavBarType): void {
   });
   closeBtn.textContent = '×';
   closeBtn.addEventListener('click', () => {
-    closeView().catch((err) => console.error('[@ait-co/devtools] navbar close failed:', err));
+    closeView().catch((err) => console.error('[@apps-in-toss/devtools] navbar close failed:', err));
   });
 
   const actions = h(
@@ -606,7 +606,7 @@ export function applyViewport(state: ViewportState): void {
   if (!bodyScrollHintEmitted) {
     bodyScrollHintEmitted = true;
     console.info(
-      '[@ait-co/devtools] Viewport simulation active — scroll happens on body, not window. ' +
+      '[@apps-in-toss/devtools] Viewport simulation active — scroll happens on body, not window. ' +
         'See README "Known limitations" for details.',
     );
   }

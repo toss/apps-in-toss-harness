@@ -10,10 +10,10 @@
  * close with an application close code that NAMES the rejection.
  *
  * Three parties share this contract:
- *   - the relay (`@ait-co/debugger`, Node) sends the close frame / HTTP error body;
- *   - the on-device console (`@ait-co/debug-console`, browser) observes
+ *   - the relay (`@apps-in-toss/debugger`, Node) sends the close frame / HTTP error body;
+ *   - the on-device console (`@apps-in-toss/debug-console`, browser) observes
  *     relay-bound WebSockets and surfaces the code to the launcher shell;
- *   - the daemon's own CDP client (`@ait-co/debugger`, Node) recognises the code
+ *   - the daemon's own CDP client (`@apps-in-toss/debugger`, Node) recognises the code
  *     as an auth failure on its `/client` dial.
  *
  * This module is intentionally dependency-free (no Node, no DOM) so it is safe

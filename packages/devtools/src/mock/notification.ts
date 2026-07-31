@@ -49,7 +49,7 @@ const _requestNotificationAgreementImpl = (
     const type = aitState.state.notification.nextResult;
 
     console.log(
-      '[@ait-co/devtools] requestNotificationAgreement:',
+      '[@apps-in-toss/devtools] requestNotificationAgreement:',
       params.options.templateCode,
       '→',
       type,

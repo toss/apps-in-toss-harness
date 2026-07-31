@@ -6,7 +6,7 @@
  * users can write:
  *
  *   // ait-test.config.ts
- *   import { definePhoneTestConfig } from '@ait-co/debugger/test-runner';
+ *   import { definePhoneTestConfig } from '@apps-in-toss/debugger/test-runner';
  *   export default definePhoneTestConfig({ ... });
  *
  * The helper resolves user config and, when given a relay connection factory,
@@ -113,7 +113,7 @@ export interface PhoneVitestUserConfig extends PhoneTestUserConfig {
  * @example
  *   // vitest.config.ts
  *   import { defineConfig } from 'vitest/config';
- *   import { definePhoneVitestConfig } from '@ait-co/debugger/test-runner';
+ *   import { definePhoneVitestConfig } from '@apps-in-toss/debugger/test-runner';
  *   export default defineConfig({
  *     test: definePhoneVitestConfig({ connection: myRelayFactory }),
  *   });
@@ -141,7 +141,7 @@ export function definePhoneVitestConfig(userConfig: PhoneVitestUserConfig): Phon
 
 export type { RelayConnectionFactory, RelayConnectionFactoryOptions };
 // Re-exported so a downstream `vitest.config.ts` can build the connection
-// factory straight from the `@ait-co/debugger/test-runner` barrel. relay-factory
+// factory straight from the `@apps-in-toss/debugger/test-runner` barrel. relay-factory
 // keeps its heavy MCP graph behind dynamic imports, so this static re-export does
 // NOT drag chii/cloudflared/tools onto this Node-config entry (verified by
 // scripts/check-test-runner-dist.sh).

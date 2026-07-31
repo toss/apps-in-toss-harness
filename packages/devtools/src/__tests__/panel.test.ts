@@ -74,7 +74,7 @@ describe('Panel error boundary', () => {
     expect(errorDiv).not.toBeNull();
     expect(errorDiv!.textContent).toContain('Error rendering "env" tab.');
     expect(consoleError).toHaveBeenCalledWith(
-      '[@ait-co/devtools] Error rendering tab "env":',
+      '[@apps-in-toss/devtools] Error rendering tab "env":',
       expect.any(Error),
     );
 
@@ -112,7 +112,7 @@ describe('Panel error boundary', () => {
     ).not.toThrow();
 
     expect(consoleError).toHaveBeenCalledWith(
-      '[@ait-co/devtools] Error rendering tab "storage":',
+      '[@apps-in-toss/devtools] Error rendering tab "storage":',
       expect.any(Error),
     );
 

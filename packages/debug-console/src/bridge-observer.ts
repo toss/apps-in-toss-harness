@@ -43,7 +43,7 @@
 // The snapshot shape and the event name are the device half of a contract the
 // daemon reads back through a CDP source string, so they live in the shared
 // protocol package rather than here (see
-// `@ait-co/internal-protocol/bridge-observer-state`). They are re-exported so
+// `@apps-in-toss/internal-protocol/bridge-observer-state`). They are re-exported so
 // this module's public surface is unchanged for consumers.
 import {
   BRIDGE_CALL_EVENT,

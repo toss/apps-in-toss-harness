@@ -15,7 +15,7 @@ import { startTunnelDashboard } from '../unplugin/tunnel.js';
 // ---------------------------------------------------------------------------
 // Optional-peer resolution gates (#817)
 //
-// The two debug packages (`@ait-co/debugger`, `@ait-co/debug-console`) are
+// The two debug packages (`@apps-in-toss/debugger`, `@apps-in-toss/debug-console`) are
 // OPTIONAL peers: a consumer who only uses environment 1 (browser + mock SDK +
 // panel) must install neither, and every call site has to degrade rather than
 // throw. These tests pin the probe's semantics and the two pure helpers the
@@ -29,7 +29,7 @@ describe('canResolveOptionalPeer', () => {
   });
 
   it('returns false (never throws) for a package that is absent', () => {
-    expect(canResolveOptionalPeer('@ait-co/definitely-not-installed-xyz')).toBe(false);
+    expect(canResolveOptionalPeer('@apps-in-toss/definitely-not-installed-xyz')).toBe(false);
   });
 
   it('returns false (never throws) for a subpath outside a package exports map', () => {
@@ -82,7 +82,7 @@ describe('INSTALL_HINT', () => {
 // ---------------------------------------------------------------------------
 // startTunnelDashboard delegation (#817)
 //
-// The dashboard implementation now lives in `@ait-co/debugger/dev-bridge`. The
+// The dashboard implementation now lives in `@apps-in-toss/debugger/dev-bridge`. The
 // wrapper keeps the cheap local gates (no relay / qr:false) so an absent relay
 // never probes the package at all, then forwards. The full dashboard behaviour
 // (GUI gate, served HTML, TOTP freshness, SECRET-HANDLING) is covered by
@@ -90,7 +90,7 @@ describe('INSTALL_HINT', () => {
 // ---------------------------------------------------------------------------
 
 describe('startTunnelDashboard delegation', () => {
-  it('delegates to the @ait-co/debugger dev-bridge subpath', () => {
+  it('delegates to the @apps-in-toss/debugger dev-bridge subpath', () => {
     expect(DEBUGGER_DEV_BRIDGE_ID).toBe('@apps-in-toss/debugger/dev-bridge');
   });
 

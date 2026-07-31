@@ -232,7 +232,7 @@ class RelayPoolWorker implements PoolWorker {
  *
  * @example
  *   // vitest.config.ts
- *   import { createRelayPool } from '@ait-co/debugger/test-runner';
+ *   import { createRelayPool } from '@apps-in-toss/debugger/test-runner';
  *   export default defineConfig({
  *     test: { pool: createRelayPool({ connection: myFactory }) },
  *   });

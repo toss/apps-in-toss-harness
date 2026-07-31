@@ -77,8 +77,8 @@ describe('protocolVersionMismatchError', () => {
   });
 
   it('names both packages and both versions', () => {
-    expect(text).toContain('@ait-co/debug-console');
-    expect(text).toContain('@ait-co/debugger');
+    expect(text).toContain('@apps-in-toss/debug-console');
+    expect(text).toContain('@apps-in-toss/debugger');
     expect(text).toContain('0.1.0');
     expect(text).toContain('0.2.0');
   });

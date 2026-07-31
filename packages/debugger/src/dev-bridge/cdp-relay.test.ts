@@ -385,11 +385,11 @@ describe('startDevServerCdpRelay — SECRET-HANDLING', () => {
     expect(all).not.toContain(`/at/${code}`);
 
     // Whatever URLs do appear, none of them points at the relay. The first-run
-    // notice links the docs page (a static, secret-free URL), so that one class
-    // is excluded; everything else must be a loopback address, which is the only
+    // notice now points readers at the docs MCP (no static URL emitted), so
+    // every URL captured here must be a loopback address — the only
     // relay-bearing URL this surface may emit.
     const urls = all.match(/\b(?:https?|wss?):\/\/[^\s"'<>)]+/g) ?? [];
-    for (const url of urls.filter((u) => !u.startsWith('https://docs.aitc.dev/'))) {
+    for (const url of urls) {
       expect(url.startsWith('http://127.0.0.1:')).toBe(true);
     }
   });

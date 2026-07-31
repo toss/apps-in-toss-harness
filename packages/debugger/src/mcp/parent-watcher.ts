@@ -9,7 +9,7 @@
  *
  * This is HOST-ONLY code — it calls `process.kill(pid, 0)`, which has no
  * meaning on the device side. It therefore does NOT belong in
- * `@ait-co/internal-protocol` (that package is strictly the device↔host shared
+ * `@apps-in-toss/internal-protocol` (that package is strictly the device↔host shared
  * wire protocol) and lives next to its only consumers instead. devtools keeps
  * its own copy for the unplugin tunnel path, which never moved here.
  */

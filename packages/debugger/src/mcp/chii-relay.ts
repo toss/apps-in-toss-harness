@@ -50,7 +50,7 @@
  *   screenshot, shoulder-surfing) but does not have the shared TOTP secret.
  *   Rotating 6-digit code makes the URL stale after 30 s.
  *   A determined attacker who extracts the secret from the dogfood bundle can
- *   still compute valid codes; that is out of scope (see umbrella CLAUDE.md §4).
+ *   still compute valid codes; that is out of scope (see docs/design/mcp-strategy.md).
  *
  * SECRET-HANDLING: The secret value and computed TOTP codes MUST NOT appear
  *   in any log, error message, or process output. `verifyAuth` is a black-box
@@ -212,7 +212,7 @@ export interface RelayAuthRejectEvent {
 
 /**
  * A device's version report on the attach handshake path (see
- * `@ait-co/internal-protocol/attach-handshake`).
+ * `@apps-in-toss/internal-protocol/attach-handshake`).
  *
  * SECRET-HANDLING: this event carries ONLY the reported version string. It must
  * never grow fields for `req.url`, the TOTP code its path prefix carries, or
@@ -220,7 +220,7 @@ export interface RelayAuthRejectEvent {
  */
 export interface AttachHandshakeEvent {
   /**
-   * The `@ait-co/debug-console` build version the device reported, or `''` when
+   * The `@apps-in-toss/debug-console` build version the device reported, or `''` when
    * the query parameter was absent or empty.
    */
   deviceVersion: string;

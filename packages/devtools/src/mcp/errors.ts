@@ -136,7 +136,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
   return mcpError(
     `${prefix}window.__sdkCall이 주입되지 않았습니다 (dog-food 빌드가 아닙니다). ` +
       'dog-food 채널(intoss-private)로 재배포 후 QR을 다시 스캔하세요: ' +
-      '`ait build && aitcc app deploy`.',
+      '`RELEASE_CHANNEL=dogfood ait build` 후 console MCP(`bundle_upload`/`bundle_upload_complete`)로 업로드.',
   );
 }
 

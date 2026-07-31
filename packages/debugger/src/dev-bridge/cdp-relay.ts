@@ -1,7 +1,7 @@
 /**
  * env-2 CDP relay bootstrap for a dev server (issue #30).
  *
- * The dev-server plugin that wires on-device debugging (`@ait-co/devtools`'s
+ * The dev-server plugin that wires on-device debugging (`@apps-in-toss/devtools`'s
  * unplugin, `tunnel.cdp`) needs four things to happen, in this order, before a
  * phone can attach:
  *
@@ -18,7 +18,7 @@
  * hazard as the API. This module exports the composition instead, and callers
  * get "a gated relay or an exception" with no way to assemble a half-gated one.
  *
- * `@ait-co/devtools` currently reaches into this package's `src/mcp/*` copies of
+ * `@apps-in-toss/devtools` currently reaches into this package's `src/mcp/*` copies of
  * those four symbols directly; `startDevServerCdpRelay` is what lets it stop.
  *
  * WHAT STAYS WITH THE CALLER (deliberate non-goals):

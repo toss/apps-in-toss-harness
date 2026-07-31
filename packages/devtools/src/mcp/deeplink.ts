@@ -1,11 +1,4 @@
-/**
- * URL of the AITC Sandbox launcher PWA.
- *
- * Declared here (not imported from `src/unplugin/tunnel.ts`) to respect the
- * mcp → unplugin layering boundary. unplugin/tunnel.ts declares its own copy
- * for the same reason — keep the two in sync when the URL changes.
- */
-const LAUNCHER_URL = 'https://devtools.aitc.dev/launcher/';
+import { LAUNCHER_URL } from '../shared/launcher-url.js';
 
 /**
  * Optional metadata that enriches the launcher deep-link (#498).

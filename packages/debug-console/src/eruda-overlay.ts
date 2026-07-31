@@ -13,8 +13,8 @@
  * `#eruda` shadow host — it cannot collide with the relay WS or the Chii DOM).
  *
  * Build-time absence (the security contract): this module lives in the
- * `@ait-co/debug-console` graph. A consumer wraps its
- * `import('@ait-co/debug-console')` call site in `if (__DEBUG_BUILD__) { … }`;
+ * `@apps-in-toss/debug-console` graph. A consumer wraps its
+ * `import('@apps-in-toss/debug-console')` call site in `if (__DEBUG_BUILD__) { … }`;
  * a release build folds that constant to `false` and dead-code-eliminates the
  * whole module — so eruda (and its dynamic `import('eruda')` chunk) is simply
  * absent from release bundles, exactly like the Chii target.js injection. The
@@ -68,7 +68,7 @@ export async function mountEruda(): Promise<void> {
   } catch (err) {
     // Reset so a later attach can retry; never break the Chii session.
     erudaMounted = false;
-    console.debug('[@ait-co/debug-console] eruda console mount skipped:', err);
+    console.debug('[@apps-in-toss/debug-console] eruda console mount skipped:', err);
   }
 }
 
@@ -92,7 +92,7 @@ export function unmountEruda(): void {
   try {
     erudaModule.destroy();
   } catch (err) {
-    console.debug('[@ait-co/debug-console] eruda console unmount skipped:', err);
+    console.debug('[@apps-in-toss/debug-console] eruda console unmount skipped:', err);
   } finally {
     // Reset regardless — a failed destroy should not wedge the guard, and a
     // later attach must be free to re-mount.

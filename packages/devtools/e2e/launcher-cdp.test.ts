@@ -23,7 +23,7 @@
  *   What a phone adds is ONLY real-device WebKit engine fidelity — the actual
  *   env(safe-area-inset-*) pixel values a real iPhone/Android WebKit produces.
  *   This is env-2's stated fidelity ceiling (CLAUDE.md §"실기기 미리보기 — 환경 2",
- *   umbrella CLAUDE.md §1.1 fidelity ladder). It is NOT a gap in the relay/CDP
+ *   docs/design/three-environments-fidelity.md §1.1 fidelity ladder). It is NOT a gap in the relay/CDP
  *   verification loop. The loop itself is fully local-verifiable.
  *
  * DOCUMENTED RESIDUE IN THIS E2E TEST (browser-side target.js injection):
@@ -34,7 +34,7 @@
  *   A. Layer B1 gate (src/in-app/gate.ts): the in-app attach guard only allows
  *      *.trycloudflare.com and *.private-apps.tossmini.com hostnames. The Playwright
  *      fixture runs on http://localhost:4173 — localhost is explicitly BLOCKED. Even
- *      though main.tsx now imports @ait-co/devtools/in-app conditionally and calls
+ *      though main.tsx now imports @apps-in-toss/debug-console conditionally and calls
  *      maybeAttach(), the gate rejects the call before injecting target.js.
  *      → In a real env-2 session the fixture is served from a trycloudflare.com tunnel
  *        and this gate is satisfied automatically.

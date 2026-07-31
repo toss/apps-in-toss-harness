@@ -9,7 +9,7 @@ declare const __VERSION__: string;
 declare const __MCP_SDK_VERSION__: string | null;
 
 // Note: no `__DEBUG_BUILD__` global is declared here. That is a CONSUMER-build
-// constant — the consumer guards `import('@ait-co/devtools/in-app')` with
+// constant — the consumer guards `import('@apps-in-toss/debug-console')` with
 // `if (__DEBUG_BUILD__)`. This package's own source never references it; the
 // in-app gate evaluates only the runtime layers (see src/in-app/gate.ts).
 

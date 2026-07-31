@@ -22,7 +22,7 @@
  * Runs entirely on the PAGE side (browser-compatible, no Node APIs) — bundled
  * into the injected IIFE by `bundle.ts`'s `sdkRedirectPlugin`, the same way
  * `bridge-stub.ts` and `runtime.ts` are. Imported ONLY from the test-runner
- * (never from `sdk-example/src` — boilerplate cleanliness, umbrella §1.4).
+ * (never from `sdk-example/src` — boilerplate cleanliness).
  *
  * SECRET-HANDLING: this module carries no secrets — only method names and
  * millisecond timestamps/durations.

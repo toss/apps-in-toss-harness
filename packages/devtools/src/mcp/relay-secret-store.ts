@@ -368,7 +368,7 @@ function warnIfEnvDiffersFromFile(
   // Compare by equality only. Neither value nor path enters the log message.
   if (envSecret !== stored) {
     logFn(
-      `[@ait-co/devtools] AIT_DEBUG_TOTP_SECRET (from environment) differs from the project-local relay secret; ` +
+      `[@apps-in-toss/devtools] AIT_DEBUG_TOTP_SECRET (from environment) differs from the project-local relay secret; ` +
         `the relay will verify against the environment value. ` +
         `Remove .env/.env.local/exported AIT_DEBUG_TOTP_SECRET, or sync the file, ` +
         `so QR/deep-links and the relay agree.\n`,
@@ -469,12 +469,12 @@ async function readAndInject(
     stored = fs.readFileSync(secretPath, 'utf8').trim();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`[@ait-co/devtools] relay 시크릿 파일 읽기 실패: ${msg}`);
+    throw new Error(`[@apps-in-toss/devtools] relay 시크릿 파일 읽기 실패: ${msg}`);
   }
 
   if (!isValidRelayAuthSecret(stored)) {
     // Stored value is corrupt — re-mint over the same path.
-    logFn('[@ait-co/devtools] relay 시크릿 파일의 값이 유효하지 않습니다. 재생성합니다.\n');
+    logFn('[@apps-in-toss/devtools] relay 시크릿 파일의 값이 유효하지 않습니다. 재생성합니다.\n');
     return mintAndPersist(secretPath, fs, env, rb, logFn, isValidRelayAuthSecret, true);
   }
 
@@ -505,7 +505,7 @@ async function mintAndPersist(
   // Self-consistency guard: our own minted secret must pass validation.
   if (!isValidRelayAuthSecret(secret)) {
     throw new Error(
-      '[@ait-co/devtools] 내부 오류: mint된 시크릿이 유효성 검사를 통과하지 못했습니다.',
+      '[@apps-in-toss/devtools] 내부 오류: mint된 시크릿이 유효성 검사를 통과하지 못했습니다.',
     );
   }
 
@@ -526,10 +526,12 @@ async function mintAndPersist(
         stored = fs.readFileSync(secretPath, 'utf8').trim();
       } catch (readErr) {
         const msg = readErr instanceof Error ? readErr.message : String(readErr);
-        throw new Error(`[@ait-co/devtools] relay 시크릿 파일 읽기 실패(경합): ${msg}`);
+        throw new Error(`[@apps-in-toss/devtools] relay 시크릿 파일 읽기 실패(경합): ${msg}`);
       }
       if (!isValidRelayAuthSecret(stored)) {
-        throw new Error('[@ait-co/devtools] relay 시크릿 파일이 경합 후에도 유효하지 않습니다.');
+        throw new Error(
+          '[@apps-in-toss/devtools] relay 시크릿 파일이 경합 후에도 유효하지 않습니다.',
+        );
       }
       env.AIT_DEBUG_TOTP_SECRET = stored;
       return;
@@ -556,10 +558,10 @@ async function mintAndPersist(
       : '';
 
   logFn(
-    `[@ait-co/devtools] relay 인증 시크릿을 생성해 프로젝트의 ${RELAY_SECRET_FILE_NAME} 파일에 저장했습니다 (권한 0600).\n` +
+    `[@apps-in-toss/devtools] relay 인증 시크릿을 생성해 프로젝트의 ${RELAY_SECRET_FILE_NAME} 파일에 저장했습니다 (권한 0600).\n` +
       `다음 실행부터 자동으로 사용됩니다. 직접 export할 필요 없습니다.\n` +
       `팀이 같은 relay를 공유하려면 이 파일을 repo에 커밋하세요(비공개 repo 권장).\n` +
       (giLine ? giLine : '') +
-      `자세히: https://docs.aitc.dev/guides/relay-auth-totp\n`,
+      `자세히: docs MCP(apps-in-toss-docs)의 searchDocumentation으로 "relay auth totp" 조회.\n`,
   );
 }

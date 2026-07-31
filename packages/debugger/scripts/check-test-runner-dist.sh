@@ -102,7 +102,7 @@ process.exit(bad ? 1 : 0);
 # --- #696: capture/report/relay-factory graph invariants ----------------------
 # capture.ts and report.ts are deliberately LEAF modules: react-free AND free of
 # the heavy MCP graph (server-lock, parent-watcher, chii/cloudflared). They are
-# re-exported from the `@ait-co/devtools/test-runner` barrel (config.ts), so if
+# re-exported from the `@apps-in-toss/devtools/test-runner` barrel (config.ts), so if
 # they ever statically pulled the daemon graph, that graph would land on the
 # Node-config entry every consumer's vitest.config.ts imports. relay-factory is
 # allowed the heavy graph but ONLY behind dynamic import — so its STATIC bundle

@@ -583,7 +583,7 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
 
   if (!gateResult.attach) {
     console.debug(
-      `[@ait-co/debug-console] debug attach skipped — gate blocked (reason: ${gateResult.reason})`,
+      `[@apps-in-toss/debug-console] debug attach skipped — gate blocked (reason: ${gateResult.reason})`,
     );
     // Defect 2: a wrong/expired TOTP code is the ONLY block reason that is a
     // user-actionable failure inside a deliberate debug session — the operator
@@ -630,7 +630,7 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
 
   // Version handshake: tell the daemon which build of this package is attaching
   // so a device↔host skew becomes one diagnostic line instead of a silent
-  // misbehaviour (see @ait-co/internal-protocol/attach-handshake). Fire-and-
+  // misbehaviour (see @apps-in-toss/internal-protocol/attach-handshake). Fire-and-
   // forget — never awaited, never able to block or fail an attach.
   reportProtocolVersion(gateResult.relayUrl, atCode);
 

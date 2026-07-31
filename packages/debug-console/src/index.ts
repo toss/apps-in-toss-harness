@@ -1,5 +1,5 @@
 /**
- * @ait-co/debug-console entry point.
+ * @apps-in-toss/debug-console entry point.
  *
  * Spec: docs/superpowers/specs/2026-05-18-in-app-debug-mcp.md
  *
@@ -13,7 +13,7 @@
  *
  * Layer A of the activation gate (build-time) is NOT enforced in this module.
  * It is the consumer's responsibility: the consumer wraps its
- * `import('@ait-co/debug-console')` call site in `if (__DEBUG_BUILD__) { … }`
+ * `import('@apps-in-toss/debug-console')` call site in `if (__DEBUG_BUILD__) { … }`
  * (see sdk-example `src/main.tsx`), where `__DEBUG_BUILD__` is a
  * consumer-build-time constant. A release consumer build folds that constant
  * to `false` and dead-code-eliminates this whole module. This package is

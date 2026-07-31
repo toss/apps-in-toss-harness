@@ -11,7 +11,7 @@
  * When WSS_URL is absent the CLI silently downgrades to mock-only so CI
  * can always run without a real device. See index.ts parseArgs().
  *
- * Design pointer: see umbrella meta/four-environments-fidelity.md §1.1 (환경 3·4)
+ * Design pointer: see docs/design/three-environments-fidelity.md §1.1 (환경 2·3)
  * and src/mcp/ for the CDP relay infrastructure.
  *
  * Scenario parity diff whitelist entries for relay-side differences:

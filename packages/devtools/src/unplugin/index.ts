@@ -1,11 +1,11 @@
 /**
- * @ait-co/devtools unplugin
+ * @apps-in-toss/devtools unplugin
  *
  * 모든 주요 번들러를 지원하는 단일 플러그인.
- * @apps-in-toss/web-framework → @ait-co/devtools/mock 으로 alias 설정.
+ * @apps-in-toss/web-framework → @apps-in-toss/devtools/mock 으로 alias 설정.
  *
  * Usage:
- *   import aitDevtools from '@ait-co/devtools/unplugin';
+ *   import aitDevtools from '@apps-in-toss/devtools/unplugin';
  *
  *   // Vite
  *   export default { plugins: [aitDevtools.vite()] };
@@ -35,7 +35,7 @@ import {
 } from './optional-peers.js';
 
 /**
- * Resolve `@ait-co/devtools/mock` to its real file path at plugin-load time.
+ * Resolve `@apps-in-toss/devtools/mock` to its real file path at plugin-load time.
  *
  * Returning the bare specifier from `resolveId` would stop the bundler from
  * walking node_modules for it — Vite 8+ treats such a non-null string as the
@@ -63,18 +63,18 @@ export interface AitDevtoolsOptions {
    *
    * true이면 진입점에 게이트된 dynamic import를 자동 추가한다:
    * `?debug=1` + `relay` URL 파라미터가 모두 존재할 때만 런타임에
-   * `@ait-co/debug-console`을 로드하고 `maybeAttach()`를 호출한다.
+   * `@apps-in-toss/debug-console`을 로드하고 `maybeAttach()`를 호출한다.
    *
    * gate가 통과하지 못하면 chunk 자체를 로드하지 않으므로 일반 production
    * 로드에서 dormant하고, 번들러의 DCE 대상이 된다.
    *
-   * `@ait-co/debug-console`은 **optional peer**다 (#817). 설치돼 있지 않으면
+   * `@apps-in-toss/debug-console`은 **optional peer**다 (#817). 설치돼 있지 않으면
    * 주입 자체를 하지 않으므로 attach 코드가 번들에 구조적으로 들어갈 수 없다 —
    * 이게 디버그 표면 보안 스코프의 기술적 강제 지점이다. 환경 1(브라우저 mock)만
    * 쓰는 소비자는 아무것도 추가로 설치하지 않아도 된다.
    *
    * 소비자가 이미 직접 배선한 경우 중복 주입을 방지하기 위해 파일에
-   * `@ait-co/debug-console`(또는 분리 전 `@ait-co/devtools/in-app`)이 이미 있으면
+   * `@apps-in-toss/debug-console`(또는 분리 전 `@ait-co/devtools/in-app`)이 이미 있으면
    * 자동으로 스킵한다.
    */
   inApp?: boolean;
@@ -89,7 +89,7 @@ export interface AitDevtoolsOptions {
    *  - GET  /api/ait-devtools/state  — 마지막으로 브라우저가 push한 mock state 스냅샷 반환
    *  - POST /api/ait-devtools/state  — 브라우저 panel이 상태 변경 시 자동 push (panel 내부 처리)
    *
-   * 이 endpoint를 `@ait-co/devtools` MCP stdio server가 읽어 AI 에이전트에 mock state를 노출한다.
+   * 이 endpoint를 `@apps-in-toss/devtools` MCP stdio server가 읽어 AI 에이전트에 mock state를 노출한다.
    * Vite 전용: webpack/rspack/esbuild/rollup 환경에서는 무시된다.
    */
   mcp?: boolean;
@@ -97,7 +97,7 @@ export interface AitDevtoolsOptions {
    * 미니앱의 webViewType (`granite.config.ts`의 `webViewProps.type`)을 빌드 상수
    * `__WEB_VIEW_TYPE__`로 주입한다 (#580). **Vite 전용** (다른 번들러는 무시).
    *
-   * 이 상수는 in-app self-report(`@ait-co/devtools/in-app`)가 읽어 launcher(env-2
+   * 이 상수는 in-app self-report(`@apps-in-toss/devtools/in-app`)가 읽어 launcher(env-2
    * PWA)에 webViewType을 postMessage로 알리고, launcher가 game 타입 미니앱에서
    * 수동 `?navBarType=game` URL 편집 없이 game 모드로 자동 진입하게 한다.
    *
@@ -146,7 +146,7 @@ export interface AitDevtoolsOptions {
          * mock SDK는 그대로라 `call_sdk`는 환경 2에서 mock을 친다 (fidelity 사다리의
          * 설계 의도 — SDK fidelity가 필요하면 환경 3로 올라간다).
          *
-         * 이 경로는 **optional peer `@ait-co/debugger`**를 요구한다 (#817).
+         * 이 경로는 **optional peer `@apps-in-toss/debugger`**를 요구한다 (#817).
          * 미설치면 CDP 배선을 건너뛰고 일반 화면 미리보기 터널로 degrade하며,
          * 설치 안내를 한 번 출력한다.
          */
@@ -195,7 +195,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
   // in-app attach 주입: shouldEnable과 동일하게 dev에서 자동.
   // maybeAttach()가 런타임 gate(Layer B·C)를 자체 검증하므로 dev 항상 주입이 안전하다.
   //
-  // #817: 주입 대상인 `@ait-co/debug-console`은 optional peer다. 미설치면 주입
+  // #817: 주입 대상인 `@apps-in-toss/debug-console`은 optional peer다. 미설치면 주입
   // 자체를 하지 않는다 — attach 코드가 번들에 구조적으로 못 들어가는 게 보안
   // 스코프의 강제 지점이고, 환경 1만 쓰는 다수 소비자는 아무것도 더 설치하지
   // 않아도 된다. 사용자가 `inApp: true`로 명시 요청했는데 패키지가 없을 때만
@@ -204,7 +204,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
   const shouldInApp = shouldEnable && (options?.inApp ?? true) && debugConsoleInstalled;
   if (shouldEnable && options?.inApp === true && !debugConsoleInstalled) {
     console.warn(
-      `[@ait-co/devtools] inApp: @ait-co/debug-console이 없어 in-app attach를 주입하지 않습니다. 설치: ${INSTALL_HINT}`,
+      `[@apps-in-toss/devtools] inApp: @apps-in-toss/debug-console이 없어 in-app attach를 주입하지 않습니다. 설치: ${INSTALL_HINT}`,
     );
   }
   const shouldMcp = shouldEnable && (options?.mcp ?? false);
@@ -241,7 +241,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
 
     resolveId(id: string) {
       if (!shouldMock) return null;
-      // @apps-in-toss/web-framework → @ait-co/devtools/mock (absolute path)
+      // @apps-in-toss/web-framework → @apps-in-toss/devtools/mock (absolute path)
       if (
         id === FRAMEWORK_ID ||
         id === WEBVIEW_BRIDGE_ID ||
@@ -276,7 +276,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
 
       // in-app attach 주입: shouldInApp이 활성화되어 있고 아직 배선이 없으면 prepend.
       // 게이트된 dynamic import로 주입 — ?debug=1 + relay 파라미터가 모두 있을 때만
-      // 런타임에 @ait-co/debug-console을 로드하고 maybeAttach()를 호출한다 (#817).
+      // 런타임에 @apps-in-toss/debug-console을 로드하고 maybeAttach()를 호출한다 (#817).
       // production DCE: URLSearchParams gate가 조건을 false로 평가하면
       // dynamic import 자체가 dead code — 번들러가 제거 가능.
       // dedupe는 신·구 specifier를 모두 인정한다 (hasInAppWiring).
@@ -295,7 +295,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
     vite: {
       config() {
         // #580: inject the webViewType build constant for every Vite build so
-        // the in-app self-report (@ait-co/devtools/in-app) can read it and post
+        // the in-app self-report (@apps-in-toss/devtools/in-app) can read it and post
         // it to the launcher (env-2 PWA) for game-mode auto-entry. JSON.stringify
         // makes it a string literal at the define substitution site.
         const define = { __WEB_VIEW_TYPE__: JSON.stringify(webViewType) };
@@ -389,7 +389,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
               (address && typeof address === 'object' ? address.port : undefined);
             if (!port) {
               console.warn(
-                '[@ait-co/devtools] tunnel: could not determine the dev server port; skipping.',
+                '[@apps-in-toss/devtools] tunnel: could not determine the dev server port; skipping.',
               );
               return;
             }
@@ -408,24 +408,24 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
                 let relayHttpUrl: string | undefined;
                 // LOCAL relay base — loopback URL, safe to surface (issue #530).
                 let relayLocalHttpUrl: string | undefined;
-                // #817: env-2 CDP는 optional peer `@ait-co/debugger`를 요구한다.
+                // #817: env-2 CDP는 optional peer `@apps-in-toss/debugger`를 요구한다.
                 // 미설치면 relay·dashboard 배선을 통째로 건너뛰고 일반 화면
                 // 미리보기 터널로 degrade한다 — 사용자가 명시적으로 cdp를 켠
                 // 경로이므로 설치 안내를 한 번 출력한다.
                 // SECRET-HANDLING: 고정 문구만 — URL·host·코드 없음.
                 if (tunnelConfig.cdp && !hasDebugger()) {
                   console.warn(
-                    `[@ait-co/devtools] tunnel: @ait-co/debugger가 없어 CDP relay를 건너뜁니다 — 화면 미리보기는 그대로 동작합니다. 설치: ${INSTALL_HINT}`,
+                    `[@apps-in-toss/devtools] tunnel: @apps-in-toss/debugger가 없어 CDP relay를 건너뜁니다 — 화면 미리보기는 그대로 동작합니다. 설치: ${INSTALL_HINT}`,
                   );
                 } else if (tunnelConfig.cdp) {
                   try {
                     // NOTE (#817): the relay BOOTSTRAP below still calls this
-                    // package's local `../mcp/*` modules. `@ait-co/debugger@0.1.1`
+                    // package's local `../mcp/*` modules. `@apps-in-toss/debugger@0.1.1`
                     // publishes only `startTunnelDashboard` from `/dev-bridge` —
                     // there is no published entry for the secret store / TOTP /
                     // chii relay / URL store yet, so those four steps cannot be
                     // delegated. The GATE above is nonetheless the real contract:
-                    // env-2 CDP requires `@ait-co/debugger`, matching the shape
+                    // env-2 CDP requires `@apps-in-toss/debugger`, matching the shape
                     // this path takes once V2 removes the local copies.
                     //
                     // Relay-auth baseline (issue #250): the env-2 CDP relay is
@@ -466,7 +466,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
                         if (nowMs - lastAuthRejectWarnAt < 10_000) return;
                         lastAuthRejectWarnAt = nowMs;
                         console.warn(
-                          '[@ait-co/devtools] tunnel: relay 인증(TOTP) 거부 감지 — 폰에서 QR을 다시 스캔하세요 (코드는 ~3분마다 만료)',
+                          '[@apps-in-toss/devtools] tunnel: relay 인증(TOTP) 거부 감지 — 폰에서 QR을 다시 스캔하세요 (코드는 ~3분마다 만료)',
                         );
                       },
                     });
@@ -485,7 +485,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
                     relayLocalHttpUrl = `http://127.0.0.1:${r.port}`;
                   } catch (err: unknown) {
                     console.warn(
-                      `[@ait-co/devtools] tunnel: CDP relay not started — screen preview works without on-device debugging: ${
+                      `[@apps-in-toss/devtools] tunnel: CDP relay not started — screen preview works without on-device debugging: ${
                         err instanceof Error ? err.message : String(err)
                       }`,
                     );
@@ -560,7 +560,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
               })
               .catch((err: unknown) => {
                 console.warn(
-                  `[@ait-co/devtools] tunnel failed to start: ${
+                  `[@apps-in-toss/devtools] tunnel failed to start: ${
                     err instanceof Error ? err.message : String(err)
                   }`,
                 );

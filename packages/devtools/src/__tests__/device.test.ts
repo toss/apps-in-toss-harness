@@ -237,7 +237,7 @@ describe('Device mock', () => {
           const promise = openCamera();
 
           vi.advanceTimersByTime(30_000);
-          await expect(promise).rejects.toThrow('Is @ait-co/devtools/panel imported?');
+          await expect(promise).rejects.toThrow('Is @apps-in-toss/devtools/panel imported?');
         } finally {
           vi.useRealTimers();
         }

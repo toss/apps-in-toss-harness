@@ -1,5 +1,5 @@
 /**
- * @ait-co/debugger attach orchestrator (issue #684 §2).
+ * @apps-in-toss/debugger attach orchestrator (issue #684 §2).
  *
  * The relay-attach orchestration — minting a fresh-TOTP attach URL, validating
  * an env's attach preconditions, rendering the QR (dashboard or text), opening

@@ -48,7 +48,7 @@ export function renderIapTab(): HTMLElement {
       if (disabled) completeBtn.disabled = true;
       completeBtn.addEventListener('click', () => {
         IAP.completeProductGrant({ params: { orderId: o.orderId } }).catch((err) =>
-          console.error('[@ait-co/devtools] completeProductGrant error:', err),
+          console.error('[@apps-in-toss/devtools] completeProductGrant error:', err),
         );
       });
       pendingSection.appendChild(

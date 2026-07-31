@@ -55,7 +55,7 @@ export interface AppsInTossSignTossCertParams {
 }
 
 export async function appsInTossSignTossCert(_params: AppsInTossSignTossCertParams): Promise<void> {
-  console.log('[@ait-co/devtools] appsInTossSignTossCert called (no-op in mock)');
+  console.log('[@apps-in-toss/devtools] appsInTossSignTossCert called (no-op in mock)');
 }
 
 /**

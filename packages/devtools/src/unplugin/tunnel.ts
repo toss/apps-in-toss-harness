@@ -3,7 +3,7 @@
  *
  * Loaded lazily (`await import('./tunnel.js')`) only when the `tunnel` option is
  * on, so `cloudflared` / `qrcode-terminal` are never pulled in for the common
- * case. This is the one place in `@ait-co/devtools` that depends on Node-only
+ * case. This is the one place in `@apps-in-toss/devtools` that depends on Node-only
  * APIs (`child_process` via the `cloudflared` wrapper) — keep it thin and out of
  * jsdom unit tests; the spawn path is verified by hand / e2e (same spirit as the
  * "web 모드는 e2e" rule in CLAUDE.md). The pure helpers below
@@ -13,6 +13,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { LAUNCHER_URL } from '../shared/launcher-url.js';
 import { DEBUGGER_DEV_BRIDGE_ID } from './optional-peers.js';
 
 /** Matches the public URL cloudflared prints for an unauthenticated quick tunnel. */
@@ -69,8 +70,6 @@ export interface PrintTunnelBannerOptions {
    */
   navBarTheme?: 'light' | 'dark';
 }
-
-const LAUNCHER_URL = 'https://devtools.aitc.dev/launcher/';
 
 /**
  * Options for {@link buildLauncherDeepLink}.
@@ -188,7 +187,7 @@ export async function printTunnelBanner(
   });
   const lines: string[] = [
     '',
-    '  ┌─ @ait-co/devtools · live tunnel ────────────────────────────',
+    '  ┌─ @apps-in-toss/devtools · live tunnel ────────────────────────────',
     `  │  ${url}`,
     '  │',
     `  │  Install the launcher PWA once:  ${LAUNCHER_URL}`,
@@ -257,18 +256,18 @@ export interface StartTunnelDashboardOptions {
  * browser. headless / opt-out falls back to the terminal ASCII QR (printed
  * separately by {@link printTunnelBanner}).
  *
- * DELEGATED (issue #817): the implementation now lives in `@ait-co/debugger`'s
+ * DELEGATED (issue #817): the implementation now lives in `@apps-in-toss/debugger`'s
  * `/dev-bridge` subpath — the one cross-repo code delegation of the package
  * split. The dashboard needs the daemon's QR HTTP server, deep-link builder and
  * TOTP minting, all of which moved into that package; keeping a second copy here
- * would fork them. `@ait-co/debugger` is an OPTIONAL peer, so a consumer who
+ * would fork them. `@apps-in-toss/debugger` is an OPTIONAL peer, so a consumer who
  * never asks for env-2 CDP installs nothing extra.
  *
  * Why this is not a separate plugin: the relay `wss://` URL must exist BEFORE
  * the QR banner is printed (the launcher QR carries `&relay=`), so the relay and
  * the dashboard are order-dependent and stay one composed call in the dev loop.
  *
- * Degradation: when `@ait-co/debugger` is not installed the import fails and we
+ * Degradation: when `@apps-in-toss/debugger` is not installed the import fails and we
  * return `undefined` — exactly the same "no dashboard" outcome as a closed GUI
  * gate, with the terminal ASCII QR standing alone. We do NOT fall back to a
  * local copy of the daemon code. The caller (`./index.ts`) prints the install
@@ -381,7 +380,7 @@ export async function startQuickTunnel(port: number): Promise<QuickTunnel> {
       stop();
       reject(
         new Error(
-          `[@ait-co/devtools] cloudflared did not report a tunnel URL within ${
+          `[@apps-in-toss/devtools] cloudflared did not report a tunnel URL within ${
             URL_TIMEOUT_MS / 1000
           }s. Check your network connection, or run \`cloudflared tunnel --url http://localhost:${port}\` manually.${stderrTail()}`,
         ),
@@ -428,7 +427,7 @@ export async function startQuickTunnel(port: number): Promise<QuickTunnel> {
       cleanup();
       reject(
         new Error(
-          `[@ait-co/devtools] cloudflared exited (code ${code ?? 'null'}) before reporting a tunnel URL.${stderrTail()}`,
+          `[@apps-in-toss/devtools] cloudflared exited (code ${code ?? 'null'}) before reporting a tunnel URL.${stderrTail()}`,
         ),
       );
     });

@@ -515,7 +515,7 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
 
   if (!gateResult.attach) {
     console.debug(
-      `[@ait-co/devtools] debug attach skipped — gate blocked (reason: ${gateResult.reason})`,
+      `[@apps-in-toss/devtools] debug attach skipped — gate blocked (reason: ${gateResult.reason})`,
     );
     // Defect 2: a wrong/expired TOTP code is the ONLY block reason that is a
     // user-actionable failure inside a deliberate debug session — the operator
@@ -634,6 +634,6 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
     })
     .catch((err) => {
       // Swallow rejection so attach never breaks — some platforms/mock reject.
-      console.debug('[@ait-co/devtools] setScreenAwakeMode failed:', err);
+      console.debug('[@apps-in-toss/devtools] setScreenAwakeMode failed:', err);
     });
 }

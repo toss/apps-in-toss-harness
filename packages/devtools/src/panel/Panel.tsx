@@ -121,7 +121,7 @@ export function Panel(): React.ReactElement {
           refresh();
         }
       } catch (err) {
-        console.error('[@ait-co/devtools] Error in subscribe callback:', err);
+        console.error('[@apps-in-toss/devtools] Error in subscribe callback:', err);
       }
       // MCP state push (unplugin `mcp: true`). Fire-and-forget.
       pushStateToMcpEndpoint(aitState.state);

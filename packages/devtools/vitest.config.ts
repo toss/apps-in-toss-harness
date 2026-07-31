@@ -25,7 +25,7 @@ export default defineConfig({
     // files above stay in vitest's scope.
     exclude: ['e2e/**/*.test.ts', '.tmp/**', 'node_modules/**', '.claude/**'],
     onConsoleLog(log: string) {
-      if (log.includes('[@ait-co/devtools]')) return false;
+      if (log.includes('[@apps-in-toss/devtools]')) return false;
     },
   },
 });

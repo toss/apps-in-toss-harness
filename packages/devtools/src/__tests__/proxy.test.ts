@@ -20,7 +20,7 @@ describe('createMockProxy', () => {
     const ref = createMockProxy('Ads', {}) as Record<string, unknown>;
 
     expect(() => ref.someNewApi).toThrow(
-      /Ads\.someNewApi is not mocked\..*github\.com\/apps-in-toss-community\/devtools\/issues/,
+      /Ads\.someNewApi is not mocked\..*github\.com\/toss\/apps-in-toss-harness\/issues/,
     );
   });
 

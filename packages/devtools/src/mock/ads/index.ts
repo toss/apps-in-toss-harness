@@ -170,7 +170,7 @@ export const TossAds = createMockProxy('TossAds', {
           const placeholder = document.createElement('div');
           placeholder.style.cssText =
             'background:#f0f0f0;border:1px dashed #999;padding:16px;text-align:center;color:#666;font-size:14px;';
-          placeholder.textContent = '[@ait-co/devtools] TossAds Placeholder';
+          placeholder.textContent = '[@apps-in-toss/devtools] TossAds Placeholder';
           el.appendChild(placeholder);
         }
       },
@@ -243,7 +243,7 @@ export const TossAds = createMockProxy('TossAds', {
 
         placeholder.dataset.aitSlotId = slotId;
         placeholder.style.cssText = `background:${bg};border:1px dashed ${borderColor};padding:8px 12px;text-align:center;color:${textColor};font-size:12px;min-height:${height};display:flex;align-items:center;justify-content:center;`;
-        placeholder.textContent = `[@ait-co/devtools] Banner Ad (${variant})`;
+        placeholder.textContent = `[@apps-in-toss/devtools] Banner Ad (${variant})`;
 
         if (el) {
           el.appendChild(placeholder);

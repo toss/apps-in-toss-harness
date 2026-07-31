@@ -1,9 +1,9 @@
 /**
- * @ait-co/devtools/in-app/auto — self-gating side-effect entry.
+ * @apps-in-toss/devtools/in-app/auto — self-gating side-effect entry.
  *
  * Consumers add a single line to their mini-app entry:
  *
- *   import '@ait-co/devtools/in-app/auto';
+ *   import '@apps-in-toss/devtools/in-app/auto';
  *
  * The entry self-gates: if none of the debug activation signals are present
  * (no `?debug=1`, no `?relay=`, and not a DEV build), it does nothing. The
@@ -19,11 +19,11 @@
  * re-enable), do NOT use this entry. Instead guard the call site yourself:
  *
  *   if (__DEBUG_BUILD__) {
- *     import('@ait-co/devtools/in-app').then((m) => m.maybeAttach());
+ *     import('@apps-in-toss/devtools/in-app').then((m) => m.maybeAttach());
  *   }
  *
  * with `define: { __DEBUG_BUILD__: 'false' }` in your release build — the
- * bundler then dead-code-eliminates the whole `@ait-co/devtools/in-app` graph
+ * bundler then dead-code-eliminates the whole `@apps-in-toss/devtools/in-app` graph
  * (verified on Vite 8/rolldown). This entry stays for the convenience case
  * where a dormant chunk gated at runtime is acceptable.
  *
@@ -48,7 +48,7 @@
  * below performs the same dormancy guarantee via a URL param check, which is
  * safe in a side-effect import context (the gate runs at module evaluation
  * time, before any React tree mounts). Consumers who already manage their own
- * `__DEBUG_BUILD__` guard can keep using `@ait-co/devtools/in-app` directly.
+ * `__DEBUG_BUILD__` guard can keep using `@apps-in-toss/devtools/in-app` directly.
  *
  * DEV detection uses two complementary signals:
  *  1. `import.meta.env.DEV` — resolved by the consumer's bundler at their
@@ -75,7 +75,7 @@ import { isDebugAllowedHost } from './gate.js';
 // ---------------------------------------------------------------------------
 // Global type augmentation
 //
-// Consumers who import '@ait-co/devtools/in-app/auto' get these Window types
+// Consumers who import '@apps-in-toss/devtools/in-app/auto' get these Window types
 // automatically — no separate globals.d.ts needed in their project.
 // ---------------------------------------------------------------------------
 declare global {
@@ -201,7 +201,7 @@ if (!shouldActivate()) {
   // Dynamic import keeps the SDK out of the top-level module graph so the
   // bridge chunk stays dormant when not needed. The namespace mirror pattern
   // (iterate Object.keys) works identically for SDK 2.x and 3.x without any
-  // version-specific code path (version-agnostic, umbrella §5.1).
+  // version-specific code path (version-agnostic).
   //
   // `@apps-in-toss/web-framework` is an optional peer. If it is absent (e.g.
   // MCP-only consumers, test environments without the SDK), the dynamic import

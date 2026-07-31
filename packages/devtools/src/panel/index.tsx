@@ -1,7 +1,7 @@
 /**
- * @ait-co/devtools Floating Panel — entry + auto-mount.
+ * @apps-in-toss/devtools Floating Panel — entry + auto-mount.
  *
- * Importing `@ait-co/devtools/panel` mounts the DevTools panel on the page. The
+ * Importing `@apps-in-toss/devtools/panel` mounts the DevTools panel on the page. The
  * panel UI is a self-contained client-side React 19 tree (`<Panel>`); React is
  * BUNDLED into `dist/panel/index.js` (the tsdown panel entry has no `external`),
  * so consumers do not need React in their own graph and react never appears in
@@ -79,7 +79,7 @@ if (typeof document !== 'undefined') {
     try {
       mount();
     } catch (err) {
-      console.error('[@ait-co/devtools] Failed to mount panel:', err);
+      console.error('[@apps-in-toss/devtools] Failed to mount panel:', err);
     }
   };
   if (document.readyState === 'loading') {

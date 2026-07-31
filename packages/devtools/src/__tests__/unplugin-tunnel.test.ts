@@ -567,7 +567,7 @@ describe('install-graph invariant (env-2 dashboard wiring)', () => {
     const src = read('src/unplugin/tunnel.ts');
     const statics = staticImportSpecifiers(src);
     // No static edge to qrcode-terminal, qrcode, the qr-http-server, the opener,
-    // deeplink, totp, or the optional `@ait-co/debugger` peer — all of those are
+    // deeplink, totp, or the optional `@apps-in-toss/debugger` peer — all of those are
     // behind `await import(...)`. (`./optional-peers.js` IS a static import: it
     // holds only string constants and an `import.meta.resolve` probe, no deps.)
     for (const spec of statics) {
@@ -575,12 +575,12 @@ describe('install-graph invariant (env-2 dashboard wiring)', () => {
       expect(spec).not.toContain('qr-http-server');
       expect(spec).not.toContain('devtools-opener');
       expect(spec).not.toContain('deeplink');
-      expect(spec).not.toContain('@ait-co/debugger');
+      expect(spec).not.toContain('@apps-in-toss/debugger');
       expect(spec).not.toMatch(/\/totp$|\/totp\.js$/);
     }
     // qrcode-terminal is still a lazy import inside printTunnelBanner.
     expect(src).toContain("import('qrcode-terminal')");
-    // #817: the dashboard is delegated to @ait-co/debugger/dev-bridge, reached
+    // #817: the dashboard is delegated to @apps-in-toss/debugger/dev-bridge, reached
     // through a dynamic import of the DEBUGGER_DEV_BRIDGE_ID constant so an
     // absent optional peer degrades instead of breaking the module graph.
     expect(src).toContain('import(DEBUGGER_DEV_BRIDGE_ID)');

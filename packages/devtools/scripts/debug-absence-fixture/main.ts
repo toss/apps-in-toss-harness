@@ -2,18 +2,18 @@
 //
 // This is NOT a panel/mock fixture — it is the smallest possible consumer that
 // imports the in-app debug surface the way a real mini-app does: a dynamic
-// `import('@ait-co/debug-console')` guarded by `if (__DEBUG_BUILD__)`. The
+// `import('@apps-in-toss/debug-console')` guarded by `if (__DEBUG_BUILD__)`. The
 // guard is the only thing under test, so this file deliberately avoids the
 // e2e panel fixture's mock/panel self-alias graph (which has its own chunking
 // behaviour unrelated to DCE).
 //
-// #817: the attach surface now ships as the optional peer `@ait-co/debug-console`,
+// #817: the attach surface now ships as the optional peer `@apps-in-toss/debug-console`,
 // which is exactly what the unplugin injects into a consumer entry point. The
 // absence guard therefore measures the package a real release build would carry.
 //
 // scripts/check-debug-surface-absent.sh builds this in two modes:
 //   - release (AIT_DEBUG_BUILD unset → __DEBUG_BUILD__ false): the whole
-//     `import('@ait-co/debug-console')` graph — Chii target.js injection AND
+//     `import('@apps-in-toss/debug-console')` graph — Chii target.js injection AND
 //     the eruda console it pulls in — must DCE to 0 bytes.
 //   - debug (AIT_DEBUG_BUILD=1 → true): the surface must survive (positive
 //     control), and the inner runtime gate (debug=1 + relay + Layer B/C TOTP
