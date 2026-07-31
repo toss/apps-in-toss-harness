@@ -1,8 +1,13 @@
 # 로드맵 — 공식 harness 기준 station map과 1.0 정의
 
-> **상태: draft** (harness#7). 확정 전까지 이 문서는 제안이다 — open question으로
-> 표시된 항목은 결정권자 확인이 필요하다. 진척 추적은 milestone
-> [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1)이 담당한다.
+> **상태: 부분 확정** (harness#7). §1~§4(station map·station별 AC·1.0 정의·
+> cross-cutting 자산 거취)는 확정됐다 — 이슈 작성자가 "이 확정은 §5의 open
+> question 5건과 독립적으로 가능하다"고 명시했다(harness#7 코멘트,
+> 2026-07-31). 미확정은 두 가지뿐이다: **§5 open question**(그중 4·5는 이미
+> 해소/잠정 확정 — §5 참고, 나머지 1·2·3은 각자의 게이트 대기)과 **§3 1.0
+> 조건4의 "배포" 정의 재확정**(검수·릴리즈를 포함하는지). 진척 추적은
+> milestone [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1)이
+> 담당한다.
 
 이 harness의 목표는 하나다: **개발자가 AI 코딩 에이전트 안에서, 빈 디렉토리부터
 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주하는 것.** 이 문서는 그 완주
@@ -70,7 +75,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 | Station | AC (공식 harness 기준) | 현재 상태 |
 |---|---|---|
 | 0 install | public repo에서 플러그인 설치 → 에이전트 세션에 `/ait:*` 명령·skill 노출 (e2e 드라이버의 init assert와 같은 기준) | **설치 형상 로컬 실증 완료**(2026-07-30) — SDK plugin 로드에서 `ait:*` 명령·skill 전부 노출 + plugin 경유 MCP 2종 등록: docs **connected**(tool 4종)·console **needs-auth**(`/mcp` 대화형 인가 대기, 설계대로). marketplace 해석(`add` → 루트 manifest → 상대 source)·public 경로 실증은 #8 대기 |
-| 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족** (#6 — clean-room 스모크로 `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구) |
+| 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족(clean-room 스모크 기준)** — `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구(#6). **단 upstream `create-ait-app`이 스키마를 재작성 중**(실측 2026-07-31): npm `latest`는 여전히 0.1.3(`granite.config.ts`+eslint 산출)이지만 upstream main은 이미 0.2.0(`apps-in-toss.config.ts`+oxlint+`pnpm-workspace.yaml` 산출)으로 바뀌어 있다 — 이 스키마 교체 대응은 #6 잔여 |
 | 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
 | 4 auth | (재정의 후 확정) 공식 로그인 경로 문서 + 레퍼런스 배선 1회 실증 | **잠정** — #5 재정의 대기 |
@@ -78,7 +83,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 | 6 operate | 배포 후 상태·로그 조회가 에이전트 안에서 동작 | **상태 조회 MCP 실증** — `miniapp_get_status`·`bundle_list` 실호출 확인(단 `bundle_build_status`는 GW `-32000` 오류, 피드백 대상). 로그 조회는 콘솔 미공개 gap 유지 — on-device 관측은 debugger relay(#2)에서 해소 |
 | 7 plan | 아이디어 발화 → 계획 산출 + scaffold seam 인쇄 | 충족 |
 | 8 design | 등록 규격 이미지 자산 산출 + register seam 인쇄 | 충족 |
-| docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | **기본 포함 완료** (GitBook MCP live 확인) — skill 말미 deep-link 재편은 #4 잔여 |
+| docs | docs MCP가 manifest 기본 포함(endpoint 실재 후) + skill 말미 안내가 그 조회 경로로 재편 | **완료** — 기본 포함(GitBook MCP live 확인)과 skill 말미 deep-link 재편 둘 다 실측 완료: `validate-plugin.mjs`의 A2/docs-link-banned(커뮤니티 링크 금지)·A2/docs-mcp-mention-required(docs MCP 언급 필수)가 8-skill 전수에 균일 강제(allowlist·exempt 모두 빈 Set) — `node scripts/validate-plugin.mjs` 0 error 실측(2026-07-31) |
 
 ## 3. 1.0 정의 (첫 GA)
 
@@ -111,12 +116,18 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 | 자산 | 거취 |
 |---|---|
 | eval 슈트 A (promptfoo 라우팅) | 유지 — skill 목록 변경 시 함께 갱신 (validate 게이트가 동기화 강제) |
-| eval 슈트 B (e2e 완주 측정) | 유지 — 측정 여정은 scaffold 경로 전환에 이미 정합(#6 follow-up). 콘솔 게이트(aitcc 차단 패턴)는 MCP GW 전환(#3) 시 차단 대상을 재정의해야 함 |
-| skill 통일 규칙 (7항목 체크리스트) | 유지 — 단 docs deep-link 규칙(4항)은 GitBook 이관(#4)과 함께 "docs MCP 조회 안내"로 재정의 |
+| eval 슈트 B (e2e 완주 측정) | 유지 — 측정 여정은 scaffold 경로 전환에 이미 정합(#6 follow-up). 콘솔 게이트는 MCP GW 전환에 맞춰 tool 이름 기준(`isConsoleMcpTool`, `mcp__apps-in-toss-console__` prefix)으로 재정의 완료(harness#3, `driver.ts`) — 상세는 §5 항목4 |
+| skill 통일 규칙 (7항목 체크리스트) | 유지 — docs deep-link 규칙(4항)은 GitBook 이관(#4)과 함께 "docs MCP 조회 안내"로 재정의 완료(A2/docs-link-banned·A2/docs-mcp-mention-required가 8-skill 전수 강제, 0 error 실측 — 위 §2 docs 행 참고) |
 | docs crosslink 검증 (커뮤니티 CI) | GitBook 이관(#4) 시 무의미 — 이관 시점에 sunset |
 | Deploy Key 용어·인증 모델 | 유지하되 MCP GW 인증 설계(#3)와 정합 재검토 — open question |
 
 ## 5. Open questions (확정 필요)
+
+5건 모두 "지금 결정 안 하면 진행이 막히는" 항목은 아니다 — 각각 확정되는 게이트
+시점이 다른 구조다: 1·3은 #8(public flip) 시점, 2는 #5(공식 로그인 경로 조사)
+시점, 4·5는 #3(console MCP GW) 시점에 확정한다. 4·5는 #3 조사 과정에서 그
+게이트를 이미 지났다 — 아래 각 항목에 해소/잠정 확정 근거를 남긴다. 1·2·3은
+해당 게이트가 아직 열리지 않아 open으로 유지한다.
 
 1. **station 0 marketplace 거취** — 커뮤니티 marketplace 병존 기간과 사용자 안내
    방식 (#8과 연동).
@@ -124,7 +135,28 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
    백엔드 레퍼런스인가)와 그에 따른 AC 확정 (#5).
 3. **커뮤니티 org의 이관 후 정체성** — archive 범위·시점, 산출물의 공식 프로젝트
    언급 방식.
-4. **콘솔 게이트 재정의** — eval·dog-food의 "콘솔 무접촉" 차단이 aitcc Bash 패턴
-   전제인데, MCP GW 전환 후 무엇을 차단 대상으로 삼는가 (#3).
-5. **Deploy Key 용어·인증 모델** — MCP GW의 인증 방식과 기존 Deploy Key
-   모델(워크스페이스-scope 자격증명, 1회 노출)의 정합 재검토 (#3).
+4. **콘솔 게이트 재정의 — 해소됨** (2026-07-31, harness#3). eval 드라이버
+   (`packages/agent-plugin/eval/e2e/driver.ts`)가 MCP GW 전환 후의 차단
+   대상을 이미 tool 이름 기준으로 재정의했다: `isConsoleMcpTool`(driver.ts:110-112)이
+   서버 키 prefix `mcp__apps-in-toss-console__`로 콘솔 MCP 도구 전체를
+   `canUseTool` 게이트(driver.ts:221-227)에서 결정적으로 deny하고,
+   `STATIC_DISALLOWED_TOOLS`(driver.ts:86)가 `disallowedTools`로 정적
+   방어를 더한다. `driver.test.ts`의 "MCP 서버 키 ↔ disallowedTools 결합"
+   스위트가 이 차단 목록과 실제 manifest 서버 키(`.claude-plugin/plugin.json`)의
+   결합을 기계 검사로 강제한다(서버 키가 개명되면 테스트가 실패) — 62/62
+   테스트 통과 실측(2026-07-31). aitcc 시절 Bash 패턴 차단
+   (`FORBIDDEN_BASH_PATTERNS`)은 폐기되지 않고 레거시 방어로 병존한다(모델이
+   학습 지식으로 `aitcc`를 시도할 가능성 대비). dog-food 수동 세션도 같은
+   원칙(tool 이름 기준 allowlist — CLAUDE.md "eval 게이트"·"dog-food" 절)을
+   쓴다. 남는 스코프는 게이트 재정의 자체가 아니라 register/deploy/status
+   skill의 aitcc→console MCP tool 오케스트레이션 전환(#3 잔여, 별도 트랙).
+5. **Deploy Key 용어·인증 모델 — 잠정 확정** (harness#3 조사 코멘트,
+   2026-07-31 기준). **이슈 #3 조사에서 관측된 바로는** MCP GW의 tool
+   인벤토리(connected 상태 확보 후 실측)에 `keys_*` 계열이 없고, GW 인증은
+   브라우저 OAuth 기반 계정-scope 세션인 반면 Deploy Key는 워크스페이스-scope
+   headless 자격증명이다 — **두 축은 서로 다른 인증 체계로 공존**하며 GW가
+   Deploy Key 발급 경로를 대체하지 않는다(이 관측은 harness#3 코멘트의
+   서버측 실측을 인용한 것으로, 이 문서 작업에서 직접 재현·검증한 사실은
+   아니다). 용어 "Deploy Key"는 유지, 과도기 모델(워크스페이스-scope·1회
+   노출)도 그대로 — GW가 자체 인증을 갖추면 대화형 경로는 GW 인증을 정본으로,
+   Deploy Key는 CI/headless 배포 전용으로 역할을 좁힌다는 방향만 남는다 (#3).
