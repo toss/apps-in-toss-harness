@@ -58,7 +58,13 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 - `<app-name>` (필수): 사람이 읽는 이름 후보. 디렉토리/패키지 이름으로
   슬러그화된다 (kebab-case, 소문자). 공백·특수문자 포함 가능.
 - `--template <name>` (선택, default `react-ts`): `react-ts` | `react` |
-  `js` | `ts` — create-ait-app의 공개 템플릿 4종.
+  `js` | `ts` — Step 2에서 핀한 `create-ait-app@0.1.3`이 지원하는 템플릿
+  전부다(`src/templates.js`의 `TEMPLATE_IDS` 소스 실측). `--list-templates`
+  플래그와 `vue-ts`/`svelte`/`solid-ts` 템플릿은 upstream main(0.2.0)에서
+  추가된 것으로, 핀돼 있는 `0.1.3`에는 **없다** (`pnpm dlx
+  create-ait-app@0.1.3 --list-templates` 실행 시 알 수 없는 옵션으로도
+  처리되지 않고 interactive 프롬프트로 빠진다 — 실측 확인됨). 핀을 올리는
+  시점에 이 목록도 함께 재검증한다(harness#6).
 - `--tds` (선택): TDS(토스 디자인 시스템) 통합 변형. **`react-ts` 전용**
   (다른 템플릿에서는 CLI가 무시). `--template react-ts-tds` 직접 지정은
   CLI가 거부하므로 반드시 이 플래그 조합으로.
@@ -88,8 +94,12 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 
 ## 의존
 
-- 호스트에 **Node 24+ + pnpm 11+** (create-ait-app `engines.node >=24` +
-  Vite). **Step 0이 실행 전 자동으로 검사·안내**하므로 수동 확인 불필요.
+- 호스트에 **Node 24+ + pnpm 11+** (Node 24+는 create-ait-app
+  `engines.node >=24` + Vite 요구사항. **pnpm 고정은 create-ait-app의
+  한계가 아니라 harness 자신의 규약**이다 — CLI 자체는 npm/yarn/pnpm 3종을
+  지원하지만(`--pm <name>`), 이 skill은 후속 `pnpm dev`/`pnpm --dir` 흐름과
+  통일하려고 항상 `--pm pnpm`으로 호출한다). **Step 0이 실행 전 자동으로
+  검사·안내**하므로 수동 확인 불필요.
 - **인터넷 필요** — `pnpm dlx`가 create-ait-app을 받고, CLI가 내부적으로
   `pnpm install` + `pnpm add @apps-in-toss/web-framework@latest` 2회 설치를
   실행한다. 오프라인이면 `--local` 폴백.
