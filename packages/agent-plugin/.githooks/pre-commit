@@ -1,5 +1,5 @@
 #!/bin/sh
-# Standard pre-commit hook for apps-in-toss-community sub-repos.
+# Standard pre-commit hook for apps-in-toss-harness packages.
 # Activated per-clone via: git config core.hooksPath .githooks
 #
 # Runs biome on staged files. Fails the commit if lint/format issues exist.

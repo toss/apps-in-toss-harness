@@ -147,7 +147,7 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 | 4 | design | `/ait:design` | `./assets/`(등록용 이미지 에셋) | ✅ 콘솔 MCP(`miniapp_create`) 규격 일치 안내 + `/ait:debug` (화면 회귀 점검) 인쇄 |
 | 5 | ship | `ait build` → 콘솔 MCP `miniapp_create` → `bundle_upload` → `bundle_upload_complete` | `.ait` 번들 + 콘솔 등록·업로드 완료 | ✅ 콘솔 MCP `miniapp_get_status` 로 운영 상태 분기 |
 
-확인 포인트(seam 규칙 — umbrella `CLAUDE.md` §1.3.3):
+확인 포인트(seam 규칙 — `docs/design/skill-conventions.md` §3):
 
 - **각 skill 의 마지막 블록**이 다음 실행할 `/ait` 명령(또는 `pnpm dev`/console MCP 도구
   호출)을 **직접 인쇄**하는가. "사용자가 알아서 안다"고 가정하면 seam 이 끊긴 것.

@@ -166,7 +166,7 @@ function buildValidFixture(dir: string): void {
   );
   writeFile(
     path.join(dir, 'package.json'),
-    JSON.stringify({ name: '@ait-co/agent-plugin', version: '0.1.0' }),
+    JSON.stringify({ name: '@apps-in-toss/agent-plugin', version: '0.1.0' }),
   );
 }
 
@@ -211,10 +211,7 @@ async function runChecks(dir: string): Promise<{ violations: Violation[]; hasErr
  */
 function hardFailsExcludingRoutingNoise(violations: Violation[]): Violation[] {
   return violations.filter(
-    (v) =>
-      v.level === 'error' &&
-      !v.rule.startsWith('A4/') && // CI 에서 console-cli 없음
-      v.rule !== 'A1/routing-mismatch', // 픽스처 skill 이 스냅샷에 없음 — 의도된 노이즈
+    (v) => v.level === 'error' && v.rule !== 'A1/routing-mismatch', // 픽스처 skill 이 스냅샷에 없음 — 의도된 노이즈
   );
 }
 
@@ -284,7 +281,7 @@ argument-hint: ''
 
 다른 제목으로 시작하면 안 된다.
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 \`\`\`
 /ait:new
@@ -311,7 +308,7 @@ argument-hint: ''
 
 본문.
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 \`\`\`
 /ait:new
@@ -322,7 +319,7 @@ argument-hint: ''
     expect(rulesFired(violations)).toContain('A2/blockquote-after-heading');
   });
 
-  it('A2/docs-root-link — docs.aitc.dev 루트 링크는 위반이 난다', async () => {
+  it('A2/docs-link-banned — docs.aitc.dev 루트 링크는 위반이 난다', async () => {
     buildValidFixture(tmpDir);
     const broken = `---
 name: ${SKILL_NAME}
@@ -344,7 +341,32 @@ argument-hint: ''
 `;
     writeFile(path.join(tmpDir, 'shared', 'skills', SKILL_NAME, 'SKILL.md'), broken);
     const { violations } = await runChecks(tmpDir);
-    expect(rulesFired(violations)).toContain('A2/docs-root-link');
+    expect(rulesFired(violations)).toContain('A2/docs-link-banned');
+  });
+
+  it('A2/docs-link-banned — docs.aitc.dev 주제별 deep-link 도 위반이 난다 (전면 금지, 루트/intro 한정 아님)', async () => {
+    buildValidFixture(tmpDir);
+    const broken = `---
+name: ${SKILL_NAME}
+description: Fixture skill.
+argument-hint: ''
+---
+
+# ${SKILL_NAME} skill
+
+## 목적
+
+본문.
+
+[가이드](https://docs.aitc.dev/guides/example)
+
+\`\`\`
+/ait:new
+\`\`\`
+`;
+    writeFile(path.join(tmpDir, 'shared', 'skills', SKILL_NAME, 'SKILL.md'), broken);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/docs-link-banned');
   });
 
   it('A2/docs-mcp-mention-required — docs MCP 언급 없으면 위반이 난다', async () => {
@@ -386,7 +408,7 @@ argument-hint: ''
 
 본문. seam 없음.
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 ## 참고
 
@@ -412,7 +434,7 @@ argument-hint: ''
 
 본문. 다음으로 /ait:new 를 실행하세요 (산문에만 있음).
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 `;
     writeFile(path.join(tmpDir, 'shared', 'skills', SKILL_NAME, 'SKILL.md'), broken);
     const { violations } = await runChecks(tmpDir);
@@ -552,7 +574,7 @@ argument-hint: ''
 
 본문.
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 \`\`\`
 /ait:deploy-bundle
@@ -585,7 +607,7 @@ argument-hint: ''
 
 이전엔 /ait:deploy-bundle 를 안내했지만 지금은 아래 명령을 쓰세요 (산문 언급).
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 \`\`\`
 /ait:new
@@ -612,7 +634,7 @@ argument-hint: ''
 
 본문.
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 \`\`\`
 /ait new
@@ -656,7 +678,7 @@ argument-hint: ''
 
 본문.
 
-[가이드](https://docs.aitc.dev/guides/fixture-guide)
+필요하면 docs MCP(searchDocumentation)로 조회한다.
 
 \`\`\`
 /ait:new

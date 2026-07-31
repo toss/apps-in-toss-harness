@@ -2,21 +2,26 @@
  * validate-plugin.mjs
  *
  * 구조 검증기 — shared/{skills,commands,templates} + eval/ 의 정합성을 확인.
- * 6개 그룹으로 나뉜다:
+ * 7개 그룹으로 나뉜다 (A4 — CLI 토큰 크로스체크는 대상이 없어져 제거됨, harness
+ * 절단 이후 이 repo에는 console-cli/aitcc 크로스체크 대상이 존재하지 않는다):
  *   A1 — frontmatter + 1:1 매핑 + 라우팅 스냅샷 (hard-fail)
  *   A2 — 본문 구조 + seam 검사 (hard-fail)
  *   A3 — 템플릿 + eval 동기화 (hard-fail)
- *   A4 — CLI 토큰 크로스체크 (optional warn, ../console-cli 없으면 skip)
  *   A5 — plugin.json ↔ package.json 버전 드리프트 (hard-fail)
- *   A6 — 링크 liveness (opt-in warn, VALIDATE_LINKS=1 일 때만 — *.aitc.dev 200 확인)
+ *   A6 — aitc.dev 링크 부재 검사 (opt-in warn, VALIDATE_LINKS=1 일 때만 — D2/D7
+ *        허용 목록 외 aitc.dev 링크가 남아있지 않은지 확인. 네트워크 비의존)
+ *   A7 — mcpServers npx args 해석 가능성 (hard-fail)
+ *   A8 — seam /ait:verb 형태·해석 가능성 (hard-fail)
  *
- * A1–A5 는 runChecks() 가 동기로 돈다(기본 `pnpm test` 경로, 네트워크 비의존).
- * A6 는 네트워크라 CLI 진입점에서만 비동기로 돌고, VALIDATE_LINKS=1 이 아니면 skip.
+ * A1–A3·A5·A7·A8 은 runChecks() 가 동기로 돈다(기본 `pnpm test` 경로, 네트워크
+ * 비의존). A6 는 CLI 진입점에서만 opt-in 으로 돌고, VALIDATE_LINKS=1 이 아니면
+ * skip — 네트워크가 필요 없어졌지만(§A6 참조) 기존 CLI 계약과의 호환을 위해
+ * opt-in 게이트는 그대로 유지한다.
  *
- * CLI:           node scripts/validate-plugin.mjs        (A1–A5; A6 skip)
- *                VALIDATE_LINKS=1 node scripts/validate-plugin.mjs   (+ A6 링크 sweep)
+ * CLI:           node scripts/validate-plugin.mjs        (A1–A3·A5·A7·A8; A6 skip)
+ *                VALIDATE_LINKS=1 node scripts/validate-plugin.mjs   (+ A6 링크 부재 sweep)
  * API: import { runChecks } from './scripts/validate-plugin.mjs'
- *      const { violations } = runChecks(repoRoot)        (A1–A5, 동기)
+ *      const { violations } = runChecks(repoRoot)        (A1–A3·A5·A7·A8, 동기)
  */
 
 import fs from 'node:fs';
@@ -412,9 +417,10 @@ function fencedCodeLineNumbers(lines) {
   return inFence;
 }
 
-// docs link allowlist — 이제 어떤 skill 도 docs.aitc.dev 루트/intro 링크를
-// 직접 인쇄하지 않는다(아래 DOCS_MCP_MENTION_RE 참조: docs MCP 도구로 대체).
-// 빈 Set 이라 A2/docs-root-link 검사가 전 skill 에 균일하게 적용된다.
+// docs link allowlist — 이제 어떤 skill 도 docs.aitc.dev 링크를(루트/intro
+// 뿐 아니라 주제별 deep-link 포함 전부) 직접 인쇄하지 않는다(아래
+// DOCS_MCP_MENTION_RE 참조: docs MCP 도구로 대체). 빈 Set 이라
+// A2/docs-link-banned 검사가 전 skill 에 균일하게 적용된다.
 const DOCS_LINK_ALLOWLIST = new Set();
 
 // A2 docs-mcp-mention-required (positive) — docs GitBook MCP(`apps-in-toss-docs`,
@@ -521,7 +527,7 @@ function checkA2(root) {
                 relFile,
                 i + 1,
                 'A2/blockquote-after-heading',
-                `첫 heading 직후 '>' blockquote 금지 (umbrella §1.3 규칙 7)`,
+                `첫 heading 직후 '>' blockquote 금지 (docs/design/skill-conventions.md §7)`,
               ),
             );
           }
@@ -549,32 +555,32 @@ function checkA2(root) {
       }
     }
 
-    // docs 링크 루트/intro 검출 (allowlist 제외)
+    // docs.aitc.dev 링크 전면 금지 검출 (allowlist 제외) — 루트/intro 뿐
+    // 아니라 주제별 deep-link 포함 어떤 docs.aitc.dev 언급도 금지. 문서
+    // 조회는 전부 docs MCP(`apps-in-toss-docs`)의 searchDocumentation/getPage
+    // 로 안내한다(아래 A2/docs-mcp-mention-required 와 짝).
     if (!DOCS_LINK_ALLOWLIST.has(skillName)) {
       for (let i = 0; i < srcLines.length; i++) {
         const line = srcLines[i];
-        if (
-          line.includes('docs.aitc.dev/intro') ||
-          /docs\.aitc\.dev\/?\s*[)\]'"\s]/.test(line) ||
-          /docs\.aitc\.dev\/$/.test(line)
-        ) {
+        if (/docs\.aitc\.dev\b/.test(line)) {
           violations.push(
             mkv(
               relFile,
               i + 1,
-              'A2/docs-root-link',
-              `docs.aitc.dev 루트/intro 링크 금지 — 주제별 deep-link 사용 (fix: docs.aitc.dev/guides/<slug> 등으로)`,
+              'A2/docs-link-banned',
+              `docs.aitc.dev 링크 금지 — docs MCP(apps-in-toss-docs)의 searchDocumentation/getPage로 조회하도록 안내 (fix: 링크를 지우고 "docs MCP로 조회한다" 식 문구로 대체)`,
             ),
           );
         }
       }
     }
 
-    // docs MCP 언급 존재 강제 (positive — §1.3.4 "문서 참조 필수"를 코드로,
-    // docs.aitc.dev deep-link → docs MCP 안내로 전환된 뒤의 형태):
-    // exempt 가 아닌 skill 은 본문 어딘가에 "docs MCP" 언급이 최소 1개 있어야
-    // 한다. (음성 검사 A2/docs-root-link 와 짝 — 그건 "루트 링크 금지", 이건
-    // "docs MCP 안내가 있어야 함". 둘 다 통과해야 §1.3.4 충족.)
+    // docs MCP 언급 존재 강제 (positive — `docs/design/skill-conventions.md`
+    // §4 "문서 참조 필수"를 코드로, docs.aitc.dev deep-link → docs MCP 안내로
+    // 전환된 뒤의 형태): exempt 가 아닌 skill 은 본문 어딘가에 "docs MCP"
+    // 언급이 최소 1개 있어야 한다. (음성 검사 A2/docs-link-banned 와 짝 —
+    // 그건 "docs.aitc.dev 링크 금지", 이건 "docs MCP 안내가 있어야 함". 둘
+    // 다 통과해야 §4 충족.)
     if (!DOCS_MCP_MENTION_EXEMPT.has(skillName)) {
       if (!DOCS_MCP_MENTION_RE.test(src)) {
         violations.push(
@@ -582,7 +588,7 @@ function checkA2(root) {
             relFile,
             1,
             'A2/docs-mcp-mention-required',
-            `docs MCP 안내 없음 — §1.3.4 위반. 본문에 "docs MCP" 언급(searchDocumentation/getPage로 조회) 필요 (정말 문서 참조가 무관한 skill 이면 DOCS_MCP_MENTION_EXEMPT 에 등재)`,
+            `docs MCP 안내 없음 — docs/design/skill-conventions.md §4 위반. 본문에 "docs MCP" 언급(searchDocumentation/getPage로 조회) 필요 (정말 문서 참조가 무관한 skill 이면 DOCS_MCP_MENTION_EXEMPT 에 등재)`,
           ),
         );
       }
@@ -603,7 +609,7 @@ function checkA2(root) {
             relFile,
             1,
             'A2/no-seam',
-            `다음 station seam 없음: skill 본문(## Out of scope / ## 참고 이전)에 '/ait:' 참조 필요 (umbrella §1.3 규칙 3)`,
+            `다음 station seam 없음: skill 본문(## Out of scope / ## 참고 이전)에 '/ait:' 참조 필요 (docs/design/skill-conventions.md §3)`,
           ),
         );
       } else {
@@ -624,7 +630,7 @@ function checkA2(root) {
               relFile,
               1,
               'A2/seam-not-printed',
-              `seam 이 산문에만 있음: 다음 station '/ait' 명령을 완료/요약 fenced 블록(## 참고 이전)에 인쇄해야 한다 (umbrella §1.3 규칙 3 — "본문 마지막 블록(완료/요약 출력)")`,
+              `seam 이 산문에만 있음: 다음 station '/ait' 명령을 완료/요약 fenced 블록(## 참고 이전)에 인쇄해야 한다 (docs/design/skill-conventions.md §3 — "본문 마지막 블록(완료/요약 출력)")`,
             ),
           );
         }
@@ -836,145 +842,6 @@ function checkA3(root) {
 }
 
 // ---------------------------------------------------------------------------
-// A4 — CLI 토큰 크로스체크 (optional warn)
-// ---------------------------------------------------------------------------
-
-/** @param {string} root @returns {Violation[]} */
-function checkA4(root) {
-  const candidates = [path.join(root, '..', 'console-cli')];
-
-  let consoleCLIRoot = null;
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      consoleCLIRoot = c;
-      break;
-    }
-  }
-
-  if (!consoleCLIRoot) {
-    return [
-      mkv('', 0, 'A4/skipped', '../console-cli 를 찾을 수 없어 A4 건너뜀 (CI에서는 정상)', 'warn'),
-    ];
-  }
-
-  const violations = [];
-
-  // console-cli 명령 surface 추출 (citty defineCommand 패턴)
-  // console-cli 의 실제 구조: export const fooCommand = defineCommand({ meta: { name: 'foo' }, ... })
-  // cli.ts 의 top-level subCommands 에 등록된 이름(key)이 실제 aitcc <subcmd> surface 다.
-  // 여기서는 meta.name 을 src/commands/*.ts 에서 수집해 Set 을 채운다.
-  const cmdSrcDir = path.join(consoleCLIRoot, 'src', 'commands');
-  /** @type {Set<string>} */
-  const aitccSubcmds = new Set();
-  if (fs.existsSync(cmdSrcDir)) {
-    // citty pattern: meta: { ... name: 'foo' ... }
-    const cittyMetaNameRe = /meta:\s*\{[^}]*name:\s*['"]([a-zA-Z0-9_-]+)['"]/gs;
-    for (const entry of fs.readdirSync(cmdSrcDir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js')) continue;
-      if (entry.name.includes('.test.')) continue;
-      const content = readFile(path.join(cmdSrcDir, entry.name));
-      for (const m of content.matchAll(cittyMetaNameRe)) {
-        aitccSubcmds.add(m[1]);
-      }
-    }
-  }
-
-  // SKILL.md 파일에서 CLI 혼동 패턴 + 알 수 없는 aitcc 서브커맨드 검출
-  // "현재 미구현" 문맥 또는 frontmatter `aitcc-surface-skip: true` 가 있으면 억제
-  const skillsDir = path.join(root, 'shared', 'skills');
-  // aitcc <subcmd> 토큰에서 제외할 known-deferred/intentional 서브커맨드
-  // (console-cli 에 없지만 skill 에서 안내 목적으로 언급되는 것들)
-  const AITCC_SUBCMD_SKIP = new Set(['logs']);
-  for (const skillName of listDirs(skillsDir)) {
-    const skillFile = path.join(skillsDir, skillName, 'SKILL.md');
-    if (!fs.existsSync(skillFile)) continue;
-    const relFile = path.relative(root, skillFile);
-    const src = readFile(skillFile);
-    const parsed = parseFrontmatter(src);
-    // frontmatter 의 aitcc-surface-skip: true 가 있으면 unknown subcmd 경고 전체 억제
-    const skipSurfaceCheck = parsed?.fm?.['aitcc-surface-skip'] === 'true';
-    const lines = src.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      // `aitcc app deploy <...>.ait` 패턴: .ait 파일 업로드는 ait (번들러 CLI)
-      if (/aitcc\s+app\s+deploy\s+\S+\.ait/.test(line)) {
-        violations.push(
-          mkv(
-            relFile,
-            i + 1,
-            'A4/aitcc-deploy-ait-path',
-            `'aitcc app deploy <path>.ait' — .ait 파일 업로드는 'ait deploy' (번들러 CLI) 가 담당 (fix: 역할 구분 명확화)`,
-            'warn',
-          ),
-        );
-      }
-      // aitcc app deploy --request-review 에 --release-notes 누락
-      if (
-        /aitcc\s+app\s+deploy\s+.*--request-review/.test(line) &&
-        !line.includes('--release-notes')
-      ) {
-        violations.push(
-          mkv(
-            relFile,
-            i + 1,
-            'A4/deploy-missing-release-notes',
-            `'aitcc app deploy --request-review' 에 --release-notes 누락 가능성 (fix: 확인 후 추가)`,
-            'warn',
-          ),
-        );
-      }
-
-      // aitcc <subcmd> 토큰 크로스체크: console-cli 에 없는 서브커맨드 경고
-      if (!skipSurfaceCheck && aitccSubcmds.size > 0) {
-        const subcmdMatch = line.match(/\baitcc\s+([a-zA-Z][a-zA-Z0-9_-]*)\b/);
-        if (subcmdMatch) {
-          const subcmd = subcmdMatch[1];
-          // CLI 자체가 아니라 단어 "CLI" 등 제외; skip-list 및 already-known 도 제외
-          if (
-            !AITCC_SUBCMD_SKIP.has(subcmd) &&
-            !aitccSubcmds.has(subcmd) &&
-            subcmd !== 'CLI' &&
-            subcmd !== 'app' // app 은 subCommand 로 등록된 명령이지만 meta.name 은 subcommand 에 있을 수 있음
-          ) {
-            // "app" 은 cli.ts subCommands 키로 등록되지만 app.ts 내부 meta.name 은 다름
-            // → aitccSubcmds Set 에 없어도 cli.ts 의 키 목록에 있으면 허용
-            // cli.ts 를 직접 파싱하지 않으므로 hardcode 로 보완
-            const CLI_TOP_LEVEL = new Set([
-              'whoami',
-              'login',
-              'logout',
-              'auth',
-              'upgrade',
-              'workspace',
-              'app',
-              'members',
-              'keys',
-              'notices',
-              'me',
-              'completion',
-            ]);
-            if (!CLI_TOP_LEVEL.has(subcmd)) {
-              violations.push(
-                mkv(
-                  relFile,
-                  i + 1,
-                  'A4/aitcc-unknown-subcmd',
-                  `'aitcc ${subcmd}' — console-cli 에서 확인되지 않은 서브커맨드 (fix: 명령 확인 또는 frontmatter 에 'aitcc-surface-skip: true' 추가)`,
-                  'warn',
-                ),
-              );
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return violations;
-}
-
-// ---------------------------------------------------------------------------
 // A5 — plugin.json ↔ package.json 버전 드리프트
 // ---------------------------------------------------------------------------
 
@@ -1178,22 +1045,34 @@ function checkA8(root) {
 }
 
 // ---------------------------------------------------------------------------
-// A6 — 링크 liveness (opt-in, warn-only, 네트워크)
+// A6 — aitc.dev 링크 부재 검사 (opt-in, warn-only)
 // ---------------------------------------------------------------------------
 //
-// 기본은 SKIP — 네트워크 비의존·결정적 CI 경로를 보존한다(A4 graceful-skip 동형).
-// VALIDATE_LINKS=1 일 때만 실행해 skill 전반의 *.aitc.dev 링크가 실제로
-// 200을 반환하는지 검사한다. 절대 error 로 올리지 않는다 — 외부 호스트라
-// 비결정적이고, 어디까지나 수동 link-sweep 자동화(advisory)다.
-// (#183 docs /intro 404, #185 외부 링크 rot 가 A2 정적 검사를 빠져나간 갭을 닫는다.)
+// 커뮤니티 결합 절단 이전에는 이 검사가 skill 전반의 *.aitc.dev 링크가 실제로
+// 살아있는지(200 응답) 네트워크로 확인했다. 절단 이후에는 목적이 바뀐다 —
+// "커뮤니티 링크가 살아있는가"가 아니라 "커뮤니티 링크 자체가 남아있는가"를
+// 묻는다. 이 repo(harness)에서 skill 본문에 남아 있어도 되는 aitc.dev 링크는
+// 딱 둘 뿐이다:
+//   - `https://devtools.aitc.dev/launcher/` — D2, 실기기 attach(환경 2·3)가
+//     실제로 여는 PWA. 대체 호스팅이 확보되기 전까지는 기능 자산이라 유지.
+//   - `https://aitc.dev/apple-touch-icon.png` — D7, `ait build` 의
+//     `brand.icon` 기본값. 대체 자산이 확보되기 전까지는 유지.
+// 그 외의 *.aitc.dev(docs.aitc.dev, sdk-example.aitc.dev, 커뮤니티 자기서술
+// 등)는 전부 커뮤니티 결합의 잔재이므로 0건이어야 한다. 더 이상 네트워크가
+// 필요 없지만(순수 텍스트 스캔), 기존 CLI 계약(`VALIDATE_LINKS=1` opt-in,
+// `runChecks()` 동기 계약과 분리된 CLI 전용 실행)은 그대로 유지한다.
+// (#183 docs /intro 404, #185 외부 링크 rot 트리아지에서 출발한 검사였으나,
+// 이제는 A2 정적 검사가 못 잡는 "허용된 두 도메인 밖의 aitc.dev 잔존"만 잡는다.)
 
-// 추출했지만 검사에서 제외하는 링크 패턴 (확인된 false-positive — #181·#185 triage):
-//   - placeholder/template 토큰(<...>) 포함 링크
-//   - oidc-bridge.aitc.dev bare-root: tenant dispatcher 라 루트 404 가 정상 동작
-const A6_SKIP_LINK_RES = [
-  /[<>]/, // <tenantId>, <resolved-path> 등 placeholder
-  /^https:\/\/oidc-bridge\.aitc\.dev\/?$/, // bare-root = tenant dispatcher 정상 404
+// D2·D7 로 명시적으로 유지가 승인된 aitc.dev 링크 — 이 둘만 통과.
+const A6_ALLOWLIST_RES = [
+  /^https:\/\/devtools\.aitc\.dev\/launcher\/?/, // D2 — 실기기 attach PWA, 대체 호스팅 미확보
+  /^https:\/\/aitc\.dev\/apple-touch-icon\.png$/, // D7 — brand.icon 기본값, 대체 자산 미확보
 ];
+
+// 추출에서 제외하는 링크 패턴 — placeholder/template 토큰(<...>) 포함 링크는
+// 실제 링크가 아니므로 애초에 대상에서 뺀다.
+const A6_SKIP_LINK_RES = [/[<>]/];
 
 /**
  * skills 전반에서 *.aitc.dev 링크를 파일:행과 함께 추출한다.
@@ -1227,38 +1106,6 @@ function collectAitcLinks(root) {
 }
 
 /**
- * 단일 URL liveness 확인. HEAD 우선, 405/501 등엔 GET fallback.
- * @param {string} url
- * @returns {Promise<{ ok: boolean, status: number | string }>}
- */
-async function probeUrl(url) {
-  const tryFetch = async (method) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
-    try {
-      const res = await fetch(url, {
-        method,
-        redirect: 'follow',
-        signal: ctrl.signal,
-      });
-      return res.status;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-  try {
-    let status = await tryFetch('HEAD');
-    // 일부 호스트는 HEAD 미지원 → GET 재시도
-    if (status === 405 || status === 501 || status === 403) {
-      status = await tryFetch('GET');
-    }
-    return { ok: status >= 200 && status < 400, status };
-  } catch (err) {
-    return { ok: false, status: err instanceof Error ? err.name : 'fetch-error' };
-  }
-}
-
-/**
  * @param {string} root
  * @returns {Promise<Violation[]>}
  */
@@ -1269,39 +1116,26 @@ async function checkA6(root) {
         '',
         0,
         'A6/skipped',
-        'VALIDATE_LINKS=1 이 아니라 링크 liveness 검사 건너뜀 (기본 동작)',
+        'VALIDATE_LINKS=1 이 아니라 aitc.dev 링크 부재 검사 건너뜀 (기본 동작)',
         'warn',
       ),
     ];
   }
 
   const links = collectAitcLinks(root);
-  // 같은 URL 중복 제거하되 첫 등장 위치 보존
-  /** @type {Map<string, { file: string, line: number }>} */
-  const unique = new Map();
-  for (const l of links) {
-    if (!unique.has(l.url)) unique.set(l.url, { file: l.file, line: l.line });
-  }
-
-  const entries = [...unique.entries()];
-  const results = await Promise.all(
-    entries.map(async ([url, loc]) => ({ url, loc, ...(await probeUrl(url)) })),
-  );
-
   /** @type {Violation[]} */
   const violations = [];
-  for (const r of results) {
-    if (!r.ok) {
-      violations.push(
-        mkv(
-          r.loc.file,
-          r.loc.line,
-          'A6/dead-link',
-          `링크 비정상 응답 (${r.status}): ${r.url} (fix: 살아있는 경로로 교체하거나 placeholder 면 A6_SKIP_LINK_RES 에 추가)`,
-          'warn',
-        ),
-      );
-    }
+  for (const l of links) {
+    if (A6_ALLOWLIST_RES.some((re) => re.test(l.url))) continue;
+    violations.push(
+      mkv(
+        l.file,
+        l.line,
+        'A6/leftover-community-link',
+        `커뮤니티 결합 잔재로 추정되는 aitc.dev 링크: ${l.url} (fix: 절단 계획서 대조 후 제거하거나, D2/D7처럼 정말 유지해야 하면 A6_ALLOWLIST_RES 에 등재)`,
+        'warn',
+      ),
+    );
   }
   if (violations.length === 0) {
     violations.push(
@@ -1309,7 +1143,7 @@ async function checkA6(root) {
         '',
         0,
         'A6/ok',
-        `링크 liveness 통과 (${unique.size}개 *.aitc.dev 링크 전부 2xx/3xx)`,
+        `aitc.dev 링크 부재 검사 통과 (허용된 D2/D7 외 잔존 링크 0건, 총 ${links.length}개 스캔)`,
         'warn',
       ),
     );
@@ -1332,7 +1166,6 @@ export function runChecks(repoRoot) {
     ...checkA1(root),
     ...checkA2(root),
     ...checkA3(root),
-    ...checkA4(root),
     ...checkA5(root),
     ...checkA7(root),
     ...checkA8(root),
@@ -1364,9 +1197,8 @@ function printViolations(violations) {
     A1: 'A1 — frontmatter + 1:1 매핑 + 라우팅 스냅샷',
     A2: 'A2 — 본문 구조 + seam',
     A3: 'A3 — 템플릿 + eval 동기화',
-    A4: 'A4 — CLI 토큰 크로스체크 (warn)',
     A5: 'A5 — plugin.json ↔ package.json 버전 드리프트',
-    A6: 'A6 — 링크 liveness (opt-in, warn)',
+    A6: 'A6 — aitc.dev 링크 부재 검사 (opt-in, warn)',
     A7: 'A7 — mcpServers npx args 해석 가능성',
     A8: 'A8 — seam /ait:verb 형태·해석 가능성',
   };
@@ -1397,7 +1229,7 @@ const isMain =
 
 if (isMain) {
   const { violations, hasErrors } = runChecks();
-  // A6 (링크 liveness)는 opt-in async 검사 — CLI 진입점에서만 실행한다.
+  // A6 (aitc.dev 링크 부재 검사)는 opt-in async 검사 — CLI 진입점에서만 실행한다.
   // 기본은 VALIDATE_LINKS!=1 이라 즉시 skip warn 을 반환하고, runChecks 의
   // 동기 계약(vitest wrapper 가 의존)은 건드리지 않는다.
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
