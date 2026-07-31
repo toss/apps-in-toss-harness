@@ -5,12 +5,6 @@
 // evaluation time. Do NOT let a linter's organizeImports reorder it below the
 // SDK block.
 import '@apps-in-toss/devtools/panel';
-// Polyfill auto-install: replaces standard Web APIs (navigator.clipboard, etc.)
-// with SDK-routing shims. When devtools mock is active, @apps-in-toss/web-framework
-// resolves to the mock, so isTossEnvironment() detects "toss present" and routes
-// navigator.clipboard.writeText → mock setClipboardText. This is the
-// mock-via-polyfill composition path verified by shim-composition.test.ts.
-import '@apps-in-toss/polyfill/auto';
 
 // ENV-2 CDP gate (issue #378 — gap #1):
 // 일반 소비자에서는 unplugin이 진입점에 in-app attach를 자동 주입한다 (devtools#465).
