@@ -59,7 +59,7 @@ export function OgTemplate({ eyebrow, title, subtitle, footer }: OgTemplateProps
             letterSpacing: '-3px',
           }}
         >
-          AiT
+          AIT
         </div>
       </div>
 
