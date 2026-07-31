@@ -51,7 +51,7 @@ export const ko = {
   'attach.steps.section': '스캔 절차',
   'attach.faq.section': '진단 체크리스트',
   'attach.url.section': 'URL (fallback)',
-  'attach.mode.sandbox': '환경 2 — AITC Sandbox App (PWA)',
+  'attach.mode.sandbox': '환경 2 — Sandbox App (PWA)',
   'attach.mode.intossDev': '환경 3 — intoss-private relay dev',
   'attach.sandbox.step1':
     '홈 화면의 launcher PWA 아이콘으로 실행하세요 (Safari 주소창이 보이면 standalone이 아닙니다).',

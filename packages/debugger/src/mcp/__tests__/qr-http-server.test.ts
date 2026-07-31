@@ -1337,7 +1337,7 @@ describe('startQrHttpServer — /attach mode-aware chrome 분기 (#468)', () => 
     expect(html).toContain('Safari 탭으로 열립니다');
     expect(html).toContain('devtools.aitc.dev/launcher/');
     // 환경 라벨
-    expect(html).toContain('환경 2 — AITC Sandbox App (PWA)');
+    expect(html).toContain('환경 2 — Sandbox App (PWA)');
     // 토큰 잔존 없음
     expect(html).not.toContain('__MODE_LABEL__');
     expect(html).not.toContain('__LIVE_FAQ__');
@@ -1348,7 +1348,7 @@ describe('startQrHttpServer — /attach mode-aware chrome 분기 (#468)', () => 
     expect(html).not.toContain('Toss');
     expect(html).not.toContain('_deploymentId');
     expect(html).toContain('Scan QR with camera');
-    expect(html).toContain('env 2 — AITC Sandbox App (PWA)');
+    expect(html).toContain('env 2 — Sandbox App (PWA)');
     expect(html).not.toContain('__MODE_LABEL__');
     expect(html).not.toContain('__LIVE_FAQ__');
   });

@@ -134,7 +134,7 @@ export async function startTunnelDashboard(
     // startChiiRelay 핸들이 connected target을 노출하지 않는다. 라이브 page 목록을
     // 알 수 없으므로 거짓 빈 목록 대신 "연결된 Pages" 섹션 자체를 숨긴다(#411).
     // env 3/4(debug-server.ts)는 router.active.listTargets()로 실제 목록을 채운다.
-    // mode: 'relay-mobile' — 이 대시보드는 항상 환경 2(AITC Sandbox PWA) 전용이므로
+    // mode: 'relay-mobile' — 이 대시보드는 항상 환경 2(Sandbox PWA) 전용이므로
     // /attach 카피가 launcher PWA 절차(sandbox family)로 분기된다(#468).
     // inspectorUrl: null — env 2에서는 unplugin relay가 connected target ID를 노출하지
     // 않아 buildChiiInspectorUrl에 필요한 targetId를 알 수 없다. target attach 후

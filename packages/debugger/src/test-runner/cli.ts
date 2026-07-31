@@ -35,7 +35,7 @@ OPTIONS
   --scheme-url <url>      intoss-private:// URL from \`ait deploy --scheme-only\`
                           (required for standalone relay attach / env3). Unused
                           and ignored when --attach-launcher is set.
-  --attach-launcher       Attach over the env-2 AITC Sandbox PWA launcher
+  --attach-launcher       Attach over the env-2 Sandbox PWA launcher
                           (real-device WebKit) instead of the env-3 intoss
                           scheme deep-link. The relay/QR/dashboard/attach-wait
                           are identical; only the QR is a launcher deep-link.
@@ -159,7 +159,7 @@ EXAMPLE (env 3 — intoss-private scheme)
     --report-dir .ait-report \\
     --timeout 60000
 
-EXAMPLE (env 2 — AITC Sandbox PWA launcher)
+EXAMPLE (env 2 — Sandbox PWA launcher)
   debugger-test 'src/**/*.ait.test.ts' \\
     --attach-launcher \\
     --app-url "https://<subdomain>.trycloudflare.com" \\
@@ -637,7 +637,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     process.stderr.write(
       `debugger-test: --scheme-url is required for standalone relay attach.\n` +
         `  Pass the intoss-private:// URL from \`ait deploy --scheme-only\`.\n` +
-        `  (For env 2 / AITC Sandbox PWA, use --attach-launcher --app-url <tunnel-url> instead.)\n`,
+        `  (For env 2 / Sandbox PWA, use --attach-launcher --app-url <tunnel-url> instead.)\n`,
     );
     process.exitCode = 1;
     return;

@@ -1,5 +1,5 @@
 /**
- * URL of the AITC Sandbox launcher PWA.
+ * URL of the Sandbox launcher PWA.
  *
  * This package's single declaration — `@apps-in-toss/devtools` holds its own
  * copy in `src/shared/launcher-url.ts` (shared there between its `mcp/` and
