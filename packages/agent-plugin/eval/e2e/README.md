@@ -96,14 +96,19 @@ op run --env-file=.env.eval -- pnpm eval:e2e --task timer --model claude-haiku-4
 
 | 형상 | `slash_commands` 키 (예) | 실제로 치는 것 |
 |---|---|---|
-| project `.claude/commands` (이 드라이버) | `new`, `ait-plan`, `ait-debug` | `/new` |
-| 설치 플러그인 (`/plugin install`) | `ait:new`, `ait:plan`(skill), `ait:ait-plan`(stub 별칭) | `/ait:new` |
+| project `.claude/commands` (이 드라이버) | `new`, `plan`, `debug` | `/new` |
+| 설치 플러그인 (`/plugin install`) | `ait:new`, `ait:plan`(skill), `ait:plan`(stub — self-delegating 겹침) | `/ait:new` |
 
-skill도 같은 목록에 `ait:<name>` 키로 오르므로, 같은 verb의 stub은 `ait-` 접두
-파일명으로 skill 키를 비켜서 있다(#286 해소 — 충돌 없는 facet stub 6개는 bare
-verb로 개명, 계약은 `A1/cmd-name-shadows-skill`이 강제). 공백 형태 `/ait <verb>`는
-어느 형상에도 없다. 이 드라이버는 측정이 "명령이 없어서" 실패하지 않도록 실제
-키(`/new`)를 쓰고, init assert도 그 키를 정확히 확인한다(`new` 명령 +
+skill도 같은 목록에 `ait:<name>` 키로 오른다. command stub 10개는 전부 bare verb
+파일명을 쓴다 — facet stub 4개(`new`/`inject-devtools`/`inject-polyfill`/
+`inject-debug-console`)는 대응 skill 이름이 달라서(`new-miniapp`/`inject`) 애초에
+안 겹치고, 나머지 6개(`debug`/`design`/`plan`/`setup-debugger`/
+`setup-phone-preview`/`welcome`)는 skill과 verb가 같아 `ait:<verb>` 슬롯에 stub과
+skill이 함께 오르는 self-delegating 겹침이다 — stub 본문이 그 skill을 그대로
+Load하므로 어느 쪽이 슬롯을 차지하든 결과가 같아 무해하다(`A1/cmd-name-shadows-skill`이
+이 패턴만 허용하고, 다른 skill로 위임하는 이름 겹침은 위반으로 잡는다). 공백 형태
+`/ait <verb>`는 어느 형상에도 없다. 이 드라이버는 측정이 "명령이 없어서" 실패하지
+않도록 실제 키(`/new`)를 쓰고, init assert도 그 키를 정확히 확인한다(`new` 명령 +
 `new-miniapp` skill 둘 다 노출됐는가). 접두어가 붙는 설치 형상에서도 통하도록
 `:` suffix 매칭을 함께 허용한다.
 

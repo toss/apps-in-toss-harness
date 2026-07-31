@@ -66,7 +66,7 @@
 - **skill** `shared/skills/<name>/` → `ait:<name>`. 대응 stub 없이도 그 자체로 호출된다(`/ait:plan`, `/ait:docs` …).
 - **command stub** `shared/commands/<file>.md` → `ait:<basename>`.
 
-그래서 stub 파일명은 **자기가 위임하는 skill과 이름이 겹치면 안 된다**(겹치면 한 칸을 두고 다툰다). facet stub 4개는 대응 skill과 이름이 다르므로 bare verb를 쓰고(`new.md`, `inject-devtools.md`, `inject-polyfill.md`, `inject-debug-console.md`), skill과 같은 verb를 갖는 stub 6개는 `ait-` prefix를 유지해 skill 쪽 `ait:<verb>` 칸을 비워 둔다(`ait-plan.md` → `ait:ait-plan`, 문서화하지 않는 별칭 — `ait-debug.md`/`ait-design.md`/`ait-setup-debugger.md`/`ait-setup-phone-preview.md`/`ait-welcome.md`도 동일 패턴). 이 계약은 `A1/cmd-name-shadows-skill`이 강제한다.
+stub 파일명이 자기가 위임하는 skill과 이름이 겹쳐도 무조건 금지는 아니다 — **자기 자신과 같은 이름의 skill로 위임**하면 어느 쪽이 `ait:<verb>` 슬롯을 차지하든 결과가 같으므로 무해하다. 전부 bare verb를 쓴다: facet stub 4개(`new.md`, `inject-devtools.md`, `inject-polyfill.md`, `inject-debug-console.md`)는 대응 skill 이름이 달라서(`new-miniapp`, `inject`) 애초에 안 겹치고, 나머지 6개(`debug.md`, `design.md`, `plan.md`, `setup-debugger.md`, `setup-phone-preview.md`, `welcome.md`)는 skill과 verb가 같은 self-delegating 겹침이다 — 둘 다 `ait:<verb>`로 오르지만 stub 본문이 그 skill을 그대로 Load하므로 무해하다. `A1/cmd-name-shadows-skill`은 이 self-delegation만 허용하고, 명령이 **다른** skill로 위임하면서 이름만 겹치는 경우만 위반으로 잡는다.
 
 ### Slash commands & Templates
 

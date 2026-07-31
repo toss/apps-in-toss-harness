@@ -457,12 +457,12 @@ const MERGED_SECONDARY_FACET_CMDS = new Set([
 
 /** @type {Record<string, string>} */
 const EXPECTED_CMD_TO_SKILL = {
-  'ait-debug.md': 'debug',
-  'ait-design.md': 'design',
-  'ait-plan.md': 'plan',
-  'ait-setup-debugger.md': 'setup-debugger',
-  'ait-setup-phone-preview.md': 'setup-phone-preview',
-  'ait-welcome.md': 'welcome',
+  'debug.md': 'debug',
+  'design.md': 'design',
+  'plan.md': 'plan',
+  'setup-debugger.md': 'setup-debugger',
+  'setup-phone-preview.md': 'setup-phone-preview',
+  'welcome.md': 'welcome',
   'inject-debug-console.md': 'inject',
   'inject-devtools.md': 'inject',
   'inject-polyfill.md': 'inject',

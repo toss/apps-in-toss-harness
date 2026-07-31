@@ -79,11 +79,13 @@ _one() {
 
 # 관측된 이름을 skill 정본 이름으로 정규화한다.
 #
-# 모델은 skill(`plan`)을 직접 부르기도 하고 command stub(`ait-plan`)을 부르기도
-# 하는데, stub은 곧바로 그 skill로 위임하므로 라우팅상 같은 결과다. 게다가 stub
-# 10개 중 3개(inject-devtools/inject-polyfill/inject-debug-console)는 이름이
-# skill과 다르다(§제공물의 facet 병합) — 그걸 안 펴면 `inject-polyfill`만 부른
-# run이 "inject 안 뜸"으로 오판된다.
+# 모델은 skill(`plan`)을 직접 부르기도 하고 command stub(`plan`)을 부르기도
+# 하는데, stub은 곧바로 그 skill로 위임하므로 라우팅상 같은 결과다(둘 다 같은
+# 이름으로 관측되므로 이 케이스는 애초에 정규화가 필요 없다). stub 10개 중
+# 3개(inject-devtools/inject-polyfill/inject-debug-console)만 이름이 skill과
+# 다르다(§제공물의 facet 병합) — 그걸 안 펴면 `inject-polyfill`만 부른 run이
+# "inject 안 뜸"으로 오판된다. `ait-*)` 케이스는 stub 파일명이 전부 bare verb로
+# 개명된 뒤로는 관측되지 않지만(#286 이후), 구형 플러그인 캐시 등 방어적으로 남긴다.
 _canon() {
   case "$1" in
     ait-new|new)                        echo new-miniapp ;;

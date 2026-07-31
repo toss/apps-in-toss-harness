@@ -273,7 +273,7 @@ export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
         initSlashCommands = message.slash_commands ?? [];
         initSkills = message.skills ?? [];
         // 키 표현은 확정됐다 (2026-07-27 실측, issue #226·#286): slash-command
-        // 키는 **command 파일의 basename**이다 — `new`, `ait-plan`, `ait-debug`.
+        // 키는 **command 파일의 basename**이다 — `new`, `plan`, `debug`.
         // `"ait new"`(다단어)도 `"ait"`(단일 prefix)도 아니다. 플러그인으로 얹히면
         // 앞에 `<plugin>:`이 붙어 `ait:new`가 된다. 이 드라이버는 project
         // `.claude/commands` 형상이라 접두어 없는 쪽이지만, 같은 코드가 설치
