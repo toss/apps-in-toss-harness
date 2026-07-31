@@ -83,7 +83,7 @@ cd ./<package_name> && pnpm install
      brand: {
        displayName: '<displayName>',
        primaryColor: '<primaryColor>',
-       icon: '<icon URL 또는 https://aitc.dev/apple-touch-icon.png>',
+       icon: '', // 앱 아이콘 https:// URL — /ait:design 으로 생성 후 채운다
      },
      web: {
        host: 'localhost',
@@ -112,6 +112,8 @@ cd ./<package_name> && pnpm install
 
 배포 준비가 되면:
   /ait:design       # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — 등록 전제)
+                     # → 호스팅한 아이콘 https:// URL을 (L-5로 만들) granite.config.ts의
+                     #   brand.icon에 채운다 (비어 있으면 ait build가 실패한다)
   (L-5로 번들 설정 추가) → ait build → console MCP(miniapp_create →
   bundle_upload → bundle_upload_complete)로 등록·업로드
   (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
