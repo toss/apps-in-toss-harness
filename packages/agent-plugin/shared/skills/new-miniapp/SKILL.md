@@ -30,8 +30,11 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   이 후처리 덕에 토스 앱 없이 브라우저에서 바로 개발할 수 있다(`pnpm dev` 즉시 실행).
 - 번들 설정(granite.config.ts + `build`/`deploy` 스크립트)은 create-ait-app
   템플릿에 기본 포함돼 있어 별도 배선이 필요 없다. 단 템플릿은
-  `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패하므로,
-  후처리 C가 플레이스홀더 URL로 채운다(실제 아이콘은 `/ait:design` 후 교체).
+  `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패한다 —
+  이 skill은 남의 도메인 이미지를 자동으로 채워 넣지 않는다(외부 URL이
+  사용자 앱 아이콘으로 박힌 채 빌드가 조용히 통과해버리는 걸 막기 위해).
+  대신 후처리 C가 빈 값 옆에 안내 주석을 남기고, Step 7 완료 안내가
+  `/ait:design`으로 아이콘을 만들어 채우도록 알린다.
 - `--sample` 없이 만든 프로젝트는 CLI(v0.1.3)가 예제 placeholder를 치환하지
   않고 남기며, 그대로 두면 **런타임에 앱 본체가 렌더되지 않는다** — 후처리 D가
   그 잔존 placeholder를 지운다.
@@ -43,7 +46,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   console MCP 도구로 등록·업로드)가 명확히 안내된다.
 
 이 skill은 **scaffold 호출 + 후처리(granite bin 검증·devtools 배선·brand.icon
-플레이스홀더·.gitignore·예제 placeholder 복구)**만 담당한다. 콘솔 등록·번들
+안내 주석·.gitignore·예제 placeholder 복구)**만 담당한다. 콘솔 등록·번들
 업로드는 console MCP 도구(`miniapp_create`/`bundle_upload`/
 `bundle_upload_complete`)의 책임 — 여기서 자동 호출하지 않는다.
 
@@ -216,19 +219,21 @@ directory>/../inject/references/devtools.md**.
 `--sample`로 넣은 IAP/IAA 예제가 브라우저에서 "샌드박스앱/토스앱에서
 실행해주세요" alert만 띄운다.
 
-### 5. 후처리 C — brand.icon 플레이스홀더 + .gitignore
+### 5. 후처리 C — brand.icon 안내 주석 + .gitignore
 
 **brand.icon**: create-ait-app 템플릿의 `granite.config.ts`는 `brand.icon: ""`
 (빈 문자열)로 생성되는데, `brand.icon`은 필수 필드라 이 상태로는 `ait build`가
-`플러그인 옵션이 올바르지 않습니다` 오류로 실패한다. `Edit`로 **이 필드만**
-커뮤니티 플레이스홀더 URL로 교체한다:
+`플러그인 옵션이 올바르지 않습니다` 오류로 실패한다. 이 skill은 값을 자동으로
+채우지 않는다 — 남의 도메인 이미지를 사용자 앱 아이콘으로 박아 넣으면 (1)
+남의 도메인에 결합되고 (2) 빌드가 조용히 "통과"해버려 사용자가 실수를 알아챌
+기회를 잃는다. 대신 `Edit`로 **이 필드만** 빈 값 옆에 안내 주석을 남긴다:
 
 ```
-icon: ""  →  icon: "https://aitc.dev/apple-touch-icon.png"
+icon: ""  →  icon: "", // 앱 아이콘 https:// URL — /ait:design 으로 생성 후 채운다
 ```
 
-(플레이스홀더임은 Step 7 안내 블록에서 알린다 — 실제 아이콘은 `/ait:design`으로
-생성 후 호스팅된 `https://` URL로 교체. 다른 필드는 건드리지 않는다.)
+(다른 필드는 건드리지 않는다. `brand.icon`이 비어 있으면 `ait build`가
+실패한다는 사실과 무엇을 해야 하는지는 Step 7 완료 안내 블록에서 알린다.)
 
 **.gitignore**: create-ait-app 템플릿에는 `.gitignore`가 없다. 없으면 생성:
 
@@ -292,12 +297,15 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 
 배포 준비가 되면 (번들 설정은 템플릿에 이미 포함):
   /ait:design       # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — 등록 전제)
+                     # → 호스팅한 아이콘 https:// URL을 granite.config.ts의
+                     #   brand.icon에 채운다 (비어 있으면 ait build가 실패한다)
   ait build         # .ait 번들 생성
   console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
                      # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
 
-참고: granite.config.ts의 brand.icon은 플레이스홀더 URL입니다 —
-  /ait:design으로 실제 아이콘을 만들고 호스팅된 https:// URL로 교체하세요.
+참고: granite.config.ts의 brand.icon이 비어 있습니다 — 이 상태로 ait build를
+  실행하면 실패합니다. /ait:design으로 아이콘을 만들고, 호스팅한 https:// URL을
+  brand.icon에 채운 뒤 다시 시도하세요.
 
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
