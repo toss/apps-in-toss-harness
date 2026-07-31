@@ -19,7 +19,7 @@ harness를 **fidelity 사다리 위의 세 개 사용자 대면 환경**으로 �
 | 겹 | 실행 면 | fidelity 천장 | 매핑 station / 명령 |
 |---|---|---|---|
 | **1. 로컬 브라우저** | desktop Chromium + mock SDK + Panel + viewport 시뮬 | 상태/계약 fidelity + 시각 레이아웃 (엔진 fidelity는 구조적 불가) | station 2 (dev) · `pnpm dev`, `/ait inject-devtools` |
-| **2. AITC Sandbox App (PWA)** | 실기기 Safari/WebKit + installable PWA shell(`devtools.aitc.dev/launcher/`) + cloudflared 터널로 dev 서버 iframe | 실기기 WebKit 엔진 + 실 터치/뷰포트 (토스 WebView·검수 불필요) + CDP 디버깅(`tunnel.cdp` opt-in, 양 끝 배선 완료 — SDK는 mock) | station 2 (dev) · `/ait setup-phone-preview`, `pnpm dev:phone` · station 3 MCP attach는 `start_debug({mode:'relay-sandbox'})`(출력 env `relay-mobile`, `--target=mobile`) |
+| **2. Sandbox App (PWA)** | 실기기 Safari/WebKit + installable PWA shell(`devtools.aitc.dev/launcher/`) + cloudflared 터널로 dev 서버 iframe | 실기기 WebKit 엔진 + 실 터치/뷰포트 (토스 WebView·검수 불필요) + CDP 디버깅(`tunnel.cdp` opt-in, 양 끝 배선 완료 — SDK는 mock) | station 2 (dev) · `/ait setup-phone-preview`, `pnpm dev:phone` · station 3 MCP attach는 `start_debug({mode:'relay-sandbox'})`(출력 env `relay-mobile`, `--target=mobile`) |
 | **3. intoss-private relay dev** | 실기기 토스 앱 WebView(dog-food `intoss-private://`) + CDP relay | 토스 WebView 런타임 + 개발 루프 (QR/deep-link로 relay 주입) | station 3 (debug, dev 의도) · `/ait debug` |
 
 핵심 통찰: **fidelity 사다리는 안쪽 겹의 구조적 한계를 바깥 겹이 메우는 동심원이다.** 환경 1(mock)이 못 하는 실기기 WebKit 엔진 거동을 환경 2(PWA)가 토스 검수 없이 채우고, 환경 2가 못 하는 토스 WebView·SDK 네이티브 브리지를 환경 3(intoss-private dev)이 채운다 — 환경 3이 가장 바깥 겹(실 토스 WebView dev 런타임)이다. 겹마다 한 가지씩 더 실제에 가까워지되 진입 비용도 오른다(브라우저 즉시 → PWA 폰 1회 설치 → 토스 dog-food 번들 deploy). station 3(debug)과 6(operate)의 `logs`는 환경 3이 쓰는 같은 on-device CDP relay 인프라의 두 용도다(debug=개발 회귀 진단, operate=배포 후 런타임 관측).
@@ -40,7 +40,7 @@ harness를 **fidelity 사다리 위의 세 개 사용자 대면 환경**으로 �
 
 천장 한 문장: "계약 + 시각 레이아웃은 측정 가능하게 충실하다. 실기기 엔진 fidelity는 물리적으로 불가능하며, 그건 환경 2(PWA)에 위임한다(과거 모델은 환경 3에 위임했으나, PWA가 검수 없이 그걸 메우므로 위임 대상이 한 겹 당겨졌다)."
 
-**환경 2 — AITC Sandbox App (PWA)**
+**환경 2 — Sandbox App (PWA)**
 
 | 영역 | grade | 내용 |
 |---|---|---|
@@ -75,7 +75,7 @@ harness를 **fidelity 사다리 위의 세 개 사용자 대면 환경**으로 �
    │            dev 서버 터널과 별도로 두 번째 cloudflared 터널 + Chii relay를 띄워
    │            한 QR로 화면 미리보기 + on-device CDP를 함께 연다)
    ▼
-[환경 2] AITC Sandbox PWA — 실기기 WebKit, 여전히 mock SDK
+[환경 2] Sandbox PWA — 실기기 WebKit, 여전히 mock SDK
    │           (🟢 양 끝 attach 배선됨: iframe이 gate 통과 → target.js 주입 →
    │            relay에 TARGET으로 연결. MCP는 --target=mobile + AIT_RELAY_BASE_URL로
    │            그 relay에 CLIENT로 붙어 start_debug({mode:'relay-sandbox'})로 환경 2를 운전 —
@@ -98,7 +98,7 @@ fidelity 겹은 Ring 축과 직교하지만, 각 겹은 특정 마일스톤에�
 | 환경 겹 | 매핑 M | 근거 |
 |---|---|---|
 | 1. 로컬 브라우저 | M1 (Ring 1) | station 2·3 GREEN을 떠받치는 상태/계약 fidelity. 로컬 fidelity 4영역(§3)이 디버깅 신뢰도. |
-| 2. AITC Sandbox PWA | M1 (Ring 1) | 실기기 WebKit 엔진 fidelity. dev 신뢰도를 토스 검수 없이 한 겹 끌어올림 — Ring 1 디버깅 환경의 핵심. |
+| 2. Sandbox PWA | M1 (Ring 1) | 실기기 WebKit 엔진 fidelity. dev 신뢰도를 토스 검수 없이 한 겹 끌어올림 — Ring 1 디버깅 환경의 핵심. |
 | 3. intoss-private relay dev | M1 (Ring 1) | 실폰 on-device relay acceptance(#171, 2026-05-25 완료) + fidelity 트랙(safe-area 실측 등). |
 
 즉 환경 1·2·3이 M1(디버깅 가능한 dev 환경)의 fidelity 사다리를 함께 떠받친다.
