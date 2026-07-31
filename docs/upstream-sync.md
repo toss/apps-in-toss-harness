@@ -140,13 +140,14 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
 | `scope-preserve` (LEGACY) | 항상 on, 끌 수 없음 | 식별자에 `LEGACY`가 들어간 상수(예: `LEGACY_IN_APP_ID`)는 영구 보존 — 과거(스코프 변경 이전) 소비자가 실제로 썼던 옛 specifier를 감지하는 용도라, 지금 우리가 스코프를 바꿔도 그 상수의 "옛 이름" 정체성 자체가 바뀌면 안 된다. |
 | `scope-preserve` (prose) | 항상 on, 끌 수 없음 | import/의존성 키/상수 대입이 아닌 모든 언급(README 문장, JSDoc, 주석) — 실측 전례상 사람도 이건 안 건드렸다. |
 | `scope-install` | **off** (`NORMALIZE_SCOPE_INSTALL=1`) | 설치 명령(`npm install`/`npx`/`pnpm add`/`yarn add`/`bun add`), npm 레지스트리 URL(`npmjs.com/package/@ait-co/...`), 설치 감지용 `grep` 문자열. 대상 패키지가 아직 `@apps-in-toss`로 npm 배포되지 않아 **지금 바꾸면 실제로 깨진다**(사용자가 그 명령을 그대로 실행하면 404). **해제 조건**: 해당 패키지가 `@apps-in-toss/*`로 실제 npm 배포된 뒤. |
+| `scope-external-target` | 항상 on (게이트는 `scope-install`과 공유) | `packages/agent-plugin/shared/templates/**`(스캐폴드 템플릿, `/ait:new`가 외부 프로젝트로 그대로 복사), `shared/skills/inject/references/**`·`shared/skills/new-miniapp/SKILL.md`·`shared/skills/setup-phone-preview/SKILL.md`(외부 프로젝트에 주입하는 코드 샘플)는 `import ... from '@ait-co/...'`나 `"@ait-co/...": "..."` 같은 **functional 모양이어도 치환하지 않는다** — 이 harness 자신의 pnpm workspace가 아니라 "다른 프로젝트"에 그대로 복사·주입되는 콘텐츠라 `scope-install`과 똑같이 미배포 문제를 겪는다. `NORMALIZE_SCOPE_INSTALL=1`이면 이 경로들도 (functional 모양이든 prose든) 한꺼번에 새 스코프로 넘어간다. **실측 근거**: 절단 완료 후 `packages/` 전체 dry-run에서 이 규칙 없이는 같은 문서 안에서 설치 명령(`pnpm add -D @ait-co/devtools`)은 old-scope로 남고 바로 아래 import 샘플(`import ... from '@apps-in-toss/devtools/unplugin'`)만 new-scope로 바뀌는 내부 불일치가 6개 파일에서 발생했다. |
 | `github-issue-degrade` | on | `github.com/apps-in-toss-community/<repo>/(issues\|pull)/<N>` (마크다운 링크든 평문 URL이든) → 평문 식별자 `<repo>#<N>`. 실측 근거(버그 재현·설계 결정의 출처)를 잃지 않으면서 커뮤니티 org로의 하이퍼링크는 제거한다. |
 | `github-link-rewrite` | on | 그 외 `github.com/apps-in-toss-community/<repo>[...]` 링크. `devtools`/`agent-plugin`처럼 harness에 벤더링된 단일 패키지 repo는 `/tree(또는 blob)/main/packages/<name>/...`로 경로까지 재구성. `debugger`는 그 자체가 서브패키지 구조라 org+repo만 스왑해도 경로가 그대로 맞는다. **매핑이 없는 repo(sdk-example·docs·oidc-bridge·console-cli 등, harness가 벤더링하지 않음)는 존재하지 않는 URL을 지어내지 않고 원문을 그대로 둔다** — 대신 dry-run 리포트에 `github-link-rewrite-needs-review`로 집계되니 사람이 보고 판단한다(참고만 남길지, 내부 동등 문서로 바꿀지, 문장을 통째로 고칠지). |
 | `docs-deeplink-mcp` | on | `https://docs.aitc.dev/guides/<slug>` 같은 딥링크 → `apps-in-toss-docs` MCP(루트 `CLAUDE.md`에 등록된 실제 서버 키, `searchDocumentation`/`getPage`/`askQuestion`/`sendFeedback` 툴)로 조회하라는 안내 문장. 문맥에 한글이 있으면 한국어 문장, 없으면 영어 문장을 쓴다. **없는 URL을 지어내지 않는다** — 대체 링크를 만드는 대신 "MCP로 조회하라"는 절차 안내로 대체한다. |
-| 치환 금지 (protected URLs) | 항상 on | `https://devtools.aitc.dev/launcher/`(실기기 attach가 실제로 여는 launcher PWA — 이 harness는 아직 자체 launcher 호스팅이 없다), `https://aitc.dev/apple-touch-icon.png`(`granite.config.ts`의 `brand.icon` 기본 placeholder — 토스 소유 아이콘 미확보). 이 정확한 문자열은 어떤 규칙도 건드리지 않는다. **해제 조건**: 각각 harness 자체 launcher 호스팅 확보 / 토스 소유 아이콘 자산 확보 후, 코드에서 실제 대체 URL로 갱신하고 이 표·`PROTECTED_LITERALS`에서 제거. |
+| 치환 금지 (protected URLs/literals) | 항상 on | `https://devtools.aitc.dev/launcher/`(실기기 attach가 실제로 여는 launcher PWA — 이 harness는 아직 자체 launcher 호스팅이 없다), `https://aitc.dev/apple-touch-icon.png`(`granite.config.ts`의 `brand.icon` 기본 placeholder — 토스 소유 아이콘 미확보), `@ait-co/devtools/in-app`(분리 전 legacy specifier — `LEGACY_IN_APP_ID`가 dedupe용으로 영구 인식해야 하는 정확한 문자열. LEGACY-named const 대입 밖, 예를 들어 테스트 fixture 문자열 안에 리터럴로 등장해도 리네임되면 안 된다 — 실측 근거: `packages/devtools/src/__tests__/unplugin.test.ts`의 "#817: 분리 전 specifier로 직접 배선한 소비자도 dedupe 대상이다" 테스트). 이 정확한 문자열들은 어떤 규칙도 건드리지 않는다. **해제 조건**: URL 두 개는 각각 harness 자체 launcher 호스팅 확보 / 토스 소유 아이콘 자산 확보 후, 코드에서 실제 대체 URL로 갱신하고 이 표·`PROTECTED_LITERALS`에서 제거. `@ait-co/devtools/in-app`은 `LEGACY_IN_APP_ID`가 소스에서 제거되는 날(더 이상 아무도 이 옛 specifier로 직접 배선하지 않는다고 판단하는 날)까지 영구 보존. |
 | `branding-neutralize` | on | `"커뮤니티 오픈소스 프로젝트입니다."` / `"Community open-source project."` (README 푸터 `---` 구분선까지 함께 제거), `"This project is not affiliated with Toss or Viva Republica."` 단독 줄(마크다운 리스트 항목 포함) 제거. `eyebrow: 'Open Source Community'`류 카피는 같은 소스 안에 이미 쓰이는 중립 표현 `'Apps in Toss'`로 대체(새 카피를 지어내지 않고 기존 표현 재사용) — 이 repo는 토스 공식이라 "공식 표방 금지" disclaimer 자체를 넣지 않는다(루트 `CLAUDE.md` "노출 산출물" 절). |
 | `license-copyright` | on, `LICENSE` 파일에만 | `Copyright (c) <year>, DaveDev42` → `Copyright (c) <year> Viva Republica, Inc.` (BSD-3 본문은 불변). **주의**: 이 harness의 `packages/agent-plugin/LICENSE`(하드포크 당시 손으로 정리)는 지금 저작권자 이름이 아예 빠져 있어(`Copyright (c) 2026`) 이 규칙이 만드는 형태와 다르다 — 이 스크립트는 원 지시(정확한 목표 문자열)를 그대로 따랐다. agent-plugin의 LICENSE를 이 형태로 맞출지는 별도로 판단하라(이 파이프라인은 hardfork 패키지의 파일을 자동으로 건드리지 않는다). |
-| 파일 전체 보존 | 항상 on | `CHANGELOG.md`(상류 릴리즈 히스토리, 커뮤니티 저장소 시절 사실 기록), `docs/superpowers/**`·`meta/**`(설계 아카이브, 날짜 기반 plan/spec 문서) — 파일 전체를 원문 그대로 둔다. |
+| 파일 전체 보존 | 항상 on | `CHANGELOG.md`(상류 릴리즈 히스토리, 커뮤니티 저장소 시절 사실 기록), `docs/superpowers/**`·`meta/**`(설계 아카이브, 날짜 기반 plan/spec 문서), `eval/e2e/baseline.json`(메인테이너가 수동으로만 갱신하는 시계열 비교 기준선 — 측정 시점의 template 의존성 문자열을 그대로 기록한 스냅샷이라 자동 정규화 대상이 아니다), `shared/__tests__/validate-negative.test.ts`(validate-plugin.mjs의 A2/docs-link-banned 음성 테스트가 fixture 안에 의도적으로 `https://docs.aitc.dev` 링크를 심어 규칙 발화를 검증한다 — `docs-deeplink-mcp`가 이 링크를 지워버리면 fixture가 "금지된 패턴"을 더 이상 담지 못해 테스트가 무력화된다) — 파일 전체를 원문 그대로 둔다. |
 
 ## `.upstream.json` 필드
 
@@ -206,11 +207,18 @@ node --test scripts/__tests__/normalize-upstream.test.mjs
 ```
 
 Node 24 내장 테스트 러너(`node:test` + `node:assert/strict`)만 쓴다 — 의존성
-추가 없음. 47개 케이스가 규칙별 positive/negative, 보존 목록이 실제로
-보존되는지, 그리고 조합된 현실적 fixture로 두 번 실행해 바이트 단위로 같은
-결과가 나오는지(멱등성)를 검증한다. 실제 데이터로도 검증했다: 이 harness가
-이미 손으로 정규화해 둔 `packages/devtools/src/unplugin/optional-peers.ts`에
-이 스크립트를 dry-run으로 돌리면 **변경 0건**이 나온다 — 스크립트의 규칙이
-사람이 실제로 내린 판단(LEGACY 보존, 나머지 상수는 치환)과 정확히 일치한다는
-뜻이다. `packages/devtools` 전체(318개 파일)에 `--write`를 두 번 연달아
-돌려도 두 번째 실행은 항상 "변경 0건"을 보고하고 파일 트리 해시가 동일했다.
+추가 없음. `node --test scripts/__tests__/`처럼 디렉터리를 통째로 주면 Node의
+테스트 러너가 `__tests__`(Jest 관례)를 자동 스캔 대상으로 인식하지 못해
+실패한다(Node가 자동 스캔하는 디렉터리 이름은 `test`/`tests`뿐) — 위처럼
+파일을 직접 지정해서 돌려라. 60개 이상의 케이스가 규칙별 positive/negative,
+보존 목록이 실제로 보존되는지, external-target 경로 판별, CLI의 trailing-slash
+견고성, 그리고 조합된 현실적 fixture로 두 번 실행해 바이트 단위로 같은
+결과가 나오는지(멱등성)를 검증한다. 실제 데이터로도 검증했다: 커뮤니티 절단
+완료 후(2026-07-31) `packages/` 전체(547개 대상 파일, 5개 패키지 전부)에
+dry-run과 `--write`를 돌리면 **변경 0건**이 나온다 — 스크립트의 규칙이 harness의
+실제 최종 상태(스코프 전환, README/OG 브랜딩, LICENSE/repository 좌표, A4 제거
+등)와 정확히 일치한다는 뜻이다. `node scripts/normalize-upstream.mjs packages/`
+처럼 root 인자에 trailing slash를 줘도(디렉터리를 그대로 이어붙이면
+`packages//agent-plugin`처럼 중복 슬래시가 생겨 경로 앵커 정규식이 조용히
+매치에 실패하는 버그가 있었다 — `walkFiles`가 `path.join`으로 고쳐졌다) 결과는
+동일하다.

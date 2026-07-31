@@ -28,7 +28,7 @@
  */
 
 import { readFile, writeFile, stat } from 'node:fs/promises';
-import { extname, basename, relative, sep } from 'node:path';
+import { extname, basename, relative, sep, join as joinPath } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // 상수 테이블 — 여기만 고치면 규칙 대상이 바뀐다.
@@ -63,6 +63,7 @@ export const MULTI_PACKAGE_REPOS = new Set(['debugger']);
 export const PROTECTED_LITERALS = [
   'https://devtools.aitc.dev/launcher/', // 실기기 attach가 실제로 여는 launcher PWA — 대체 호스팅 미확보
   'https://aitc.dev/apple-touch-icon.png', // granite.config.ts brand.icon 기본값 — 토스 소유 아이콘 미확보
+  '@ait-co/devtools/in-app', // 분리 전(pre-split) legacy specifier — LEGACY_IN_APP_ID가 dedupe용으로 영구 인식하는 정확한 문자열. LEGACY-named const 대입 밖(예: 테스트 fixture 문자열 안에 리터럴로 등장)에서도 절대 리네임하면 안 된다 — 실측 근거: packages/devtools/src/__tests__/unplugin.test.ts의 "#817: 분리 전 specifier로 직접 배선한 소비자도 dedupe 대상이다" 테스트가 이 정확한 문자열을 fixture로 쓴다.
 ];
 
 /** 보존 목록 — 파일 전체를 건드리지 않는다 (경로가 이 목록에 매치되면 원본 그대로 반환). */
@@ -70,6 +71,8 @@ const PRESERVED_FILE_PATTERNS = [
   /(^|\/)CHANGELOG\.md$/, // 상류 릴리즈 히스토리 — 커뮤니티 저장소 시절 사실 기록
   /(^|\/)docs\/superpowers\//, // 설계 아카이브 (plans/specs, 날짜 기반)
   /(^|\/)meta\//, // 설계 아카이브 (재설계 기록 등)
+  /(^|\/)eval\/e2e\/baseline\.json$/, // 시계열 비교 기준선 — 메인테이너가 수동으로만 갱신하는 고정 입력값(fixedInputs). 측정 시점의 실제 template 의존성 문자열을 그대로 기록하는 스냅샷이라 자동 정규화 대상이 아니다.
+  /(^|\/)shared\/__tests__\/validate-negative\.test\.ts$/, // validate-plugin.mjs의 A2/docs-link-banned 음성 테스트가 fixture 안에 의도적으로 https://docs.aitc.dev 링크를 심어 규칙 발화를 검증한다 — docs-deeplink-mcp 규칙이 이 링크를 MCP 안내 문구로 바꿔버리면 그 fixture가 더 이상 "금지된 패턴"을 담지 않게 되어 테스트가 무력화된다.
 ];
 
 const HANGUL_RE = /[\u3131-\u318E\uAC00-\uD7A3]/;
@@ -147,6 +150,30 @@ const INSTALL_CMD_RE = /\b(?:npm\s+install|npx|pnpm\s+add|yarn\s+add|bun\s+add)\
 const NPM_REGISTRY_URL_RE = /https:\/\/(?:www\.)?npmjs\.com\/package\/@ait-co\/|https:\/\/registry\.npmjs\.org\/@ait-co\//;
 const GREP_DETECTION_RE = /\bgrep\b/;
 
+/**
+ * "외부 타겟 프로젝트" 콘텐츠 — 이 harness 자신의 pnpm workspace로 로컬 해석되는
+ * import/의존성 선언이 아니라, 스캐폴드 템플릿이 그대로 복사되거나 inject 계열
+ * skill이 "다른(외부) 프로젝트"에 주입하는 코드 샘플·의존성 선언이다. import
+ * 특정자나 package.json 키 모양이어도 실제로는 대상 패키지가 아직 npm 미배포라
+ * scope-install과 동일한 문제(설치·모듈 resolve 실패)를 겪는다 — 그래서 이
+ * 경로 아래에서는 "functional" 분류(2~4단계)를 건너뛰고 곧장 scope-install
+ * 게이트로 보낸다. 실측 근거: 절단 이후 packages/ 전체 dry-run에서 이 경로들이
+ * (설치 명령은 old-scope로 남겨두면서) 문법상 import/package.json 모양이라는
+ * 이유만으로 코드 샘플만 새 스코프로 리네임돼, 같은 문서 안에서 설치 명령과
+ * import 예시의 스코프가 서로 어긋나는 내부 불일치가 발생했다.
+ */
+const EXTERNAL_TARGET_PATH_PATTERNS = [
+  /(^|\/)packages\/agent-plugin\/shared\/templates\//, // /ait:new가 외부 프로젝트로 그대로 복사하는 스캐폴드 템플릿
+  /(^|\/)packages\/agent-plugin\/shared\/skills\/inject\/references\//, // /ait:inject-*가 외부 프로젝트에 주입하는 코드 샘플 안내
+  /(^|\/)packages\/agent-plugin\/shared\/skills\/new-miniapp\/SKILL\.md$/, // 스캐폴드 직후 devtools wiring 코드 샘플
+  /(^|\/)packages\/agent-plugin\/shared\/skills\/setup-phone-preview\/SKILL\.md$/, // 외부 프로젝트 vite.config에 주입하는 코드 샘플
+];
+
+export function isExternalTargetContent(filePath) {
+  const p = toPosix(filePath);
+  return EXTERNAL_TARGET_PATH_PATTERNS.some((re) => re.test(p));
+}
+
 function renameScopeInMatch(str) {
   return str.replace(new RegExp(`@ait-co/(${SCOPE_ALT})`, 'g'), '@apps-in-toss/$1');
 }
@@ -163,6 +190,15 @@ function normalizeScopeLine(line, opts) {
   const constMatch = line.match(CONST_ASSIGN_RE);
   if (constMatch && /LEGACY/i.test(constMatch[2])) {
     return { line, category: 'legacy-preserved' };
+  }
+
+  // 1.5) 외부 타겟 프로젝트 콘텐츠 — import/package.json 모양이어도 functional로
+  // 취급하지 않는다. 항상 scope-install 게이트를 그대로 적용한다.
+  if (opts.externalTarget) {
+    if (opts.allowScopeInstall) {
+      return { line: renameScopeInMatch(line), category: 'install-forced' };
+    }
+    return { line, category: 'install-blocked' };
   }
 
   // 2) import/require/resolve 특정자 — functional, 항상 치환.
@@ -387,6 +423,14 @@ export const RULES = [
       'LEGACY 명명 상수(과거 스펙 감지용, 영구 보존)와 prose/주석/JSDoc 언급은 어떤 설정에서도 치환하지 않는다.',
   },
   {
+    id: 'scope-external-target',
+    category: 'scope',
+    defaultEnabled: true,
+    envVar: null,
+    description:
+      'agent-plugin의 스캐폴드 템플릿(shared/templates/)과 외부 프로젝트 주입 안내(shared/skills/inject/references/, new-miniapp·setup-phone-preview의 SKILL.md)는 import/package.json 키 모양이어도 functional로 치환하지 않는다 — 이 harness 자신의 workspace가 아니라 "다른 프로젝트"에 그대로 복사·주입되는 콘텐츠라 scope-install과 동일한 미배포 문제를 겪는다. EXTERNAL_TARGET_PATH_PATTERNS로 경로 판별, scope-install 게이트를 그대로 공유한다(NORMALIZE_SCOPE_INSTALL=1이면 같이 풀린다).',
+  },
+  {
     id: 'github-issue-degrade',
     category: 'link',
     defaultEnabled: true,
@@ -449,10 +493,11 @@ export function normalizeContent(content, ctx) {
 
   // 스코프 치환은 코드/JSON/마크다운 어디든 줄 단위로 동작.
   const allowScopeInstall = env.NORMALIZE_SCOPE_INSTALL === '1';
+  const externalTarget = isExternalTargetContent(filePath);
   out = out
     .split('\n')
     .map((line) => {
-      const { line: nextLine, category } = normalizeScopeLine(line, { allowScopeInstall });
+      const { line: nextLine, category } = normalizeScopeLine(line, { allowScopeInstall, externalTarget });
       if (category) counter.bump(`scope:${category}`);
       return nextLine;
     })
@@ -488,7 +533,12 @@ async function walkFiles(root) {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
-      const full = `${dir}/${entry.name}`;
+      // path.join으로 정규화 — 호출자가 trailing slash를 준 경로(예: `packages/`)를
+      // 그대로 문자열 이어붙이면 `packages//agent-plugin/...`처럼 중복 슬래시가
+      // 생겨, 경로 앵커 정규식(EXTERNAL_TARGET_PATH_PATTERNS 등)이 조용히
+      // 매치에 실패한다 — 실측 근거: 이 버그로 packages/ 전체 dry-run이
+      // external-target 예외를 전혀 적용하지 못했다.
+      const full = toPosix(joinPath(dir, entry.name));
       if (entry.isDirectory()) {
         await walk(full);
       } else if (entry.isFile()) {

@@ -1,8 +1,21 @@
 // 실행: node --test scripts/__tests__/normalize-upstream.test.mjs
 // (Node 24 내장 테스트 러너 — 의존성 추가 없음. 실행 방법은 docs/upstream-sync.md에도 기록.)
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test, describe } from 'node:test';
-import { normalizeContent, isPreservedFile, PROTECTED_LITERALS, SCOPED_PACKAGES } from '../normalize-upstream.mjs';
+import { fileURLToPath } from 'node:url';
+import {
+  normalizeContent,
+  isPreservedFile,
+  isExternalTargetContent,
+  PROTECTED_LITERALS,
+  SCOPED_PACKAGES,
+} from '../normalize-upstream.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function norm(content, filePath, env) {
   return normalizeContent(content, { filePath, env: env ?? {} });
@@ -69,7 +82,25 @@ describe('scope rename — LEGACY literal (permanent preserve)', () => {
     const withFlag = norm(src, 'src/unplugin/optional-peers.ts', { NORMALIZE_SCOPE_INSTALL: '1' });
     assert.equal(withoutFlag.content, src);
     assert.equal(withFlag.content, src);
-    assert.equal(withoutFlag.counts['scope:legacy-preserved'], 1);
+    // '@ait-co/devtools/in-app' is also a PROTECTED_LITERALS entry (see below),
+    // which is checked before the LEGACY-const branch — so this line is now
+    // categorized 'protected-literal', not 'scope:legacy-preserved'. Either way
+    // the line is untouched; the assertion above is the behavioral guarantee.
+    assert.equal(withoutFlag.counts['scope:protected-literal'], 1);
+  });
+
+  test('a string literal that merely embeds the pre-split specifier (not a LEGACY const) is also preserved — real regression: unplugin.test.ts #817 dedupe fixture', () => {
+    // 실측 근거: packages/devtools/src/__tests__/unplugin.test.ts의
+    // "#817: 분리 전 specifier로 직접 배선한 소비자도 dedupe 대상이다" 테스트는
+    // `const code = "import('@ait-co/devtools/in-app')...";` 형태로 legacy
+    // specifier를 fixture 문자열에 심는다. 변수명이 LEGACY가 아니고, 텍스트
+    // 모양이 `import(...)` 특정자와 우연히 일치해 예전에는 IMPORT_SPECIFIER_RE가
+    // 먼저 매치해 리네임됐다 — 그러면 "분리 전 specifier" 테스트가 더 이상
+    // 분리 전 specifier를 테스트하지 못하게 된다.
+    const src = "const code = \"import('@ait-co/devtools/in-app').then((m) => m.maybeAttach());\\nconsole.log('hello');\";\n";
+    const { content, counts } = norm(src, 'src/__tests__/unplugin.test.ts');
+    assert.equal(content, src);
+    assert.equal(counts['scope:protected-literal'], 1);
   });
 });
 
@@ -270,6 +301,125 @@ describe('preserved files — whole file skipped', () => {
 
   test('a package.json is NOT preserved (sanity check the matcher is not too broad)', () => {
     assert.equal(isPreservedFile('packages/devtools/package.json'), false);
+  });
+
+  test('eval/e2e/baseline.json (frozen measurement snapshot) is untouched — real regression', () => {
+    // baseline.json의 templateBaseline은 메인테이너가 수동으로만 갱신하는 고정
+    // 입력값이다. 자동 정규화 대상이면 스캐폴드 템플릿의 실제(아직 미배포라
+    // 리네임되지 않는) 의존성 문자열과 어긋나게 된다.
+    assert.equal(isPreservedFile('packages/agent-plugin/eval/e2e/baseline.json'), true);
+    const src = '{\n  "fixedInputs": {\n    "templateBaseline": {\n      "@ait-co/devtools": "^0.1.19"\n    }\n  }\n}\n';
+    const { content, preserved } = norm(src, 'packages/agent-plugin/eval/e2e/baseline.json');
+    assert.equal(content, src);
+    assert.equal(preserved, true);
+  });
+
+  test('validate-negative.test.ts (A2/docs-link-banned negative fixture) is untouched — real regression', () => {
+    // 이 파일의 negative fixture는 의도적으로 https://docs.aitc.dev 링크를 심어
+    // validate-plugin.mjs의 A2/docs-link-banned 규칙이 실제로 발화하는지 검증한다.
+    // docs-deeplink-mcp 규칙이 이 링크를 MCP 안내 문구로 바꿔버리면 fixture가
+    // 더 이상 "금지된 패턴"을 담지 않아 테스트가 무력화된다.
+    assert.equal(isPreservedFile('packages/agent-plugin/shared/__tests__/validate-negative.test.ts'), true);
+    const src = "    const broken = `[전체 문서](https://docs.aitc.dev)`;\n    expect(rulesFired(violations)).toContain('A2/docs-link-banned');\n";
+    const { content, preserved } = norm(src, 'packages/agent-plugin/shared/__tests__/validate-negative.test.ts');
+    assert.equal(content, src);
+    assert.equal(preserved, true);
+  });
+
+  test('sibling validate.test.ts (positive fixtures, no banned-link samples) is NOT preserved (matcher precision)', () => {
+    assert.equal(isPreservedFile('packages/agent-plugin/shared/__tests__/validate.test.ts'), false);
+  });
+});
+
+describe('scope rename — external-target content (scaffold templates + inject references)', () => {
+  test('path matcher: scaffold templates are external-target', () => {
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/templates/react-vite/package.json'), true);
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/templates/react-vite/vite.config.ts'), true);
+  });
+
+  test('path matcher: inject references dir is external-target', () => {
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/skills/inject/references/devtools.md'), true);
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/skills/inject/references/debug-console.md'), true);
+  });
+
+  test('path matcher: new-miniapp/SKILL.md and setup-phone-preview/SKILL.md are external-target', () => {
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/skills/new-miniapp/SKILL.md'), true);
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/skills/setup-phone-preview/SKILL.md'), true);
+  });
+
+  test('path matcher: an unrelated agent-plugin file is NOT external-target', () => {
+    assert.equal(isExternalTargetContent('packages/agent-plugin/shared/skills/debug/SKILL.md'), false);
+    assert.equal(isExternalTargetContent('packages/devtools/src/unplugin/index.ts'), false);
+  });
+
+  test('template package.json devDependency stays @ait-co/* by default — real regression: would 404 on scaffold pnpm install', () => {
+    const src = '{\n  "devDependencies": {\n    "@ait-co/devtools": "^0.1.103"\n  }\n}\n';
+    const { content, counts } = norm(src, 'packages/agent-plugin/shared/templates/react-vite/package.json');
+    assert.equal(content, src);
+    assert.equal(counts['scope:install-blocked'], 1);
+    assert.equal(counts['scope:functional-pkgjson'], undefined);
+  });
+
+  test('template vite.config.ts import specifier stays @ait-co/* by default — real regression', () => {
+    const src = "import aitDevtools from '@ait-co/devtools/unplugin';\n";
+    const { content, counts } = norm(src, 'packages/agent-plugin/shared/templates/react-vite/vite.config.ts');
+    assert.equal(content, src);
+    assert.equal(counts['scope:install-blocked'], 1);
+    assert.equal(counts['scope:functional-import'], undefined);
+  });
+
+  test('inject/references code sample (import-from form) stays @ait-co/* by default, consistent with the install command in the same doc — real regression', () => {
+    const src = [
+      'pnpm add -D @ait-co/devtools            # pnpm',
+      '',
+      "import aitDevtools from '@ait-co/devtools/unplugin';",
+      '',
+    ].join('\n');
+    const { content } = norm(src, 'packages/agent-plugin/shared/skills/inject/references/devtools.md');
+    assert.equal(content, src, 'install command and import sample must not disagree on scope');
+  });
+
+  test('external-target files DO flip together once NORMALIZE_SCOPE_INSTALL=1 (post-publish escape hatch still works)', () => {
+    const src = "import aitDevtools from '@ait-co/devtools/unplugin';\n";
+    const { content, counts } = norm(src, 'packages/agent-plugin/shared/templates/react-vite/vite.config.ts', {
+      NORMALIZE_SCOPE_INSTALL: '1',
+    });
+    assert.equal(content, "import aitDevtools from '@apps-in-toss/devtools/unplugin';\n");
+    assert.equal(counts['scope:install-forced'], 1);
+  });
+
+  test('same file OUTSIDE the external-target path list still renames functional imports normally (no over-broadening)', () => {
+    const src = "import aitDevtools from '@ait-co/devtools/unplugin';\n";
+    const { content, counts } = norm(src, 'packages/devtools/vite.config.ts');
+    assert.equal(content, "import aitDevtools from '@apps-in-toss/devtools/unplugin';\n");
+    assert.equal(counts['scope:functional-import'], 1);
+  });
+});
+
+describe('CLI robustness — trailing slash on the root path must not defeat path-anchored rules (regression)', () => {
+  test('invoking with vs. without a trailing slash on the root directory yields the same dry-run report', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'normalize-cli-trailing-slash-'));
+    try {
+      const targetDir = path.join(tmpDir, 'packages', 'agent-plugin', 'shared', 'templates', 'fixture-tpl');
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(targetDir, 'package.json'),
+        '{\n  "devDependencies": {\n    "@ait-co/devtools": "^0.1.0"\n  }\n}\n',
+        'utf8',
+      );
+
+      const scriptPath = path.join(__dirname, '..', 'normalize-upstream.mjs');
+      const rootNoSlash = path.join(tmpDir, 'packages');
+      const rootWithSlash = `${rootNoSlash}/`;
+
+      const outNoSlash = execFileSync('node', [scriptPath, rootNoSlash], { encoding: 'utf8' });
+      const outWithSlash = execFileSync('node', [scriptPath, rootWithSlash], { encoding: 'utf8' });
+
+      assert.equal(outWithSlash, outNoSlash, 'a trailing slash on the root arg must not change the dry-run report');
+      assert.match(outNoSlash, /변경: 0/, 'external-target template package.json must not be flagged as changed');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 
