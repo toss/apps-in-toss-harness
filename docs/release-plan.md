@@ -34,6 +34,12 @@
 - [ ] **실기기 스모크** — iOS Safari / Android Chrome에서 홈 화면 추가, 그리고
       `?url=…&debug=1&relay=…` deep-link로 attach까지 완주. 데스크톱 200 확인은 이걸 대체하지
       못한다(PWA 설치 흐름은 실기기에서만 검증된다).
+      상수를 바꾸지 않고 새 launcher를 가리키게 하는 수단은 `AIT_LAUNCHER_URL` env
+      override다(#19) — 이게 없으면 "상수를 바꿔야 검증할 수 있는데 검증해야 상수를
+      바꾼다"는 순환이 된다. 절차는
+      [`packages/devtools/docs/pages-deploy-verification.md`](../packages/devtools/docs/pages-deploy-verification.md)
+      4번 단계가 정본이다. **override에는 launcher의 base URL만 넣는다** — 회전하는
+      TOTP `at=`가 실린 attach deep-link 전체를 붙여넣지 않는다.
 - [ ] 위가 통과한 뒤에만 `LAUNCHER_URL` 상수 **2곳을 동시에** 교체 —
       `packages/devtools/src/shared/launcher-url.ts`,
       `packages/debugger/src/mcp/deeplink.ts`. 두 패키지가 값-복제 관계라 하나만 바꾸면
@@ -44,7 +50,7 @@
 
 **완료 조건**: `aitc.dev` 참조 0건(CHANGELOG·설계 아카이브 제외).
 
-관련: #11, #15
+관련: #11 · 선행 해소 #19(`AIT_LAUNCHER_URL` override) · #15(배포 노출면 회귀, 완료)
 
 ---
 
@@ -69,9 +75,14 @@
 ### 순서
 
 - [ ] npm 스코프 publish 권한 확인, trusted publisher(GitHub Actions OIDC) 등록
-- [ ] 배포 워크플로 — `workflow_dispatch` 전용, dry-run 기본값, dist-tag 기본 `next`
+- [x] 배포 워크플로 — `workflow_dispatch` 전용, dry-run 기본값, dist-tag 기본 `next`
+      (`.github/workflows/release.yml`, #16). 안전장치는
+      [`docs/npm-release.md`](./npm-release.md) §4 참고 — dry-run은 fail-closed이고,
+      실제 publish는 `main`에서만 허용되며, `dist_tag`는 화이트리스트 검사를 통과해야 한다.
 - [ ] `npm pack` 산출물 검증 — `dist` 포함, `bin`·`exports`가 실존 파일을 가리킴, README 포함,
-      시크릿·내부 경로 미포함
+      시크릿·내부 경로 미포함. **발행 manifest도 함께 본다** — `pnpm pack`은 `workspace:`를
+      `devDependencies`에서도 실제 버전으로 치환하므로, npm에 존재하지 않는 의존이 박힐 수
+      있다(#18: `debug-console`·`debugger`에 `@apps-in-toss/internal-protocol@0.0.0`).
 - [ ] `--tag next`로 1개 패키지 → **실제 설치 실증** → 나머지 2개
 - [ ] 검증 후 `latest` 승격
 - [ ] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip (#10),
