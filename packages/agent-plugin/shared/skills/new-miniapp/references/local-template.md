@@ -1,6 +1,6 @@
 # `--local` 폴백 — 내장 react-vite 템플릿 복사 절차
 
-`/ait:new`의 정본 경로는 create-ait-app 비대화형 호출(SKILL.md Step 2~5)이다.
+`/ait:new`의 정본 경로는 create-ait-app 비대화형 호출(SKILL.md Step 2~6)이다.
 이 문서는 **오프라인·네트워크 제한·create-ait-app 실행 불가** 상황의 폴백
 절차다 — plugin에 동봉된 `react-vite` 템플릿(React 19 + Vite 8 + TS +
 `@ait-co/devtools` 배선 완료)을 복사한다. SKILL.md의 Step 0(toolchain 검사)과
@@ -123,7 +123,7 @@ cd ./<package_name> && pnpm install
 
 `--no-install`이었으면 안내에 `pnpm install`을 한 줄 추가하고, dev 서버
 자동 기동은 **하지 않는다**(사용자가 workspace 통합·lockfile 수동 관리를
-의도한 신호). install을 했다면 SKILL.md Step 6의 "dev 서버 자동 기동"과
+의도한 신호). install을 했다면 SKILL.md Step 8의 "dev 서버 자동 기동"과
 동일하게 `pnpm --dir <project_abs_path> dev`를 `run_in_background: true`로
 기동하고 Local URL을 파싱해 알린다.
 

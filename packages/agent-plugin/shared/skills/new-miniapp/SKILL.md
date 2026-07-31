@@ -33,7 +33,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   `brand.icon`을 빈 문자열로 남기고 그 상태로는 `ait build`가 실패한다 —
   이 skill은 남의 도메인 이미지를 자동으로 채워 넣지 않는다(외부 URL이
   사용자 앱 아이콘으로 박힌 채 빌드가 조용히 통과해버리는 걸 막기 위해).
-  대신 후처리 C가 빈 값 옆에 안내 주석을 남기고, Step 7 완료 안내가
+  대신 후처리 C가 빈 값 옆에 안내 주석을 남기고, Step 8 완료 안내가
   `/ait:design`으로 아이콘을 만들어 채우도록 알린다.
 - `--sample` 없이 만든 프로젝트는 CLI(v0.1.3)가 예제 placeholder를 치환하지
   않고 남기며, 그대로 두면 **런타임에 앱 본체가 렌더되지 않는다** — 후처리 D가
@@ -139,7 +139,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   한국어 안내를 준다. CLI에는 `--force`/overwrite가 없다.)
 
 `--local`이면 여기서 **`references/local-template.md`를 Read**해 그 절차(복사 +
-토큰 치환 + install + 안내)로 진행하고, 아래 2~5는 건너뛴다.
+토큰 치환 + install + 안내)로 진행하고, 아래 2~6은 건너뛴다.
 
 ### 2. scaffold — create-ait-app 비대화형 호출
 
@@ -184,7 +184,36 @@ CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니�
   하려던 설치(`pnpm install` → `pnpm add @apps-in-toss/web-framework@latest`)를
   수동으로 이어가는 회피를 안내한다.
 
-### 3. 후처리 A — dev 스크립트 무결성 (granite bin 검증)
+### 3. 후처리 0 — 버전 가드 (산출물 형상 확인)
+
+Step 2의 핀(`@0.1.3`)이 살아 있는 한 아래 후처리 A~D의 전제(`granite.config.ts`
+파일명·`brand.icon` 필드·`{{...}}` placeholder)는 결정적이다. 하지만 이 핀을
+올리는 날 그 전제가 조용히 깨진다 — upstream 0.2.x는 `granite.config.ts` 대신
+`apps-in-toss.config.ts`를 쓴다. 후처리를 시작하기 전에 산출물 형상이 기대와
+맞는지 먼저 확인한다:
+
+```bash
+test -f ./<package_name>/granite.config.ts && echo "형상 일치(0.1.x)" || echo "형상 불일치"
+```
+
+- **있으면** (0.1.x 형상) 통과 — 후처리 A로 진행.
+- **없으면** 아래 후처리 A~D를 진행하지 않고 즉시 중단한다. `granite.config.ts`가
+  없다는 건 핀(`@0.1.3`)과 실제 scaffold 산출물이 어긋났다는 신호이고, 아래
+  단계들은 전부 0.1.x 산출물 형상을 전제하므로 그대로 진행하면 잘못된 파일을
+  찾다 조용히 실패하거나 엉뚱한 파일을 건드릴 수 있다. 사용자에게 한 블록으로
+  보고하고 멈춘다:
+
+  ```
+  scaffold 산출물이 예상한 0.1.x 형상(granite.config.ts)과 다릅니다.
+  create-ait-app 핀(@0.1.3)과 실제 산출물이 어긋난 것으로 보입니다 —
+  harness#6(버전 가드)을 참조하세요. 이후 후처리를 진행하지 않고 여기서
+  중단합니다.
+  ```
+
+  (0.2.x용 후처리는 새로 작성하지 않는다 — plain 0.2.0은 이 skill 작성 시점
+  기준 npm에 미배포라 대상이 유동적이다. harness#41에 보류 기록.)
+
+### 4. 후처리 A — dev 스크립트 무결성 (granite bin 검증)
 
 템플릿의 `dev` 스크립트는 `granite dev`인데, `granite` bin은 강제 설치되는
 `@apps-in-toss/web-framework` 중 **2.x만 제공**한다(3.x는 `ait` bin뿐). CLI가
@@ -206,10 +235,10 @@ ls ./<package_name>/node_modules/.bin/granite
   `pnpm --dir ./<package_name> why @apps-in-toss/web-framework`)를 사용자에게
   보여준다.
 
-### 4. 후처리 B — devtools 배선 (브라우저 dev 활성화)
+### 5. 후처리 B — devtools 배선 (브라우저 dev 활성화)
 
 **`--no-devtools`가 지정됐으면 이 단계 전체를 건너뛴다** — devtools는 사용자
-의향에 따르는 선택 요소다. 건너뛴 경우 Step 7 완료 안내에서 `pnpm dev` 줄의
+의향에 따르는 선택 요소다. 건너뛴 경우 Step 8 완료 안내에서 `pnpm dev` 줄의
 설명을 조정하고 `/ait:inject-devtools` seam을 알린다.
 
 `inject` skill의 devtools facet과 같은 패턴을 이 자리에서 수행한다 (idempotent —
@@ -243,7 +272,7 @@ directory>/../inject/references/devtools.md**.
 `--sample`로 넣은 IAP/IAA 예제가 브라우저에서 "샌드박스앱/토스앱에서
 실행해주세요" alert만 띄운다.
 
-### 5. 후처리 C — brand.icon 안내 주석 + .gitignore
+### 6. 후처리 C — brand.icon 안내 주석 + .gitignore
 
 **brand.icon**: create-ait-app 템플릿의 `granite.config.ts`는 `brand.icon: ""`
 (빈 문자열)로 생성되는데, `brand.icon`은 필수 필드라 이 상태로는 `ait build`가
@@ -257,7 +286,7 @@ icon: ""  →  icon: "", // 앱 아이콘 https:// URL — /ait:design 으로 �
 ```
 
 (다른 필드는 건드리지 않는다. `brand.icon`이 비어 있으면 `ait build`가
-실패한다는 사실과 무엇을 해야 하는지는 Step 7 완료 안내 블록에서 알린다.)
+실패한다는 사실과 무엇을 해야 하는지는 Step 8 완료 안내 블록에서 알린다.)
 
 **.gitignore**: create-ait-app 템플릿에는 `.gitignore`가 없다. 없으면 생성:
 
@@ -276,7 +305,7 @@ dist/
 
 (`git init` 자체는 하지 않는다 — 사용자 결정. Out of scope 참조.)
 
-### 6. 후처리 D — 미치환 예제 placeholder 복구
+### 7. 후처리 D — 미치환 예제 placeholder 복구
 
 create-ait-app v0.1.3은 `--sample`을 주지 않으면(= 정본 호출) 예제 치환 단계를
 조기 반환해 **템플릿의 `{{…}}` placeholder를 그대로 남긴다** (v0.1.3
@@ -307,9 +336,10 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 > create-vite 산출물이라 placeholder 자체가 없고, TDS 경로는 App.tsx를 무조건
 > 재작성). 호출은 지금 `@0.1.3`으로 핀돼 있으므로(Step 2) 이 단계는 당분간
 > no-op이 되지 않는다 — 핀을 0.2.x로 올리는 시점에 이 단계와 함께 후처리 A/C의
-> `granite.config.ts` 전제를 재검토한다(harness#6).
+> `granite.config.ts` 전제를 재검토한다(harness#6). Step 3(버전 가드)이 그
+> 시점의 형상 불일치를 여기 도달하기 전에 미리 잡아준다.
 
-### 7. 다음 단계 안내 + dev 서버 기동
+### 8. 다음 단계 안내 + dev 서버 기동
 
 생성이 끝나면 한 블록으로 마무리:
 
