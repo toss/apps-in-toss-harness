@@ -1,8 +1,8 @@
-# 환경 2 (AITC Sandbox PWA) — fidelity acceptance 절차
+# 환경 2 (Sandbox PWA) — fidelity acceptance 절차
 
 ## 목적
 
-이 문서는 **환경 2(AITC Sandbox App / PWA)**가 fidelity 사다리의 독립 겹으로서 실제로 작동한다는 것을 메인테이너가 검증하는 절차를 정의한다.
+이 문서는 **환경 2(Sandbox App / PWA)**가 fidelity 사다리의 독립 겹으로서 실제로 작동한다는 것을 메인테이너가 검증하는 절차를 정의한다.
 
 환경 2가 존재하는 이유: 환경 1(로컬 브라우저 + mock SDK)은 desktop Chromium에서 실행되므로 실기기 WebKit 엔진 거동을 구조적으로 재현할 수 없다. 환경 2는 `devtools.aitc.dev/launcher/`에 배포된 installable PWA 셸이 cloudflared 터널을 통해 dev 서버를 iframe으로 띄우는 방식으로, 토스 앱 WebView 없이 실기기 Safari/WebKit 엔진을 타겟으로 삼는다.
 
@@ -20,7 +20,7 @@ iOS Safari에서 아래 URL을 연다.
 https://devtools.aitc.dev/launcher/
 ```
 
-상단의 **"Install launcher to your phone"** 버튼을 탭하거나, Safari 공유 시트 → "홈 화면에 추가"로 설치한다. 설치 후 홈 화면에 "AITC DevTools Launcher" 아이콘이 생기면 완료.
+상단의 **"Install launcher to your phone"** 버튼을 탭하거나, Safari 공유 시트 → "홈 화면에 추가"로 설치한다. 설치 후 홈 화면에 "Apps in Toss DevTools Launcher" 아이콘이 생기면 완료.
 
 iOS에서는 `beforeinstallprompt` 이벤트가 없으므로 공유 시트 경로가 정상 동작이다(`e2e/fixture/launcher/main.ts`의 `@khmyznikov/pwa-install` 커스텀 엘리먼트가 이를 처리한다).
 

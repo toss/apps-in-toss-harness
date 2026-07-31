@@ -235,7 +235,7 @@ export const en: Record<StringKey, string> = {
   'attach.url.section': 'URL (fallback)',
 
   // qr-http-server — attach page mode label (environment visibility, #468)
-  'attach.mode.sandbox': 'env 2 — AITC Sandbox App (PWA)',
+  'attach.mode.sandbox': 'env 2 — Sandbox App (PWA)',
   'attach.mode.intossDev': 'env 3 — intoss-private relay dev',
 
   // attach page — sandbox family (env 2: launcher PWA; no Toss app / _deploymentId concepts)
@@ -277,7 +277,7 @@ export const en: Record<StringKey, string> = {
   'attach.intoss.faq.totp':
     '<strong>TOTP gate Layer C is inactive</strong> — check that <code>AIT_DEBUG_TOTP_SECRET</code> is set on the relay server',
   // Launcher PWA
-  'launcher.title': 'AITC DevTools Launcher',
+  'launcher.title': 'Apps in Toss DevTools Launcher',
   'launcher.description': 'Scan the terminal QR code or paste the tunnel URL.',
   'launcher.installCta': 'Install launcher to your phone',
   'launcher.urlPlaceholder': 'https://example.trycloudflare.com',
