@@ -960,13 +960,11 @@ type _AppLogin = Assert<typeof Mock.appLogin, typeof Original.appLogin>;
 Please file an issue: https://github.com/toss/apps-in-toss-harness/issues
 ```
 
-### 3. Weekly GitHub Actions CI
+### 3. SDK version drift check (`pnpm check-sdk-update`)
 
-`.github/workflows/check-sdk-update.yml` automatically runs **every Monday**:
+Compares the installed `@apps-in-toss/web-framework` version against the published one and, when they differ, prints the upgrade command and exits **1**. It detects only — it does not upgrade or type-check for you. (During the web-framework 3.0 prerelease window it reads the `beta` dist-tag rather than `latest`; this reverts at the GA flip.)
 
-1. Checks for a new version of `@apps-in-toss/web-framework`
-2. Updates to the latest version and runs the type check
-3. On detecting a new version, automatically opens a GitHub Issue (including whether there are type errors)
+**It does not run automatically — invoke it by hand.** The community repo had a workflow that ran this every Monday and opened a GitHub Issue on drift; this repo has no such workflow, because the root `.github/` is harness-owned and is excluded wholesale from upstream snapshots (`EXCLUDE_ROOT_INFRA` in `scripts/sync-upstream.mjs`). Whether to restore the weekly automation is a separate decision.
 
 ## Fidelity QA
 

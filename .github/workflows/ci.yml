@@ -34,5 +34,12 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # mock SDK 정합성 회귀 게이트. devtools README가 "CI는 이걸 자동 실행한다"고
+      # 적어 두지만 실제로는 이 repo 어디에서도 안 돌고 있었다 — 커뮤니티 repo의
+      # 워크플로에만 있었고, 루트 `.github/`는 EXCLUDE_ROOT_INFRA로 상류 스냅샷에서
+      # 제외되므로 harness로 넘어온 적이 없다. 문서를 낮추는 대신 게이트를 되살린다
+      # (실측: 54 probes, 0 errors, exit 0). `--filter`라 devtools가 스크립트를
+      # 잃으면 ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT로 실패한다 — 조용히 통과하지 않는다.
+      - run: pnpm --filter @apps-in-toss/devtools qa:fidelity --runner=mock
       - run: pnpm typecheck
       - run: pnpm test
