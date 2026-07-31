@@ -100,6 +100,14 @@ dev 전용이다.
 
 ## 참고
 
+- **create-ait-app 프로젝트에 IAP/IAA 예제 추가**: 이 skill의 두 facet과는
+  무관한 별도 CLI 서브커맨드지만, 같은 brownfield 자리라 여기 남긴다 —
+  `pnpm dlx create-ait-app@0.1.3 add-sample [directory] --sample iap,iaa`
+  (`directory` 생략 시 기본값은 cwd `.`). `granite.config.ts`가 있는
+  create-ait-app 프로젝트에서만 동작하고(`@0.1.3` 소스 실측:
+  `src/detect-project.js`가 없으면 즉시 거부), `--sample`을 생략하면
+  interactive checkbox 프롬프트로 빠진다. 이 skill은 이 명령을 실행하지
+  않는다 — `new-miniapp` skill의 Step 8 완료 안내가 같은 명령을 노출한다.
 - 표준 dev 환경 셋업(브라우저 mock·실기기 미리보기) 등 주제별 가이드는 docs MCP
   (`searchDocumentation`/`getPage`)로 조회한다.
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`

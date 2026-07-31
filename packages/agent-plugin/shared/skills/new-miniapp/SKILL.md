@@ -370,6 +370,19 @@ grep -n '{{SAMPLE_IMPORTS}}\|{{PAGE_STATE_AND_ROUTES}}\|{{SAMPLE_ROUTES}}\|{{SAM
 그 아래에 `나중에 브라우저 mock 개발이 필요하면: /ait:inject-devtools` 한 줄을
 덧붙인다.
 
+`--sample` 없이 만들었으면(= 정본 호출) "배포 준비가 되면" 블록 아래에 한 줄을
+덧붙인다:
+
+```
+나중에 인앱결제/인앱광고 예제가 필요해지면:
+  cd <package_name> && pnpm dlx create-ait-app@0.1.3 add-sample --sample iap,iaa
+```
+
+(create-ait-app의 `add-sample` 서브커맨드 — `granite.config.ts`가 있는
+프로젝트에서만 동작하고, `--sample`을 생략하면 interactive checkbox 프롬프트로
+빠지므로 에이전트가 대신 실행해줄 땐 항상 명시한다. 자세한 제약은 Out of
+scope 참조.)
+
 #### dev 서버 자동 기동
 
 안내 블록 인쇄 직후, 에이전트가 dev 서버를 백그라운드로 직접 기동한다. Bash
@@ -404,7 +417,14 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   (`inject` skill의 devtools facet).
 - ❌ 기존 프로젝트에 IAP/IAA 샘플 추가 — create-ait-app의 `add-sample`
   서브커맨드가 brownfield를 지원한다 (`pnpm dlx create-ait-app@0.1.3
-  add-sample iap`). 이 skill은 greenfield 전용.
+  add-sample [directory] --sample iap,iaa`, `directory` 생략 시 기본값은
+  cwd `.`). `@0.1.3` 소스 실측(`src/detect-project.js`): 대상 디렉토리에
+  `granite.config.ts`가 없으면 즉시 거부한다("create-ait-app으로 생성한
+  프로젝트인지 확인해 주세요") — create-ait-app으로 만든 프로젝트에서만
+  동작한다. `--sample`(또는 positional `iap`/`iaa`)을 생략하면 interactive
+  checkbox 프롬프트로 빠지므로 비대화형 호출에는 항상 명시한다. 이 skill은
+  greenfield 전용이라 자동 호출하지 않는다 — 필요하면 Step 8 완료 안내의
+  명령을 그대로 쓴다.
 - ❌ Workspace 등록 / 멤버 초대 / billing — 콘솔 UI의 책임.
 - ❌ Git 초기화 — 사용자가 결정 (`.gitignore` 파일만 생성해 둔다).
 - ❌ create-ait-app 자체의 버그 수정 — upstream(toss/create-ait-app) 이슈로.
