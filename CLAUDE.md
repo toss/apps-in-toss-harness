@@ -9,9 +9,9 @@
 
 ## 정본 규칙 (이관 기간 — 가장 중요)
 
-**public 전환 + 첫 `@apps-in-toss/*` npm 배포 전까지, 각 패키지의 정본은 커뮤니티 원 repo다.** 이 repo의 `packages/*`는 plain-copy 스냅샷 staging이다.
+**public 전환 + 첫 `@apps-in-toss/*` npm 배포 전까지, 각 패키지의 정본은 커뮤니티 원 repo다.** 이 repo의 `packages/*`는 plain-copy 스냅샷 staging이다. **예외 — `packages/agent-plugin`은 hardfork 완료로 이 repo가 정본이다** (aitcc 트리밍·manifest 재작성·`/ait:<verb>` rename이 이 repo에서 수행됨). 커뮤니티 `agent-plugin`의 재스냅샷으로 덮지 마라 — 커뮤니티 쪽 개별 개선을 가져올 땐 선별 cherry-pick만. 스냅샷 staging 원칙은 나머지 5패키지(devtools·debugger·debug-console·internal-protocol·polyfill)에만 적용된다.
 
-- 패키지 내용 수정 요청이 오면: 원 repo(`apps-in-toss-community/agent-plugin`, `~/polyfill`, `~/devtools`, `~/debugger` — debugger repo가 debugger·debug-console·internal-protocol 3패키지의 원본)에서 작업하는 게 맞는지 먼저 확인하라. 이 repo에서 직접 고치는 건 monorepo 통합 자체(루트 설정, manifest 타깃 아키텍처 재작성, 패키지 rename)에 한정한다.
+- 패키지 내용 수정 요청이 오면: 원 repo(`~/polyfill`, `~/devtools`, `~/debugger` — debugger repo가 debugger·debug-console·internal-protocol 3패키지의 원본)에서 작업하는 게 맞는지 먼저 확인하라(`agent-plugin`은 예외 — 이 repo가 정본이므로 그대로 여기서 작업한다). 이 repo에서 직접 고치는 건 monorepo 통합 자체(루트 설정, manifest 타깃 아키텍처 재작성, 패키지 rename)와 `agent-plugin` 자체 변경에 한정한다.
 - 커뮤니티 쪽 변경은 재스냅샷(`git archive HEAD | tar -x`)으로 따라온다 — 양쪽 동시 수정(이중 유지보수)을 만들지 마라.
 - **커뮤니티 org(`apps-in-toss-community`)에는 어떤 쓰기도 하지 않는다.** 이 머신의 Block-PublicGithub 프록시가 비-toss GitHub 쓰기를 차단하며, 우회하지 않는다. 읽기(clone·조회)는 가능하다. 이관 관련 커밋·이슈·PR은 전부 이 repo에만 만든다.
 - 정본 전환(이 repo가 정본이 되는 시점)은 public flip + 첫 배포와 함께 명시적으로 선언된다.
