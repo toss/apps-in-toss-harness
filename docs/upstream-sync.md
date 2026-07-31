@@ -22,7 +22,9 @@ import마다 손으로 다시 지우면 곧 drift가 쌓인다.
 | `.upstream.json` (repo 루트) | 각 `packages/<name>`이 어느 커뮤니티 repo/path/ref까지 반영됐는지 기록하는 상태 파일. |
 | `scripts/normalize-upstream.mjs` | 절단 규칙을 재적용하는 순수 텍스트 변환기. import 없이도 단독으로 아무 파일/디렉토리에 돌릴 수 있다. |
 | `scripts/sync-upstream.mjs` | 실제 파이프라인 — 상류 획득 → 반영(모드별) → normalize 자동 실행 → `.upstream.json` 갱신. |
+| `scripts/upstream-drift-audit.mjs` | 읽기 전용 감사 — "지금 몇 건이 다음 sync에 조용히 되돌아가거나 지워지는가"를 측정한다(#25). 작업 트리·상류 clone에 아무것도 쓰지 않는다. |
 | `scripts/__tests__/normalize-upstream.test.mjs` | 정규화 규칙 단위 테스트 (Node 내장 테스트 러너). |
+| `scripts/__tests__/upstream-drift-audit.test.mjs` | 감사 스크립트의 순수 함수(분류·필터·마커 감지) 단위 테스트. |
 
 ## 언제 돌리는가
 
@@ -36,17 +38,41 @@ import마다 손으로 다시 지우면 곧 drift가 쌓인다.
 
 ## 밀림(drift) 확인 — 실행 없이 미리보기
 
+두 스크립트가 서로 다른 질문에 답한다 — 헷갈리지 않게 구분한다.
+
 ```bash
 node scripts/sync-upstream.mjs --package all
 ```
 
 `--write`를 주지 않으면(기본값) 아무것도 쓰지 않고, 패키지별로 상류 HEAD의
 SHA를 `.upstream.json`의 `lastImportedRef`와 비교해 "이미 최신"인지 아니면
-몇 건이 바뀌는지만 보여준다. 이 명령은 로컬에 커뮤니티 repo clone이 있으면
-그걸 `git fetch`(원격 조회, 커뮤니티 repo에 쓰기 없음)하고, 없으면
-`gh api repos/<owner>/<repo>/tarball/<ref>`로 받는다 — clone은
-`~/Projects/github.com/apps-in-toss-community/<repo>`를 기본으로 찾는다
-(harness umbrella 관례).
+몇 건이 바뀌는지만 보여준다. **"상류가 얼마나 앞서갔나"**를 묻는다. 이
+명령은 로컬에 커뮤니티 repo clone이 있으면 그걸 `git fetch`(원격 조회,
+커뮤니티 repo에 쓰기 없음)하고, 없으면 `gh api repos/<owner>/<repo>/tarball/<ref>`로
+받는다 — clone은 `~/Projects/github.com/apps-in-toss-community/<repo>`를
+기본으로 찾는다(harness umbrella 관례).
+
+```bash
+node scripts/upstream-drift-audit.mjs            # snapshot 패키지 전부, 사람이 읽는 표
+node scripts/upstream-drift-audit.mjs --package devtools
+node scripts/upstream-drift-audit.mjs --json      # 기계 판독용
+```
+
+`upstream-drift-audit.mjs`는 다른 질문에 답한다 — **"우리 손수정 중 몇 건이
+다음 sync에 되돌아가는가"**. 상류가 새로 움직이지 않았어도(항상
+`lastImportedRef`, 즉 이미 반영된 시점 기준), 현행 `normalize-upstream.mjs`
+규칙을 그 시점 상류에 다시 적용한 결과를 `packages/<name>`과 바이트
+비교한다 — 그 차이가 "규칙이 아직 따라잡지 못한, 사람이 손으로만 고친
+부분"이고, 다음 `sync-upstream.mjs --write`가 `localOnly` 보호 없이 그
+부분을 조용히 덮어쓰거나 지운다. `localOnly`·`dropUpstreamPaths`·
+`EXCLUDE_ROOT_INFRA`·빌드 산출물(`node_modules`/`dist`/`coverage`/`.turbo`/
+`test-results`/`playwright-report` 등, 세그먼트 단위 매치라 중첩 경로도
+잡는다)은 양쪽에서 제외하므로, 남는 건 전부 실제 위험이다. 결과는
+"덮어쓰기"(양쪽에 있고 내용이 다름) / "삭제"(하네스에만 있음)로 분류하고,
+덮어쓰기의 상류 쪽(=정규화 후) 내용에 커뮤니티 잔재 마커(`aitc.dev`/`@ait-co`/
+`AITC`/`apps-in-toss-community`/`커뮤니티`)가 남아 있으면 표시한다.
+`--check` 같은 CI 게이팅 플래그는 의도적으로 없다 — 지금은 관측 도구다
+(issue #25 참고, 잔여 drift가 모드 결정 전까지 정상 상태로 남는다).
 
 ## mode 두 가지
 
@@ -256,18 +282,37 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
   "AITC 브랜드 정리" 작업으로 JSON-LD `sameAs` 배열 전체 삭제 등 정규 규칙으로
   재현 불가능한 손질이 이미 들어가 있다. 그래서 확장자를 넓히는 대신 letterbox-probe
   의 두 파일만 `.upstream.json`의 `localOnly`로 개별 고정했다.
-- **"AITC 브랜드 정리" 계열의 넓은 drift**: devtools ~65개, debugger 계열
-  ~25개 파일이 상류 재추출본과 여전히 다르다(golden-master 방식 검증 — 상류를
-  고정 ref에서 재추출 → 이 스크립트의 최신 규칙으로 정규화 → `packages/<name>`과
-  `diff -rq`). 표본 조사 결과 전부 `@ait-co` 스코프 토큰이나 disclaimer 문장과
-  무관한 손질이었다 — dogfood 호스트네임/앱 id 교체, `RELEASE_CHANNEL=dogfood`
-  같은 빌드 플래그 추가, MCP 도구 시그니처 변경(`start_attach`에 `mode` 파라미터
-  추가 등), `AITC Sandbox PWA` → `Sandbox PWA` 같은 표기 변경. 이건 이 이슈(#21)
-  범위 밖의 별개 진행 중 작업이라 규칙화하지 않는다 — 규칙화하면 "일반화 가능한
-  패턴"이 아니라 "그 시점 하나의 hand-edit을 정확히 재현하는 규칙"이 되어
-  유지보수 부담만 커진다. 이 drift가 실제로 문제(다음 스냅샷 sync가 그 작업을
-  되돌림)가 되는 시점엔, 그 작업이 끝난 뒤 새로운 `localOnly` 항목으로 등록하거나
-  상류에도 동일하게 반영하는 별도 판단이 필요하다.
+- **"AITC 브랜드 정리" 계열의 넓은 drift**: `scripts/upstream-drift-audit.mjs`로
+  전수 측정한 결과(issue #25, 측정 기준 커밋 `d7700bb`), 현행 규칙 기준으로
+  devtools 60건 / debugger 25건 / debug-console 5건 / internal-protocol 1건,
+  합계 **91건**(그중 커뮤니티 잔재 마커가 남아 있는 것 62건)이 다음
+  `sync-upstream.mjs --write`가 조용히 되돌리거나 지울 하네스 손수정이었다
+  — 이전엔 표본 조사로 "devtools ~65개, debugger 계열 ~25개"로만 어림잡았던
+  것을 정확한 수치로 대체한다. 이 중 **가장 위험도가 높은 두 클래스는 이미
+  `localOnly`로 고정했다**(harness 커밋 — 이 문단을 갱신한 PR):
+  - **클래스 1 — 공개 서빙되는 Pages 표면** (`https://toss.github.io/apps-in-toss-harness/`가
+    서빙하는 파일 전체: `e2e/fixture/index.html`·`assets/og/image.png`·
+    `e2e/fixture/vite.config.ts`·`e2e/fixture/main.tsx`·`e2e/fixture/launcher/**`·
+    `e2e/fixture/public/launcher/{manifest.webmanifest,sw.js}`·
+    `scripts/build-og-image.tsx`·`scripts/og/template.tsx`, 12개 파일, devtools
+    `localOnly` 참고).
+  - **클래스 2 — PR #22(`AIT_LAUNCHER_URL` override)의 소비자·회귀 테스트**
+    (devtools 6개: `src/mcp/deeplink.ts`·`src/mcp/attach-orchestrator.ts`·
+    `src/unplugin/tunnel.ts`·`src/mcp/__tests__/{deeplink,debug-server}.test.ts`·
+    `src/__tests__/unplugin-tunnel.test.ts`, debugger 4개: 같은 목록에서
+    `tunnel.ts`·`unplugin-tunnel.test.ts` 제외 — devtools/debugger 두
+    `localOnly` 참고).
+
+  두 클래스를 등록한 뒤 남은 잔여 drift는 devtools 42건 / debugger 21건 /
+  debug-console 5건 / internal-protocol 1건, 합계 **69건**(잔재 마커 46건)이다
+  — 표본 조사 결과 전부 `@ait-co` 스코프 토큰이나 disclaimer 문장과 무관한
+  손질이었다: dogfood 호스트네임/앱 id 교체, `RELEASE_CHANNEL=dogfood` 같은
+  빌드 플래그 추가, MCP 도구 시그니처 변경(`start_attach`에 `mode` 파라미터
+  추가 등), `AITC Sandbox PWA` → `Sandbox PWA` 같은 표기 변경. 이 69건은
+  **이 문서가 규칙화하지 않기로 의도적으로 남겨 둔 나머지**다 — 개별
+  `localOnly` 등록은 #25가 다루는 모드 결정(snapshot 유지 vs hardfork 전환)과
+  함께 판단한다. 규칙화하면 "일반화 가능한 패턴"이 아니라 "그 시점 하나의
+  hand-edit을 정확히 재현하는 규칙"이 되어 유지보수 부담만 커진다.
 
 ## `.upstream.json` 필드
 
@@ -308,7 +353,8 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
    검증하고, push 전 `@apps-in-toss/*` 항목을 npmmirror와 전수 대조한다.
 3. **snapshot 파일 삭제가 의도와 다르면**: 그 경로를 `.upstream.json`의
    `localOnly`(계속 지키고 싶다) 또는 `dropUpstreamPaths`(반대로 상류에 있어도
-   영구히 빼고 싶다)에 추가하고 다시 돌린다.
+   영구히 빼고 싶다)에 추가하고 다시 돌린다. `node scripts/upstream-drift-audit.mjs`로
+   등록 전후를 비교하면 그 경로가 실제로 위험 목록에서 빠졌는지 확인할 수 있다.
 4. **hardfork(agent-plugin) patch가 너무 커서 리뷰하기 힘들면**: `--ref`를
    최근 몇 커밋 전으로 좁혀서 더 작은 diff를 여러 번 만들거나, 커뮤니티 쪽
    개별 PR/커밋 메시지를 먼저 훑어 가져올 가치가 있는 변경만 골라 그 파일만
@@ -323,7 +369,8 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
 ## 테스트 실행
 
 ```bash
-node --test scripts/__tests__/normalize-upstream.test.mjs
+node --test scripts/__tests__/normalize-upstream.test.mjs scripts/__tests__/upstream-drift-audit.test.mjs
+# 또는 루트에서: pnpm test:scripts (scripts/__tests__/**/*.test.mjs 전체)
 ```
 
 Node 24 내장 테스트 러너(`node:test` + `node:assert/strict`)만 쓴다 — 의존성

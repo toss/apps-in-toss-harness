@@ -43,9 +43,13 @@ const PATCH_OUTPUT_DIR = join(REPO_ROOT, '.upstream-patches');
  *  상류 repo-root 전용 인프라 파일/디렉토리. 실측 근거: devtools 최초 벤더링 시
  *  git archive HEAD로 통째로 받은 뒤 이 목록에 해당하는 것들은 손으로 뺐다
  *  (harness 커밋 edd5743). packages/agent-plugin은 hardfork라 이 목록이 적용되지
- *  않는다(패치만 만들고 자동 반영하지 않으므로).
+ *  않는다(패치만 만들고 자동 반영하지 않으므로). export하는 이유: 이 스크립트와
+ *  scripts/upstream-drift-audit.mjs가 같은 규칙으로 무엇이 "repo-root 인프라"인지
+ *  판단해야 한다 — 두 곳에서 각자 하드코딩하면 목록이 갈라져 감사 결과가 조용히
+ *  틀려진다(#25, TEXT_LIKE_EXTENSIONS를 정규화기↔이 스크립트가 공유하게 만든
+ *  #24와 같은 이유).
  */
-const EXCLUDE_ROOT_INFRA = new Set([
+export const EXCLUDE_ROOT_INFRA = new Set([
   '.github',
   '.githooks',
   '.claude',
