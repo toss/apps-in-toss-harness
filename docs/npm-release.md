@@ -54,6 +54,16 @@ npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 �
 - `dist_tag`·`package` 입력은 워크플로의 `run:` 셸 블록에 직접 텍스트로
   보간하지 않고 `env:`로 넘겨 `"$VAR"`로만 참조한다 — 임의 문자열이 셸
   명령으로 이어붙는 걸 구조적으로 막는다.
+- **dry-run이 실증하지 못하는 것: provenance(Sigstore) 생성.** npm CLI
+  소스(`lib/commands/publish.js` → `libnpmpublish`의 `publish()`) 기준으로,
+  `--dry-run`이면 실제 레지스트리 publish 호출 자체를 건너뛰고 그 호출 안에
+  있는 provenance attestation 빌드(`buildMetadata`)도 함께 건너뛴다 —
+  `--provenance`를 같이 줘도 마찬가지다. trusted-publishing OIDC 토큰
+  교환은 dry-run에서도 시도는 하지만, 실패해도 에러가 아니라 경고만 내고
+  넘어간다. 즉 **dry-run 통과가 "provenance까지 성공한다"의 증거는 아니다**
+  — 그 경로는 `dry_run: false`(실배포)에서 처음 실증된다. §2의 2번(첫
+  실배포는 의존 없는 `debug-console` 하나로)이 이 잔여 리스크를 좁히는
+  역할도 한다.
 
 ## 5. 배포 성사 후 후속 작업
 

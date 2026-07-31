@@ -81,21 +81,14 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           case "$DRY_RUN" in
-            false)
-              real_publish=true
-              dry_run_flag=""
-              ;;
-            true)
-              real_publish=false
-              dry_run_flag="--dry-run"
-              ;;
+            false) real_publish=true ;;
+            true) real_publish=false ;;
             *)
               echo "::error::dry_run must be exactly 'true' or 'false', got: '${DRY_RUN}' — refusing to proceed"
               exit 1
               ;;
           esac
           echo "real_publish=${real_publish}" >> "$GITHUB_OUTPUT"
-          echo "dry_run_flag=${dry_run_flag}" >> "$GITHUB_OUTPUT"
 
           if [ "$DIST_TAG" = "latest" ]; then
             echo "::error::dist_tag 'latest' is not allowed via this workflow. Publish to a non-latest tag (e.g. 'next') first, verify install, then promote manually: npm dist-tag add <pkg>@<version> latest. See docs/npm-release.md."
@@ -179,13 +172,31 @@ jobs:
       # 이어붙이는 값이 들어오면 이 job이 쥔 OIDC publish 자격까지 노출될 수
       # 있다(이 job의 트리거 권한은 repo write라 외부 공격면은 아니지만, 되돌릴
       # 수 없는 액션이라 방어적으로 막는다).
+      #
+      # real_publish 판정은 validate 스텝이 이미 fail-closed로 내렸지만, 여기
+      # 실행 지점에서도 다시 3갈래로 명시적으로 분기한다 — "빈 값·예상 못한
+      # 값이면 기본 동작이 dry-run(혹은 실배포)"가 아니라 "기본 동작이 멈춤"이
+      # 되도록. validate가 항상 먼저 돌고 실패 시 job이 멈추므로 지금 당장
+      # 뚫리는 경로는 없지만, 판단이 두 스텝에 걸쳐 있고 실행 쪽 예전 형태
+      # (`[ -n "$DRY_RUN_FLAG" ]`)는 그 값이 빈 문자열이 되는 쪽(=output 이름
+      # 변경, 스텝 재배치 등)이 실배포로 fail-open이었다. output 하나(real_publish)
+      # 만 넘기고 여기서 다시 검증해 그 재발 경로를 구조적으로 없앤다.
       - name: Pack and publish
         env:
           TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
           DIST_TAG: ${{ inputs.dist_tag }}
-          DRY_RUN_FLAG: ${{ steps.validate.outputs.dry_run_flag }}
+          REAL_PUBLISH: ${{ steps.validate.outputs.real_publish }}
           NPM_CONFIG_PROVENANCE: 'true'
         run: |
+          case "$REAL_PUBLISH" in
+            true) dry_run_flag="" ;;
+            false) dry_run_flag="--dry-run" ;;
+            *)
+              echo "::error::real_publish is '${REAL_PUBLISH}' (expected 'true' or 'false') — refusing to publish"
+              exit 1
+              ;;
+          esac
+
           mkdir -p "$GITHUB_WORKSPACE/release-tarballs"
           for pkg in $TARGET_PACKAGES; do
             echo "::group::${pkg}"
@@ -197,8 +208,8 @@ jobs:
             echo "tarball: ${tarball}"
 
             publish_args=(publish "${tarball}" --tag "$DIST_TAG" --access public --provenance)
-            if [ -n "$DRY_RUN_FLAG" ]; then
-              publish_args+=("$DRY_RUN_FLAG")
+            if [ -n "$dry_run_flag" ]; then
+              publish_args+=("$dry_run_flag")
             fi
 
             npm "${publish_args[@]}"
