@@ -1,0 +1,157 @@
+name: Release
+
+# 수동 발행 전용. push/tag 트리거 없음 — 사고로 배포되면 npm unpublish는
+# 24시간·의존성 조건 제약이 커서 되돌리기 어렵다.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Publish which package(s)?'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - devtools
+          - debugger
+          - debug-console
+      dist_tag:
+        description: 'npm dist-tag'
+        required: true
+        type: string
+        default: next
+      dry_run:
+        description: 'Dry run (no actual publish)'
+        required: true
+        type: boolean
+        default: true
+
+# 진행 중인 발행 job은 취소하지 않는다 — 취소가 half-published 상태를 만들 수 있다.
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # npm trusted publishing(OIDC)에 id-token: write가 필요하다.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          # trusted publishing(OIDC)을 쓰려면 registry-url이 설정된 .npmrc가 있어야
+          # npm CLI가 이 레지스트리를 OIDC 대상으로 인식한다.
+          registry-url: 'https://registry.npmjs.org'
+
+      # npm trusted publishing(OIDC)은 npm CLI >= 11.5.1 (Node >= 22.14.0)이
+      # 필요하다. .nvmrc의 Node 버전에 번들된 npm이 이보다 낮을 수 있으니 명시적으로
+      # 올린다. (공식 가이드: https://docs.npmjs.com/trusted-publishers)
+      - name: Ensure npm CLI supports trusted publishing (OIDC)
+        run: |
+          npm install --global npm@latest
+          npm --version
+
+      - run: pnpm install --frozen-lockfile
+
+      # 게이트는 CI(.github/workflows/ci.yml)와 정확히 같은 커맨드·순서를 쓴다:
+      # `pnpm -r <cmd>`가 아니라 루트 package.json의 스크립트(`pnpm lint`·`pnpm
+      # test` 등)를 그대로 호출한다 — 루트 스크립트는 워크스페이스 재귀 실행 위에
+      # scripts/__tests__/ 같은 루트 전용 테스트를 얹을 수 있어서(`pnpm test` =
+      # `pnpm -r test && pnpm test:scripts`), `pnpm -r test`만 직접 부르면 이런
+      # 루트 레벨 게이트가 조용히 빠질 수 있다. build가 test보다 먼저인 것도
+      # 의도다 — devtools의 터널 테스트가 workspace-link된
+      # @apps-in-toss/debugger의 dist/를 동적 import하기 때문.
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - name: Resolve target packages
+        id: plan
+        run: |
+          case "${{ inputs.package }}" in
+            all) echo "packages=debug-console debugger devtools" >> "$GITHUB_OUTPUT" ;;
+            debug-console) echo "packages=debug-console" >> "$GITHUB_OUTPUT" ;;
+            debugger) echo "packages=debugger" >> "$GITHUB_OUTPUT" ;;
+            devtools) echo "packages=devtools" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::unknown package input: ${{ inputs.package }}"
+              exit 1
+              ;;
+          esac
+
+      # @apps-in-toss/agent-plugin과 @apps-in-toss/internal-protocol은 private: true라
+      # workflow_dispatch의 package 선택지에 애초에 없다(구조적 배제). pnpm publish
+      # 자체도 private 패키지를 거부하지만, 실수로 이 경계가 흐트러지는 것을 막기
+      # 위해 여기서도 명시적으로 한 번 더 확인한다.
+      - name: Guard against private packages
+        run: |
+          for pkg in ${{ steps.plan.outputs.packages }}; do
+            is_private="$(node -p "require('./packages/${pkg}/package.json').private === true")"
+            if [ "$is_private" = "true" ]; then
+              echo "::error::packages/${pkg} is private:true — refusing to publish"
+              exit 1
+            fi
+          done
+
+      # pnpm pack으로 tarball을 먼저 만드는 이유: workspace:* devDependency를 실제
+      # 버전으로 치환하는 건 pnpm의 역할이고(npm publish는 workspace: 프로토콜을
+      # 모른다), 반면 이 시점(pnpm 11.17.0)의 pnpm publish는 npm trusted
+      # publishing(OIDC)을 지원하지 않는다(npm CLI 11.5.1+ 전용 기능). 그래서
+      # "pnpm pack으로 정확한 tarball을 만들고 npm publish로 그 tarball을 올린다"는
+      # 하이브리드 경로를 쓴다 — 두 도구의 강점만 취한다.
+      - name: Pack and publish
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/release-tarballs"
+          for pkg in ${{ steps.plan.outputs.packages }}; do
+            echo "::group::${pkg}"
+            (
+              cd "packages/${pkg}"
+              pnpm pack --pack-destination "$GITHUB_WORKSPACE/release-tarballs"
+            )
+            tarball="$(ls "$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-*.tgz)"
+            echo "tarball: ${tarball}"
+
+            publish_args=(publish "${tarball}" --tag "${{ inputs.dist_tag }}" --access public --provenance)
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              publish_args+=(--dry-run)
+            fi
+
+            npm "${publish_args[@]}"
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### npm release"
+            echo ""
+            echo "- packages: ${{ steps.plan.outputs.packages }}"
+            echo "- dist-tag: ${{ inputs.dist_tag }}"
+            echo "- dry-run: ${{ inputs.dry_run }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # NODE_AUTH_TOKEN(GitHub secret) 폴백 — OIDC trusted publishing이 npmjs.com에
+  # 배선되기 전까지 쓸 수 있는 경로. 기본 job(release)은 건드리지 않고, 이 폴백이
+  # 필요해지면 위 release job의 "Pack and publish" 스텝에 아래를 추가한다:
+  #
+  #   env:
+  #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  #
+  # 그리고 release job의 permissions에서 id-token: write는 빼도 된다(OIDC를 안
+  # 쓰므로). NPM_TOKEN은 npmjs.com에서 발급한 automation 토큰을 GitHub repo
+  # secret으로 저장한 것 — 값은 로그·커밋 어디에도 남기지 않는다.
