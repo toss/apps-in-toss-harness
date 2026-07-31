@@ -66,8 +66,12 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   페이지를 scaffold에 포함.
 - `--local` (선택): create-ait-app을 쓰지 않고 plugin 내장 `react-vite`
   템플릿을 복사한다. 오프라인/네트워크 제한 환경 폴백. 이 경로에서만
-  `--no-install`을 지원한다 (create-ait-app 경로는 CLI가 install을 강제해
-  생략 불가).
+  `--no-install`을 지원한다 — create-ait-app 경로는 CLI가 install을 강제해
+  생략 불가하다 (`@0.1.3` 소스 실측 — npm 배포 tarball과 `v0.1.3` 태그 모두
+  동일: `src/main.js`가 `installDependencies()`를 조건 없이 호출하고,
+  `--skip-install` 같은 스킵 플래그를 정의도 소비도 하지 않는다. upstream
+  main(0.2.0)은 이후 `--skip-install`을 추가했지만 Step 2의 핀은 `@0.1.3`이라
+  아직 적용되지 않는다 — 핀을 올리는 시점에 이 제약도 재검토한다).
 - `--no-devtools` (선택): 후처리 B(devtools 배선)를 건너뛴다 — mock 없이
   실기기/샌드박스 위주로 개발하려는 경우. 나중에 필요해지면
   `/ait:inject-devtools`로 언제든 배선할 수 있다.
@@ -148,9 +152,13 @@ pnpm dlx create-ait-app@0.1.3 <package_name> --inline --pm pnpm --template <temp
 - **생성 위치는 프로세스 cwd 기준** — CLI의 `--cwd` 플래그는 scaffold
   경로에서 무시된다(add-sample 전용). 다른 위치에 만들려면 그 디렉토리에서
   실행한다.
-- **`--skills`는 쓰지 않는다** — CLI가 프로젝트 루트 `CLAUDE.md`/`AGENTS.md`를
-  병합 없이 통째로 덮어써 harness 구성과 충돌한다. 에이전트용 지식 주입은
-  이 plugin의 skill들이 담당하므로 필요 없다.
+- **`--skills`는 쓰지 않는다** — `@0.1.3` 소스 실측(`src/skills.js`의
+  `writeAiSkills()`): `--skills --ai claude`(codex는 `--ai codex`) 조합이면
+  프로젝트 루트 `CLAUDE.md`(codex는 `AGENTS.md`)를 `fs.writeFileSync`로 병합
+  없이 통째로 덮어쓴다 — harness 구성과 충돌한다. 에이전트용 지식 주입은 이
+  plugin의 skill들이 담당하므로 필요 없다. (upstream main(0.2.0)은 이 로직을
+  외부 `skills` CLI 위임으로 교체해 `.claude/skills/`에만 쓰고 루트 파일은
+  건드리지 않지만, 핀은 `@0.1.3`이라 아직 적용되지 않는다.)
 - `pnpm dlx`를 쓴다 — `pnpm create`의 플래그 전달 방식 차이로 인한 오동작을
   피하고 인자를 그대로 CLI에 넘긴다.
 
