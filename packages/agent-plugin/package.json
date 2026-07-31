@@ -1,5 +1,5 @@
 {
-  "name": "@ait-co/agent-plugin",
+  "name": "@apps-in-toss/agent-plugin",
   "version": "0.1.22",
   "description": "Community plugin for building Apps in Toss mini-apps from inside AI coding agents (Claude Code first; Codex and others to follow)",
   "type": "module",
