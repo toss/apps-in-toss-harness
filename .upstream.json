@@ -22,7 +22,8 @@
       "lastImportedRef": "0834f986185e13af4b5ca1eb724bd7661f4d5101",
       "lastImportedAt": "2026-07-30T23:40:22+09:00",
       "mode": "snapshot",
-      "localOnly": [],
+      "localOnly": ["README.md", "README.en.md"],
+      "_localOnly_comment": "harness 커밋 89f3e33(2026-07-31, 'README 설치·import 스코프 불일치 해소 + 미배포 명시')가 설치 명령을 @apps-in-toss/*로 손으로 통일하고 '아직 npm 미배포' 문구를 추가했다 — 상류 community README는 여전히 @ait-co/*라, localOnly 없이 재동기화하면 이 수동 수정이 조용히 사라진다.",
       "dropUpstreamPaths": [
         "e2e/shim-composition.test.ts"
       ],
@@ -38,7 +39,8 @@
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "snapshot",
-      "localOnly": [],
+      "localOnly": ["README.md", "README.en.md"],
+      "_localOnly_comment": "harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유.",
       "dropUpstreamPaths": []
     },
     "debug-console": {
@@ -51,7 +53,8 @@
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "snapshot",
-      "localOnly": [],
+      "localOnly": ["README.md", "README.en.md"],
+      "_localOnly_comment": "harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유.",
       "dropUpstreamPaths": []
     },
     "internal-protocol": {
