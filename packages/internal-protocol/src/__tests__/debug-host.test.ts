@@ -18,11 +18,11 @@ import {
 
 describe('isPrivateAppsHost', () => {
   it('accepts a dogfood subdomain', () => {
-    expect(isPrivateAppsHost('aitc-sdk-example.private-apps.tossmini.com')).toBe(true);
+    expect(isPrivateAppsHost('ait-harness-e2e.private-apps.tossmini.com')).toBe(true);
   });
 
   it('rejects a production entry host', () => {
-    expect(isPrivateAppsHost('aitc-sdk-example.apps.tossmini.com')).toBe(false);
+    expect(isPrivateAppsHost('ait-harness-e2e.apps.tossmini.com')).toBe(false);
   });
 
   it('rejects an attacker host that merely CONTAINS the suffix', () => {
