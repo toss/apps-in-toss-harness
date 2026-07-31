@@ -99,8 +99,8 @@ op run --env-file=.env.eval -- pnpm eval:e2e --task timer --model claude-haiku-4
 | project `.claude/commands` (이 드라이버) | `new`, `plan`, `debug` | `/new` |
 | 설치 플러그인 (`/plugin install`) | `ait:new`, `ait:plan`(skill), `ait:plan`(stub — self-delegating 겹침) | `/ait:new` |
 
-skill도 같은 목록에 `ait:<name>` 키로 오른다. command stub 10개는 전부 bare verb
-파일명을 쓴다 — facet stub 4개(`new`/`inject-devtools`/`inject-polyfill`/
+skill도 같은 목록에 `ait:<name>` 키로 오른다. command stub 9개는 전부 bare verb
+파일명을 쓴다 — facet stub 3개(`new`/`inject-devtools`/
 `inject-debug-console`)는 대응 skill 이름이 달라서(`new-miniapp`/`inject`) 애초에
 안 겹치고, 나머지 6개(`debug`/`design`/`plan`/`setup-debugger`/
 `setup-phone-preview`/`welcome`)는 skill과 verb가 같아 `ait:<verb>` 슬롯에 stub과

@@ -108,7 +108,6 @@
   "devDependencies": {
     "@apps-in-toss/debug-console": "workspace:*",
     "@apps-in-toss/debugger": "workspace:*",
-    "@apps-in-toss/polyfill": "workspace:*",
     "@apps-in-toss/web-framework": "3.0.0-beta.3051978",
     "@apps-in-toss/web-framework-2x": "npm:@apps-in-toss/web-framework@2.10.7",
     "@biomejs/biome": "2.5.1",

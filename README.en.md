@@ -6,7 +6,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We're in the process of migrating tools scattered across the `apps-in-toss-community` organization into this monorepo, and we're currently in private staging. Until the public switch-over and the first `@apps-in-toss/*` npm publish, the community org repos remain canonical. `devtools`, `polyfill`, `debugger`, and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
+We're in the process of migrating tools scattered across the `apps-in-toss-community` organization into this monorepo, and we're currently in private staging. Until the public switch-over and the first `@apps-in-toss/*` npm publish, the community org repos remain canonical. `devtools`, `debugger`, and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
 
 ## Quick start
 
@@ -47,7 +47,6 @@ Login wiring (station 4) is due for a redesign and isn't part of this flow yet.
 | `/ait:plan [requirements]` | Turns natural-language requirements into a list of needed SDK domains, runtime permissions, and console terms (analysis only — hands off to `/ait:new`) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]` | Drives `create-ait-app` non-interactively to scaffold a mini-app, then wires up devtools (mock SDK + panel) as a post-step (greenfield only) | 1. scaffold |
 | `/ait:inject-devtools` | Adds the devtools unplugin to an existing project's build config (brownfield) | 2. dev |
-| `/ait:inject-polyfill [--entry <path>]` | Migrates an existing project to polyfill mode — routes standard Web API calls to the SDK at runtime | 2. dev |
 | `/ait:inject-debug-console` | Installs `debug-console` (on-device attach + eruda) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
 | `/ait:setup-phone-preview` | Wires up the quick-tunnel + launcher PWA flow to preview the dev server on a real device (WebKit) | 2. dev |
 | `/ait:setup-debugger` | Wires the debug MCP server (`debugger`) into the project's `.mcp.json` as an opt-in | 3. debug |
@@ -70,13 +69,12 @@ The harness's standard registration and upload flow uses only the console MCP's 
 
 ## Packages
 
-Six packages managed as a pnpm workspace.
+Five packages managed as a pnpm workspace.
 
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin for Claude Code — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
 | `@apps-in-toss/devtools` | `packages/devtools` | Mock SDK + floating devtools panel + generic bundler plugin | Not yet published to npm |
-| `@apps-in-toss/polyfill` | `packages/polyfill` | Polyfill that routes standard Web API calls to the SDK at runtime | Not yet published to npm |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | Not yet published to npm |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | Not yet published to npm |
 | `@apps-in-toss/internal-protocol` | `packages/internal-protocol` | Device↔host wire-protocol source shared by `debugger` and `debug-console` | Workspace-internal only, not published |

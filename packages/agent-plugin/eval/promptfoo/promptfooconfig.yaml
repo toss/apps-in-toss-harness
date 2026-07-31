@@ -25,7 +25,7 @@
 #
 # 형상 주의 (issue #275): 이 파일은 skill 을 **project skill** 로 얹는다. 실제
 #   사용자는 /plugin install 로 얹으므로 skill 이 `ait:` 네임스페이스에 들어가고
-#   shared/commands/ 10개가 같은 목록에 함께 오른다 — 그 차이가 측정값을 바꿀 수
+#   shared/commands/ 9개가 같은 목록에 함께 오른다 — 그 차이가 측정값을 바꿀 수
 #   있다(project-skill 형상 vs 설치 형상에서 동일 케이스의 통과율이 달랐던 사례가
 #   과거 있었다 — aitcc 정리로 케이스 번호가 재편돼 구체 번호는 더 이상 유효하지
 #   않다). 여기는 **케이스 정본**이고, 라우팅 회귀 판정은 eval/routing/
@@ -114,14 +114,6 @@ tests:
   - description: 'POS inject (devtools facet) — 기존 프로젝트에 devtools 주입'
     vars:
       utterance: '이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어'
-    assert:
-      - type: skill-used
-        value: inject
-
-  # --- station 2: dev — polyfill 마이그레이션 (inject skill의 polyfill facet) ---
-  - description: 'POS inject (polyfill facet) — polyfill 모드 전환'
-    vars:
-      utterance: '표준 Web API로 코드를 쓸 수 있게 앱인토스 polyfill 모드로 마이그레이션해줘'
     assert:
       - type: skill-used
         value: inject

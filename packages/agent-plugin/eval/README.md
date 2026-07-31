@@ -95,17 +95,18 @@ npx promptfoo@latest view
 
 이 fixture 는 skill 을 **project skill**(`.claude/skills/`)로 얹는다. 실제 사용자는
 `/plugin install` 로 얹으므로 skill 이 `ait:` 네임스페이스에 들어가고 `shared/commands/`
-10개가 **같은 목록에 함께** 오른다. 이 차이가 측정값을 바꿀 수 있다 — issue #275 에서 두
+9개가 **같은 목록에 함께** 오른다. 이 차이가 측정값을 바꿀 수 있다 — issue #275 에서 두
 케이스가 project 형상에선 5/5 통과, 설치 형상에선 각각 0/5·2/5 였다(그 두 케이스가 걸었던
-`docs`·`auth-setup` skill 은 이후 harness aitcc 정리로 제거됐고 케이스 번호도 23→13 으로
-재편돼, 구체 수치는 더 이상 현재 케이스에 대응하지 않는다 — 상세는 `routing/README.md`).
+`docs`·`auth-setup` skill 은 이후 harness aitcc 정리로 제거됐고 케이스 번호도 23→13 으로,
+inject skill 의 polyfill facet 제거로 다시 13→12 으로 재편돼, 구체 수치는 더 이상 현재
+케이스에 대응하지 않는다 — 상세는 `routing/README.md`).
 
 그래서 **케이스 정본은 여기**(`promptfooconfig.yaml`)에 두되, **라우팅 회귀 판정은
 [`routing/`](./routing/)** 로 한다 — `claude -p --plugin-dir` 라 설치 형상을 그대로 재고
 API 키도 필요 없다.
 
 ```bash
-bash eval/routing/run.sh 3        # 전체 13케이스 × 3회
+bash eval/routing/run.sh 3        # 전체 12케이스 × 3회
 bash eval/routing/run.sh 5 03 09  # 특정 케이스만 × 5회
 ```
 

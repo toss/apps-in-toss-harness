@@ -64,9 +64,9 @@ bun add @ait-co/debug-console       # bun
 
 ## 4. 진입점 와이어업 (멱등)
 
-진입점(`--entry` 없음 — `inject-polyfill`과 동일한 자동 감지 순서: `src/main.tsx` →
-`src/main.ts` → `src/index.tsx` → `src/index.ts` → `index.tsx` → `index.ts`)을 `Read`로
-열어 `@ait-co/debug-console`이 이미 import되어 있는지 확인. 있으면:
+진입점(`--entry` 없음 — 자동 감지 순서: `src/main.tsx` → `src/main.ts` → `src/index.tsx` →
+`src/index.ts` → `index.tsx` → `index.ts`)을 `Read`로 열어 `@ait-co/debug-console`이 이미
+import되어 있는지 확인. 있으면:
 
 ```
 @ait-co/debug-console import가 이미 있습니다. 와이어업을 건너뜁니다.
