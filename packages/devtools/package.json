@@ -57,10 +57,6 @@
   "scripts": {
     "build": "tsdown",
     "check:footprint-absent": "bash scripts/check-devtools-footprint-absent.sh",
-    "check:mcp-react-free": "bash scripts/check-devtools-footprint-absent.sh",
-    "check:test-runner-dist": "bash scripts/check-devtools-footprint-absent.sh",
-    "check:debug-surface-absent": "bash scripts/check-devtools-footprint-absent.sh",
-    "check:dashboard-html-fresh": "bash scripts/check-devtools-footprint-absent.sh",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.2x.json && tsc --noEmit -p e2e/fixture/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
     "test": "vitest run",
