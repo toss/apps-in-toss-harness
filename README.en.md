@@ -37,7 +37,7 @@ Claude Code is the first-class target for now. Support for other agents such as 
 8. **ship** — Run `ait build` to produce a native `.ait` bundle, then register and upload it through the console MCP's `miniapp_create` → `bundle_upload` → `bundle_upload_complete`.
 9. **operate** — Check post-deploy status with the console MCP's `miniapp_get_status` and `bundle_list`.
 
-Login wiring (station 4) is due for a redesign and isn't part of this flow yet.
+Station 4 (auth) only covers the client-side `appLogin()` mock — the server side of mini-app user login (backend token verification) is deliberately out of scope for the harness. The focus is on getting a working mini-app (client) done first; server-related knowledge and skills will be added in later stages. That's why there's no dedicated login-wiring step in this flow.
 
 ## Commands
 
@@ -54,7 +54,7 @@ Login wiring (station 4) is due for a redesign and isn't part of this flow yet.
 | `/ait:design [figma-url]` | Checks a Figma design against mini-app UX constraints (safe-area, swipe-back, PageHeader) and produces the image assets needed for registration (does not register or upload) | 8. design |
 | `ait build` (terminal command) | Generates a `.ait` native bundle from `granite.config.ts`. Fails if `brand.icon` is empty | 5. register+ship |
 
-Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands — the agent calls the console MCP tools below directly. Station 4 (auth) is also due for a redesign, so this repo has no auth-related commands yet.
+Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands — the agent calls the console MCP tools below directly. Station 4 (auth) has no dedicated login-wiring command because the server side is deliberately out of scope for the harness (see above) — the client side already works via the `appLogin()` mock.
 
 ## MCP servers
 

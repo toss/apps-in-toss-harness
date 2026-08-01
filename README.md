@@ -37,7 +37,7 @@ Claude Code에서 아래 두 명령으로 harness에 진입합니다.
 8. **ship** — `ait build`로 `.ait` 네이티브 번들을 만든 뒤, 콘솔 MCP의 `miniapp_create` → `bundle_upload` → `bundle_upload_complete`로 등록·업로드합니다.
 9. **operate** — 콘솔 MCP의 `miniapp_get_status`, `bundle_list`로 배포 후 상태를 조회합니다.
 
-로그인 배선(station 4)은 재정의 대상이라 아직 이 흐름에 포함돼 있지 않습니다.
+station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다 — 미니앱 사용자 로그인의 서버 측(백엔드 토큰 검증 연동)은 의도적으로 harness 범위 밖입니다. 작동하는 미니앱(클라이언트)을 완성하는 데 먼저 집중하고, 서버 관련 knowledge·skill은 이후 단계적으로 추가할 예정입니다. 그래서 이 흐름에는 별도 로그인 배선 단계가 없습니다.
 
 ## 명령
 
@@ -54,7 +54,7 @@ Claude Code에서 아래 두 명령으로 harness에 진입합니다.
 | `/ait:design [figma-url]` | Figma 디자인을 미니앱 UX 제약(safe-area, swipe-back, PageHeader)과 대조하고 등록용 이미지 자산을 산출 (등록·업로드는 하지 않음) | 8. design |
 | `ait build` (터미널 명령) | `granite.config.ts` 기반으로 `.ait` 네이티브 번들을 생성. `brand.icon`이 비어 있으면 실패합니다 | 5. register+ship |
 
-station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령이 없습니다 — 에이전트가 아래 콘솔 MCP 도구를 직접 호출합니다. station 4(auth)도 재정의 대상이라 이 repo에 auth 관련 명령이 없습니다.
+station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령이 없습니다 — 에이전트가 아래 콘솔 MCP 도구를 직접 호출합니다. station 4(auth)는 서버 구현이 의도적으로 harness 범위 밖이라(위 참고) 별도 로그인 배선 명령이 없습니다 — 클라이언트 쪽은 `appLogin()` mock으로 이미 동작합니다.
 
 ## MCP 서버
 
