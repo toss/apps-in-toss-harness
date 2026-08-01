@@ -63,7 +63,7 @@ import { tmpdir, homedir } from 'node:os';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeFile, TEXT_LIKE_EXTENSIONS } from './normalize-upstream.mjs';
-import { EXCLUDE_ROOT_INFRA } from './sync-upstream.mjs';
+import { EXCLUDE_ROOT_INFRA, resolvePackageTargetDir } from './sync-upstream.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -248,7 +248,7 @@ async function auditPackage(pkgName, pkgCfg) {
       localOnly: pkgCfg.localOnly,
     });
 
-    const targetDir = join(REPO_ROOT, 'packages', pkgName);
+    const targetDir = resolvePackageTargetDir(pkgName, pkgCfg);
     const currentPathsRaw = (await pathExists(targetDir)) ? await listFilesRecursive(targetDir) : [];
     const currentPaths = filterCurrentPaths(currentPathsRaw, { localOnly: pkgCfg.localOnly });
 

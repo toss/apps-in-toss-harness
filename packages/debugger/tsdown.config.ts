@@ -54,6 +54,16 @@ const outExtensions: Options['outExtensions'] = () => ({ js: '.js', dts: '.d.ts'
 // simply point at `vitest/node`, which is what every consumer already has.
 const external = ['vitest', 'vitest/node'];
 
+// internal-protocol lives outside packages/ (shared/, not a pnpm workspace
+// member — #18 option 4). There is no node_modules symlink for the bare
+// `@apps-in-toss/internal-protocol/*` specifier to resolve through, so map it
+// straight onto the shared source directory. Must mirror tsconfig.json's
+// `paths` and vitest.config.ts's `resolve.alias` exactly, or the three
+// toolchains disagree about where the specifier points.
+const alias = {
+  '@apps-in-toss/internal-protocol': '../../shared/internal-protocol/src',
+};
+
 const common = {
   dts: true,
   sourcemap: true,
@@ -64,6 +74,7 @@ const common = {
   outExtensions,
   define,
   external,
+  alias,
 } as const;
 
 // Each entry lives in its own config object, mirroring devtools'

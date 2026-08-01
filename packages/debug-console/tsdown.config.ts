@@ -30,16 +30,28 @@ const outExtensions: Options['outExtensions'] = ({ format }) => {
   return { js: '.js', dts: '.d.ts' };
 };
 
+// internal-protocol lives outside packages/ (shared/, not a pnpm workspace
+// member — #18 option 4). There is no node_modules symlink for the bare
+// `@apps-in-toss/internal-protocol/*` specifier to resolve through, so map it
+// straight onto the shared source directory. Must mirror tsconfig.json's
+// `paths` and vitest.config.ts's `resolve.alias` exactly, or the three
+// toolchains disagree about where the specifier points.
+const alias = {
+  '@apps-in-toss/internal-protocol': '../../shared/internal-protocol/src',
+};
+
 const common = {
   // `eager` runs declaration emit through tsc instead of the isolated-
   // declarations fast path. `gate.ts` and `bridge-observer.ts` re-export
-  // symbols that originate in `@apps-in-toss/internal-protocol`, whose entries are
-  // raw `.ts` files; the fast path cannot emit across that boundary (it warns
-  // "Failed to emit declaration file") and silently drops the re-export lines,
-  // after which the rollup fails on every symbol `index.ts` forwards through
-  // them. With `eager` the declarations are inlined into `dist/*.d.ts`, which
-  // is the required outcome anyway: the protocol package is private and never
-  // published, so nothing we ship may name it.
+  // symbols that originate in `@apps-in-toss/internal-protocol` (`shared/internal-protocol`,
+  // aliased above), whose entries are raw `.ts` files; the fast path cannot
+  // emit across that boundary (it warns "Failed to emit declaration file")
+  // and silently drops the re-export lines, after which the rollup fails on
+  // every symbol `index.ts` forwards through them. With `eager` the
+  // declarations are inlined into `dist/*.d.ts`, which is the required
+  // outcome anyway: internal-protocol isn't a package at all (not a pnpm
+  // workspace member, no package.json entry to resolve), so nothing we ship
+  // may name it.
   dts: { eager: true },
   sourcemap: true,
   clean: true,
@@ -47,6 +59,7 @@ const common = {
   outExtensions,
   define,
   external,
+  alias,
 } as const;
 
 export default defineConfig([

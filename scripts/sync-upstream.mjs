@@ -75,6 +75,24 @@ export const EXCLUDE_ROOT_INFRA = new Set([
   '.git',
 ]);
 
+/**
+ * 패키지의 로컬 반영 대상 디렉터리. 기본은 `packages/<name>`이지만,
+ * internal-protocol처럼 pnpm workspace 밖(`shared/<name>`)으로 강등된
+ * 패키지는 `.upstream.json`의 `packages.<name>.localPath`로 실제 물리
+ * 경로를 명시한다(#18 옵션 4 — packages/ 밖으로 옮기면서 상류 sync
+ * 파이프라인의 타겟도 함께 옮겨야 한다). export하는 이유: 이 스크립트와
+ * scripts/upstream-drift-audit.mjs가 같은 매핑으로 "지금 이 패키지가
+ * 로컬 어디 있는가"를 판단해야 한다 — 각자 `packages/<name>`을 하드코딩하면
+ * internal-protocol 감사가 존재하지 않는 디렉터리를 보고 조용히 "분기 0건"을
+ * 리포트한다(실측: EXCLUDE_ROOT_INFRA/TEXT_LIKE_EXTENSIONS와 같은 공유 이유).
+ * @param {string} pkgName
+ * @param {{ localPath?: string }} pkgCfg
+ * @returns {string}
+ */
+export function resolvePackageTargetDir(pkgName, pkgCfg) {
+  return join(REPO_ROOT, pkgCfg?.localPath ?? join('packages', pkgName));
+}
+
 const DEFAULT_LOCAL_CLONE_ROOT = join(homedir(), 'Projects', 'github.com', 'apps-in-toss-community');
 const DEFAULT_REF_FALLBACK = 'main';
 
@@ -254,7 +272,7 @@ export function decideDeleteGate({ toDeleteCount, write, allowDelete }) {
 // ---------------------------------------------------------------------------
 
 async function applySnapshot(pkgName, pkgCfg, extractRoot, write, allowDelete) {
-  const targetDir = join(REPO_ROOT, 'packages', pkgName);
+  const targetDir = resolvePackageTargetDir(pkgName, pkgCfg);
   const localOnly = new Set(pkgCfg.localOnly ?? []);
   const dropUpstream = new Set(pkgCfg.dropUpstreamPaths ?? []);
 
@@ -345,7 +363,7 @@ function extractDepsSignature(pkgJsonText) {
 // ---------------------------------------------------------------------------
 
 async function applyHardfork(pkgName, pkgCfg, extractRoot, sha) {
-  const targetDir = join(REPO_ROOT, 'packages', pkgName);
+  const targetDir = resolvePackageTargetDir(pkgName, pkgCfg);
   await mkdir(PATCH_OUTPUT_DIR, { recursive: true });
   const patchPath = join(PATCH_OUTPUT_DIR, `${pkgName}-${sha.slice(0, 12)}.patch`);
 
@@ -366,7 +384,7 @@ async function applyHardfork(pkgName, pkgCfg, extractRoot, sha) {
   const lineCount = stdout.split('\n').length;
 
   log(`  hardfork 모드 — 자동 반영 거부. 상류 diff를 patch로 저장: ${relative(REPO_ROOT, patchPath)} (${lineCount}줄)`);
-  log(`  packages/${pkgName}은 이 repo에서 이미 하드포크된 패키지다 — 자동 재스냅샷 금지, 선별 cherry-pick만.`);
+  log(`  ${relative(REPO_ROOT, targetDir)}은 이 repo에서 이미 하드포크된 패키지다 — 자동 재스냅샷 금지, 선별 cherry-pick만.`);
   log('  이 patch에서 실제로 가져오고 싶은 변경만 사람이 선별 cherry-pick하라 — 통째로 적용(patch -p1 등)하지 마라.');
   return { patchPath };
 }
@@ -375,8 +393,8 @@ async function applyHardfork(pkgName, pkgCfg, extractRoot, sha) {
 // normalize 재적용
 // ---------------------------------------------------------------------------
 
-async function runNormalize(pkgName, write) {
-  const targetDir = join(REPO_ROOT, 'packages', pkgName);
+async function runNormalize(pkgName, pkgCfg, write) {
+  const targetDir = resolvePackageTargetDir(pkgName, pkgCfg);
   const files = await listFilesRecursive(targetDir);
   let changed = 0;
   for (const f of files) {
@@ -461,7 +479,7 @@ async function main() {
           process.exitCode = 1;
           continue; // 삭제 가드 발동 — 이 패키지는 아무것도 반영하지 않았다(normalize도 skip).
         }
-        await runNormalize(pkgName, args.write);
+        await runNormalize(pkgName, pkgCfg, args.write);
 
         if (args.write) {
           pkgCfg.lastImportedRef = sha;

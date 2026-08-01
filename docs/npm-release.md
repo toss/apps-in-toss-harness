@@ -82,7 +82,74 @@ npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 �
   `prepublishOnly`가 아니라 `ci.yml`에 넣어라 — `prepublishOnly`는 사람이
   디렉터리에서 손으로 publish하는 경우의 최후 방어선으로만 남겨 둔다.
 
-## 5. 배포 성사 후 후속 작업
+## 5. internal-protocol phantom devDependency (#18) — 결정: 옵션 4
+
+`@apps-in-toss/internal-protocol`은 `debugger`·`debug-console`이 공유하는
+device↔host wire-protocol 상수 소스였다. `private: true` + `version: 0.0.0`인
+pnpm workspace 패키지였는데, `pnpm pack`/`pnpm publish`가 `workspace:*`를
+`devDependencies`에서도 실제 버전 문자열로 치환하기 때문에, 발행되는
+`debug-console`·`debugger` manifest에는 npm에 **영원히 존재하지 않을**
+`"@apps-in-toss/internal-protocol": "0.0.0"`이 그대로 박혔다 — 기능은 안 깨지지만
+(npm은 devDependencies를 설치하지 않는다) 공급망 스캐너·SBOM 도구에는 해결 불가
+의존으로, registry 메타데이터를 보는 사람에게는 "존재하지 않는 내부 패키지"로
+남는다. npm 버전은 불변이라 **첫 발행 전이 유일한 차단 시점**이었다.
+
+검토한 선택지:
+
+1. **`internal-protocol`을 발행 대상으로 승격** — `private: true` 해제 + 실버전
+   부여. 가장 단순하지만 내부 프로토콜을 영구히 공개 API 표면으로 노출하게 된다
+   (`@apps-in-toss` 스코프에 이름이 영구히 남고, 72시간 후에는 unpublish도 못 한다).
+2. **devDependency 관계 제거 — 각 패키지로 소스 흡수** — 중복이 생기고, 이 패키지가
+   존재하는 이유(device↔host 상수를 두 패키지 사이에서 **어긋나지 않게** 묶어두는
+   단일 정본)를 정확히 잃는다.
+3. **발행 직전 manifest 후처리** — `pnpm pack` 산출 tarball을 손으로 수정. 동작은
+   하지만 "발행물과 repo의 manifest가 다르다"는 상태가 생겨 provenance 신뢰를 깎는다.
+   채택하지 않음.
+4. **워크스페이스 패키지를 그만두고 공유 소스로 강등 (채택)** — `packages/internal-protocol`을
+   pnpm workspace 밖 `shared/internal-protocol/`로 옮긴다. `pnpm-workspace.yaml`은
+   `packages/*`만 잡으므로 이동만으로 workspace 밖으로 나가고, `package.json` 항목 자체가
+   발행 manifest에 등장할 여지가 없어진다. 2번의 상위 호환이다 — 소스 복제 없이 단일
+   정본을 유지하면서도 발행면은 3번 옵션처럼 깨끗해진다.
+
+옵션 4를 택한 근거: 1번은 되돌릴 수 없는 방향으로 공개 표면을 늘린다 — 유령
+devDep 한 줄보다 "내부 프로토콜인데 왜 공개 스코프에 있나"라는 질문을 영구히
+남기는 불필요한 공개 패키지 하나가 첫인상 관점에서 더 오래 남는 자국이다. 4번은
+되돌릴 수 있고(원하면 다시 패키지로 승격 가능), 비용이 빌드 설정 수준이며,
+`internal-protocol`의 `exports`가 이미 raw TS(`./src/*.ts`)를 가리켜 소비자
+번들러가 소스째 흡수하는 구조라 개념적으로도 애초에 패키지일 필요가 없었다.
+
+### 구조
+
+- `shared/internal-protocol/`에 소스(`src/*.ts` 4개 모듈 + `__tests__/` 3개
+  테스트 파일)와 `tsconfig.json`·`biome.json`·`vitest.config.ts`가 그대로 남는다.
+  `package.json`도 남지만 이제 문서용 manifest일 뿐이다(pnpm workspace 밖이라
+  `pnpm -r …`의 어떤 스크립트도 이 디렉터리에 닿지 않는다).
+- `debugger`·`debug-console`의 `devDependencies`에서 `@apps-in-toss/internal-protocol`
+  항목이 완전히 사라졌다.
+- 기존 `@apps-in-toss/internal-protocol/<subpath>` bare specifier(소스 코드의
+  import 문)는 **한 줄도 바꾸지 않았다** — 대신 두 소비자 패키지 각각의
+  `tsconfig.json`(`compilerOptions.paths`) · `tsdown.config.ts`(`alias`) ·
+  `vitest.config.ts`(`resolve.alias`) 3곳에서 그 specifier를
+  `../../shared/internal-protocol/src/*.ts` 물리 경로로 매핑한다. 3곳 중 하나라도
+  빠지면 그 도구(타입체크/빌드/테스트)가 그 자리에서 소리 내며 실패한다 — 조용한
+  실패 모드는 없다.
+- `pnpm -r test`/`lint`/`typecheck`가 더 이상 `shared/internal-protocol`에 닿지
+  않으므로, 루트 `package.json`에 `test:shared`/`lint:shared`/`typecheck:shared`
+  스크립트를 신설해 루트 `test`/`lint`/`typecheck`에 합성했다 — internal-protocol
+  자신의 테스트 28건·lint·독립 typecheck가 조용히 커버리지에서 빠지지 않는다.
+  (4개 소스 모듈 자체의 typecheck는 이미 두 소비자 패키지의 기존 typecheck가
+  import 그래프를 통해 전이적으로 검사한다 — 루트 `typecheck:shared`가 메우는 건
+  `__tests__/` 전용 타입체크뿐이다.)
+- `scripts/check-pack-manifests.mjs`의 `KNOWN_VIOLATIONS` baseline에서 두 항목을
+  제거했다 — internal-protocol이 workspace 패키지 목록(`packages/*`)에서 아예
+  빠졌으므로 `findPhantomDependencies()`가 애초에 그 이름을 찾지 못해 위반이
+  발생하지 않는다.
+- `.upstream.json`의 internal-protocol 항목이 `localPath: "shared/internal-protocol"`을
+  얻었다 — `scripts/sync-upstream.mjs`/`scripts/upstream-drift-audit.mjs`가 이제
+  이 필드로 로컬 반영 대상을 계산한다(상류 쪽 `upstream.path`는 상류 repo 안에서의
+  위치라 그대로 `packages/internal-protocol`).
+
+## 6. 배포 성사 후 후속 작업
 
 - 스킬·템플릿의 설치 문자열을 `@ait-co/*` → `@apps-in-toss/*`로 flip (harness#10).
 - README의 "아직 npm 미배포" 문구 제거.

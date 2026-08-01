@@ -39,11 +39,13 @@ async function withTempWorkspace(packageManifests, fn) {
 }
 
 describe('readWorkspacePackages + findPhantomDependencies — 현재 repo 상태', () => {
-  test('현재 실제 repo는 debugger/debug-console → internal-protocol의 알려진 2건만 위반한다', async () => {
+  test('현재 실제 repo는 위반이 없다 (#18 해소 — internal-protocol이 shared/로 강등돼 workspace 밖)', async () => {
     const packages = await readWorkspacePackages(REPO_ROOT);
     assert.ok(packages.length >= 4, `워크스페이스 패키지가 충분히 발견돼야 한다 (found ${packages.length})`);
 
     const violations = findPhantomDependencies(packages);
+    assert.deepEqual(violations, [], `위반이 발견됨: ${JSON.stringify(violations, null, 2)}`);
+
     const { newViolations, staleBaseline } = classifyAgainstBaseline(violations, KNOWN_VIOLATIONS);
 
     assert.deepEqual(

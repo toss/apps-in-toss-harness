@@ -1,5 +1,5 @@
 {
-  "_comment": "일방향 vendored import 파이프라인 상태 파일. 각 packages/<name>이 apps-in-toss-community 조직의 어느 repo/path에서, 어느 ref까지 반영됐는지 기록한다. mode 설명: 'hardfork'는 이 repo에서 이미 갈라져 나가 자동 덮어쓰기가 금지된 패키지 — 새 상류 커밋은 patch로만 사람이 선별 cherry-pick한다(현재 5개 패키지 전부). 'snapshot'은 과거 모드로, 상류를 정본으로 통째로 덮어쓸 수 있었다(devtools/debugger/debug-console/internal-protocol이 harness#25 결정 2026-07-31로 전환되기 전까지 이 모드였다) — sync-upstream.mjs는 이 모드를 계속 지원하지만 지금 이 파일 안의 어느 패키지도 쓰지 않는다. lastImportedRef/lastImportedAt은 hardfork에서는 갱신되지 않는 고정값(패치 생성의 diff 기준점)이라 스크립트가 자동으로 건드리지 않는다 — 사람이 손으로 고치지 마라. 자세한 절차·모드 결정 근거는 docs/upstream-sync.md.",
+  "_comment": "일방향 vendored import 파이프라인 상태 파일. 각 packages/<name>이 apps-in-toss-community 조직의 어느 repo/path에서, 어느 ref까지 반영됐는지 기록한다. mode 설명: 'hardfork'는 이 repo에서 이미 갈라져 나가 자동 덮어쓰기가 금지된 패키지 — 새 상류 커밋은 patch로만 사람이 선별 cherry-pick한다(현재 5개 패키지 전부). 'snapshot'은 과거 모드로, 상류를 정본으로 통째로 덮어쓸 수 있었다(devtools/debugger/debug-console/internal-protocol이 harness#25 결정 2026-07-31로 전환되기 전까지 이 모드였다) — sync-upstream.mjs는 이 모드를 계속 지원하지만 지금 이 파일 안의 어느 패키지도 쓰지 않는다. lastImportedRef/lastImportedAt은 hardfork에서는 갱신되지 않는 고정값(패치 생성의 diff 기준점)이라 스크립트가 자동으로 건드리지 않는다 — 사람이 손으로 고치지 마라. 자세한 절차·모드 결정 근거는 docs/upstream-sync.md. `packages.<name>.localPath`(선택)는 로컬 반영 대상이 packages/<name> 기본값이 아닐 때만 명시한다 — harness#18(옵션 4)로 internal-protocol이 pnpm workspace 밖 shared/internal-protocol로 강등되며 처음 쓰였다; sync-upstream.mjs/upstream-drift-audit.mjs의 resolvePackageTargetDir()가 이 필드를 읽는다.",
   "packages": {
     "agent-plugin": {
       "_comment": "hardfork 완료 (skill 7종 제거, /ait:<verb> rename, manifest 재작성 — 이 repo가 정본). 상류 재스냅샷 금지, 선별 cherry-pick만. lastImportedRef는 하드포크의 베이스가 된 커밋(harness commit d456387 'chore: monorepo 골격 + 1차 스냅샷').",
@@ -101,21 +101,30 @@
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "hardfork",
-      "localOnly": ["README.md", "README.en.md", ".gitignore", "biome.json"],
+      "localOnly": [
+        "README.md",
+        "README.en.md",
+        ".gitignore",
+        "biome.json"
+      ],
       "_localOnly_comment": "README.md/README.en.md: harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유. .gitignore/biome.json: debugger 항목의 _localOnly_comment와 동일한 사유(repo-root 전용 설정을 서브트리에 손으로 복사).",
       "dropUpstreamPaths": []
     },
     "internal-protocol": {
-      "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다. 전환 사유는 devtools 항목과 동일(측정 기준 커밋 d7700bb, 잔존 1건). lastImportedRef는 이제 갱신되지 않는 고정 기준점(diff patch 생성 기준). 상류 debugger repo의 packages/internal-protocol 서브디렉토리를 추출 대상으로 삼았다는 사실은 바뀌지 않는다. localOnly는 지우지 않고 유지 — 선별 cherry-pick 대조 기준.",
+      "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다. 전환 사유는 devtools 항목과 동일(측정 기준 커밋 d7700bb, 잔존 1건). lastImportedRef는 이제 갱신되지 않는 고정 기준점(diff patch 생성 기준). 상류 debugger repo의 packages/internal-protocol 서브디렉토리를 추출 대상으로 삼았다는 사실은 바뀌지 않는다(상류의 위치는 그대로) — 로컬 반영 대상만 harness#18(옵션 4, 결정 2026-08-01)로 packages/internal-protocol에서 shared/internal-protocol로 강등됐다: private:true/version:0.0.0 workspace 패키지가 debugger·debug-console의 발행 manifest에 phantom devDependency로 박히는 문제를 pnpm workspace 밖으로 빼서 원천 해소했다(package.json 항목 자체가 없어짐). `localPath`가 그 새 로컬 위치를 가리킨다 — sync-upstream.mjs/upstream-drift-audit.mjs 둘 다 `resolvePackageTargetDir()`로 이 필드를 읽는다(없으면 packages/<name> 기본값). localOnly는 지우지 않고 유지 — 선별 cherry-pick 대조 기준.",
       "upstream": {
         "owner": "apps-in-toss-community",
         "repo": "debugger",
         "path": "packages/internal-protocol"
       },
+      "localPath": "shared/internal-protocol",
       "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
       "lastImportedAt": "2026-07-30T23:40:40+09:00",
       "mode": "hardfork",
-      "localOnly": [".gitignore", "biome.json"],
+      "localOnly": [
+        ".gitignore",
+        "biome.json"
+      ],
       "_localOnly_comment": "README 없음(이 패키지만 처음부터 미보유). .gitignore/biome.json: debugger 항목의 _localOnly_comment와 동일한 사유(repo-root 전용 설정을 서브트리에 손으로 복사) — #21.",
       "dropUpstreamPaths": []
     }
