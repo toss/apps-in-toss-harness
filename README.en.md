@@ -69,7 +69,7 @@ The harness's standard registration and upload flow uses only the console MCP's 
 
 ## Packages
 
-Five packages managed as a pnpm workspace.
+Four packages managed as a pnpm workspace.
 
 | Package | Directory | Role | Published |
 |---|---|---|---|
@@ -77,7 +77,8 @@ Five packages managed as a pnpm workspace.
 | `@apps-in-toss/devtools` | `packages/devtools` | Mock SDK + floating devtools panel + generic bundler plugin | Not yet published to npm |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | Not yet published to npm |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | Not yet published to npm |
-| `@apps-in-toss/internal-protocol` | `packages/internal-protocol` | Device↔host wire-protocol source shared by `debugger` and `debug-console` | Workspace-internal only, not published |
+
+`shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (#18 option 4) — it lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
 ## Contributing / development
 

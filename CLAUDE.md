@@ -9,7 +9,7 @@
 
 ## 정본 규칙 (가장 중요)
 
-**agent-plugin·devtools·debugger·debug-console·internal-protocol 전부 이 repo가 정본이다.** 커뮤니티 org(`apps-in-toss-community`)에서 하드카피 완료했고 연관관계는 끊겼다 — 1회성 하드카피이며 이후 반복 동기화·plain-copy staging은 없다. 수정은 전부 `packages/<name>`에서 직접 한다.
+**agent-plugin·devtools·debugger·debug-console·internal-protocol 전부 이 repo가 정본이다.** 커뮤니티 org(`apps-in-toss-community`)에서 하드카피 완료했고 연관관계는 끊겼다 — 1회성 하드카피이며 이후 반복 동기화·plain-copy staging은 없다. 수정은 대부분 `packages/<name>`에서 직접 한다 — 예외는 `internal-protocol`로, pnpm workspace 밖 `shared/internal-protocol/`에 산다(harness#18 옵션 4, `docs/npm-release.md` "internal-protocol phantom devDependency" 절 참고). `debugger`·`debug-console`이 tsconfig `paths`/번들러 `alias`로 그 소스를 직접 참조한다.
 
 - **커뮤니티 org(`apps-in-toss-community`)에는 어떤 쓰기도 하지 않는다.** 이 머신의 Block-PublicGithub 프록시가 비-toss GitHub 쓰기를 차단하며, 우회하지 않는다. 읽기(clone·조회)는 가능하다. 이관 관련 커밋·이슈·PR은 전부 이 repo에만 만든다.
 - **상류(커뮤니티) 개선 수신**: 커뮤니티 repo는 더 이상 정본이 아니지만 개선은 계속되므로, `scripts/sync-upstream.mjs`가 일방향으로 import하고 정규화 스크립트가 절단 규칙(스코프·링크·브랜딩)을 재적용한다. **수동으로 커뮤니티 코드를 복사하지 마라.**
