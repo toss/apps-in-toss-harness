@@ -26,9 +26,9 @@
 
 - pnpm workspace (`packages/*`), packageManager 고정. 각 패키지는 단독 repo 시절의 biome.json·scripts를 유지한다(루트 `pnpm -r lint/test`로 실행). 설정 dedupe는 이관 안정화 후.
 - 단독 repo 시절 `pnpm-workspace.yaml`(allowBuilds)은 루트로 병합됨. 패키지에 nested pnpm-workspace.yaml을 다시 만들지 마라.
-- **lockfile quirk (사내망 머신)**: 사내 투명 프록시가 npm 메타데이터의 tarball URL을 `nexus.toss.bz`로 재작성해 내려주므로, 그 머신에서 재해석(re-resolution)하면 pnpm-lock.yaml에 명시적 tarball URL이 박힌다 — nexus URL은 GitHub CI에서, npmjs URL은 로컬 정책 검사에서 거부되는 대칭 함정. **lockfile은 tarball URL 필드가 없는 형태(`resolution: {integrity: …}`만)를 유지해야 양쪽 다 통과한다.** 재해석 후 URL이 생겼으면 `sed -E 's|, tarball: [^}]*\}|}|g' pnpm-lock.yaml`로 제거하고 `pnpm install --frozen-lockfile`로 검증하라. 루트 pnpm-workspace.yaml의 `overrides.baseline-browser-mapping`도 같은 프록시가 최신 버전 tarball을 404로 주는 문제의 회피다.
-- **dist-tag quirk (같은 프록시, 세 번째 함정)**: nexus는 일부 `@apps-in-toss/*` 패키지의 **dist-tag를 공개 registry와 다르게** 내려준다(실측 2026-07-29: `web-framework` latest가 공개 npm은 `2.10.8`, nexus는 `3.0.0-rc.0`). 따라서 이 머신에서 `npm view <pkg> dist-tags`·`@latest` 설치 결과는 공개망 사용자와 다를 수 있다 — dist-tag 기반 판단은 반드시 공개 미러(`registry.npmmirror.com`)나 jsdelivr(`data.jsdelivr.com/v1/packages/npm/<pkg>/resolved?specifier=latest`)로 교차 확인하라. (이 괴리로 create-ait-app의 `web-framework@latest` 강제 설치가 사내망에서만 3.x를 받아 `granite` bin 부재로 깨진다 — harness#6 gap 분석 §C.10.)
-- **integrity quirk (같은 프록시, 두 번째 함정)**: nexus는 일부 `@apps-in-toss/*` 패키지를 **같은 버전·다른 바이트의 사내 빌드**로 내려준다(예: `ait-format@1.0.0`, `webview-bridge@3.0.0-beta.*`). 그 머신에서 재해석하면 lockfile에 사내 해시가 박혀 GitHub CI가 `ERR_PNPM_TARBALL_INTEGRITY`로 죽는다. **lockfile의 integrity는 항상 public npm 해시여야 한다.** public 해시 확보는 프록시가 안 가로채는 공개 미러 `https://registry.npmmirror.com/@apps-in-toss/<pkg>`의 `versions[<v>].dist.integrity`로 (신뢰 검증: 이미 아는 public 해시 하나를 canary로 대조). 로컬 fetch는 사내 빌드라 public 해시와 불일치하므로, store에 없는 패키지는 일회용 userconfig(`@apps-in-toss:registry=https://registry.npmmirror.com/` + 기존 `cafile` 유지)로 한 번 받아 store에 캐시시키면 이후 일반 `pnpm install --frozen-lockfile`은 store-hit으로 통과한다. integrity가 바이트를 고정하므로 미러 사용은 공급망상 안전하다. **주의(실측 2026-07-31)**: 이 머신에서 non-frozen `pnpm install`이 한 번이라도 돌면 사내 해시가 조용히 재유입될 수 있고, **로컬 `--frozen-lockfile` 통과는 사내 store 기준이라 CI 통과를 보증하지 않는다** — push 전 `@apps-in-toss/*` 전 항목을 npmmirror와 전수 대조하라(canary: 이전 CI green 커밋의 lockfile 항목과 미러 값 일치 확인).
+- **lockfile quirk (사내망에서 작업하는 경우)**: 일부 사내망은 투명 프록시가 registry 응답(패키지 메타데이터의 tarball URL·integrity·dist-tag)을 가로채 재작성해 내려준다 — 그런 환경에서 재해석(re-resolution)하면 pnpm-lock.yaml에 프록시 경유 tarball URL·해시가 박히고, 공개 registry 기준으로 도는 GitHub CI는 그 lockfile을 `ERR_PNPM_TARBALL_URL_MISMATCH`/`ERR_PNPM_TARBALL_INTEGRITY`로 거부한다(실측 선례: 사내망에서의 재생성이 1881개 lockfile entry 전체에 프록시 경유 tarball URL을 박아 PR 1차 CI가 RED — 커밋 9edd67d로 복원). **lockfile은 tarball URL 필드가 없는 형태(`resolution: {integrity: …}`만)를 유지해야 그런 환경과 CI 양쪽 다 통과한다.** 재해석 후 URL이 생겼으면 `sed -E 's|, tarball: [^}]*\}|}|g' pnpm-lock.yaml`로 제거하고, main 대비 diff가 실제 의존성 변경분만 남는지 확인한 뒤 `pnpm install --frozen-lockfile`로 검증하라. 루트 pnpm-workspace.yaml의 `overrides.baseline-browser-mapping`도 같은 부류 프록시가 최신 버전 tarball을 404로 주는 문제의 회피다.
+- **dist-tag quirk (같은 부류 프록시, 세 번째 함정)**: 그런 프록시는 일부 `@apps-in-toss/*` 패키지의 **dist-tag를 공개 registry와 다르게** 내려줄 수 있다(실측 2026-07-29: `web-framework` latest가 공개 npm은 `2.10.8`, 사내망 경유는 `3.0.0-rc.0`). 따라서 그런 환경에서 `npm view <pkg> dist-tags`·`@latest` 설치 결과는 공개망 사용자와 다를 수 있다 — dist-tag 기반 판단은 반드시 공개 미러(`registry.npmmirror.com`)나 jsdelivr(`data.jsdelivr.com/v1/packages/npm/<pkg>/resolved?specifier=latest`)로 교차 확인하라. (이 괴리로 create-ait-app의 `web-framework@latest` 강제 설치가 그런 환경에서만 3.x를 받아 `granite` bin 부재로 깨진다 — harness#6 gap 분석 §C.10.)
+- **integrity quirk (같은 부류 프록시, 두 번째 함정)**: 프록시가 일부 `@apps-in-toss/*` 패키지를 **같은 버전·다른 바이트의 사내 빌드**로 내려줄 수 있다(예: `ait-format@1.0.0`, `webview-bridge@3.0.0-beta.*`). 그런 환경에서 재해석하면 lockfile에 그쪽 해시가 박혀 GitHub CI가 `ERR_PNPM_TARBALL_INTEGRITY`로 죽는다. **lockfile의 integrity는 항상 public npm 해시여야 한다.** public 해시 확보는 그런 프록시가 안 가로채는 공개 미러 `https://registry.npmmirror.com/@apps-in-toss/<pkg>`의 `versions[<v>].dist.integrity`로 (신뢰 검증: 이미 아는 public 해시 하나를 canary로 대조). 로컬 fetch는 사내 빌드라 public 해시와 불일치하므로, store에 없는 패키지는 일회용 userconfig(`@apps-in-toss:registry=https://registry.npmmirror.com/` + 기존 `cafile` 유지)로 한 번 받아 store에 캐시시키면 이후 일반 `pnpm install --frozen-lockfile`은 store-hit으로 통과한다. integrity가 바이트를 고정하므로 미러 사용은 공급망상 안전하다. **주의**: 그런 환경에서 non-frozen `pnpm install`이 한 번이라도 돌면 프록시 경유 해시가 조용히 재유입될 수 있고, **로컬 `--frozen-lockfile` 통과는 로컬 store 기준이라 CI 통과를 보증하지 않는다** — push 전 `@apps-in-toss/*` 전 항목을 npmmirror와 전수 대조하라(canary: 이전 CI green 커밋의 lockfile 항목과 미러 값 일치 확인).
 - `packages/agent-plugin/.claude-plugin/`이 플러그인 manifest — 타깃 아키텍처(기본: docs MCP + console MCP remote, opt-in: devtools devDependency + debugger MCP를 skill이 프로젝트 `.mcp.json`에 배선)는 #1에서 진행. **opt-in 축 완료** — devtools·debugger는 manifest 상시 등록이 아니라 skill 배선(`setup-debugger`가 프로젝트 `.mcp.json`, `/ait:new`는 `--no-devtools` opt-out). **remote 축 완료(2026-07-30)** — 공식 endpoint 실재를 확인하고 manifest `mcpServers`에 기본 포함: docs MCP `https://developers-apps-in-toss.toss.im/~gitbook/mcp`(무인증, GitBook — tools: searchDocumentation·getPage·askQuestion·sendFeedback), console MCP `https://mcp.toss.im/adapters/apps-in-toss-console/mcp`(#3 MCP GW — OAuth protected resource, 설치 후 `/mcp`에서 `apps-in-toss-console` 인증 필요). 서버 키는 공식 문서 표기와 동일(`apps-in-toss-docs`·`apps-in-toss-console`). placeholder 금지 원칙은 유지 — 이번 포함은 실재 확인의 결과다. 설치 형상 실측(2026-07-30, SDK plugin 로드): docs `connected`+tool 4종, console `needs-auth`(대화형 `/mcp` 인가 대기) — 콘솔 tool 실호출·완주 실증은 인가 후 잔여(`docs/roadmap.md` 1.0 조건 4).
 - **station map·1.0 정의는 `docs/roadmap.md`** (#7 — §1~§4 확정, 미확정은 §5 open question 5건과 §3 1.0 조건4의 "배포" 정의 재확정뿐). 공식 harness의 정규 경로(station 0~8)·station별 AC·과도기 허용 항목이 여기 정의돼 있다.
 
@@ -44,12 +44,11 @@
 
 ## dog-food (콘솔 E2E 재활용 타겟)
 
-콘솔 실증의 상시 타겟은 **워크스페이스 59(rn-framework) / miniAppId 58955 (`ait-harness-e2e`)** 다 (2026-07-30 E2E 완주로 생성, Dave 결정). 커뮤니티 dog-food(31146/워크스페이스 3095)는 커뮤니티 계정 축이라 이 harness의 console MCP OAuth(사내 business-accounts 계정)로는 접근 불가 — 두 축을 혼동하지 마라.
+콘솔 실증은 **고정된 dog-food 타겟 하나만 재사용**한다 — 구체 워크스페이스·miniAppId·프로젝트명은 maintainer-internal 운영 기록에만 있고 이 공개 문서에는 신지 않는다.
 
-- **새 앱을 만들지 않는다.** 모든 업로드·조회 실증은 58955 재사용. granite.config.ts `appName: 'ait-harness-e2e'`가 콘솔 매칭 키다 — 불일치 번들은 업로드는 되지만 컴파일에서 `BUILD_FAILED`("콘솔에 등록된 앱 ID와 granite.config.ts의 appName이 일치하지 않아요")가 난다.
+- **새 앱을 만들지 않는다.** 모든 업로드·조회 실증은 그 고정 타겟을 재사용한다. `granite.config.ts`의 `appName`이 콘솔 매칭 키다 — 불일치 번들은 업로드는 되지만 컴파일에서 `BUILD_FAILED`("콘솔에 등록된 앱 ID와 granite.config.ts의 appName이 일치하지 않아요")가 난다.
 - **검수 제출(`review_*`·`bundle_submit_review`)·릴리즈/롤백·푸시·프로모션 금지.** 실증 scope는 업로드·컴파일(`CREATED`)까지다. 자동화 세션은 항상 콘솔 tool allowlist(canUseTool)로 이 경계를 결정적으로 강제한다.
-- 로컬 재현 프로젝트: `~/Projects/ait-e2e-run/ait-harness-e2e/` (plugin project-scope 테스트 디렉토리 안, node_modules 제외 보존본 — `pnpm install --frozen-lockfile`로 복원).
-- 위 워크스페이스·miniAppId·사내 프록시/nexus quirk·로컬 경로는 **운영 문서인 이 파일에만** 쓴다 — README 등 공개 산출물에는 넣지 않는다.
+- 커뮤니티 org 시절의 dog-food 타겟은 별개 계정 축이라 이 harness의 console MCP OAuth로는 접근 불가 — 두 축을 혼동하지 마라.
 
 ## 노출 산출물
 
@@ -57,7 +56,7 @@
 
 - **i18n**: ko primary(`README.md`, 한국어 전용) + en sub(`README.en.md`, 영어 전용). 두 파일은 동등 정본 — 내용 변경 시 같은 PR에서 함께 갱신한다. 파일당 단일 언어, 한 파일 안 병기 금지.
 - **용어**: 콘솔의 워크스페이스-scope 자격증명은 노출 텍스트에서 **`Deploy Key`**로 부른다(CLI flag·secret 이름 같은 외부 인터페이스는 그대로 유지).
-- **README 금지 항목**: dog-food miniAppId/워크스페이스 번호, 사내 프록시·nexus quirk, 사내 도메인, 로컬 경로.
+- **README 금지 항목**: dog-food miniAppId/워크스페이스 번호 등 사내 식별자, 사내 도메인·서비스명, 로컬 절대경로. (사내망 프록시 quirk 자체는 위 lockfile 절처럼 호스트명 없이 일반화하면 공개해도 된다 — 지식은 공개하고 식별자만 뺀다.)
 - 파일로 확인하지 못한 명령·URL·기능은 쓰지 않는다.
 
 ## 시크릿
