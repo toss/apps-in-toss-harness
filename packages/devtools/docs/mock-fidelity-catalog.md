@@ -146,7 +146,7 @@ iPhone 15 Pro 실 web-relevant 스펙(devtools#190 relay 실측): CSS viewport *
 
 | API | mock 동작 | real 동작 | 분류 | 관측? | gap |
 |---|---|---|---|---|---|
-| `appLogin` | `mock-auth-<uuid>` + `environment` 따라 referrer | 실 OAuth authorization code | 🟡 partial | (env 의존) | 토큰은 가짜. referrer는 `'toss'→DEFAULT`/`else→SANDBOX`로 환경 반영. oidc-bridge 연동 시 실 code 필요. |
+| `appLogin` | `mock-auth-<uuid>` + `environment` 따라 referrer | 실 OAuth authorization code | 🟡 partial | (env 의존) | 토큰은 가짜. referrer는 `'toss'→DEFAULT`/`else→SANDBOX`로 환경 반영. 실 code 교환은 공식 서버 연동(harness 범위 밖 — 서버 구현 scope-out 결정, harness#5) 소관. |
 | `getIsTossLoginIntegratedService` | `auth.isTossLoginIntegrated` state | 실 통합 여부 | 🟢 faithful | ✓ | 패널 토글. |
 | `getUserKeyForGame` | `auth.userKeyHash` 있으면 `{hash,HASH}`, 없으면 `undefined` | 실 사용자 키 해시 | 🟢 faithful | ✓ | 상태 기반. |
 | `getAnonymousKey` | `auth.anonymousKeyHash` 동일 패턴 | 실 익명 키 | 🟢 faithful | ✓ | 상태 기반. |

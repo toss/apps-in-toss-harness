@@ -3,8 +3,8 @@
 > **상태: 부분 확정** (harness#7). §1~§4(station map·station별 AC·1.0 정의·
 > cross-cutting 자산 거취)는 확정됐다 — 이슈 작성자가 "이 확정은 §5의 open
 > question 5건과 독립적으로 가능하다"고 명시했다(harness#7 코멘트,
-> 2026-07-31). 미확정은 두 가지뿐이다: **§5 open question**(그중 4·5는 이미
-> 해소/잠정 확정 — §5 참고, 나머지 1·2·3은 각자의 게이트 대기)과 **§3 1.0
+> 2026-07-31). 미확정은 두 가지뿐이다: **§5 open question**(그중 2·4·5는 이미
+> 해소/잠정 확정 — §5 참고, 나머지 1·3은 각자의 게이트 대기)과 **§3 1.0
 > 조건4의 "배포" 정의 재확정**(검수·릴리즈를 포함하는지). 진척 추적은
 > milestone [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1)이
 > 담당한다.
@@ -17,8 +17,9 @@
 이 station map은 커뮤니티 org `apps-in-toss-community`의 9-station map을 하드카피해
 공식 이관의 pivot을 반영해 재정의한 것이다 —
 console 축은 CLI 리버스엔지니어링 대신 서버 API의 MCP Gateway 노출(#3),
-docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 공식 로그인
-경로(#5), scaffold 축은 `create-ait-app` 소비(#6, 완료).
+docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 서버 구현
+scope-out(#5, 클라이언트 mock만 harness가 다룸), scaffold 축은
+`create-ait-app` 소비(#6, 완료).
 
 ## 1. Station map
 
@@ -28,7 +29,7 @@ docs 축은 GitBook published-docs MCP(#4), auth 축은 브리지 제거 후 공
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
 | 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 잔여는 스코프·URL 전환) | 구조 유지 — devtools는 opt-in 프로젝트 devDependency, `/ait:new`가 기본 배선. 패키지 스코프만 `@apps-in-toss/*`로 전환 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
-| 4 | auth | (재정의 대상) | 공식 로그인 경로 (#5) | oidc-bridge/-cloud 제거 — `appLogin` + 공식 백엔드 검증 경로로 station 자체를 재정의. 실체 확정 전까지 이 station의 AC는 잠정 |
+| 4 | auth | `appLogin()` mock (클라이언트만) | agent-plugin (클라이언트 mock) — 서버 연동은 harness 범위 밖 | oidc-bridge/-cloud 제거. **결정(Dave, 2026-07-31, harness#5)**: 서버 구현(공식 백엔드 토큰 검증 연동)은 harness에서 scope-out — "작동하는 미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가". station 4는 `appLogin()` mock으로 클라이언트 개발까지만 다루고, `auth-setup` skill은 신설하지 않는다 |
 | 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
 | 6 | operate | console MCP `miniapp_get_status`·`bundle_list` | console MCP GW (#3) + debugger relay | station 5와 같은 전환. logs의 on-device 관측은 debugger relay(#2)가 담당 |
 | 7 | plan | `/ait:plan` | agent-plugin | 유지 |
@@ -78,7 +79,7 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 | 1 scaffold | `/ait:new <name>` 1회로 create-ait-app 산출물 + devtools 배선 + granite.config.ts(icon 채움) + `.gitignore` + 앱 소스 무결성(미치환 placeholder 없음) — 네트워크 불가 시 `--local` 폴백 | **충족(clean-room 스모크 기준)** — `.ait` 산출까지 실행 실증, placeholder 결함은 후처리 D로 복구(#6). **단 upstream `create-ait-app`이 스키마를 재작성 중**(실측 2026-07-31): npm `latest`는 여전히 0.1.3(`granite.config.ts`+eslint 산출)이지만 upstream main은 이미 0.2.0(`apps-in-toss.config.ts`+oxlint+`pnpm-workspace.yaml` 산출)으로 바뀌어 있다 — 이 스키마 교체 대응은 #6 잔여 |
 | 2 dev | scaffold 직후 `pnpm dev`로 브라우저에서 mock SDK + panel 동작 — 토스 앱 없이 | **충족 (실증)** — dev 서버에서 SDK import가 devtools mock으로 치환되고 panel이 헤드리스 브라우저에 렌더됨을 HTTP·CDP로 확인(#6). `@apps-in-toss/*` 스코프 전환은 #2 |
 | 3 debug | `/ait:setup-debugger` 배선 + 세션 승인 → `/mcp`에 서버 노출 → QR attach로 실기기 세션 1회 실증 | 배선 축 완료(#1) — 실기기 실증은 #2 이관 후 재확인 |
-| 4 auth | (재정의 후 확정) 공식 로그인 경로 문서 + 레퍼런스 배선 1회 실증 | **잠정** — #5 재정의 대기 |
+| 4 auth | 서버 구현은 의도적 scope-out — `appLogin()` mock으로 클라이언트 개발이 막힘 없이 된다는 것만 AC. 서버 토큰 검증 연동은 AC 대상 아님 | **결정으로 해소**(Dave, 2026-07-31, harness#5) — `auth-setup` skill은 신설하지 않는다. 서버 knowledge/skill은 향후 별도 단계에서 점진 추가 |
 | 5 ship | 빈 디렉토리 → 등록 → 배포가 에이전트 안에서 완주 — 종착 인터페이스는 console MCP GW, 과도기는 aitcc | **충족 (MCP 완주 실증, 2026-07-30)** — 빈 디렉토리→scaffold→`.ait` 빌드→`miniapp_create`(**58955** `ait-harness-e2e`, ws 59)→`bundle_upload`+S3 PUT+`upload_complete`→컴파일 **CREATED**까지 에이전트 안에서 완주. 검수 제출·릴리즈는 dog-food 정책상 scope 제외. skill 표면 재구성은 #3 잔여 |
 | 6 operate | 배포 후 상태·로그 조회가 에이전트 안에서 동작 | **상태 조회 MCP 실증** — `miniapp_get_status`·`bundle_list` 실호출 확인(단 `bundle_build_status`는 GW `-32000` 오류, 피드백 대상). 로그 조회는 콘솔 미공개 gap 유지 — on-device 관측은 debugger relay(#2)에서 해소 |
 | 7 plan | 아이디어 발화 → 계획 산출 + scaffold seam 인쇄 | 충족 |
@@ -124,15 +125,20 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 ## 5. Open questions (확정 필요)
 
 5건 모두 "지금 결정 안 하면 진행이 막히는" 항목은 아니다 — 각각 확정되는 게이트
-시점이 다른 구조다: 1·3은 #8(public flip) 시점, 2는 #5(공식 로그인 경로 조사)
-시점, 4·5는 #3(console MCP GW) 시점에 확정한다. 4·5는 #3 조사 과정에서 그
-게이트를 이미 지났다 — 아래 각 항목에 해소/잠정 확정 근거를 남긴다. 1·2·3은
-해당 게이트가 아직 열리지 않아 open으로 유지한다.
+시점이 다른 구조다: 1·3은 #8(public flip) 시점, 2는 #5(auth 축 재정의) 시점,
+4·5는 #3(console MCP GW) 시점에 확정한다. 2·4·5는 각자의 게이트를 이미
+지났다 — 아래 각 항목에 해소/잠정 확정 근거를 남긴다. 1·3은 해당 게이트가
+아직 열리지 않아 open으로 유지한다.
 
 1. **station 0 marketplace 거취** — 커뮤니티 marketplace 병존 기간과 사용자 안내
    방식 (#8과 연동).
-2. **station 4의 실체** — 공식 로그인 경로의 형태(SDK 직결 가이드인가, 별도 검증
-   백엔드 레퍼런스인가)와 그에 따른 AC 확정 (#5).
+2. **station 4의 실체 — 결정으로 해소됨** (Dave, 2026-07-31, harness#5).
+   공식 로그인 경로(SDK 직결 가이드/별도 검증 백엔드 레퍼런스)는 지금
+   조사·확정하지 않는다 — "서버 구현 관련은 harness에서 제거하고 작동하는
+   미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가"가
+   결정이다. station 4의 AC는 클라이언트 `appLogin()` mock까지로 좁혀졌고
+   (§2 station 4 행), `auth-setup` skill은 신설하지 않는다. 서버 경로
+   조사·skill화는 이후 별도 이슈로 다시 연다.
 3. **커뮤니티 org의 이관 후 정체성** — archive 범위·시점, 산출물의 공식 프로젝트
    언급 방식.
 4. **콘솔 게이트 재정의 — 해소됨** (2026-07-31, harness#3). eval 드라이버

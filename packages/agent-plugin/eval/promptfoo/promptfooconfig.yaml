@@ -50,9 +50,12 @@ providers:
       working_dir: ./fixture
       # 8개 skill을 명시적으로 노출 (setting_sources 발견과 병행 — 안전).
       # aitcc 전제 skill 4종(register/deploy/status/setup-bundle) + 불필요
-      # skill 3종(docs/auth-setup/changeset)이 콘솔 MCP(apps-in-toss-console)·
-      # docs MCP(apps-in-toss-docs)·oidc 제거 방침·harness-external 정리로
-      # 제거됐다(harness aitcc 정리 — 15→8 skill).
+      # skill 2종(docs/changeset)이 콘솔 MCP(apps-in-toss-console)·docs MCP
+      # (apps-in-toss-docs)·harness-external 정리로 제거됐다. auth-setup은
+      # 별개 사유로 제거 — 서버 인증(미니앱 사용자 로그인)이 harness scope
+      # 밖으로 결정돼(Dave, 2026-07-31, harness#5) skill 자체가 신설되지
+      # 않았다(콘솔 MCP OAuth로 "대체"된 게 아님 — 그건 개발자→콘솔 축).
+      # (harness aitcc 정리 — 15→8 skill).
       skills:
         - debug
         - design
