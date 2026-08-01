@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/debugger",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "MCP debugging daemon, on-device CDP relay, test runner, and dev bridge for Apps in Toss mini-apps — devDependency / npx tooling, never part of a production bundle",
   "type": "module",
   "engines": {
@@ -58,6 +58,7 @@
   "devDependencies": {
     "@apps-in-toss/debug-console": "workspace:*",
     "@biomejs/biome": "2.5.1",
+    "@changesets/cli": "^2.31.0",
     "@types/node": "^25.6.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.17",
