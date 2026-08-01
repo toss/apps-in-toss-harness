@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/debug-console",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "On-device attach + eruda console for Apps in Toss mini-apps — the only package in this split that can enter a production bundle",
   "type": "module",
   "engines": {

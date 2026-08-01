@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.145
+
+### Patch Changes
+
+- devtools에서 이동 완료된 debug 표면(`src/mcp`·`src/test-runner`·`src/in-app`)을 제거하고 전환 스텁으로 대체한다.
+
+  상류 커뮤니티 devtools의 `df1f45e`("이동한 debug 표면 제거 + 전환 스텁 + footprint 가드")를 이 repo의 독자 구조(`packages/debugger`·`packages/debug-console` 분리, localOnly 파일)에 맞춰 선별 반영했다. 삭제 전 각 파일을 `packages/debugger`·`packages/debug-console` 쪽 대응 사본과 대조해 실질 divergence가 없음을 확인했다 — 발견된 차이는 전부 패키지 자기 참조(`devtools-mcp`→`debugger` 등 문구)이거나 debugger/debug-console 쪽이 이미 더 진화한 구조(`@apps-in-toss/internal-protocol` 공유 추출 등)였다.
+
+  - `src/mcp/**`·`src/test-runner/**`·`src/in-app/**` 삭제, `src/stubs/*` 전환 스텁 이식(0.2.x 한정, 1.0.0에서 제거 예정)
+  - `package.json` dependencies 7→3(`chii`·`ws`·`qrcode`·`ajv`·`@modelcontextprotocol/sdk` 제거), bin 두 개는 stub으로 재배선
+  - CI 가드 4종(`check:mcp-react-free`·`check:test-runner-dist`·`check:debug-surface-absent`·`check:dashboard-html-fresh`)을 표면과 함께 대체하는 `check:footprint-absent` 신규 추가(+ 과도기 alias 4개 — ci.yml 교체 전까지 green 유지용, 이후 별도 PR에서 걷어낸다)
+  - README/README.en/CLAUDE.md — 상류 df1f45e·066bf84 취지를 이 repo 구조에 맞게 수작업 반영
+  - `.upstream.json`·`docs/upstream-sync.md` — devtools에서 완전히 사라진 localOnly 항목 정리, debugger 쪽 신규 localOnly(`docs/env3-test-execution-redesign.md`) 등록
+
+- throttle 레지스트리를 `globalThis` 싱글턴으로 고친다.
+
+  `tsdown.config.ts`가 mock/panel/unplugin entry를 각각 self-contained로 빌드하므로 소비자가 두 entry를 동시에 import하면 모듈 상태가 entry당 하나씩 복제된다. `AitStateManager`는 이미 `globalThis` 싱글턴으로 방어돼 있었지만 `throttle-registry.ts`의 Map에는 그 가드가 빠져 있어, `dist/mock/index.js`와 `dist/panel/index.js`에 따로 복제됐다.
+
+  그 결과 `aitState.reset()`은 싱글턴을 먼저 생성한 번들의 Map을 비우고, `throttleErrorFor`가 읽는 Map에는 낡은 타임스탬프가 남아 리셋 직후 첫 호출이 이유 없이 `APP_BRIDGE_THROTTLED`로 거부될 수 있었다. 복제를 재현하는 회귀 테스트도 함께 넣었다(수정 전에는 실패한다).
+
+  부수로 `throttleErrorFor`가 `dial?.methods?.includes(...)`로 두 번째 홉까지 방어한다 — `__ait.patch`는 콘솔에서 손으로 치는 무타입 표면이라 `methods` 누락이 TypeError가 아니라 no-op이어야 한다.
+
+- THROTTLED 시뮬레이션 다이얼을 추가한다.
+
+  실기기 네이티브 브리지는 같은 메서드를 짧은 간격으로 연타하면 `APP_BRIDGE_THROTTLED`로 거부하는데, 그 코드는 `NativeErrorCode` 유니온과 `CODE_META`에 인벤토리로만 등재돼 있었고 이 코드로 reject하는 mock은 한 곳도 없었다. `failureModes.throttled = { methods, intervalMs }`로 그 rate limit을 env1에서 opt-in 재현한다 — 다이얼 미설정이 기본이라 기존 동작은 그대로다.
+
+  거부된 호출은 창을 갱신하지 않으므로 연타 중에도 최초 허용 시점 기준으로 풀린다. 훅은 `observe()`가 아니라 각 mock 본문 안에 넣었다 — `observe()`는 원 함수 호출 _전에_ 감싸므로 거기서 던지면 Promise를 반환해야 할 API가 동기 throw로 바뀌고, `threwSync`는 env1↔env3 동치 diff의 관측 축이라 그 차이가 곧 가짜 불일치가 된다.
+
 ## 0.1.144
 
 ### Patch Changes

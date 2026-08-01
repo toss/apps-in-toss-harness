@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/devtools",
-  "version": "0.1.144",
+  "version": "0.1.145",
   "description": "Browser development tools for Apps in Toss mini-apps — mock SDK, floating devtools panel, and universal bundler plugin. devDependency only; contributes nothing to a production bundle",
   "type": "module",
   "engines": {
@@ -72,8 +72,8 @@
     "prepublishOnly": "pnpm build && pnpm check:footprint-absent && pnpm typecheck && pnpm test && pnpm build:og"
   },
   "peerDependencies": {
-    "@apps-in-toss/debug-console": "^0.1.0",
-    "@apps-in-toss/debugger": "^0.1.3",
+    "@apps-in-toss/debug-console": "^0.1.4",
+    "@apps-in-toss/debugger": "^0.1.4",
     "@apps-in-toss/web-framework": ">=2.6.0 <3.0.0"
   },
   "peerDependenciesMeta": {
