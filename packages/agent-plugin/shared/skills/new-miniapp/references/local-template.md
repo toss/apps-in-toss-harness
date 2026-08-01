@@ -3,7 +3,7 @@
 `/ait:new`의 정본 경로는 create-ait-app 비대화형 호출(SKILL.md Step 2~6)이다.
 이 문서는 **오프라인·네트워크 제한·create-ait-app 실행 불가** 상황의 폴백
 절차다 — plugin에 동봉된 `react-vite` 템플릿(React 19 + Vite 8 + TS +
-`@ait-co/devtools` 배선 완료)을 복사한다. SKILL.md의 Step 0(toolchain 검사)과
+`@apps-in-toss/devtools` 배선 완료)을 복사한다. SKILL.md의 Step 0(toolchain 검사)과
 Step 1(입력 정규화 + 충돌 검사)은 이미 끝난 상태를 전제한다.
 
 ## L-1. 템플릿 위치 확인

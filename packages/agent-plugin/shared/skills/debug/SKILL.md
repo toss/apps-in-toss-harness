@@ -48,7 +48,7 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
 
 ## 의존
 
-- **`@ait-co/devtools`가 devDependencies에 있어야** floating panel을 쓸 수 있다.
+- **`@apps-in-toss/devtools`가 devDependencies에 있어야** floating panel을 쓸 수 있다.
   없으면 `/ait:inject-devtools`를 먼저 안내한다 (없어도 브라우저 기본 DevTools
   가이드는 진행 가능).
 - **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동 안내.
@@ -81,7 +81,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 예: cd <project-root> && /ait:debug
 ```
 
-`package.json`을 `Read`로 읽어 `@ait-co/devtools`가 `devDependencies`에 있는지
+`package.json`을 `Read`로 읽어 `@apps-in-toss/devtools`가 `devDependencies`에 있는지
 확인한다.
 
 - **있으면**: floating panel 경로(아래 2-A)를 우선 안내.
