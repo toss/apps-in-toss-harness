@@ -345,4 +345,4 @@ devtools CLAUDE.md의 **react-free·MCP-only install 불변식**과 충돌하는
 - connection boot: `src/mcp/debug-server.ts:2065`(`bootRelayFamily`), `:1887`(`createRelayConnection`), `src/mcp/chii-relay.ts:314`(`startChiiRelay`).
 - cell 소유: `sdk-example/src/test/aitCapture.ts`(`__AIT_CELL__` sdkLine/platform), env `AIT_CELL_PLATFORM`.
 - install-graph 불변식: devtools `CLAUDE.md` "install-graph 불변식" + `scripts/check-mcp-react-free.sh`·`scripts/check-test-runner-dist.sh`.
-- 설계 승인 후 구현은 §5 PR 분할로. cross-repo(devtools/sdk-example)는 PR 분리(umbrella §6.2).
+- 설계 승인 후 구현은 §5 PR 분할로. cross-repo(devtools/sdk-example)는 PR 분리.

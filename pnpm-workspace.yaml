@@ -1,7 +1,7 @@
 packages:
   - packages/*
 
-# 사내 npm 미러(nexus)가 아직 캐시하지 못한 최신 transitive 버전 회피 — 커뮤니티 lockfile이 검증한 버전으로 고정.
+# 일부 사내망 npm 미러가 아직 캐시하지 못한 최신 transitive 버전 회피 — 커뮤니티 lockfile이 검증한 버전으로 고정.
 overrides:
   baseline-browser-mapping: 2.10.19
   # devtools 단독 repo에서는 postcss가 단일 버전(8.5.15)으로만 해석됐으나, debug-console/debugger가
