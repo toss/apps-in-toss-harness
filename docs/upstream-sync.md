@@ -15,6 +15,12 @@ import마다 손으로 다시 지우면 곧 drift가 쌓인다.
 커뮤니티 repo에 push·commit·PR을 만드는 코드는 존재하지 않고, 앞으로도
 추가하지 않는다.
 
+**현재 상태(harness#25 결정, 2026-07-31): 5개 패키지 전부 `hardfork` 모드다.**
+`snapshot`(상류가 정본, 자동 덮어쓰기)은 devtools·debugger·debug-console·
+internal-protocol이 한때 쓰던 모드였지만 지금은 아무 패키지도 쓰지 않는다 —
+`sync-upstream.mjs`는 레거시 지원으로 이 모드를 계속 구현하고 있을 뿐이다.
+자세한 경위는 아래 "mode: hardfork" 절.
+
 ## 구성 요소
 
 | 파일 | 역할 |
@@ -22,7 +28,7 @@ import마다 손으로 다시 지우면 곧 drift가 쌓인다.
 | `.upstream.json` (repo 루트) | 각 `packages/<name>`이 어느 커뮤니티 repo/path/ref까지 반영됐는지 기록하는 상태 파일. |
 | `scripts/normalize-upstream.mjs` | 절단 규칙을 재적용하는 순수 텍스트 변환기. import 없이도 단독으로 아무 파일/디렉토리에 돌릴 수 있다. |
 | `scripts/sync-upstream.mjs` | 실제 파이프라인 — 상류 획득 → 반영(모드별) → normalize 자동 실행 → `.upstream.json` 갱신. |
-| `scripts/upstream-drift-audit.mjs` | 읽기 전용 감사 — "지금 몇 건이 다음 sync에 조용히 되돌아가거나 지워지는가"를 측정한다(#25). 작업 트리·상류 clone에 아무것도 쓰지 않는다. |
+| `scripts/upstream-drift-audit.mjs` | 읽기 전용 감사 — 상류(lastImportedRef 시점)와 `packages/<name>`이 얼마나 갈라졌는지 측정한다(#25). mode와 무관하게 전 패키지가 대상이다: 과거(snapshot 시절)엔 "몇 건이 다음 sync에 조용히 되돌아가는가"(되돌림 감지)를 물었지만, 전 패키지 hardfork 전환 후엔 "상류와 얼마나 멀어졌는가"(거리 측정 — cherry-pick 대조 자료)로 재규정됐다. 작업 트리·상류 clone에 아무것도 쓰지 않는다. |
 | `scripts/__tests__/normalize-upstream.test.mjs` | 정규화 규칙 단위 테스트 (Node 내장 테스트 러너). |
 | `scripts/__tests__/upstream-drift-audit.test.mjs` | 감사 스크립트의 순수 함수(분류·필터·마커 감지) 단위 테스트. |
 
@@ -53,88 +59,190 @@ SHA를 `.upstream.json`의 `lastImportedRef`와 비교해 "이미 최신"인지 
 기본으로 찾는다(harness umbrella 관례).
 
 ```bash
-node scripts/upstream-drift-audit.mjs            # snapshot 패키지 전부, 사람이 읽는 표
+node scripts/upstream-drift-audit.mjs            # 전 패키지(mode 무관), 사람이 읽는 표
 node scripts/upstream-drift-audit.mjs --package devtools
 node scripts/upstream-drift-audit.mjs --json      # 기계 판독용
 ```
 
-`upstream-drift-audit.mjs`는 다른 질문에 답한다 — **"우리 손수정 중 몇 건이
-다음 sync에 되돌아가는가"**. 상류가 새로 움직이지 않았어도(항상
-`lastImportedRef`, 즉 이미 반영된 시점 기준), 현행 `normalize-upstream.mjs`
-규칙을 그 시점 상류에 다시 적용한 결과를 `packages/<name>`과 바이트
-비교한다 — 그 차이가 "규칙이 아직 따라잡지 못한, 사람이 손으로만 고친
-부분"이고, 다음 `sync-upstream.mjs --write`가 `localOnly` 보호 없이 그
-부분을 조용히 덮어쓰거나 지운다. `localOnly`·`dropUpstreamPaths`·
+`upstream-drift-audit.mjs`는 다른 질문에 답한다 — **"상류(lastImportedRef
+시점)와 지금 `packages/<name>`이 얼마나 갈라졌는가"**. 상류가 새로 움직이지
+않았어도(항상 `lastImportedRef`, 즉 이미 반영된 시점 기준), 현행
+`normalize-upstream.mjs` 규칙을 그 시점 상류에 다시 적용한 결과를
+`packages/<name>`과 바이트 비교한다. `localOnly`·`dropUpstreamPaths`·
 `EXCLUDE_ROOT_INFRA`·빌드 산출물(`node_modules`/`dist`/`coverage`/`.turbo`/
 `test-results`/`playwright-report` 등, 세그먼트 단위 매치라 중첩 경로도
-잡는다)은 양쪽에서 제외하므로, 남는 건 전부 실제 위험이다. 결과는
+잡는다)은 양쪽에서 제외하므로, 남는 건 전부 실제 분기다. 결과는
 "덮어쓰기"(양쪽에 있고 내용이 다름) / "삭제"(하네스에만 있음)로 분류하고,
 덮어쓰기의 상류 쪽(=정규화 후) 내용에 커뮤니티 잔재 마커(`aitc.dev`/`@ait-co`/
 `AITC`/`apps-in-toss-community`/`커뮤니티`)가 남아 있으면 표시한다.
-`--check` 같은 CI 게이팅 플래그는 의도적으로 없다 — 지금은 관측 도구다
-(issue #25 참고, 잔여 drift가 모드 결정 전까지 정상 상태로 남는다).
+
+**용도가 재규정됐다(harness#25, 2026-07-31 hardfork 전환)**: snapshot
+시절에는 이 차이가 곧 "규칙이 아직 따라잡지 못한, 사람이 손으로만 고친
+부분"이었고, 다음 `sync-upstream.mjs --write`가 `localOnly` 보호 없이 그
+부분을 조용히 덮어쓰거나 지우는 **위험 신호**였다. 지금은 전 패키지가
+`hardfork`라 자동 `--write` 자체가 없다 — 그래서 같은 수치가 이제는
+"harness가 상류와 의도적으로 유지 중인 분기(divergence) 크기"를 뜻하는
+**관측/참고 지표**다. 선별 cherry-pick 시 "이 파일은 harness가 이미 손댔다"는
+사실을 빠르게 확인하는 대조 자료로 쓴다. `--check` 같은 CI 게이팅 플래그는
+여전히 의도적으로 없다 — hardfork 패키지의 분기는 정상 상태이므로 게이팅하면
+항상 빨갛다.
 
 ## mode 두 가지
 
-`.upstream.json`의 `packages.<name>.mode`가 갈래를 결정한다.
+`.upstream.json`의 `packages.<name>.mode`가 갈래를 결정한다. **현재
+5개 패키지(agent-plugin/devtools/debugger/debug-console/internal-protocol)
+전부 `hardfork`다** — `snapshot`은 devtools 계열 4패키지가 한때 쓰던
+모드지만 harness#25 결정(2026-07-31)으로 전환됐고, `sync-upstream.mjs`는
+레거시 지원으로 계속 구현하고 있을 뿐 지금 어느 패키지도 이 모드를 쓰지
+않는다.
 
-### `snapshot` (devtools, debugger, debug-console, internal-protocol)
+### `hardfork` (agent-plugin, devtools, debugger, debug-console, internal-protocol — 전 패키지)
 
-상류가 정본이다. `sync-upstream.mjs --write`가 추출본으로 `packages/<name>`을
-그대로 덮어쓸 수 있다.
+이 harness가 해당 서브트리의 정본이라 상류를 자동으로 덮어쓰지 않는다. 새
+상류 커밋은 `.upstream-patches/<pkg>-<sha12>.patch`로 diff만 떨어뜨리고,
+실제로 가져올 변경은 사람이 읽고 선별 cherry-pick한다.
 
-- **repo-root 전용 인프라 파일은 자동 제외**된다(`upstream.path === '.'`인
-  패키지, 지금은 devtools만 해당): `.github`, `.githooks`, `.claude`,
+#### 왜 hardfork인가 (harness#25 결정, 2026-07-31)
+
+devtools 계열 4패키지는 원래 `snapshot`이었다(상류가 정본, `--write`가
+추출본으로 통째로 덮어씀). 이 모드는 "harness는 이 서브트리를 손대지
+않는다"는 전제 위에 서 있었는데, 실측(#25)이 그 전제가 이미 깨졌다는 걸
+보여줬다:
+
+- 클래스 1(공개 Pages 표면)·클래스 2(#22 override 소비자·테스트)를
+  `localOnly`로 고정한 뒤에도 **69건의 하네스 손수정**(devtools 42 /
+  debugger 21 / debug-console 5 / internal-protocol 1, `main`에서
+  `node scripts/upstream-drift-audit.mjs`로 독립 확인)이 다음
+  `sync-upstream.mjs --write`에 무방비였다 — 아래 "수동 확인이 필요한 항목"
+  절 참고.
+- `localOnly` 등록은 **PR마다 단조 증가**했다(#22 하나가 5개 추가). 등록을
+  빠뜨리면 실패 모드가 "조용한 되돌림"이라 CI가 잡지 못한다 — snapshot
+  `--write`는 정의상 `localOnly`에 없는 파일을 상류 버전으로 덮어쓰는 게
+  정상 동작이므로, 등록 누락과 의도된 동작을 구분할 방법이 없다.
+- `agent-plugin`이 이미 같은 이유로 `hardfork`였다 — harness가 서브트리
+  안에서 계속 개발하는 한 "상류가 정본"이라는 snapshot의 전제 자체가
+  성립하지 않는다는 걸 먼저 보여준 선례다.
+
+즉 근본 원인은 개별 등록 누락이 아니라 **모드 선택**이었다 — 그래서 개별
+`localOnly` 추가가 아니라 모드 자체를 harness가 이미 정본인 나머지 4패키지와
+맞춰 전환했다.
+
+#### 선별 수용 절차 (cherry-pick 워크플로)
+
+`hardfork` 모드에는 자동 반영이 없으므로, 상류 개선을 받아들이려면 사람이
+직접 포팅한다. 실제로 이번 주 PR #42가 이 방식으로 처리됐다(커뮤니티
+devtools `e198cf7`→`a365ad9` 구간을 읽어 수작업 포팅) — 그 선례를 절차로
+고정한다:
+
+1. **읽기 전용 커뮤니티 clone에서 변경 확인**: `~/Projects/github.com/apps-in-toss-community/<repo>`에서
+   `git log <lastImportedRef>..origin/main -- <path>`로 관심 있는 구간을
+   좁히고, `git show <sha>` (또는 `git diff <old>..<new> -- <path>`)로 실제
+   diff를 읽는다. 이 clone에는 절대 쓰지 않는다(fetch/log/show/diff만).
+2. **가져올 가치가 있는 변경만 고른다**: 버그 수정·구체적 개선 위주로 본다.
+   대부분의 diff는 이 repo에서 이미 걷어낸 브랜딩·스코프·skill 구성 차이라
+   노이즈가 크다 — `.upstream.json`의 `localOnly`(아래 "snapshot — 레거시
+   모드" 절 참고)에 등록돼 있던 경로면 그 자체가 "harness가 이미 손댄
+   파일이니 통째로 받지 말라"는 신호다.
+3. **`packages/<pkg>`에 수작업으로 포팅**: 상류 코드를 그대로 복사하지 않고
+   harness 쪽 파일에 필요한 부분만 반영한다. 스코프 치환(`@ait-co/*` →
+   `@apps-in-toss/*`)·GitHub 링크·브랜딩 문구는 손으로 정리하거나,
+   `node scripts/normalize-upstream.mjs --write packages/<pkg>`를 그 파일에
+   돌려 절단 규칙을 재적용한다(아래 "`normalize-upstream.mjs` 단독 사용"
+   절 참고).
+4. **평소와 같은 PR로 제출**한다 — 리뷰·CI·머지 절차는 다른 harness 변경과
+   동일하다. hardfork라고 특별한 우회 경로는 없다.
+
+`sync-upstream.mjs --package <pkg> [--ref <sha>]`를 돌리면 이 절차의 1번을
+자동화된 diff로 대체할 수 있다(패치 파일로 떨어뜨림 — 아래 참고). diff가
+너무 크면 "충돌·의존성 변화 시 대처" 절의 4번(`--ref`를 좁혀 여러 번 실행)을
+참고한다.
+
+#### 스크립트 동작
+
+- `sync-upstream.mjs`는 hardfork 패키지에 대해 **`packages/<pkg>`를 전혀
+  건드리지 않는다** (`--write`를 줘도 마찬가지 — hardfork 모드에는 "write"
+  개념이 없다, 항상 읽기 전용 diff만 만든다).
+- 대신 상류와의 diff를 `.upstream-patches/<pkg>-<sha12>.patch`에 `diff -ruN`
+  형식으로 떨어뜨리고 종료한다.
+- **이 patch를 통째로 `patch -p1`/`git apply`하지 마라.** 위 "선별 수용
+  절차"대로 실제로 가져오고 싶은 변경만 사람이 읽고 cherry-pick한다.
+  agent-plugin의 경우 대부분의 diff가 이 repo에서 이미 걷어낸 aitcc
+  트리밍·manifest 차이·skill 개수 차이라 노이즈가 크다 — 구체적인 버그
+  수정 하나를 찾는 용도로 생각하라. devtools/debugger 계열은 브랜딩·스코프·
+  dogfood 설정 차이가 노이즈다(아래 "수동 확인이 필요한 항목"의 69건 참고).
+- `.upstream.json`은 갱신되지 않는다(`lastImportedRef`는 하드포크 베이스
+  커밋으로 고정 — 실제로 무언가 자동 반영된 적이 없으므로 "최신 반영 시점"이
+  존재하지 않는다). devtools 계열 4패키지는 snapshot 시절 마지막
+  `lastImportedRef`가 그대로 hardfork의 기준점이 됐다.
+- `.upstream-patches/`는 리뷰용 스크래치 산출물이다 — 검토가 끝나면 지워도
+  된다. 커밋해서 repo에 영구히 남길 필요는 없다(원하면 남겨도 무방하지만
+  기본 워크플로는 아니다).
+
+### `snapshot` — 레거시 모드 (더 이상 쓰이지 않음)
+
+**지금 `.upstream.json`의 어느 패키지도 이 모드를 쓰지 않는다.** devtools·
+debugger·debug-console·internal-protocol이 harness#25 결정(2026-07-31)
+이전까지 이 모드였다 — 상류가 정본이라 `sync-upstream.mjs --write`가
+추출본으로 `packages/<name>`을 그대로 덮어썼다. `sync-upstream.mjs`는 이
+모드를 여전히 온전히 구현하고 있다(레거시 지원 — `mode: "snapshot"`으로
+되돌리면 그대로 동작한다), 아래는 그 동작 방식과 이 모드 아래서 왜
+`localOnly`/`dropUpstreamPaths`를 지금 값으로 채웠는지에 대한 기록이다.
+
+**`localOnly`/`dropUpstreamPaths`는 hardfork 전환 후에도 `.upstream.json`에
+그대로 남아 있다** — 지웠으면 안 됐다. 이제 이 값들은 snapshot 덮어쓰기를
+막는 게 아니라(hardfork에는 자동 덮어쓰기 자체가 없으므로), 위 "선별 수용
+절차"에서 **"이 파일은 harness가 이미 손댔다/독자 구현이다"라는 대조
+기준**으로 쓰인다 — cherry-pick 후보를 검토할 때 이 목록에 있는 경로면
+상류 버전을 그대로 받지 말고 왜 갈라졌는지부터 확인하라는 신호다.
+
+- **repo-root 전용 인프라 파일은 자동 제외**됐다(`upstream.path === '.'`인
+  패키지, devtools만 해당): `.github`, `.githooks`, `.claude`,
   `.cwconfig.json`, `.cwshare`, `.npmrc`, `.nvmrc`, `CLAUDE.md`,
   `pnpm-lock.yaml`, `pnpm-workspace.yaml`. 이 monorepo는 이미 자기 루트에
-  이런 파일을 갖고 있으므로 패키지 안에 중복해 들이지 않는다(`sync-upstream.mjs`의
-  `EXCLUDE_ROOT_INFRA`). **이건 `upstream.path === '.'`인 패키지에만 발화한다** —
-  debugger 계열 3패키지는 애초에 `packages/<sub>` 서브디렉토리 단위로만
-  추출하므로 이 자동 제외 목록이 아예 적용되지 않는다. 그런데 그 서브디렉토리
-  추출 자체에는 `.gitignore`·`biome.json`이 **처음부터 존재하지 않는다** —
-  두 파일은 최초 벤더링(커밋 `1432504`) 때 커뮤니티 debugger repo의
-  **repo-root** 설정을 사람이 손으로 `packages/<sub>` 서브트리 "안으로"
-  복사해 넣은 것이라, 어떤 상류 추출로도 재현되지 않는다(#21). 그래서 이
-  두 파일은 아래 `localOnly`로 별도 등록한다 — `EXCLUDE_ROOT_INFRA`가 막아주는
-  대상이 아니다.
+  이런 파일을 갖고 있으므로 패키지 안에 중복해 들이지 않았다(`sync-upstream.mjs`의
+  `EXCLUDE_ROOT_INFRA`, 코드는 지금도 남아 있다). **이건 `upstream.path === '.'`인
+  패키지에만 발화한다** — debugger 계열 3패키지는 애초에 `packages/<sub>`
+  서브디렉토리 단위로만 추출했으므로 이 자동 제외 목록이 아예 적용되지
+  않았다. 그런데 그 서브디렉토리 추출 자체에는 `.gitignore`·`biome.json`이
+  **처음부터 존재하지 않는다** — 두 파일은 최초 벤더링(커밋 `1432504`) 때
+  커뮤니티 debugger repo의 **repo-root** 설정을 사람이 손으로 `packages/<sub>`
+  서브트리 "안으로" 복사해 넣은 것이라, 어떤 상류 추출로도 재현되지
+  않는다(#21). 그래서 이 두 파일은 아래 `localOnly`로 별도 등록했다 —
+  `EXCLUDE_ROOT_INFRA`가 막아주는 대상이 아니었다.
 - **`localOnly`** (패키지 항목의 배열 필드): 이 harness monorepo에서만 손으로
-  고친(또는 상류에 대응물이 없는) 파일 경로 목록. 상류에 같은 경로가 있어도
-  절대 덮어쓰지 않고, 상류에서 사라졌어도 절대 지우지 않는다. **판단 기준**:
-  "상류에도 이 경로가 존재해야 정상이지만, 이 harness가 손댄 버전이 이겨야
-  하는가?" — 그렇다면 `localOnly`다(아래 `dropUpstreamPaths`와 반대 극).
-  전형적인 사례:
+  고친(또는 상류에 대응물이 없는) 파일 경로 목록. snapshot 하에서는 상류에
+  같은 경로가 있어도 절대 덮어쓰지 않고, 상류에서 사라졌어도 절대 지우지
+  않았다. **판단 기준(등록 당시)**: "상류에도 이 경로가 존재해야 정상이지만,
+  이 harness가 손댄 버전이 이겨야 하는가?" — 그렇다면 `localOnly`다(아래
+  `dropUpstreamPaths`와 반대 극). 전형적인 사례:
   - README.md/README.en.md — 설치 명령·미배포 상태 문구를 손으로 통일(커밋
     `89f3e33`).
   - `docs/superpowers/**`·`meta/**`(devtools) — 아카이브 배너·umbrella 참조
     제거(커밋 `bc666f0`)로 손을 댔다. **주의**: 이 경로들은
     `normalize-upstream.mjs`의 `PRESERVED_FILE_PATTERNS`에도 나열돼 있지만,
-    그건 **정규화 단계만** 건너뛰는 것이지 snapshot 재동기화의 파일 덮어쓰기를
-    막지 못한다 — 이 문서 아래 "`dropUpstreamPaths` vs `localOnly` vs
-    `PRESERVED_FILE_PATTERNS`" 절 참고. 그래서 손으로 고친 파일이라면
-    `PRESERVED_FILE_PATTERNS`에 있어도 **반드시 `localOnly`에도** 등록해야
-    한다 — 이 둘은 서로 다른 파이프라인 단계를 지키는 별개 메커니즘이다(#21).
+    그건 **정규화 단계만** 건너뛰는 것이지(지금도 발화) snapshot 재동기화의
+    파일 덮어쓰기를 막지 못했다 — 이 문서 아래 "`dropUpstreamPaths` vs
+    `localOnly` vs `PRESERVED_FILE_PATTERNS`" 절 참고. 그래서 손으로 고친
+    파일이라면 `PRESERVED_FILE_PATTERNS`에 있어도 **반드시 `localOnly`에도**
+    등록해야 했다 — 이 둘은 서로 다른 파이프라인 단계를 지키는 별개
+    메커니즘이다(#21).
   - `.gitignore`/`biome.json`(debugger/debug-console/internal-protocol) —
     바로 위 항목 참고. repo-root 전용 설정을 서브트리 안으로 손 복사한
-    것이라 어떤 상류 추출에도 나타나지 않는다.
+    것이라 어떤 상류 추출에도 나타나지 않았다.
   - devtools의 `docs/pages-deploy-verification.md`·`src/shared/launcher-url.ts` —
     상류에 대응 파일이 없는 harness 전용 신규 파일(GitHub Pages 배포·launcher
-    URL 단일화 작업). `localOnly`가 없으면 "상류에 없다"는 이유만으로 다음
-    snapshot sync가 통째로 삭제한다.
+    URL 단일화 작업). `localOnly`가 없었다면 "상류에 없다"는 이유만으로
+    다음 snapshot sync가 통째로 삭제했을 것이다.
   - devtools의 `e2e/fixture/public/letterbox-probe/index.html`·
     `fullscreen/manifest.webmanifest` — "커뮤니티 오픈소스" 문구가 표준
     `DISCLAIMER_SENTENCES`와 다른 축약형이거나 HTML 구조 삭제를 동반해 정규화
     규칙으로 안전하게 일반화할 수 없다고 판단(아래 "수동 확인이 필요한 항목"
-    참고) — 정규화 규칙 대신 파일 단위로 고정한다.
-
-  monorepo 통합을 위해 어떤 파일을 손으로 고치게 되면 **그 즉시** 이 필드에
-  경로를 추가하라. 안 하면 다음 sync가 그 파일을 상류 버전으로 조용히
-  덮어쓰거나(상류에도 같은 경로가 있는 경우), 상류에 없다는 이유만으로
-  삭제한다(harness 전용 신규 파일인 경우).
+    참고) — 정규화 규칙 대신 파일 단위로 고정했다.
 - **`dropUpstreamPaths`**: 상류에는 있지만 이 harness에서는 **의도적으로
   존재 자체를 원치 않는** 경로. `localOnly`와 판단 축이 다르다 —
   `localOnly`는 "상류에도 있어야 정상, 우리 버전이 이긴다"이고,
-  `dropUpstreamPaths`는 "이 harness에는 애초에 있으면 안 된다"다. 지금 항목
-  (devtools):
+  `dropUpstreamPaths`는 "이 harness에는 애초에 있으면 안 된다"다. 등록된
+  항목(devtools):
   - `e2e/shim-composition.test.ts` — polyfill×mock 합성 테스트. 2026-07-31
     harness의 polyfill 절단과 함께 제거됐고, 상류 devtools repo는 폐기하지
     않았으므로 재동기화 시 되살아나지 않게 명시적으로 계속 제외한다. polyfill을
@@ -151,43 +259,22 @@ node scripts/upstream-drift-audit.mjs --json      # 기계 판독용
     `public/` 아래 두 번째 사본을 두면 `build:og` 재실행 시 조용히 drift만
     생긴다 — 그래서 다섯 개 전부 `dropUpstreamPaths`다.
 
-  판단이 애매하면 이 질문으로 정리한다: **"이 harness가 이 파일을 어떤 형태로든
-  갖고 싶은가?"** — 예(다만 우리 버전으로) → `localOnly`. 아니오(존재 자체가
-  문제) → `dropUpstreamPaths`.
-- **삭제 정책**: 상류에서 사라진 파일은(위 두 예외를 빼면) `packages/<name>`
-  에서도 함께 삭제된다 — "snapshot = 상류가 정본"의 직접적 귀결이다. `--write`
-  실행 시 콘솔에 삭제 목록이 그대로 출력되므로, 커밋 전에 `git diff --stat`으로
-  한 번 더 확인하라.
+  판단이 애매했을 땐 이 질문으로 정리했다: **"이 harness가 이 파일을 어떤
+  형태로든 갖고 싶은가?"** — 예(다만 우리 버전으로) → `localOnly`. 아니오
+  (존재 자체가 문제) → `dropUpstreamPaths`.
+- **삭제 정책(snapshot 하에서)**: 상류에서 사라진 파일은(위 두 예외를 빼면)
+  `packages/<name>`에서도 함께 삭제됐다 — "snapshot = 상류가 정본"의 직접적
+  귀결이다. `--write` 실행 시 콘솔에 삭제 목록이 그대로 출력되므로, 커밋
+  전에 `git diff --stat`으로 한 번 더 확인하는 게 절차였다(레거시로 남아
+  있어 `mode: "snapshot"`으로 돌아가면 지금도 그대로 동작한다).
 - **package.json 의존성 변화**: `dependencies`/`devDependencies`/
   `peerDependencies`/`optionalDependencies`가 상류에서 바뀌면 경고만 출력하고
   **`pnpm install`은 절대 실행하지 않는다**(이 머신의 사내 프록시가 lockfile에
   사내 해시/tarball URL을 재유입시키는 quirk가 있다 — 루트 `CLAUDE.md`의
-  "integrity quirk"/"lockfile quirk" 절 참고). 의존성이 바뀌었으면 수동으로
-  lockfile을 갱신하고 그 절차를 그대로 따르라.
-- 반영 직후 **`normalize-upstream.mjs --write`가 자동 실행**된다 — 별도로
-  다시 돌릴 필요 없다.
-
-### `hardfork` (agent-plugin)
-
-이 repo에서 이미 하드포크가 완료된 패키지다(skill 7종 제거, `/ait:<verb>`
-rename, manifest 재작성 — **이 harness repo가 agent-plugin의 정본**). 상류
-커뮤니티 agent-plugin을 그대로 덮어쓰면 하드포크 작업이 통째로 날아간다.
-
-- `sync-upstream.mjs`는 이 패키지에 대해 **`packages/agent-plugin`을 전혀
-  건드리지 않는다** (`--write`를 줘도 마찬가지 — hardfork 모드에는 "write"
-  개념이 없다, 항상 읽기 전용 diff만 만든다).
-- 대신 상류와의 diff를 `.upstream-patches/agent-plugin-<sha12>.patch`에
-  `diff -ruN` 형식으로 떨어뜨리고 종료한다.
-- **이 patch를 통째로 `patch -p1`/`git apply`하지 마라.** 실제로 가져오고
-  싶은 변경만 사람이 읽고 선별 cherry-pick한다. 대부분의 diff는 이 repo에서
-  이미 걷어낸 aitcc 트리밍·manifest 차이·skill 개수 차이라 노이즈가 크다 —
-  구체적인 버그 수정 하나를 찾는 용도로 생각하라.
-- `.upstream.json`은 갱신되지 않는다(`lastImportedRef`는 하드포크 베이스
-  커밋으로 고정 — 실제로 무언가 자동 반영된 적이 없으므로 "최신 반영 시점"이
-  존재하지 않는다).
-- `.upstream-patches/`는 리뷰용 스크래치 산출물이다 — 검토가 끝나면 지워도
-  된다. 커밋해서 repo에 영구히 남길 필요는 없다(원하면 남겨도 무방하지만
-  기본 워크플로는 아니다).
+  "integrity quirk"/"lockfile quirk" 절 참고). 이 로직도 코드에 그대로
+  남아 있다.
+- 반영 직후 **`normalize-upstream.mjs --write`가 자동 실행**됐다 — snapshot
+  모드로 돌아가면 지금도 자동 실행된다.
 
 ## `normalize-upstream.mjs` 단독 사용
 
@@ -234,11 +321,18 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
 정확히 이 혼동 때문에 생긴 구멍이었다) — 새 항목을 어디에 넣을지 판단할 때
 아래 표를 기준으로 삼는다.
 
-| 메커니즘 | 위치 | 지키는 것 | 안 지키는 것 |
+**전 패키지 hardfork 전환(harness#25, 2026-07-31) 이후 참고**: `dropUpstreamPaths`/
+`localOnly`가 실제로 snapshot 덮어쓰기/삭제를 막는 건 지금은 `mode: "snapshot"`으로
+되돌린 패키지에서만이다(레거시 지원, 위 "mode 두 가지" 절 참고). 지금 5개
+패키지 모두 hardfork라 이 표의 "지키는 것" 칸은 지금 당장 발화하지 않지만,
+아래 표·판단 기준은 그대로 유효하다 — hardfork의 선별 cherry-pick 절차에서
+"이 경로는 harness가 손댔다"는 대조 기준으로 쓰이기 때문이다.
+
+| 메커니즘 | 위치 | 지키는 것 (snapshot 하에서) | 안 지키는 것 |
 |---|---|---|---|
 | `dropUpstreamPaths` | `.upstream.json` (패키지별) | `sync-upstream.mjs`의 snapshot 적용 — 상류에 그 경로가 있어도 harness에 **아예 만들지 않는다**(존재 자체를 원치 않음). | 정규화(애초에 파일이 없으니 대상이 아님). |
 | `localOnly` | `.upstream.json` (패키지별) | `sync-upstream.mjs`의 snapshot 적용 — 상류에 그 경로가 있든 없든 harness에 있는 버전을 **절대 덮어쓰거나 지우지 않는다**(우리 버전이 이겨야 함). | 정규화(localOnly 파일이라도 `normalize-upstream.mjs`를 직접 그 경로에 돌리면 규칙이 적용된다 — 다만 실무에서는 손으로 이미 고쳐진 파일이라 대개 규칙이 발화하지 않는다). |
-| `PRESERVED_FILE_PATTERNS` (`normalize-upstream.mjs` 상수) | 코드 (배열 상수) | 정규화 — 절단 규칙(스코프·링크·브랜딩 등)을 이 경로에서 **재적용하지 않는다**. | **스냅샷 덮어쓰기/삭제를 전혀 막지 않는다.** `sync-upstream.mjs`는 이 상수를 참조하지 않는다 — `--write`가 새 상류 스냅샷으로 `packages/<name>`을 덮어쓸 때, 이 목록에 있는 파일도 상류에 그 경로가 있으면 그대로 덮어써진다(상류 원문 그대로 들어오니 "정규화가 필요 없다"는 게 아니라 "상류 원문을 신뢰한다"는 뜻으로 쓰인 목록이라, 손으로 고친 파일에 이 목록만 걸어두면 다음 sync에 그 손질이 사라진다). |
+| `PRESERVED_FILE_PATTERNS` (`normalize-upstream.mjs` 상수) | 코드 (배열 상수) | 정규화 — 절단 규칙(스코프·링크·브랜딩 등)을 이 경로에서 **재적용하지 않는다**(mode와 무관하게 지금도 발화). | **스냅샷 덮어쓰기/삭제를 전혀 막지 않는다.** `sync-upstream.mjs`는 이 상수를 참조하지 않는다 — snapshot 모드에서 `--write`가 새 상류 스냅샷으로 `packages/<name>`을 덮어쓸 때, 이 목록에 있는 파일도 상류에 그 경로가 있으면 그대로 덮어써진다(상류 원문 그대로 들어오니 "정규화가 필요 없다"는 게 아니라 "상류 원문을 신뢰한다"는 뜻으로 쓰인 목록이라, 손으로 고친 파일에 이 목록만 걸어두면 다음 sync에 그 손질이 사라진다). |
 
 **실측 사고 사례(#21)**: `docs/superpowers/**`·`meta/**`(devtools)는 커밋
 `bc666f0`이 아카이브 배너·umbrella 참조 제거로 손을 댔고, 처음부터
@@ -311,13 +405,22 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
   파라미터 추가 등), `AITC Sandbox PWA` → `Sandbox PWA` 같은 표기 변경.
   **"잔재가 없다"는 뜻이 아니다** — 잔재 마커 46건이 그대로 남아 있고, 그 대부분은
   `aitc.dev` 도메인·`AITC` 브랜드처럼 스코프 토큰도 disclaimer 문장도 아닌
-  값들이라 위 규칙표의 어느 항목에도 걸리지 않는다. 즉 이 69건은 다음
-  `--write`에서 브랜드·도메인 손질이 되돌아가고, 정규화가 그걸 다시 고쳐주지도
-  않는다. 이 69건은
-  **이 문서가 규칙화하지 않기로 의도적으로 남겨 둔 나머지**다 — 개별
-  `localOnly` 등록은 #25가 다루는 모드 결정(snapshot 유지 vs hardfork 전환)과
-  함께 판단한다. 규칙화하면 "일반화 가능한 패턴"이 아니라 "그 시점 하나의
-  hand-edit을 정확히 재현하는 규칙"이 되어 유지보수 부담만 커진다.
+  값들이라 위 규칙표의 어느 항목에도 걸리지 않는다. snapshot이 유지됐다면 이
+  69건은 다음 `--write`에서 브랜드·도메인 손질이 되돌아가고, 정규화가 그걸
+  다시 고쳐주지도 않았을 것이다.
+
+  **이 69건이 harness#25의 모드 결정을 확정지었다.** 클래스 1·2를 고정한
+  뒤에도(등록 자체가 PR마다 계속 느는 작업이었다 — #22 하나가 5개 추가) 이만한
+  분량이 무방비로 남는다는 게, "harness가 서브트리 안에서 계속 개발하는 한
+  개별 `localOnly` 등록으로는 못 따라잡는다"는 걸 실측으로 보여줬다. 그래서
+  이 69건을 규칙화하거나 개별 `localOnly`로 마저 등록하는 대신(그랬다면
+  "일반화 가능한 패턴"이 아니라 "그 시점 하나의 hand-edit을 정확히 재현하는
+  규칙"이 되어 유지보수 부담만 커졌을 것이다), **모드 자체를 devtools 계열
+  4패키지 전부 `hardfork`로 전환했다**(2026-07-31, 위 "왜 hardfork인가" 절).
+  hardfork에는 자동 `--write`가 없으므로 이 69건은 더 이상 "다음 sync에
+  되돌아갈 위험"이 아니다 — 지금은 상류와의 분기 크기를 보여주는 기록으로
+  남는다(`node scripts/upstream-drift-audit.mjs`로 계속 관측 가능, 위 "밀림
+  확인" 절 참고).
 
 ## `.upstream.json` 필드
 
@@ -331,11 +434,11 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
         "repo": "<커뮤니티 repo 이름>",
         "path": "." // 또는 "packages/<sub>" — repo 안에서 이 패키지에 해당하는 서브경로. "."면 repo 전체.
       },
-      "lastImportedRef": "<40자 SHA>",   // 스크립트가 --write 성공 시에만 갱신. 손으로 고치지 마라.
+      "lastImportedRef": "<40자 SHA>",   // snapshot에서만 --write 성공 시 갱신. hardfork에서는 고정 기준점(diff patch 생성 기준) — 두 경우 다 사람이 손으로 고치지 마라.
       "lastImportedAt": "<ISO8601>",     // 위와 동일 — 스크립트 전용 필드.
-      "mode": "snapshot" | "hardfork",
-      "localOnly": ["path/a", "path/b"], // snapshot 전용. 상류가 있어도 절대 건드리지 않을 경로.
-      "dropUpstreamPaths": ["path/c"]    // snapshot 전용. 상류에 있어도 의도적으로 계속 뺄 경로 + 이유는 `_dropUpstreamPaths_comment`.
+      "mode": "snapshot" | "hardfork",   // 현재(harness#25 이후) .upstream.json의 5개 패키지 전부 "hardfork". "snapshot"은 sync-upstream.mjs가 계속 구현하는 레거시 모드.
+      "localOnly": ["path/a", "path/b"], // 원래 snapshot 전용(상류가 있어도 절대 건드리지 않을 경로). hardfork 하에서는 자동 적용은 없지만 지우지 않고 유지 — 선별 cherry-pick 시 "harness가 이미 손댄 파일" 대조 기준.
+      "dropUpstreamPaths": ["path/c"]    // 원래 snapshot 전용(상류에 있어도 의도적으로 계속 뺄 경로) + 이유는 `_dropUpstreamPaths_comment`. hardfork 하에서도 같은 이유로 유지.
     }
   }
 }
@@ -356,14 +459,20 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
    그대로 따른다 — 요약: 새 의존성의 public npm integrity 해시를
    `registry.npmmirror.com`에서 확보해 store에 캐시시킨 뒤 `--frozen-lockfile`로
    검증하고, push 전 `@apps-in-toss/*` 항목을 npmmirror와 전수 대조한다.
-3. **snapshot 파일 삭제가 의도와 다르면**: 그 경로를 `.upstream.json`의
-   `localOnly`(계속 지키고 싶다) 또는 `dropUpstreamPaths`(반대로 상류에 있어도
-   영구히 빼고 싶다)에 추가하고 다시 돌린다. `node scripts/upstream-drift-audit.mjs`로
-   등록 전후를 비교하면 그 경로가 실제로 위험 목록에서 빠졌는지 확인할 수 있다.
-4. **hardfork(agent-plugin) patch가 너무 커서 리뷰하기 힘들면**: `--ref`를
-   최근 몇 커밋 전으로 좁혀서 더 작은 diff를 여러 번 만들거나, 커뮤니티 쪽
-   개별 PR/커밋 메시지를 먼저 훑어 가져올 가치가 있는 변경만 골라 그 파일만
-   따로 비교한다(`git -C ~/Projects/github.com/apps-in-toss-community/agent-plugin diff <old>..<new> -- <path>`).
+3. **(`mode: "snapshot"`으로 되돌린 패키지에 한해) 파일 삭제가 의도와 다르면**:
+   그 경로를 `.upstream.json`의 `localOnly`(계속 지키고 싶다) 또는
+   `dropUpstreamPaths`(반대로 상류에 있어도 영구히 빼고 싶다)에 추가하고
+   다시 돌린다. `node scripts/upstream-drift-audit.mjs`로 등록 전후를
+   비교하면 그 경로가 실제로 목록에서 빠졌는지 확인할 수 있다. 지금
+   `.upstream.json`의 모든 패키지가 `hardfork`라 이 절차는 레거시다.
+4. **hardfork patch가 너무 커서 리뷰하기 힘들면**: `--ref`를 최근 몇 커밋
+   전으로 좁혀서 더 작은 diff를 여러 번 만들거나, 커뮤니티 쪽 개별 PR/커밋
+   메시지를 먼저 훑어 가져올 가치가 있는 변경만 골라 그 파일만 따로
+   비교한다(`git -C ~/Projects/github.com/apps-in-toss-community/<repo> diff <old>..<new> -- <path>` —
+   `<repo>`는 devtools/debugger 계열이면 커뮤니티 devtools/debugger repo,
+   agent-plugin이면 커뮤니티 agent-plugin repo). PR #42가 이 방식(커뮤니티
+   devtools `e198cf7`→`a365ad9` 구간을 읽어 수작업 포팅)의 실제 선례다 —
+   위 "선별 수용 절차" 절 참고.
 5. **`gh api`가 GraphQL을 요구하는 명령으로 막히면**: 이 머신은 REST만 허용된다.
    `sync-upstream.mjs`가 쓰는 `gh api repos/.../commits/<ref>`·
    `gh api repos/.../tarball/<ref>`는 둘 다 REST라 문제 없다 — 만약 로컬 clone이
