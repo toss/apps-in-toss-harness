@@ -20,7 +20,16 @@
     "exactOptionalPropertyTypes": false,
     "noUncheckedIndexedAccess": false,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // internal-protocol lives outside packages/ (shared/, not a pnpm workspace
+    // member — #18 option 4), so there is no node_modules symlink to resolve
+    // the bare `@apps-in-toss/internal-protocol/*` specifier through. Map it
+    // straight onto the shared source directory; the bundler alias in
+    // tsdown.config.ts and the test alias in vitest.config.ts must mirror this
+    // exactly or the two toolchains disagree about where the specifier points.
+    "paths": {
+      "@apps-in-toss/internal-protocol/*": ["../../shared/internal-protocol/src/*.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/**/__tests__/**", "src/**/*.test.ts"]
