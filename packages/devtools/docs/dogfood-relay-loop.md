@@ -119,7 +119,7 @@ attach 성공 시 `pages` 배열에 페이지가 나타난다:
 ```json
 {
   "tunnelStatus": { "up": true, "wssUrl": "wss://..." },
-  "pages": [{ "id": "...", "title": "ait-harness-e2e", "attached": true }]
+  "pages": [{ "id": "...", "title": "example-app", "attached": true }]
 }
 ```
 
