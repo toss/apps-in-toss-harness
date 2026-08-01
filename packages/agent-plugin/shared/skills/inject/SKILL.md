@@ -24,9 +24,9 @@ argument-hint: ''
 
 두 facet은 목적이 다르다:
 
-- **devtools facet** (`/ait:inject-devtools`): `@ait-co/devtools` unplugin을 빌드 config에
+- **devtools facet** (`/ait:inject-devtools`): `@apps-in-toss/devtools` unplugin을 빌드 config에
   추가해 토스 앱 없이 브라우저에서 mock SDK로 개발·테스트한다. 인자 없음.
-- **debug-console facet** (`/ait:inject-debug-console`): `@ait-co/debug-console`(on-device
+- **debug-console facet** (`/ait:inject-debug-console`): `@apps-in-toss/debug-console`(on-device
   attach + eruda)을 **`dependencies`**로 설치하고 `/auto` self-gating import를 진입점에
   와이어업한다. 환경 3(intoss-private candidate) on-device 디버깅에 attach 표면을 남긴다.
   인자 없음.
@@ -34,7 +34,7 @@ argument-hint: ''
 ## devtools facet — `/ait:inject-devtools`
 
 빌드 도구(Vite / Next.js / Rspack / Webpack)를 감지하고, lockfile로 패키지 매니저를 감지해
-`@ait-co/devtools`를 devDep으로 설치한 뒤, config 파일을 멱등하게 패치한다
+`@apps-in-toss/devtools`를 devDep으로 설치한 뒤, config 파일을 멱등하게 패치한다
 (`aitDevtools.<bundler>({ panel: true })`). 이미 설정이 있으면 skip. 콘솔 인증 불필요 — 로컬
 dev 전용이다.
 
@@ -46,7 +46,7 @@ dev 전용이다.
 
 ## debug-console facet — `/ait:inject-debug-console`
 
-`@ait-co/debug-console`을 **runtime dependency**로 설치하고, 진입점에 self-gating
+`@apps-in-toss/debug-console`을 **runtime dependency**로 설치하고, 진입점에 self-gating
 `import '@ait-co/debug-console/auto'`를 멱등하게 삽입한다. 이 패키지는 예전
 `@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP 데몬·on-device attach
 표면이 `debugger` 패키지(`@apps-in-toss/debugger` + `@apps-in-toss/debug-console`)로

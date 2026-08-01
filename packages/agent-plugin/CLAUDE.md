@@ -14,17 +14,17 @@
 
 이 repo가 직접 소비하는 것은 콘솔 MCP(`apps-in-toss-console` — 등록·번들 업로드·상태 조회, manifest 기본 포함), docs MCP(`apps-in-toss-docs` — 문서 조회, manifest 기본 포함), station 2·3(dev·debug)을 떠받치는 3-패키지(아래 표). `console-cli`(aitcc)는 harness aitcc 정리로 이 repo의 의존에서 빠졌다(콘솔 MCP로 대체 — 이건 **개발자/에이전트가 콘솔 API에 접근하는 축**이다). `oidc-bridge`는 이 축과 **다른 축**이었다 — 미니앱 **사용자**가 로그인하는 축(`appLogin()` → 백엔드 토큰 교환)으로, 콘솔 MCP의 OAuth 세션으로 대체된 적이 없다. 공식 서버 연동 경로(mTLS 파트너 서버 모델)는 존재하지만 harness는 당분간 이걸 떠안지 않기로 결정했다(Dave, 2026-07-31 — "서버 구현 관련은 제거하고 작동하는 미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가", harness#5). 그래서 harness는 클라이언트 쪽(`appLogin()` mock)만 다루고 서버 측 토큰 교환·검증은 명시적으로 scope 밖이다 — station 4(auth) 재정의는 `docs/roadmap.md` 참고. `polyfill`은 공식 harness 스코프 밖 패키지라(monorepo에서 제거됨) `inject` skill에서 더 이상 안내하지 않는다. Downstream은 `sdk-example` (dog-fooding 타겟).
 
-`devtools` 단일 패키지에서 MCP 데몬·테스트 러너·on-device attach 표면이 `debugger` repo(`@ait-co/debugger` + `@ait-co/debug-console` 2개 패키지)로 분리됐다(Phase 3). `devtools`는 mock·panel·unplugin(브라우저 dev 필수품)만 남아 계속 devDep 전용으로 쓰인다.
+`devtools` 단일 패키지에서 MCP 데몬·테스트 러너·on-device attach 표면이 `debugger` repo(`@apps-in-toss/debugger` + `@apps-in-toss/debug-console` 2개 패키지)로 분리됐다(Phase 3). `devtools`는 mock·panel·unplugin(브라우저 dev 필수품)만 남아 계속 devDep 전용으로 쓰인다.
 
 ### 3-패키지 경계 (station 2·3)
 
 | 패키지 | 정체성 | 설치 위치 | agent-plugin의 소비 지점 |
 |---|---|---|---|
-| `@ait-co/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | `devDependencies` | `inject`(devtools facet), `new-miniapp` 후처리 배선(+`--local` 템플릿) |
-| `@ait-co/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | `setup-debugger` skill → 프로젝트 `.mcp.json` `mcpServers.ait-devtools`(`npx -y -p @ait-co/debugger debugger`), `debug` §5가 소비 |
-| `@ait-co/debug-console` | on-device attach 런타임(eruda 인앱 콘솔 포함) | **`dependencies`** — 프로덕션 번들에 들어갈 수 있는 유일한 패키지 | `inject`(debug-console facet) |
+| `@apps-in-toss/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | `devDependencies` | `inject`(devtools facet), `new-miniapp` 후처리 배선(+`--local` 템플릿) |
+| `@apps-in-toss/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | `setup-debugger` skill → 프로젝트 `.mcp.json` `mcpServers.ait-devtools`(`npx -y -p @ait-co/debugger debugger`), `debug` §5가 소비 |
+| `@apps-in-toss/debug-console` | on-device attach 런타임(eruda 인앱 콘솔 포함) | **`dependencies`** — 프로덕션 번들에 들어갈 수 있는 유일한 패키지 | `inject`(debug-console facet) |
 
-**보안 스코프 축**: "무엇이 앱 번들에 들어갈 수 있는가"는 이 표의 설치 위치 열 — 각 패키지의 `package.json` 한 장으로 답해진다. `@ait-co/devtools`·`@ait-co/debugger`는 devDep/npx 전용이라 프로덕션 번들에 구조적으로 유입되지 않는다. `@ait-co/debug-console`이 설치돼 있지 않으면 attach 코드는 번들에 들어갈 수 없다 — 환경 3(intoss-private candidate)이 production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, on-device attach 표면을 남기려면 이 패키지만 명시적으로 `dependencies`에 설치해야 한다. 이 한 패키지로의 격리가 3-way split의 요점이다.
+**보안 스코프 축**: "무엇이 앱 번들에 들어갈 수 있는가"는 이 표의 설치 위치 열 — 각 패키지의 `package.json` 한 장으로 답해진다. `@apps-in-toss/devtools`·`@apps-in-toss/debugger`는 devDep/npx 전용이라 프로덕션 번들에 구조적으로 유입되지 않는다. `@apps-in-toss/debug-console`이 설치돼 있지 않으면 attach 코드는 번들에 들어갈 수 없다 — 환경 3(intoss-private candidate)이 production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, on-device attach 표면을 남기려면 이 패키지만 명시적으로 `dependencies`에 설치해야 한다. 이 한 패키지로의 격리가 3-way split의 요점이다.
 
 ## 아키텍처 원칙 (중요, repo-specific)
 
@@ -52,10 +52,10 @@
 | `new-miniapp` | `toss/create-ait-app` 비대화형(`--inline`) 호출 wrapper + 후처리(devtools 배선·granite bin 검증·.gitignore). `--local` 폴백은 내장 react-vite 복사 + 번들 설정 인라인 절차(L-5, `references/local-template.md`) | `/ait:new` | `Bash`, create-ait-app(dlx), `templates/`(폴백) |
 | `plan` | 기획 station 7 — SDK 도메인/권한/약관 기획 지원, docs MCP로 문서 조회 | `/ait:plan` | `Read`, docs MCP |
 | `design` | 디자인 station 8 — Figma MCP 연동 등록용 이미지 에셋 설계, 콘솔 MCP `miniapp_create` 규격과 일치 | `/ait:design` | Figma MCP |
-| `inject` | 기존 프로젝트 빌드 셋업 패치 — **devtools facet**: `@ait-co/devtools` unplugin 주입 · **debug-console facet**: `@ait-co/debug-console`(on-device attach + eruda) `dependencies` 설치 + `/auto` 와이어업 | `/ait:inject-devtools`, `/ait:inject-debug-console` | `Edit`, `Bash` |
+| `inject` | 기존 프로젝트 빌드 셋업 패치 — **devtools facet**: `@apps-in-toss/devtools` unplugin 주입 · **debug-console facet**: `@apps-in-toss/debug-console`(on-device attach + eruda) `dependencies` 설치 + `/auto` 와이어업 | `/ait:inject-devtools`, `/ait:inject-debug-console` | `Edit`, `Bash` |
 | `setup-phone-preview` | vite.config tunnel 옵션 + dev:phone script + cloudflared 사전 캐시 — 환경 2(Sandbox App (PWA)) 진입, 실기기 WebKit dev 미리보기 | `/ait:setup-phone-preview` | `Edit`, `Bash` |
-| `setup-debugger` | `ait-devtools` MCP server(`@ait-co/debugger`)를 프로젝트 `.mcp.json`에 opt-in 배선 — `/ait:debug` 환경 2·3의 전제 | `/ait:setup-debugger` | `Read`/`Write`/`Edit` |
-| `debug` | 환경 3겹 분기 디버깅 안내. 환경 1: 브라우저(devtools panel · `window.__ait` · 브라우저 DevTools). 환경 2: PWA Sandbox(`setup-phone-preview`). 환경 3: `ait-devtools` MCP(`@ait-co/debugger`)의 `start_attach` QR로 on-device CDP relay attach — §5-B가 candidate scheme URL이 없으면 `ait build` → 콘솔 MCP(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`)로 직접 등록·업로드해 얻는다 | `/ait:debug` | `Read`, `ait-devtools` MCP (opt-in — `setup-debugger`가 배선), 콘솔 MCP |
+| `setup-debugger` | `ait-devtools` MCP server(`@apps-in-toss/debugger`)를 프로젝트 `.mcp.json`에 opt-in 배선 — `/ait:debug` 환경 2·3의 전제 | `/ait:setup-debugger` | `Read`/`Write`/`Edit` |
+| `debug` | 환경 3겹 분기 디버깅 안내. 환경 1: 브라우저(devtools panel · `window.__ait` · 브라우저 DevTools). 환경 2: PWA Sandbox(`setup-phone-preview`). 환경 3: `ait-devtools` MCP(`@apps-in-toss/debugger`)의 `start_attach` QR로 on-device CDP relay attach — §5-B가 candidate scheme URL이 없으면 `ait build` → 콘솔 MCP(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`)로 직접 등록·업로드해 얻는다 | `/ait:debug` | `Read`, `ait-devtools` MCP (opt-in — `setup-debugger`가 배선), 콘솔 MCP |
 
 ### 명령 표면 — `/ait:<verb>` (issue #286)
 
@@ -178,7 +178,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 ## Status
 
-Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/plugin.json` 존재 — 루트 `.claude-plugin/marketplace.json`(monorepo 정본, source `./packages/agent-plugin`)이 `/plugin marketplace add toss/apps-in-toss-harness` → `/plugin install ait@apps-in-toss` 설치 경로(harness station 0)를 지탱한다(패키지 자체 `.claude-plugin/marketplace.json`은 미사용 커뮤니티 잔재라 제거됨). manifest `mcpServers`는 remote http 서버 2종(`apps-in-toss-docs`, `apps-in-toss-console`)을 기본 포함한다. `ait-devtools` MCP(station 2·3 attach surface)는 여기 포함되지 않고 `setup-debugger` skill이 프로젝트 `.mcp.json`에 opt-in 배선한다(harness#1 전환. Phase 3 분리 후 데몬 패키지는 `@ait-co/debugger` — server key `ait-devtools`는 개명하지 않는다).
+Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/plugin.json` 존재 — 루트 `.claude-plugin/marketplace.json`(monorepo 정본, source `./packages/agent-plugin`)이 `/plugin marketplace add toss/apps-in-toss-harness` → `/plugin install ait@apps-in-toss` 설치 경로(harness station 0)를 지탱한다(패키지 자체 `.claude-plugin/marketplace.json`은 미사용 커뮤니티 잔재라 제거됨). manifest `mcpServers`는 remote http 서버 2종(`apps-in-toss-docs`, `apps-in-toss-console`)을 기본 포함한다. `ait-devtools` MCP(station 2·3 attach surface)는 여기 포함되지 않고 `setup-debugger` skill이 프로젝트 `.mcp.json`에 opt-in 배선한다(harness#1 전환. Phase 3 분리 후 데몬 패키지는 `@apps-in-toss/debugger` — server key `ait-devtools`는 개명하지 않는다).
 
 - ✅ **작동** (8 skill / 9 command): `welcome`, `new-miniapp`, `plan`, `design`, `inject`(devtools·debug-console facet), `setup-phone-preview`, `setup-debugger`, `debug`. harness aitcc 정리로 `docs`·`status`(+logs facet)·`deploy`(+Deploy Key facet)·`setup-bundle`·`register`·`changeset` 6개 skill 제거(콘솔 MCP·docs MCP·harness 외부 도구로 대체). `auth-setup`도 같은 정리에서 제거됐지만 사유는 별개다 — 서버 인증(미니앱 사용자 로그인 축)이 harness scope 밖으로 결정됐기 때문(Dave, 2026-07-31, harness#5)이지 콘솔 MCP OAuth(개발자→콘솔 축)로 대체된 게 아니다. auth-setup skill은 재신설하지 않는다. `inject`의 polyfill facet도 공식 harness 스코프 밖 패키지를 안내한다는 이유로 제거됐다.
 - ✅ **배선 경로**: `/ait:setup-debugger` → 프로젝트 `.mcp.json`의 `ait-devtools`(`npx -y -p @ait-co/debugger debugger`) → `/ait:debug`가 환경 2·3 attach 경로(`start_attach` QR) 발급. attach 전 bootstrap 도구만, 폰 attach 후 `list_changed`로 동적 등록(devtools #208).
