@@ -34,7 +34,7 @@ function params(query: string): URLSearchParams {
  * the default host so they isolate the layer under test; the Layer B1 block
  * below varies the host explicitly.
  */
-const VALID_HOST = 'ait-harness-e2e.private-apps.tossmini.com';
+const VALID_HOST = 'example-app.private-apps.tossmini.com';
 
 /** A valid dogfood gate-passing set of query params. */
 const VALID_PARAMS = params(
@@ -71,7 +71,7 @@ describe('Layer B1 — host allowlist', () => {
     // Pre-#760 this host was blocked at B1 outright ('host'). The 3.0 loader
     // serves dogfood candidates from the same tossmini family, so B1 now
     // passes and the #665 invariant moves to C3: missing `at=` → 'auth'.
-    const result = gate(VALID_PARAMS, 'ait-harness-e2e.apps.tossmini.com');
+    const result = gate(VALID_PARAMS, 'example-app.apps.tossmini.com');
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('auth');
   });
@@ -105,7 +105,7 @@ describe('Layer B1 — host allowlist', () => {
   });
 
   it('passes a *.private-apps.tossmini.com dogfood host', () => {
-    const result = gate(VALID_PARAMS, 'ait-harness-e2e.private-apps.tossmini.com');
+    const result = gate(VALID_PARAMS, 'example-app.private-apps.tossmini.com');
     expect(result.attach).toBe(true);
   });
 
@@ -118,11 +118,11 @@ describe('Layer B1 — host allowlist', () => {
 
 describe('isPrivateAppsHost', () => {
   it('accepts a *.private-apps.tossmini.com subdomain', () => {
-    expect(isPrivateAppsHost('ait-harness-e2e.private-apps.tossmini.com')).toBe(true);
+    expect(isPrivateAppsHost('example-app.private-apps.tossmini.com')).toBe(true);
   });
 
   it('rejects a production *.apps.tossmini.com host', () => {
-    expect(isPrivateAppsHost('ait-harness-e2e.apps.tossmini.com')).toBe(false);
+    expect(isPrivateAppsHost('example-app.apps.tossmini.com')).toBe(false);
   });
 
   it('rejects a suffix-spoofing host', () => {
@@ -156,7 +156,7 @@ describe('isTrycloudflareHost', () => {
   });
 
   it('rejects a private-apps host (not a tunnel)', () => {
-    expect(isTrycloudflareHost('ait-harness-e2e.private-apps.tossmini.com')).toBe(false);
+    expect(isTrycloudflareHost('example-app.private-apps.tossmini.com')).toBe(false);
   });
 });
 
@@ -511,7 +511,7 @@ describe('Full decision matrix', () => {
   it('row: tossmini(3.0) host / at absent → BLOCKED (auth — TOTP mandatory, #760)', () => {
     // Pre-#760 this row was BLOCKED (host). The 3.0 loader serves dogfood
     // candidates from this family, so the block moved from B1 to C3.
-    const result = gate(VALID_PARAMS, 'ait-harness-e2e.apps.tossmini.com');
+    const result = gate(VALID_PARAMS, 'example-app.apps.tossmini.com');
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('auth');
   });
@@ -584,7 +584,7 @@ describe('isDebugAllowedHost — positive-allowlist kill-switch (#665)', () => {
   });
 
   it('allows *.private-apps.tossmini.com (env 3 dogfood)', () => {
-    expect(isDebugAllowedHost('ait-harness-e2e.private-apps.tossmini.com')).toBe(true);
+    expect(isDebugAllowedHost('example-app.private-apps.tossmini.com')).toBe(true);
     expect(isDebugAllowedHost('my-app.private-apps.tossmini.com')).toBe(true);
   });
 
@@ -595,7 +595,7 @@ describe('isDebugAllowedHost — positive-allowlist kill-switch (#665)', () => {
 
   it('allows apps.tossmini.com family (3.0 unified serving, gated by C3 TOTP — #760)', () => {
     expect(isDebugAllowedHost('apps.tossmini.com')).toBe(true);
-    expect(isDebugAllowedHost('ait-harness-e2e.apps.tossmini.com')).toBe(true);
+    expect(isDebugAllowedHost('example-app.apps.tossmini.com')).toBe(true);
   });
 
   // ── Blocked hosts ──────────────────────────────────────────────────────────
@@ -620,11 +620,11 @@ describe('isDebugAllowedHost — positive-allowlist kill-switch (#665)', () => {
 
 describe('isTossminiHost', () => {
   it('accepts private-apps hosts (2.x family is a subset)', () => {
-    expect(isTossminiHost('ait-harness-e2e.private-apps.tossmini.com')).toBe(true);
+    expect(isTossminiHost('example-app.private-apps.tossmini.com')).toBe(true);
   });
 
   it('accepts a 3.0 unified serving host (non-private-apps subdomain)', () => {
-    expect(isTossminiHost('ait-harness-e2e.apps.tossmini.com')).toBe(true);
+    expect(isTossminiHost('example-app.apps.tossmini.com')).toBe(true);
     expect(isTossminiHost('apps.tossmini.com')).toBe(true);
   });
 
@@ -650,7 +650,7 @@ describe('isTossminiHost', () => {
 // ---------------------------------------------------------------------------
 
 describe('3.0-family gate flow (#760)', () => {
-  const HOST_30 = 'ait-harness-e2e.apps.tossmini.com';
+  const HOST_30 = 'example-app.apps.tossmini.com';
   const RELAY = 'relay=wss%3A%2F%2Fabc.trycloudflare.com%2F';
 
   it('attaches with debug + wss relay + at code, no _deploymentId', () => {

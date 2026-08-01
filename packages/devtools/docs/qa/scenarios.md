@@ -231,7 +231,7 @@ npx -y @ait-co/devtools devtools-mcp
 # 3. dogfood bundle 준비 + 배포
 RELEASE_CHANNEL=dogfood ait build
 # 이어서 console MCP miniapp_create(신규 등록 시만) → bundle_upload → bundle_upload_complete
-# → intoss-private://<app-id>?_deploymentId=<uuid> 응답 (harness dogfood: 58955 `ait-harness-e2e`, ws 59)
+# → intoss-private://<app-id>?_deploymentId=<uuid> 응답 (harness dogfood: 고정 타겟, 구체 식별자는 maintainer-internal 기록)
 # 시퀀스 정본: packages/agent-plugin/shared/skills/debug/SKILL.md §5-B
 
 # 4. relay URL 포함 deep-link 생성

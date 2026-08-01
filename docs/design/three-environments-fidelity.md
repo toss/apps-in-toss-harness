@@ -89,7 +89,7 @@ harness를 **fidelity 사다리 위의 세 개 사용자 대면 환경**으로 �
 
 - **test-push↔debug-query 상호배타 결함은 test-push 폐기로 해소.** 환경 3의 정식 진입은 deep-link/QR query-param 단일 경로다. QR은 사람이 폰 카메라로 같은 deep-link를 여는 수동 변형.
 - **환경 1→2와 환경 2→3은 같은 폰을 쓰되 실행 면이 다르다**: 환경 2는 PWA 홈 화면 아이콘(Safari WebKit), 환경 3은 토스 앱 안 WebView. 같은 dev 코드를 두 면에서 차례로 올려 "엔진 fidelity → WebView fidelity"로 한 겹씩 검증한다. 환경 2의 WebKit 겹에도 CDP probe(실 WebKit DOM/console/exception/measure_safe_area 관측)가 같은 QR로 닿는다 — 단 이 채널이 채우는 건 엔진 fidelity지 SDK fidelity가 아니다(환경 2의 SDK는 여전히 mock).
-- `/ait debug`는 한 명령으로 환경을 자동 분기: ① relay attach 없음 + dev 서버만 → 환경 1·2 안내(브라우저/PWA), ② 환경 2 MCP attach → `start_debug({mode:'relay-sandbox'})`(터널 인프라 `setup-phone-preview` 선행, `--target=mobile`+`AIT_RELAY_BASE_URL`/`AIT_TUNNEL_BASE_URL`, launcher QR), ③ `intoss-private://` candidate → 환경 3 경로(QR/deep-link). (umbrella `CLAUDE.md` §1.1 "read-only skill은 관측 결과에 따라 분기하는 seam" 규약.) PWA 터널 진입(환경 2)은 `/ait setup-phone-preview`가 배선하고, 그 위 MCP attach 분기는 `/ait debug`의 mobile 경로(agent-plugin #96 CLOSED)가 담당한다.
+- `/ait debug`는 한 명령으로 환경을 자동 분기: ① relay attach 없음 + dev 서버만 → 환경 1·2 안내(브라우저/PWA), ② 환경 2 MCP attach → `start_debug({mode:'relay-sandbox'})`(터널 인프라 `setup-phone-preview` 선행, `--target=mobile`+`AIT_RELAY_BASE_URL`/`AIT_TUNNEL_BASE_URL`, launcher QR), ③ `intoss-private://` candidate → 환경 3 경로(QR/deep-link). (read-only skill은 관측 결과에 따라 분기하는 seam 규약.) PWA 터널 진입(환경 2)은 `/ait setup-phone-preview`가 배선하고, 그 위 MCP attach 분기는 `/ait debug`의 mobile 경로(agent-plugin #96 CLOSED)가 담당한다.
 
 ### 1.4 환경 겹 ↔ 마일스톤 매핑 (직교 축 교차)
 
@@ -140,7 +140,7 @@ RFC 6238: `createHmac('sha1', key).update(counterBuf).digest()` → dynamic trun
 - **in-app-side(2차, baked)**: 소비자(dog-food 앱, 예: sdk-example) vite config가 `define`/`import.meta.env`로 같은 시크릿을 in-app 번들에 fold-in — 이것이 사용자가 말한 "빌드될 때 포함"이며, `__DEBUG_BUILD__`와 정확히 같은 소비자-빌드 패턴이다.
 - 시크릿 생성기는 `generateAttachToken`의 `randomBytes(32).toString('hex')`를 작은 crypto 모듈로 추출해 재사용. `.env`는 `.gitignore`.
 
-### 2.6 SECRET-HANDLING 제약 (절대 준수 — umbrella `CLAUDE.md` §3.1)
+### 2.6 SECRET-HANDLING 제약 (절대 준수 — 루트 `CLAUDE.md` "시크릿" 절과 동일 원칙)
 
 - 시크릿을 stdout/stderr/로그에 **절대 출력 안 함**. `renderAttachBanner`/`printAttachBanner`의 token 출력은 제거/대체 — 배너엔 시크릿도, 가능하면 코드도 안 찍는다(코드는 deep-link에만 splice, rotating이라 stale).
 - `console.debug`·gate `reason`·에러 메시지에 시크릿/계산 중간값/`process.env` 덤프 금지. gate BLOCKED reason은 enum(`'auth'`)만.
@@ -210,7 +210,7 @@ station 2·3 도구(`devtools-mcp`)를 `agent-plugin`에 어떻게 통합하느�
 
 ### 5.1 문제 — 세션 재시작 vs in-session 명령
 
-새 MCP 서버를 붙이려면 통상 에이전트 세션 재시작이 필요하다. 그런데 station 3의 진입점인 `/ait debug`는 **세션 안에서 실행되는** 명령이다. "디버그하려고 명령을 쳤는데 그 결과로 세션을 재시작해야 한다"는 마찰은 harness의 seam(§1.1 umbrella `CLAUDE.md`)을 끊는다.
+새 MCP 서버를 붙이려면 통상 에이전트 세션 재시작이 필요하다. 그런데 station 3의 진입점인 `/ait debug`는 **세션 안에서 실행되는** 명령이다. "디버그하려고 명령을 쳤는데 그 결과로 세션을 재시작해야 한다"는 마찰은 harness의 세션-내 완결 seam을 끊는다.
 
 이 마찰의 실제 비용은 이번에 드러났다: `devtools-mcp`가 종료 시 정리되지 않아 고아 프로세스가 relay 포트(9100)를 점유한 채 남고, 다음 세션의 MCP가 startup 시 `EADDRINUSE` → MCP error `-32000`으로 기동 실패했다. 세션 경계를 넘나드는 프로세스 수명이 곧 비용이다(§5.5 friction-2가 이 정리 문제를 다룬다).
 
@@ -345,5 +345,5 @@ debug 모드(`src/mcp/debug-server.ts` + `ChiiCdpConnection`)는 이미 CDP `Run
 1. **기획 문서**(이 문서) — 설계 정본 고정.
 2. **roadmap 이슈 분해 + Project 등록** — devtools repo 이슈로: (a) TOTP 인증, (b) 영역 4 관측 토대, (c) 영역 2 광고, (d) 영역 3 haptic, (e) 영역 1 safe-area, (f) HMR spike(1.0.0 AC 외), **(g) `call_sdk`/`evaluate` tool — CDP 위 read/exec 도구**, **(h) `LocalCdpConnection` — 환경 1 CDP attach + Chromium 기동**, **(i) agent-plugin manifest에 `devtools-mcp` 등록 (friction-2 #209 이후)**.
 3. **MCP 완성 순서**: (g) `call_sdk`/`evaluate`를 **debug 모드(기존 CDP)에 먼저** 추가 — 손으로 짜던 raw-CDP를 즉시 대체(환경 3 사용성 개선이 바로 나옴). 그 다음 (h) `LocalCdpConnection`으로 환경 1에 같은 tool을 연다. (i) agent-plugin 등록은 friction-2(#209) + listChanged(#208)가 닫힌 뒤.
-4. **fidelity 구현은 영역 4 → 2 → 3 → 1 순**(4가 토대), TOTP는 독립 병행 가능. 각 영역 별도 PR(umbrella `CLAUDE.md` §6.2), 모두 `__typecheck.ts` Assert 게이트 + `docs/mock-fidelity-catalog.md` 갱신 동반.
-5. **Project README / CLAUDE.md 갱신**은 해당 PR이 station을 GREEN으로 전환할 때 같은 세션이 동반(umbrella §6.1).
+4. **fidelity 구현은 영역 4 → 2 → 3 → 1 순**(4가 토대), TOTP는 독립 병행 가능. 각 영역 별도 PR로 분리, 모두 `__typecheck.ts` Assert 게이트 + `docs/mock-fidelity-catalog.md` 갱신 동반.
+5. **Project README / CLAUDE.md 갱신**은 해당 PR이 station을 GREEN으로 전환할 때 같은 세션이 동반한다.

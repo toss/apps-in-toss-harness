@@ -308,7 +308,7 @@ async function applySnapshot(pkgName, pkgCfg, extractRoot, write, allowDelete) {
 
   log(`  변경 예정: 추가/갱신 ${toAddOrUpdate.length}건, 삭제 ${toDelete.length}건, localOnly 보호로 삭제 skip ${protectedFromDelete.length}건`);
   if (depsChanged) {
-    warn('package.json의 dependencies/devDependencies/peerDependencies가 상류에서 바뀌었다. pnpm install은 이 스크립트가 실행하지 않는다 — 수동으로 lockfile을 갱신하고 CLAUDE.md의 integrity quirk 절차(사내 프록시 nexus 해시 오염 방지, npmmirror 대조)를 따르라.');
+    warn('package.json의 dependencies/devDependencies/peerDependencies가 상류에서 바뀌었다. pnpm install은 이 스크립트가 실행하지 않는다 — 수동으로 lockfile을 갱신하고 CLAUDE.md의 integrity quirk 절차(사내망 프록시 해시 오염 방지, npmmirror 대조)를 따르라.');
   }
 
   if (!write) {

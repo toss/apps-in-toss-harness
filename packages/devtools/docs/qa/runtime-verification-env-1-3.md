@@ -6,7 +6,7 @@
 >
 > **환경 2(Sandbox PWA)는 이 가이드 범위 밖이다** — 진입 메커니즘이 다르다(아래 핵심 모델 참고). 절차·acceptance는 [`docs/env2-pwa-acceptance.md`](../env2-pwa-acceptance.md)가 정본. **폰 세션 순서는 환경 2를 먼저** 돈다 — 토스 앱·검수가 불필요해 마찰이 낮고, CDP relay 경로의 절반을 더 싼 환경에서 먼저 검증한 뒤 환경 3(dogfood relay)으로 넘어간다.
 >
-> **레거시 QA 절차 — harness 좌표로 갱신됨.** §"환경 3" 섹션은 원래 커뮤니티 dog-food 좌표(miniAppId `31146`)와 `aitcc` CLI를 전제로 작성됐다. harness dogfood 대상은 miniAppId `58955`(`ait-harness-e2e`, 워크스페이스 `59` — `docs/roadmap.md` station 5)이고, 배포·상태 조회는 console MCP(`apps-in-toss-console`)로 전환됐다. 아래는 그 전환을 반영해 갱신했다 — 정확한 최신 호출 시퀀스는 `packages/agent-plugin/shared/skills/debug/SKILL.md` §5-B·5-C가 정본. aitcc에 결합돼 harness 절차로 완전히 옮기지 못한 구간은 "console MCP 기반 재작성 필요"로 표시했다.
+> **레거시 QA 절차 — harness 좌표로 갱신됨.** §"환경 3" 섹션은 원래 커뮤니티 dog-food 좌표(miniAppId `31146`)와 `aitcc` CLI를 전제로 작성됐다. harness dogfood 대상은 고정된 단일 miniApp(구체 워크스페이스·miniAppId·앱 이름은 maintainer-internal 운영 기록 참고 — `docs/roadmap.md` station 5)이고, 배포·상태 조회는 console MCP(`apps-in-toss-console`)로 전환됐다. 아래는 그 전환을 반영해 갱신했다 — 정확한 최신 호출 시퀀스는 `packages/agent-plugin/shared/skills/debug/SKILL.md` §5-B·5-C가 정본. aitcc에 결합돼 harness 절차로 완전히 옮기지 못한 구간은 "console MCP 기반 재작성 필요"로 표시했다.
 
 ## 핵심 모델 — `start_debug(mode)` 단일 진입
 
@@ -83,7 +83,7 @@ start_debug({mode: 'local-browser'})
 
 - 실 iPhone 1대 (토스 앱 설치, dogfood 빌드 진입 가능한 계정)
 - 데스크톱: Claude Code 세션 + console MCP(`apps-in-toss-console`) OAuth 인가 완료 상태
-- `58955`(`ait-harness-e2e`) → REVIEW lock 미해제 상태 확인. `aitcc app status`에 대응하는 console MCP 조회(`miniapp_get_status` 추정)는 응답 필드 미확인 — **console MCP 기반 재작성 필요**
+- 고정 dogfood 타겟 → REVIEW lock 미해제 상태 확인. `aitcc app status`에 대응하는 console MCP 조회(`miniapp_get_status` 추정)는 응답 필드 미확인 — **console MCP 기반 재작성 필요**
 
 ### 1. dogfood 번들 배포
 
@@ -92,7 +92,7 @@ cd <대상 미니앱 프로젝트 루트>
 RELEASE_CHANNEL=dogfood ait build
 ```
 
-이어서 console MCP `miniapp_create`(신규 등록 시만) → `bundle_upload` → `bundle_upload_complete`로 업로드한다(harness dogfood는 `58955` 단일 앱 update 모드로 재사용 — 신규 등록 불필요). 업로드 완료 응답:
+이어서 console MCP `miniapp_create`(신규 등록 시만) → `bundle_upload` → `bundle_upload_complete`로 업로드한다(harness dogfood는 고정 단일 앱 update 모드로 재사용 — 신규 등록 불필요). 업로드 완료 응답:
 
 ```
 # intoss-private://<app-id>?_deploymentId=<uuid>
@@ -194,4 +194,4 @@ start_debug({mode: 'local-browser'})
 
 ## 운영팀 처리 대기 시
 
-REVIEW lock류 에러가 떨어지면 `58955`(`ait-harness-e2e`) update mode를 강제하지 말 것. 운영팀 처리 trail로 두고 다음 세션 대기(`docs/roadmap.md` station 5). (`aitcc` 시절의 `errorCode: 4046`에 대응하는 console MCP 에러 코드는 미확인 — console MCP 기반 재작성 필요.)
+REVIEW lock류 에러가 떨어지면 고정 dogfood 타겟의 update mode를 강제하지 말 것. 운영팀 처리 trail로 두고 다음 세션 대기(`docs/roadmap.md` station 5). (`aitcc` 시절의 `errorCode: 4046`에 대응하는 console MCP 에러 코드는 미확인 — console MCP 기반 재작성 필요.)

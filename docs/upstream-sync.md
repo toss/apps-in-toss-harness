@@ -482,8 +482,7 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
    `sync-upstream.mjs`가 쓰는 `gh api repos/.../commits/<ref>`·
    `gh api repos/.../tarball/<ref>`는 둘 다 REST라 문제 없다 — 만약 로컬 clone이
    없어서 이 경로를 타는데 실패한다면 먼저 clone을 받아두는 편이 낫다
-   (`~/Projects/github.com/apps-in-toss-community/<repo>`, umbrella
-   `meta/scripts`류 부트스트랩 참고).
+   (`~/Projects/github.com/apps-in-toss-community/<repo>`로 일반 `git clone`).
 
 ## 테스트 실행
 
