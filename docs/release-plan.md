@@ -119,6 +119,18 @@ publish는 내부 레지스트리로 샐 수 있다. 배포는 CI에서만 한�
 첫 배포가 정본 전환 선언이다. 이후 커뮤니티 repo는 정본이 아니며, 상류 수신 파이프라인
 (`scripts/sync-upstream.mjs`)의 역할도 재평가한다.
 
+**상류 sync 모드 재평가는 이 트리거를 앞당겨 2026-07-31에 이미 내려졌다(harness#25).**
+devtools·debugger·debug-console·internal-protocol 4패키지가 `snapshot`(상류가 정본,
+자동 덮어쓰기) 모드였는데, harness가 이미 그 서브트리 안에서 계속 손수정을 쌓고 있어
+전제가 깨져 있었다 — 클래스 1·2를 `localOnly`로 고정한 뒤에도 69건의 하네스 손수정이
+다음 `sync-upstream.mjs --write`에 무방비였고(devtools 42 / debugger 21 /
+debug-console 5 / internal-protocol 1), `localOnly` 등록은 PR마다 계속 늘었다(#22
+하나가 5개 추가). 첫 npm 배포까지 기다리지 않고 5개 패키지 전부(agent-plugin 포함)
+`hardfork`로 전환해 자동 덮어쓰기를 없애고 선별 cherry-pick만 남겼다(실제 선례: PR
+#42, 커뮤니티 devtools `e198cf7`→`a365ad9` 구간 수작업 포팅). 근거·절차 전문은
+`docs/upstream-sync.md`. 즉 "정본 전환이 첫 배포에 딸려 온다"는 원래 가정과 달리,
+상류 sync 쪽 정본 전환은 이미 끝났고 이 Phase 4에는 로드맵·org 거취 결정만 남는다.
+
 - [ ] 로드맵·1.0 정의 확정 (#7)
 - [ ] 커뮤니티 org 거취 결정
 

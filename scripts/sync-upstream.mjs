@@ -27,9 +27,13 @@
  *   snapshot  — 상류가 정본. 추출본으로 packages/<name>을 덮어쓴다. repo-root
  *               전용 인프라 파일(EXCLUDE_ROOT_INFRA)과 dropUpstreamPaths는
  *               제외, localOnly로 지정한 파일은 절대 덮어쓰거나 지우지 않는다.
- *               반영 후 normalize-upstream.mjs --write를 자동 실행.
- *   hardfork  — 자동 덮어쓰기 거부. 상류 diff를 patch 파일로 떨어뜨리고 종료
- *               (agent-plugin — 이 repo가 이미 정본이라 선별 cherry-pick만).
+ *               반영 후 normalize-upstream.mjs --write를 자동 실행. harness#25
+ *               결정(2026-07-31)으로 현재 이 모드를 쓰는 패키지는 없다 —
+ *               레거시 지원으로 스크립트에는 계속 남아 있다.
+ *   hardfork  — 자동 덮어쓰기 거부. 상류 diff를 patch 파일로 떨어뜨리고 종료.
+ *               harness#25 결정(2026-07-31)으로 현재 5개 패키지
+ *               (agent-plugin/devtools/debugger/debug-console/internal-protocol)
+ *               전부 이 모드다 — 이 repo가 이미 정본이라 선별 cherry-pick만 한다.
  */
 
 import { execFile } from 'node:child_process';
@@ -362,7 +366,7 @@ async function applyHardfork(pkgName, pkgCfg, extractRoot, sha) {
   const lineCount = stdout.split('\n').length;
 
   log(`  hardfork 모드 — 자동 반영 거부. 상류 diff를 patch로 저장: ${relative(REPO_ROOT, patchPath)} (${lineCount}줄)`);
-  log('  packages/agent-plugin은 이 repo에서 이미 하드포크가 완료됐다(skill 7종 제거, /ait:<verb> rename, manifest 재작성).');
+  log(`  packages/${pkgName}은 이 repo에서 이미 하드포크된 패키지다 — 자동 재스냅샷 금지, 선별 cherry-pick만.`);
   log('  이 patch에서 실제로 가져오고 싶은 변경만 사람이 선별 cherry-pick하라 — 통째로 적용(patch -p1 등)하지 마라.');
   return { patchPath };
 }

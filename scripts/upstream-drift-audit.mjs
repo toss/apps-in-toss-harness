@@ -3,19 +3,29 @@
 /**
  * upstream-drift-audit.mjs
  *
- * 읽기 전용 감사 도구 — "지금 다음 `sync-upstream.mjs --write`를 돌리면 몇 건의
- * 하네스 손수정이 조용히 되돌아가거나 지워지는가"를 측정한다(#25).
+ * 읽기 전용 감사 도구. 전 패키지 hardfork 전환(harness#25, 2026-07-31) 이전에는
+ * "지금 다음 `sync-upstream.mjs --write`를 돌리면 몇 건의 하네스 손수정이
+ * 조용히 되돌아가거나 지워지는가"(되돌림 감지)를 측정했다 — mode:"snapshot"
+ * 패키지에서만 의미가 있었다(hardfork는 애초에 자동 반영이 없어 되돌림 위험이
+ * 없으므로). 지금은 **전 패키지가 hardfork**라 그 질문 자체가 대부분
+ * 공허해졌다. 그래서 이 스크립트는 mode와 무관하게 전 패키지를 대상으로
+ * "상류(lastImportedRef 시점)와 지금 `packages/<name>`이 얼마나 멀어졌는가"
+ * (상류와의 거리 측정)를 재는 도구로 쓰임이 바뀌었다 — 출력의 "덮어쓰기"/"삭제"
+ * 건수는 이제 hardfork 패키지에서는 위험 신호가 아니라 **누적 분기(divergence)
+ * 크기**다: 이 harness가 그 패키지에서 상류와 다르게 유지하고 있는 파일이 몇 개고
+ * (덮어쓰기), harness 전용으로 새로 생긴 파일이 몇 개인지(삭제로 분류되지만
+ * hardfork 하에서는 "harness 전용 신규 파일"을 뜻한다). mode:"snapshot" 패키지가
+ * 다시 생기면(레거시 지원, sync-upstream.mjs가 계속 구현하고 있음) 그 패키지에
+ * 한해 원래 의미("다음 --write가 되돌린다")도 그대로 유효하다.
  *
  * `sync-upstream.mjs`의 밀림(drift) 미리보기(`--package all`, dry-run)는 "상류가
  * 얼마나 앞서갔나"(상류 HEAD의 SHA가 `lastImportedRef`와 다른가)를 본다. 이
  * 스크립트는 그것과 다른 질문에 답한다 — 상류가 새로 움직이지 않았어도(항상
  * `lastImportedRef`, 즉 지금 이미 반영된 커밋을 기준으로), 현행
  * `normalize-upstream.mjs` 규칙을 그 시점 상류에 다시 적용한 결과가
- * `packages/<name>`과 바이트 단위로 얼마나 다른가를 측정한다. 이 차이가 곧
- * "규칙이 아직 따라잡지 못한, 사람이 손으로만 고친 부분"이고, 다음 snapshot
- * sync가 `localOnly` 보호 없이 그 부분을 덮어쓰거나 지운다.
+ * `packages/<name>`과 바이트 단위로 얼마나 다른가를 측정한다.
  *
- * mode:"snapshot" 패키지만 대상이다(hardfork는 애초에 자동 반영이 없다).
+ * mode와 무관하게 전 패키지가 대상이다(과거엔 snapshot만 — 위 설명 참고).
  *
  * 동작:
  *   1. 각 패키지의 상류 clone(~/Projects/github.com/apps-in-toss-community/<repo>)에서
@@ -36,13 +46,14 @@
  *      않는다.
  *
  * 사용법:
- *   node scripts/upstream-drift-audit.mjs                # snapshot 패키지 전부
+ *   node scripts/upstream-drift-audit.mjs                # 전 패키지(mode 무관)
  *   node scripts/upstream-drift-audit.mjs --package devtools
  *   node scripts/upstream-drift-audit.mjs --json          # 기계 판독용
  *
  * 의도적으로 없는 것: `--check`/exit-1-on-drift 같은 CI 게이팅 플래그. 지금은
- * 관측 도구다 — 등록 없이 CI에 걸면 #25의 잔여 drift(모드 결정 전까지 정상
- * 상태로 남아 있을 예정) 때문에 항상 빨갛다.
+ * 관측 도구다 — hardfork 패키지의 "덮어쓰기"/"삭제" 건수는 정상적으로 0이 아니고
+ * (harness가 의도적으로 유지하는 분기), 게이팅하면 그 정상 상태를 계속 빨갛게
+ * 잘못 표시한다.
  */
 
 import { execFile } from 'node:child_process';
@@ -247,7 +258,7 @@ async function auditPackage(pkgName, pkgCfg) {
     for (const p of currentPaths) currentFiles.set(p, await readFile(join(targetDir, p)));
 
     const { overwrites, deletions } = classifyDrift(upstreamFiles, currentFiles);
-    return { package: pkgName, lastImportedRef: sha, overwrites, deletions };
+    return { package: pkgName, mode: pkgCfg.mode, lastImportedRef: sha, overwrites, deletions };
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -261,14 +272,17 @@ function printHuman(results) {
   let totalOverwrite = 0;
   let totalDelete = 0;
   let totalResidue = 0;
+  let hasSnapshot = false;
+  let hasHardfork = false;
 
   for (const r of results) {
-    log(`\n== ${r.package} (lastImportedRef ${r.lastImportedRef.slice(0, 12)}) ==`);
+    log(`\n== ${r.package} (${r.mode}, lastImportedRef ${r.lastImportedRef.slice(0, 12)}) ==`);
     const residueCount = r.overwrites.filter((o) => o.markers.length > 0).length;
-    log(`  덮어쓰기 ${r.overwrites.length}건, 삭제 ${r.deletions.length}건 (그중 커뮤니티 잔재 복귀 ${residueCount}건)`);
+    const label = r.mode === 'hardfork' ? '분기(divergence)' : '덮어쓰기';
+    log(`  ${label} ${r.overwrites.length}건, 삭제(harness 전용 신규 파일 포함) ${r.deletions.length}건 (그중 커뮤니티 잔재 ${residueCount}건)`);
     for (const o of r.overwrites) {
       const tag = o.markers.length > 0 ? ` [잔재: ${o.markers.join(', ')}]` : '';
-      log(`    [덮어쓰기]${tag} ${o.path}`);
+      log(`    [${label}]${tag} ${o.path}`);
     }
     for (const d of r.deletions) {
       log(`    [삭제] ${d}`);
@@ -276,15 +290,20 @@ function printHuman(results) {
     totalOverwrite += r.overwrites.length;
     totalDelete += r.deletions.length;
     totalResidue += residueCount;
+    if (r.mode === 'snapshot') hasSnapshot = true;
+    if (r.mode === 'hardfork') hasHardfork = true;
   }
 
   log('\n---');
   log(
-    `합계: 덮어쓰기 ${totalOverwrite}건, 삭제 ${totalDelete}건, 총 ${totalOverwrite + totalDelete}건 ` +
-      `(그중 커뮤니티 잔재 복귀 ${totalResidue}건)`,
+    `합계: 덮어쓰기/분기 ${totalOverwrite}건, 삭제 ${totalDelete}건, 총 ${totalOverwrite + totalDelete}건 ` +
+      `(그중 커뮤니티 잔재 ${totalResidue}건)`,
   );
-  if (totalOverwrite + totalDelete > 0) {
-    log('이 항목들은 다음 `sync-upstream.mjs --write`가 조용히 되돌리거나 지운다 — .upstream.json의 localOnly 등록 여부를 검토하라.');
+  if (hasSnapshot && totalOverwrite + totalDelete > 0) {
+    log('snapshot 모드 패키지의 항목들은 다음 `sync-upstream.mjs --write`가 조용히 되돌리거나 지운다 — .upstream.json의 localOnly 등록 여부를 검토하라.');
+  }
+  if (hasHardfork) {
+    log('hardfork 모드 패키지의 항목들은 위험 신호가 아니라 상류와의 누적 분기 크기다 — 선별 cherry-pick 시 대조 기준으로 참고하라(.upstream.json의 localOnly).');
   }
 }
 
@@ -306,14 +325,16 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const state = await loadState();
-  const snapshotNames = Object.entries(state.packages)
-    .filter(([, cfg]) => cfg.mode === 'snapshot')
-    .map(([name]) => name);
+  // mode와 무관하게 전 패키지가 대상이다 — hardfork 전환 전에는 snapshot 패키지만
+  // 골랐지만(되돌림 감지가 hardfork에는 성립하지 않았으므로), 지금은 "상류와의
+  // 거리 측정" 도구로 재규정되어 hardfork 패키지도 유의미하다(파일 상단 docblock
+  // 참고).
+  const allNames = Object.keys(state.packages);
 
-  const requested = args.packages.length === 0 || args.packages.includes('all') ? snapshotNames : args.packages;
-  const unknown = requested.filter((n) => !snapshotNames.includes(n));
+  const requested = args.packages.length === 0 || args.packages.includes('all') ? allNames : args.packages;
+  const unknown = requested.filter((n) => !allNames.includes(n));
   if (unknown.length > 0) {
-    console.error(`알 수 없는 snapshot 패키지: ${unknown.join(', ')} (가능: ${snapshotNames.join(', ')})`);
+    console.error(`알 수 없는 패키지: ${unknown.join(', ')} (가능: ${allNames.join(', ')})`);
     process.exitCode = 1;
     return;
   }
