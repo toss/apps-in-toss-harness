@@ -34,6 +34,10 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # devtools 통합 footprint 가드(#40, upstream df1f45e). debug 표면 제거 후
+      # devtools의 발행 산출물·소스에 debug 잔재가 없음을 3단계(positive control
+      # 포함)로 검사한다. 위 4줄은 debugger 쪽 실질 가드가 계속 담당한다.
+      - run: pnpm -r check:footprint-absent
       # 발행 manifest phantom 의존 게이트(#18, PR #37). npm 버전은 불변이라
       # 첫 배포 전이 유일한 차단 시점 — baseline에 없는 새 위반이 나오면 실패한다.
       - run: pnpm check:pack-manifests
