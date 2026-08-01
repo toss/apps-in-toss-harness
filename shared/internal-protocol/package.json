@@ -1,6 +1,7 @@
 {
   "name": "@apps-in-toss/internal-protocol",
   "private": true,
+  "type": "module",
   "description": "Shared device<->host wire-protocol source for @apps-in-toss/debugger and @apps-in-toss/debug-console — lives outside packages/ (not a pnpm workspace member, never published). Consumers reach it via tsconfig `paths` + bundler `alias` mapping the `@apps-in-toss/internal-protocol/*` specifier onto `src/*.ts` directly; this manifest is documentation only, not a resolution target. Typecheck/test/lint run through the consumer packages' own tooling (see root package.json's `*:shared` scripts) — this package no longer has its own pnpm scripts (#18, option 4).",
   "exports": {
     "./relay-auth-close": "./src/relay-auth-close.ts",
