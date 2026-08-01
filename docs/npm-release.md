@@ -149,7 +149,27 @@ devDep 한 줄보다 "내부 프로토콜인데 왜 공개 스코프에 있나"�
   이 필드로 로컬 반영 대상을 계산한다(상류 쪽 `upstream.path`는 상류 repo 안에서의
   위치라 그대로 `packages/internal-protocol`).
 
-## 6. 배포 성사 후 후속 작업
+## 6. changeset version 실행 절차 (패키지별 독립 .changeset 구조의 함정)
+
+이 monorepo는 루트 통합 `.changeset/`이 아니라 **패키지별 독립 `.changeset/`** 구조인데,
+`@changesets/cli`는 `@manypkg/find-root`로 cwd 상위의 `pnpm-workspace.yaml` 위치(= repo 루트)를
+항상 monorepo 루트로 resolve한다. 그래서 `pnpm --filter <pkg> exec changeset version`은 어느
+패키지에서도 동작하지 않고 `There is no .changeset folder`로 실패한다(2026-08-02 실측, PR #53).
+
+pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음 절차를 쓴다:
+
+1. `cp -r packages/<pkg>/.changeset .changeset` — 해당 패키지의 `.changeset/`을 repo 루트로 임시 복사
+2. 루트에서 `pnpm exec changeset version` 실행 — 해당 패키지만 bump된다(다른 패키지의 pending은
+   루트에 없으므로 안전)
+3. `rm -rf .changeset` — 임시 루트 복사본 제거 (소진된 `.md`는 1의 복사 시점에 루트로 왔다가
+   여기서 같이 사라지므로, **원본 `packages/<pkg>/.changeset/`의 소진된 `.md`를 손으로 삭제**한다)
+4. `git diff`로 확인: package.json 버전 patch bump + CHANGELOG 신규 항목 + 소진된 `.md` 삭제만
+   남아야 한다
+
+배포 워크플로(release.yml)는 changesets를 호출하지 않고 package.json에 커밋된 버전을 그대로
+발행하므로, 이 절차는 배포 전 버전 확정 단계에서만 필요하다.
+
+## 7. 배포 성사 후 후속 작업
 
 - 스킬·템플릿의 설치 문자열을 `@ait-co/*` → `@apps-in-toss/*`로 flip (harness#10).
 - README의 "아직 npm 미배포" 문구 제거.
