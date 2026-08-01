@@ -2,7 +2,9 @@
 
 이 문서는 메인테이너용이다. `apps-in-toss-community` 조직의 원 repo(devtools·
 debugger·agent-plugin)에서 계속 발생하는 코드 개선을 이 harness monorepo의
-`packages/<name>`으로 주기적으로 받아오는 절차를 다룬다.
+`packages/<name>`(internal-protocol만 예외 — `shared/internal-protocol`,
+아래 "구성 요소"의 `localPath` 설명 참고)으로 주기적으로 받아오는 절차를
+다룬다.
 
 **연관관계 절단과 코드 수신은 별개다.** Dave 방침: 커뮤니티와의 브랜딩·링크·
 런타임 결합은 완전히 끊되(별도 작업), 코드 개선은 계속 받는다. 그래서 이
@@ -25,7 +27,7 @@ internal-protocol이 한때 쓰던 모드였지만 지금은 아무 패키지도
 
 | 파일 | 역할 |
 |---|---|
-| `.upstream.json` (repo 루트) | 각 `packages/<name>`이 어느 커뮤니티 repo/path/ref까지 반영됐는지 기록하는 상태 파일. |
+| `.upstream.json` (repo 루트) | 각 패키지가 어느 커뮤니티 repo/path/ref까지 반영됐는지 기록하는 상태 파일. 로컬 반영 대상은 기본이 `packages/<name>`이지만, `packages.<name>.localPath`가 있으면 그걸 쓴다 — internal-protocol은 harness#18(옵션 4, 2026-08-01)로 pnpm workspace 밖 `shared/internal-protocol`로 강등되며 `localPath: "shared/internal-protocol"`을 처음 얻었다(상류 쪽 `upstream.path`는 상류 repo 안에서의 위치라 그대로 `packages/internal-protocol`). |
 | `scripts/normalize-upstream.mjs` | 절단 규칙을 재적용하는 순수 텍스트 변환기. import 없이도 단독으로 아무 파일/디렉토리에 돌릴 수 있다. |
 | `scripts/sync-upstream.mjs` | 실제 파이프라인 — 상류 획득 → 반영(모드별) → normalize 자동 실행 → `.upstream.json` 갱신. |
 | `scripts/upstream-drift-audit.mjs` | 읽기 전용 감사 — 상류(lastImportedRef 시점)와 `packages/<name>`이 얼마나 갈라졌는지 측정한다(#25). mode와 무관하게 전 패키지가 대상이다: 과거(snapshot 시절)엔 "몇 건이 다음 sync에 조용히 되돌아가는가"(되돌림 감지)를 물었지만, 전 패키지 hardfork 전환 후엔 "상류와 얼마나 멀어졌는가"(거리 측정 — cherry-pick 대조 자료)로 재규정됐다. 작업 트리·상류 clone에 아무것도 쓰지 않는다. |

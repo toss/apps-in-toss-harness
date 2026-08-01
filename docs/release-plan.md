@@ -66,9 +66,11 @@
 1. **`prepare` 부재** — `dist/`가 `.gitignore`라 git-install 시 빈 패키지가 된다.
    `main`/`exports`/`bin`이 전부 `./dist/*`를 가리키므로 기능 저하가 아니라 완전 비기능이다.
    (이건 `prepare` 추가로 넘을 수 있다.)
-2. **`workspace:*` devDependency** — 워크스페이스 밖에서는 해석되지 않는다. 특히
-   `internal-protocol`은 `private: true`에 raw TS export라 npm에 존재하지 않는다.
-   패키징 아키텍처를 바꿔야 넘을 수 있다.
+2. **`workspace:*` devDependency** — 워크스페이스 밖에서는 해석되지 않는다. 예:
+   `debugger`가 `debug-console`을 `workspace:*` devDependency로 문다. 패키징
+   아키텍처를 바꿔야 넘을 수 있다. (`internal-protocol`은 harness#18로
+   pnpm workspace 밖 `shared/internal-protocol`로 강등되며 애초에 이 문제 축에서
+   빠졌다 — devDependencies에 그 항목 자체가 더는 없다.)
 3. **private repo 인증** — 접근권이 없는 사용자에게는 인증 단계에서 실패한다. 즉 이 harness의
    원래 대상 독자에게는 애초에 닫힌 경로다.
 
@@ -80,9 +82,13 @@
       [`docs/npm-release.md`](./npm-release.md) §4 참고 — dry-run은 fail-closed이고,
       실제 publish는 `main`에서만 허용되며, `dist_tag`는 화이트리스트 검사를 통과해야 한다.
 - [ ] `npm pack` 산출물 검증 — `dist` 포함, `bin`·`exports`가 실존 파일을 가리킴, README 포함,
-      시크릿·내부 경로 미포함. **발행 manifest도 함께 본다** — `pnpm pack`은 `workspace:`를
-      `devDependencies`에서도 실제 버전으로 치환하므로, npm에 존재하지 않는 의존이 박힐 수
-      있다(#18: `debug-console`·`debugger`에 `@apps-in-toss/internal-protocol@0.0.0`).
+      시크릿·내부 경로 미포함. **발행 manifest phantom 의존은 해소됨(#18)** — `pnpm pack`이
+      `workspace:`를 `devDependencies`에서도 실제 버전으로 치환해 `debug-console`·`debugger`
+      발행 manifest에 npm에 존재하지 않는 `@apps-in-toss/internal-protocol@0.0.0`이 박히던
+      문제를, internal-protocol을 pnpm workspace 밖 `shared/internal-protocol`로 강등해(옵션 4,
+      2026-08-01) 그 devDependency 항목 자체를 없앴다 — 자세한 결정 경위·구조는
+      [`docs/npm-release.md`](./npm-release.md) "internal-protocol phantom devDependency"
+      절 참고. `scripts/check-pack-manifests.mjs`(baseline 비어 있음)가 CI에서 회귀를 잡는다.
 - [ ] `--tag next`로 1개 패키지 → **실제 설치 실증** → 나머지 2개
 - [ ] 검증 후 `latest` 승격
 - [ ] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip (#10),
