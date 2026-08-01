@@ -48,6 +48,7 @@
 
 - **새 앱을 만들지 않는다.** 모든 업로드·조회 실증은 그 고정 타겟을 재사용한다. `granite.config.ts`의 `appName`이 콘솔 매칭 키다 — 불일치 번들은 업로드는 되지만 컴파일에서 `BUILD_FAILED`("콘솔에 등록된 앱 ID와 granite.config.ts의 appName이 일치하지 않아요")가 난다.
 - **검수 제출(`review_*`·`bundle_submit_review`)·릴리즈/롤백·푸시·프로모션 금지.** 실증 scope는 업로드·컴파일(`CREATED`)까지다. 자동화 세션은 항상 콘솔 tool allowlist(canUseTool)로 이 경계를 결정적으로 강제한다.
+- E2E용 로컬 재현 프로젝트가 maintainer 로컬에 보존돼 있다(경로는 maintainer-internal 운영 기록 — node_modules 제외 보존본, `pnpm install --frozen-lockfile`로 복원).
 - 커뮤니티 org 시절의 dog-food 타겟은 별개 계정 축이라 이 harness의 console MCP OAuth로는 접근 불가 — 두 축을 혼동하지 마라.
 
 ## 노출 산출물
