@@ -391,11 +391,14 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
     `scripts/build-og-image.tsx`·`scripts/og/template.tsx`, 12개 파일, devtools
     `localOnly` 참고).
   - **클래스 2 — PR #22(`AIT_LAUNCHER_URL` override)의 소비자·회귀 테스트**
-    (devtools 6개: `src/mcp/deeplink.ts`·`src/mcp/attach-orchestrator.ts`·
-    `src/unplugin/tunnel.ts`·`src/mcp/__tests__/{deeplink,debug-server}.test.ts`·
-    `src/__tests__/unplugin-tunnel.test.ts`, debugger 4개: 같은 목록에서
-    `tunnel.ts`·`unplugin-tunnel.test.ts` 제외 — devtools/debugger 두
-    `localOnly` 참고).
+    (devtools 2개: `src/unplugin/tunnel.ts`·`src/__tests__/unplugin-tunnel.test.ts`,
+    debugger 4개: `src/mcp/deeplink.ts`·`src/mcp/attach-orchestrator.ts`·
+    `src/mcp/__tests__/{deeplink,debug-server}.test.ts` — devtools/debugger 두
+    `localOnly` 참고). devtools 쪽은 원래 6개였다 — harness#40(상류 df1f45e
+    선별 수용)이 `deeplink.ts`·`attach-orchestrator.ts`와 그 테스트 2개를
+    devtools에서 완전히 삭제하고 debugger 쪽 사본만 남겼으므로, 지금은 두
+    목록이 겹치지 않는 별개의 집합이다(devtools의 `tunnel.ts`에는 애초부터
+    debugger 쪽 대응 파일이 없었다).
 
   두 클래스를 등록한 뒤 남은 잔여 drift는 devtools 42건 / debugger 21건 /
   debug-console 5건 / internal-protocol 1건, 합계 **69건**(잔재 마커 46건)이다

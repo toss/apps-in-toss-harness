@@ -143,42 +143,15 @@ importers:
 
   packages/devtools:
     dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.29.0
-        version: 1.29.0(supports-color@8.1.1)(zod@4.4.3)
-      '@vitest/expect':
-        specifier: ^4.1.9
-        version: 4.1.10
-      '@vitest/runner':
-        specifier: ^4.1.9
-        version: 4.1.10
-      ajv:
-        specifier: ^8.20.0
-        version: 8.20.0
-      chii:
-        specifier: ^1.15.5
-        version: 1.15.5(supports-color@8.1.1)
       cloudflared:
         specifier: ^0.7.1
         version: 0.7.1
-      eruda:
-        specifier: ^3.4.3
-        version: 3.4.3
-      esbuild:
-        specifier: ^0.28.1
-        version: 0.28.1
-      qrcode:
-        specifier: ^1.5.4
-        version: 1.5.4
       qrcode-terminal:
         specifier: ^0.12.0
         version: 0.12.0
       unplugin:
         specifier: ^3.2.0
         version: 3.3.0(esbuild@0.28.1)(rolldown@1.0.0-rc.12(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3))(rollup@4.62.2)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
-      ws:
-        specifier: ^8.21.0
-        version: 8.21.1
     devDependencies:
       '@apps-in-toss/debug-console':
         specifier: workspace:*
@@ -213,9 +186,6 @@ importers:
       '@types/node':
         specifier: ^25.6.2
         version: 25.9.5
-      '@types/qrcode':
-        specifier: ^1.5.6
-        version: 1.5.6
       '@types/qrcode-terminal':
         specifier: ^0.12.2
         version: 0.12.2
@@ -225,9 +195,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.17)
-      '@types/ws':
-        specifier: ^8.18.0
-        version: 8.18.1
       '@vitejs/plugin-react':
         specifier: ^6.0.3
         version: 6.0.4(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))

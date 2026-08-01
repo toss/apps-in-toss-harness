@@ -140,34 +140,40 @@ describe('docs/upstream-sync.md ↔ .upstream.json localOnly', () => {
   });
 
   test('클래스 2(#22 override 소비자·회귀 테스트) 열거가 두 패키지 localOnly와 일치해야 한다', () => {
+    // harness#40(상류 df1f45e) 이후 devtools/debugger 두 목록은 서로소다(더 이상
+    // "devtools 목록에서 일부 제외 = debugger 목록"이 아니다) — 문서는 "devtools
+    // N개: … , debugger M개: …" 두 구간으로 나눠 적고, 여기서도 그 구분점
+    // (`debugger *N개`)을 기준으로 잘라 각각 독립적으로 해석한다.
     const bullet = classBullet(2);
-    const devtoolsTokens = pathTokens(bullet);
-    const devtoolsResolved = resolveAgainstLocalOnly(devtoolsTokens, localOnly('devtools'), '클래스 2/devtools');
+    const splitMatch = bullet.match(/debugger\s*\*{0,2}\d+개/);
+    assert.notEqual(
+      splitMatch,
+      null,
+      '문서에서 "debugger N개" 구분점을 못 찾았다 — 문구가 바뀌었다면 이 추출기를 고쳐라',
+    );
+    const devtoolsPart = bullet.slice(0, splitMatch.index);
+    const debuggerPart = bullet.slice(splitMatch.index);
+
+    const devtoolsResolved = resolveAgainstLocalOnly(
+      pathTokens(devtoolsPart),
+      localOnly('devtools'),
+      '클래스 2/devtools',
+    );
     assert.equal(
       devtoolsResolved.size,
       statedCount(bullet, 'devtools'),
       '문서가 적은 devtools 개수와 실제 열거 개수가 다르다',
     );
 
-    // debugger는 "같은 목록에서 <파일>·<파일> 제외"로 서술된다. 제외 대상은 경로가
-    // 아닌 맨 파일명으로 적히므로 그렇게 추출한다.
-    const excluded = [...bullet.matchAll(/`([^`\/]+\.tsx?)`/g)].map((m) => m[1]);
-    assert.ok(excluded.length > 0, 'debugger 제외 파일명 추출 실패 — 문구가 바뀌었다면 이 추출기를 고쳐라');
-
-    const debuggerExpected = [...devtoolsResolved].filter(
-      (p) => !excluded.some((e) => p === e || p.endsWith(`/${e}`)),
+    const debuggerResolved = resolveAgainstLocalOnly(
+      pathTokens(debuggerPart),
+      localOnly('debugger'),
+      '클래스 2/debugger',
     );
     assert.equal(
-      debuggerExpected.length,
+      debuggerResolved.size,
       statedCount(bullet, 'debugger'),
-      '문서가 적은 debugger 개수와 (devtools 목록 − 제외)의 개수가 다르다',
+      '문서가 적은 debugger 개수와 실제 열거 개수가 다르다',
     );
-    for (const p of debuggerExpected) {
-      assert.ok(
-        localOnly('debugger').includes(p),
-        `클래스 2/debugger: 문서상 보호 대상인 \`${p}\` 가 debugger localOnly에 없다 — ` +
-          '다음 sync-upstream --write 가 이 파일을 조용히 덮어쓴다.',
-      );
-    }
   });
 });

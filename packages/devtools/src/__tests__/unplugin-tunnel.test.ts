@@ -14,6 +14,22 @@ import {
 // out of jsdom unit-test scope (verified by hand / e2e, same spirit as the
 // "web 모드는 e2e" rule in CLAUDE.md). The pure helpers are covered here.
 
+/**
+ * `startTunnelDashboard` above delegates to `@apps-in-toss/debugger`'s
+ * `/dev-bridge` (issue #817) — the actual `at=` TOTP minting for the dashboard
+ * HTML now happens inside that package's `src/mcp/totp.ts`, not here (harness#40:
+ * this package's own `src/mcp/totp.ts` copy was deleted along with the rest of
+ * `src/mcp/**` — upstream df1f45e). Before that split this file imported its own
+ * sibling `../mcp/totp.js` to independently regenerate/verify the code found in
+ * the dashboard HTML; the equivalent implementation now only exists in the
+ * sibling package, so the tests below reach it with a literal dynamic
+ * `import('../../../debugger/src/mcp/totp.ts')` — the specifier stays a string
+ * literal (not hoisted into a shared constant) so Vite's import-analysis can
+ * rewrite it relative to THIS file; a variable defeats that and resolves
+ * against the wrong base. Same monorepo, no compiled `dist/` dependency, same
+ * spirit as `../shared/launcher-url.test.ts`'s `readDebuggerSource()`.
+ */
+
 vi.mock('qrcode-terminal', () => ({
   default: {
     generate: (input: string, _opts: unknown, cb?: (out: string) => void) => {
@@ -522,8 +538,10 @@ describe('startTunnelDashboard', () => {
       expect(atMatch).not.toBeNull();
       const code = atMatch?.[1] ?? '';
       // It is a real RFC-6238 code for the secret at "now", not a placeholder.
-      const { generateTotp } = await import('../mcp/totp.js');
-      const { verifyTotp } = await import('../mcp/totp.js');
+      // @ts-expect-error — cross-package source import by design (see file-header
+      // comment above); tsc's `rootDir` doesn't span packages, so this only
+      // type-checks within `packages/debugger`'s own `tsc --noEmit`, not here.
+      const { generateTotp, verifyTotp } = await import('../../../debugger/src/mcp/totp.ts');
       expect(/^\d{6}$/.test(code)).toBe(true);
       expect(verifyTotp(SECRET, code)).toBe(true);
       // Sanity: regenerating at the same step reproduces the code.
@@ -552,7 +570,10 @@ describe('startTunnelDashboard', () => {
       expect(joined).not.toContain('trycloudflare.com');
       expect(joined).not.toContain(SECRET);
       // No TOTP code in the log (any 6-digit run derived from the secret).
-      const { generateTotp } = await import('../mcp/totp.js');
+      // @ts-expect-error — cross-package source import by design (see file-header
+      // comment above); tsc's `rootDir` doesn't span packages, so this only
+      // type-checks within `packages/debugger`'s own `tsc --noEmit`, not here.
+      const { generateTotp } = await import('../../../debugger/src/mcp/totp.ts');
       expect(joined).not.toContain(generateTotp(SECRET, Date.now()));
     } finally {
       await handle.close();

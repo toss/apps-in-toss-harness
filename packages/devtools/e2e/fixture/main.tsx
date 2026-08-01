@@ -14,8 +14,10 @@ import '@apps-in-toss/devtools/panel';
 // NOTE: the in-app gate BLOCKS localhost — it only allows *.trycloudflare.com
 // and *.private-apps.tossmini.com hostnames. In a real env-2 session the fixture
 // is served from a trycloudflare.com tunnel and the gate passes. In local
-// development / Playwright e2e, localhost is blocked — see
-// e2e/launcher-cdp.test.ts for the documented manual residue.
+// development / Playwright e2e, localhost is blocked — this remains manual
+// residue (the node-side relay-boot + launcher-param-forwarding automation
+// that used to document it, e2e/launcher-cdp.test.ts, moved to
+// @apps-in-toss/debugger with the rest of the MCP-attach surface, #818).
 //
 // #817: the attach package is `@apps-in-toss/debug-console` — the optional peer the
 // unplugin injects for a normal consumer. This fixture keeps the wiring explicit
