@@ -1000,6 +1000,19 @@ Turbopack은 unplugin을 지원하지 않으므로, `next.config.js`에서 `reso
 import '@apps-in-toss/devtools/panel';
 ```
 
+### cloudflared 바이너리가 준비되지 않을 때
+
+`pnpm add @apps-in-toss/devtools`만 하면 `pnpm install` 로그에 `cloudflared`의 "Ignored build scripts" 경고가 남는 경우가 있습니다 — pnpm은 기본적으로 의존성의 postinstall 스크립트를 차단하고(`ignore-scripts` 정책), `cloudflared`는 postinstall에서 `~38 MB` 바이너리를 받기 때문입니다.
+
+대부분은 별도 조치가 필요 없습니다 — `tunnel` 옵션을 처음 켜는 순간(`pnpm dev:phone` 등) `startQuickTunnel`이 바이너리 부재를 감지해 `cloudflared.install()`을 lazy로 호출하므로, 첫 실행에서 자동으로 다운로드됩니다(위 [`(b) 빌드 스크립트 허용`](#run-on-a-real-phone-실기기-미리보기) 참고). 이 다운로드를 `pnpm install` 시점으로 앞당기고 싶다면(예: CI 캐시 warm-up, 첫 `dev:phone` 지연 방지) 둘 중 하나를 선택하세요:
+
+- **대화형으로 허용**: `pnpm approve-builds`를 실행해 `cloudflared`를 선택.
+- **설정으로 명시**: pnpm 워크스페이스라면 `pnpm-workspace.yaml`의 [`allowBuilds`](https://pnpm.io/settings#allowbuilds)에 `cloudflared: true` 추가(`/ait:setup-phone-preview`가 자동화하는 것도 이 방식입니다). 단일 프로젝트(워크스페이스 아님)라면 `package.json`의 `pnpm.onlyBuiltDependencies`에 `"cloudflared"` 추가.
+
+npm/yarn 사용자는 postinstall이 기본으로 실행되므로 이 문제와 무관합니다.
+
+바이너리 다운로드 자체가 실패한다면(오프라인, 사내 방화벽 등) 위 lazy install도 같은 이유로 실패하고 에러 메시지가 이 절을 가리킵니다 — 네트워크 연결을 확인하거나, `cloudflared tunnel --url http://localhost:<port>`를 수동 설치해 실행해보세요.
+
 ## MCP Server
 
 MCP 표면(데몬 · attach · CDP tool)은 `@apps-in-toss/debugger`로 이동했습니다(#818). 에이전트 등록도 이제 devtools가 아니라 debugger를 가리킵니다:

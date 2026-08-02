@@ -999,6 +999,19 @@ Since Turbopack doesn't support unplugin, use `resolveAlias` in `next.config.js`
 import '@apps-in-toss/devtools/panel';
 ```
 
+### cloudflared binary not installed
+
+A plain `pnpm add @apps-in-toss/devtools` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
+
+Most of the time this needs no action: the first time you turn on the `tunnel` option (e.g. `pnpm dev:phone`), `startQuickTunnel` detects the missing binary and lazily calls `cloudflared.install()`, downloading it on that first run (see [`(b) Allow the pnpm 10+ build script`](#run-on-a-real-phone) above). If you'd rather pull that download forward to `pnpm install` time (e.g. to warm a CI cache, or to avoid the delay on the first `dev:phone`), pick one:
+
+- **Interactive**: run `pnpm approve-builds` and select `cloudflared`.
+- **Declarative**: in a pnpm workspace, add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml` (this is what `/ait:setup-phone-preview` automates). In a single project (not a workspace), add `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` instead.
+
+npm/yarn users are unaffected — those package managers run postinstall by default.
+
+If the binary download itself fails (offline, corporate firewall), the lazy install above fails the same way and the error message points back to this section — check your network connection, or install `cloudflared` yourself and run `cloudflared tunnel --url http://localhost:<port>` manually.
+
 ## MCP Server
 
 The MCP surface (daemon · attach · CDP tools) moved to `@apps-in-toss/debugger` (#818). Agent registration now points at debugger, not devtools:
