@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseForce, parseMode, parseTarget } from '../cli.js';
+import {
+  findUnknownFlags,
+  parseForce,
+  parseHelp,
+  parseMode,
+  parseTarget,
+  parseVersion,
+} from '../cli.js';
 
 describe('parseMode', () => {
   it('defaults to debug mode with no flag', () => {
@@ -89,3 +96,90 @@ describe('parseForce', () => {
 
 // seedLiveIntentFromEnv / liveIntent tests removed — relay-live (env 4) and
 // the liveIntent bit are fully removed in #665.
+
+describe('parseHelp', () => {
+  it('returns false with no flags', () => {
+    expect(parseHelp([])).toBe(false);
+  });
+
+  it('returns true for --help', () => {
+    expect(parseHelp(['--help'])).toBe(true);
+  });
+
+  it('returns true for -h', () => {
+    expect(parseHelp(['-h'])).toBe(true);
+  });
+
+  it('returns true when mixed with other flags', () => {
+    expect(parseHelp(['--mode=dev', '--help'])).toBe(true);
+  });
+});
+
+describe('parseVersion', () => {
+  it('returns false with no flags', () => {
+    expect(parseVersion([])).toBe(false);
+  });
+
+  it('returns true for --version', () => {
+    expect(parseVersion(['--version'])).toBe(true);
+  });
+
+  it('returns true for -v', () => {
+    expect(parseVersion(['-v'])).toBe(true);
+  });
+});
+
+// Issue #54 — unknown flags used to be silently ignored and fell through to
+// booting a real MCP stdio session.
+describe('findUnknownFlags', () => {
+  it('returns empty for no args', () => {
+    expect(findUnknownFlags([])).toEqual([]);
+  });
+
+  it('returns empty for every known valid combination', () => {
+    expect(
+      findUnknownFlags([
+        '--mode=debug',
+        '--target',
+        'relay',
+        '--force',
+        '--takeover',
+        '--help',
+        '-h',
+        '--version',
+        '-v',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not flag a space-separated value-flag argument as unknown', () => {
+    expect(findUnknownFlags(['--mode', 'dev'])).toEqual([]);
+    expect(findUnknownFlags(['--target', 'local'])).toEqual([]);
+  });
+
+  it('flags a single unrecognized long flag', () => {
+    expect(findUnknownFlags(['--env=relay-live'])).toEqual(['--env=relay-live']);
+  });
+
+  it('flags a typo of a known flag', () => {
+    expect(findUnknownFlags(['--forc'])).toEqual(['--forc']);
+  });
+
+  it('flags multiple unknown flags, preserving order', () => {
+    expect(findUnknownFlags(['--bogus', '--mode=dev', '--nope'])).toEqual(['--bogus', '--nope']);
+  });
+
+  it('flags a value-flag typo passed with = as unknown, not a value flag', () => {
+    // --force is boolean-only; --force=true is not a recognized token shape.
+    expect(findUnknownFlags(['--force=true'])).toEqual(['--force=true']);
+  });
+
+  it('does not flag positional (non-dash) tokens', () => {
+    expect(findUnknownFlags(['relay'])).toEqual([]);
+  });
+
+  it('leaves a dangling value flag with no following token unflagged', () => {
+    // parseMode/parseTarget reject this with their own, more specific error.
+    expect(findUnknownFlags(['--mode'])).toEqual([]);
+  });
+});

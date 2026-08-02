@@ -33,9 +33,114 @@ import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { runDebugServer, runLocalDebugServer, runMobileDebugServer } from './debug-server.js';
 import { runDevServer } from './server.js';
+import { readDevtoolsVersion } from './tools.js';
 
 type Mode = 'debug' | 'dev';
 type Target = 'relay' | 'local' | 'mobile';
+
+/* -------------------------------------------------------------------------- */
+/* CLI help                                                                    */
+/* -------------------------------------------------------------------------- */
+
+// Mirrors `debugger-test`'s USAGE block (src/test-runner/cli.ts) in tone and
+// section layout (USAGE / OPTIONS / DESCRIPTION) — issue #54 asks the two
+// `bin`s in this package to read as "one tool's commands".
+const USAGE = `
+debugger — MCP debugging daemon (CDP/Chii relay + dev-mode bridge) for Apps in Toss mini-apps
+
+USAGE
+  debugger [options]
+
+OPTIONS
+  --mode <mode>          debug (default) | dev. debug boots the MCP stdio
+                          server that attaches over CDP (see --target); dev
+                          reads live browser mock state from a running Vite
+                          dev server instead.
+  --target <target>      relay (default) | local | mobile. Only meaningful
+                          with --mode=debug:
+                            relay  — CDP/Chii relay + cloudflared quick
+                                     tunnel, attaching a real Toss WebView
+                                     (env 3).
+                            local  — CDP direct-attach to a local Chromium
+                                     the server launches itself (env 1, no
+                                     relay/tunnel).
+                            mobile — CDP attach to an EXTERNAL relay the
+                                     devtools unplugin already brought up
+                                     for the env-2 PWA (issue #378).
+  --force, --takeover     Take over an existing MCP daemon lock instead of
+                          refusing to start when one is already held.
+  --help, -h              Show this help message
+  --version, -v           Print the installed @apps-in-toss/debugger version
+
+DESCRIPTION
+  Node-only stdio process. An MCP client (Claude Code, etc.) spawns this as
+  a subprocess and talks MCP over stdin/stdout — it is not meant to be run
+  interactively at a terminal. With no flags it boots in debug mode against
+  the relay target (today's default, unchanged).
+
+  Back-compat (issue #348): the legacy --mode/--target flags and the
+  MCP_ENV environment variable are still honored.
+
+EXAMPLE
+  debugger --mode=debug --target=local
+`.trimStart();
+
+/**
+ * Long flags that take no value (present/absent only).
+ * Exported for unit testing alongside {@link findUnknownFlags}.
+ */
+export const BOOLEAN_FLAGS = new Set(['--force', '--takeover', '--help', '-h', '--version', '-v']);
+
+/** Long flags that require a value, either `--flag=value` or `--flag value`. */
+const VALUE_FLAGS = new Set(['--mode', '--target']);
+
+/**
+ * Returns every argv token that looks like a flag (starts with `-`) but is
+ * neither a known boolean flag nor a known value flag — e.g. a typo'd
+ * `--forc` or an unsupported `--env`.
+ *
+ * Value-flag tokens correctly consume their paired value (`--mode dev`'s
+ * `dev` is not itself flagged) so this never misclassifies a flag's own
+ * argument as an unknown flag. A dangling value flag with no following token
+ * (`debugger --mode`) is intentionally left for {@link parseMode}/
+ * {@link parseTarget} to reject with their existing, more specific error
+ * message — this function only flags tokens that do not match any known
+ * flag name at all.
+ *
+ * Positional (non-`-`-prefixed) tokens are out of scope — this CLI has never
+ * accepted positionals, and issue #54 is scoped to flags specifically.
+ *
+ * Exported for unit testing.
+ */
+export function findUnknownFlags(argv: readonly string[]): string[] {
+  const unknown: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === undefined || !arg.startsWith('-')) continue;
+    if (BOOLEAN_FLAGS.has(arg)) continue;
+    const eqIndex = arg.indexOf('=');
+    const bareFlag = eqIndex === -1 ? arg : arg.slice(0, eqIndex);
+    if (VALUE_FLAGS.has(bareFlag)) {
+      // Space-separated form (`--mode dev`) consumes the next token as this
+      // flag's value, not a separate arg — `--mode=dev` already carries its
+      // value in the same token, so there is nothing to skip.
+      if (eqIndex === -1) i++;
+      continue;
+    }
+    unknown.push(arg);
+  }
+  return unknown;
+}
+
+/** True when `--help`/`-h` is present in argv. */
+export function parseHelp(argv: readonly string[]): boolean {
+  return argv.includes('--help') || argv.includes('-h');
+}
+
+/** True when `--version`/`-v` is present in argv. */
+export function parseVersion(argv: readonly string[]): boolean {
+  return argv.includes('--version') || argv.includes('-v');
+}
 
 /**
  * Returns `true` when `--force` or `--takeover` is present in argv.
@@ -107,6 +212,31 @@ function normalizeTarget(value: string): Target {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  // --help/--version short-circuit before any other parsing — checked first
+  // regardless of what else is in argv, matching debugger-test's convention.
+  if (parseHelp(args)) {
+    process.stdout.write(USAGE);
+    return;
+  }
+  if (parseVersion(args)) {
+    process.stdout.write(`debugger ${readDevtoolsVersion() ?? '0.0.0-unbuilt'}\n`);
+    return;
+  }
+
+  // Unknown flags are no longer silently ignored (issue #54) — previously an
+  // unrecognized flag like `--env` fell through to the default mode/target
+  // and quietly booted a real MCP stdio session.
+  const unknown = findUnknownFlags(args);
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `[debugger] unknown flag(s): ${unknown.join(', ')}\n` +
+        `Run \`debugger --help\` for usage.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const mode = parseMode(args);
   if (mode === 'dev') {
     await runDevServer();
