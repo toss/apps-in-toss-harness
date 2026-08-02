@@ -97,6 +97,21 @@ This ecosystem has two similarly-named but different CLIs — do not conflate th
 - **`ait`** (`@apps-in-toss/cli`) — the bundler. `ait build` produces a `.ait` bundle, and `ait deploy --scheme-only` prints the `intoss-private://` URL used as `--scheme-url` in the test-runner example above.
 - **`aitcc`** (the console automation CLI) — Apps in Toss console registration, deploy, and status. This package never calls `aitcc`.
 
+## Troubleshooting
+
+### cloudflared binary not installed
+
+A plain `pnpm add -D @apps-in-toss/debugger` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
+
+Most of the time this needs no action: the first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading it on that first run. If you'd rather pull that download forward to `pnpm install` time (e.g. to warm a CI cache, or to avoid the delay on first start), pick one:
+
+- **Interactive**: run `pnpm approve-builds` and select `cloudflared`.
+- **Declarative**: in a pnpm workspace, add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml` (this is what `/ait:setup-phone-preview` automates — see [`"Run on a real phone"`](../devtools/README.en.md#run-on-a-real-phone) in the `@apps-in-toss/devtools` README). In a single project (not a workspace), add `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` instead.
+
+npm/yarn users are unaffected — those package managers run postinstall by default.
+
+If the binary download itself fails (offline, corporate firewall), the lazy install above fails the same way and the error message points back to this section — check your network connection, or install `cloudflared` yourself and run `cloudflared tunnel --url http://localhost:<port>` manually.
+
 ## License
 
 BSD-3-Clause

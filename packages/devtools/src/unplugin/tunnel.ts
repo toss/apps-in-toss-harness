@@ -362,9 +362,24 @@ export async function startQuickTunnel(port: number): Promise<QuickTunnel> {
   const cloudflared = await import('cloudflared');
   const { bin, install, Tunnel } = cloudflared;
 
+  // pnpm's `ignore-scripts` default blocks the `cloudflared` package's own
+  // postinstall, so this lazy download is what makes a fresh
+  // `pnpm add @apps-in-toss/devtools` work out of the box — no `allowBuilds`
+  // config required. This only throws when the download itself fails
+  // (offline / firewall); augment that error with a pointer to the pre-cache
+  // options instead of surfacing the raw network error alone.
   if (!existsSync(bin)) {
     await mkdir(dirname(bin), { recursive: true });
-    await install(bin);
+    try {
+      await install(bin);
+    } catch (err) {
+      throw new Error(
+        `[@apps-in-toss/devtools] cloudflared binary download failed: ${
+          err instanceof Error ? err.message : String(err)
+        }. See README "Troubleshooting → cloudflared binary" for pnpm allowBuilds / pre-cache options.`,
+        { cause: err },
+      );
+    }
   }
 
   const tunnel = Tunnel.quick(`http://localhost:${port}`);
