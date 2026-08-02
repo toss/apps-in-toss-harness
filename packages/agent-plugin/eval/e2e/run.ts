@@ -105,14 +105,24 @@ async function main(): Promise<void> {
     process.stderr.write('필수: --task <id> (예: --task timer)\n');
     process.exit(2);
   }
-  // 인증 토큰: gateway면 --auth-token-env가 가리키는 환경변수, 아니면 ANTHROPIC_API_KEY.
+  // 인증 토큰: gateway면 --auth-token-env가 가리키는 환경변수가 반드시 있어야 한다
+  // (SDK가 그 값을 ANTHROPIC_AUTH_TOKEN으로 전달해야 라우팅이 성립).
+  // first-party(Anthropic)는 ANTHROPIC_API_KEY가 없어도 진행한다 — Agent SDK가 spawn하는
+  // claude CLI가 로그인된 자격증명(OAuth)을 그대로 쓰므로 env 키는 필수가 아니다.
   // 토큰 *값*은 driver가 env로만 전달하고 어디에도 출력하지 않는다 — 여기선 존재만 본다.
   const tokenEnvName = args.authTokenEnv || 'ANTHROPIC_API_KEY';
   if (!process.env[tokenEnvName]) {
+    if (args.baseUrl) {
+      process.stderr.write(
+        `${tokenEnvName} 미설정 — gateway 경로는 토큰 env가 필수다. ` +
+          'op run --env-file=.env.eval -- pnpm eval:e2e ... 로 주입하라.\n',
+      );
+      process.exit(2);
+    }
     process.stderr.write(
-      `${tokenEnvName} 미설정 — op run --env-file=.env.eval -- pnpm eval:e2e ... 로 주입하라.\n`,
+      'ANTHROPIC_API_KEY 미설정 — 로그인된 Claude Code CLI 자격증명으로 진행한다 ' +
+        '(해당 계정 사용량 소비). 명시 키를 쓰려면 .env.eval로 주입.\n',
     );
-    process.exit(2);
   }
 
   const task = loadTask(args.task);

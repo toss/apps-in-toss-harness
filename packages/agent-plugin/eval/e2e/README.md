@@ -73,7 +73,12 @@ drift 한다.
 ## 실행
 
 ```bash
-# 키 주입(평문 커밋 금지) — .env.eval 에 ANTHROPIC_API_KEY=op://... 권장
+# first-party(Anthropic) — 로그인된 Claude Code CLI 자격증명으로 그대로 돈다(env 키 불필요,
+# 해당 계정 사용량 소비). Agent SDK가 claude CLI를 spawn하므로 CLI 로그인 = 인증이다.
+pnpm eval:e2e --task timer --model claude-haiku-4-5 --n 5
+
+# 명시 키 주입(선택, 평문 커밋 금지 — .env.eval은 gitignore) — .env.eval 에
+# ANTHROPIC_API_KEY=op://... 권장. gateway 경로(--base-url)는 토큰 env가 필수다.
 op run --env-file=.env.eval -- pnpm eval:e2e --task timer --model claude-haiku-4-5 --n 5
 ```
 
