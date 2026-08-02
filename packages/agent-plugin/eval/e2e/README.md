@@ -171,8 +171,8 @@ stdout 요약 예:
 
 ## 안전 불변 (반드시 지킨다)
 
-- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 아예 안 부른다. dog-food 앱
-  `31146`은 구조적으로 못 건드린다. aitcc 전제 skill(register/deploy/status/setup-bundle)은
+- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 아예 안 부른다. 고정 dog-food
+  타겟은 구조적으로 못 건드린다. aitcc 전제 skill(register/deploy/status/setup-bundle)은
   harness에서 이미 제거됐지만, 모델이 학습 지식만으로 같은 명령을 시도할 수 있으므로 아래
   두 게이트는 skill 존재 여부와 무관하게 유지한다.
 - **Bash 경로 — 콘솔/인증 변이 명령은 결정적으로 차단.** `aitcc …`(커뮤니티 console-cli 전체)와

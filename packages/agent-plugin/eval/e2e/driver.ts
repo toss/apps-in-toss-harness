@@ -6,7 +6,7 @@
 // 분류를 수집한다.
 //
 // 안전 불변(plan §3):
-//   - **build-only가 기본** — 콘솔 API를 아예 안 부른다. 31146 구조적 무접촉.
+//   - **build-only가 기본** — 콘솔 API를 아예 안 부른다. 고정 dog-food 타겟 구조적 무접촉.
 //   - 콘솔/인증을 변이시키는 Bash 명령(aitcc / ait deploy·register·login /
 //     --api-key)은 절대 실행하지 않는다.
 //   - **콘솔 MCP 도구(apps-in-toss-console)는 절대 호출하지 않는다** — 플러그인이
@@ -56,8 +56,8 @@ const DISPATCH_COMMAND = 'new';
 // 콘솔/인증을 변이시키는 Bash 명령 패턴 — canUseTool 게이트가 결정적으로 차단한다.
 // `ait deploy`/`ait register`/`ait login`은 번들러(`@apps-in-toss/cli`) 자체의
 // API-key 기반 콘솔 접촉 서브명령이라 register/deploy 등 skill 유무와 무관하게
-// 여전히 실재하는 위험 경로다(명령 문자열을 직접 검사해 거부). 31146 dog-food
-// 앱·워크스페이스 3095 에 닿는 모든 경로를 build-only 측정에서 구조적으로
+// 여전히 실재하는 위험 경로다(명령 문자열을 직접 검사해 거부). 고정 dog-food
+// 타겟 앱·워크스페이스에 닿는 모든 경로를 build-only 측정에서 구조적으로
 // 차단하는 것이 목적(§1.4 "register 자율 디스패치 금지"). 콘솔 MCP 도구
 // (apps-in-toss-console)는 Bash가 아니라 별도 canUseTool 분기(아래
 // isConsoleMcpTool)가 차단한다.
