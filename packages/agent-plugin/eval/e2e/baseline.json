@@ -1,35 +1,35 @@
 {
   "_note": "시계열 비교 기준선. 의미 있는 측정(충분한 N) 후 메인테이너가 갱신한다. fixedInputs = run-to-run 분산을 KPI로 측정하기 위해 고정한 입력들(plan §1.2). kpi 슬롯은 task×model 셀당 한 줄, 측정 전엔 null.",
-  "asOf": "2026-08-03 (epoch 2)",
+  "asOf": "2026-08-03 (epoch 3)",
   "fixedInputs": {
     "sdkVersion": "0.3.220",
-    "scaffolder": "create-ait-app@0.1.3",
+    "scaffolder": "create-ait-app@0.2.1",
     "templateSha": null,
     "pricingAsOf": "2026-06-24",
     "maxTurns": 80,
     "templateBaseline": {
-      "@apps-in-toss/web-framework": "2.10.8",
-      "@ait-co/devtools": "0.1.144"
+      "@apps-in-toss/web-framework": "latest(비고정 — 0.2.x 산출물이 dist-tag 리터럴을 기록, 측정일 해석 3.0.0)",
+      "@ait-co/devtools": "0.1.144(무핀 — 측정일 해석)"
     },
-    "_env": "사내 프록시 호스트에서 측정 — 여정에 미러 404 workaround(overrides pin)와 pnpm 11 approve-builds 게이트가 포함되므로 청정망 수치와 직접 비교 금지. templateSha는 --local 폴백 전용이라 이 epoch 미사용(null). epoch 2 = maxTurns 80(#61) + new-miniapp 실행 계약 문구(#62) 반영 — 같은 날 epoch 1(maxTurns=60, 문구 이전: haiku 40%/CV 1.084·sonnet 40%/CV 0.308)은 git 이력의 직전 버전 참조. 두 개선의 효과가 셀 수치에 직접 나타났다(sonnet timeout 3건 전멸, haiku 조기 이탈 전멸)."
+    "_env": "사내 프록시 호스트에서 측정(측정 커밋 89943b3) — 여정에 미러 404 workaround와 pnpm 11 ignored-builds 게이트가 포함되므로 청정망 수치와 직접 비교 금지. templateSha는 --local 폴백 전용이라 이 epoch 미사용(null). epoch 3 = create-ait-app 핀 0.1.3→0.2.1 이관(harness#68, PR #70) 직후 재측정: 산출물 형상 전환(apps-in-toss.config.ts, build 체인에 tsc -b 타입 게이트 신설), 후처리 A(wf 2.x 강등)·C-1·D 삭제, 채점 bundleConfig any-of화, pm 경유 deploy 차단 패턴 추가 — fixedInputs·skill 본문·채점이 함께 바뀌어 epoch 2 수치와 직접 비교 금지. epoch 2 핵심 수치(참고, 원본은 git 이력): haiku 60%/median 3,167,255/CV 0.556/$0.5267 · sonnet 100%/median 1,561,862/CV 0.197/$0.7392. web-framework는 0.2.x 산출물이 리터럴 latest를 기록해 설치 시점 해석에 따라 달라진다(버전 비고정이 여정 난이도에 포함됨)."
   },
   "kpi": {
     "_shape": "<taskId>.<model> = { n, provider, completionRate, tokensPerSuccessMedian, tokenCv, usdPerSuccess }. qwen 등 게이트웨이 셀은 usdPerSuccess가 캐시 제외 부분값(캐시 토큰 ≈0).",
     "timer.claude-haiku-4-5": {
       "n": 5,
       "provider": "anthropic",
-      "completionRate": 0.6,
-      "tokensPerSuccessMedian": 3167255,
-      "tokenCv": 0.556,
-      "usdPerSuccess": 0.5267
+      "completionRate": 1.0,
+      "tokensPerSuccessMedian": 639443,
+      "tokenCv": 0.098,
+      "usdPerSuccess": 0.1324
     },
     "timer.claude-sonnet-4-6": {
       "n": 5,
       "provider": "anthropic",
       "completionRate": 1.0,
-      "tokensPerSuccessMedian": 1561862,
-      "tokenCv": 0.197,
-      "usdPerSuccess": 0.7392
+      "tokensPerSuccessMedian": 836330,
+      "tokenCv": 0.144,
+      "usdPerSuccess": 0.5083
     },
     "timer.claude-opus-4-8": null,
     "timer.qwen3-coder": null,
