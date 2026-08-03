@@ -160,7 +160,7 @@ function linkClaudeDir(cwd: string): void {
  */
 export async function runOnce(opts: DriverOptions): Promise<RunRecord> {
   const { task, model, iteration } = opts;
-  const maxTurns = opts.maxTurns ?? 60;
+  const maxTurns = opts.maxTurns ?? 80;
   const startedAt = Date.now();
   const workDir = mkdtempSync(join(tmpdir(), `ait-e2e-${task.id}-`));
 

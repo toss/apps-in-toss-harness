@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): Args {
     task: '',
     model: 'claude-haiku-4-5',
     n: 3,
-    maxTurns: 60,
+    maxTurns: 80,
     keep: false,
     logInit: false,
     baseUrl: '',
@@ -63,7 +63,7 @@ function parseArgs(argv: string[]): Args {
         out.n = Number.parseInt(argv[++i] ?? '3', 10);
         break;
       case '--max-turns':
-        out.maxTurns = Number.parseInt(argv[++i] ?? '60', 10);
+        out.maxTurns = Number.parseInt(argv[++i] ?? '80', 10);
         break;
       case '--keep':
         out.keep = true;

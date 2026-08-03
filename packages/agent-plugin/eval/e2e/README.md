@@ -89,7 +89,7 @@ op run --env-file=.env.eval -- pnpm eval:e2e --task timer --model claude-haiku-4
 | `--task <id>` | (필수) | `tasks/<id>.task.json` |
 | `--model <id>` | `claude-haiku-4-5` | 모델 alias 또는 full id (비용 floor가 기본) |
 | `--n <int>` | 3 | 반복 횟수 |
-| `--max-turns <int>` | 60 | 안전 상한 |
+| `--max-turns <int>` | 80 | 안전 상한. 첫 epoch(2026-08-03)에서 60이 sonnet에 binding이었다(번들을 만들고도 턴 소진 1건) — 사내 프록시 호스트의 설치 마찰(미러 404·approve-builds)이 턴을 잠식해 80으로 상향. 그 epoch과 시계열 비교하려면 `--max-turns 60`으로 맞춘다(baseline.json fixedInputs 참조). |
 | `--keep` | off | 실패 디버깅용 격리 디렉토리 보존 |
 | `--log-init` | off | 첫 run의 init `slash_commands`/`skills` 키를 stderr로 출력 |
 | `--base-url <url>` | (없음) | Anthropic-호환 게이트웨이 base URL → Qwen 등 비-Anthropic으로 라우팅(아래 "공급자 축") |
