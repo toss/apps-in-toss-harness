@@ -1,19 +1,36 @@
 {
   "_note": "시계열 비교 기준선. 의미 있는 측정(충분한 N) 후 메인테이너가 갱신한다. fixedInputs = run-to-run 분산을 KPI로 측정하기 위해 고정한 입력들(plan §1.2). kpi 슬롯은 task×model 셀당 한 줄, 측정 전엔 null.",
-  "asOf": null,
+  "asOf": "2026-08-03",
   "fixedInputs": {
-    "sdkVersion": null,
+    "sdkVersion": "0.3.220",
+    "scaffolder": "create-ait-app@0.1.3",
     "templateSha": null,
     "pricingAsOf": "2026-06-24",
+    "maxTurns": 60,
     "templateBaseline": {
-      "@apps-in-toss/web-framework": "^2.6.0",
-      "@ait-co/devtools": "^0.1.19"
-    }
+      "@apps-in-toss/web-framework": "2.10.8",
+      "@ait-co/devtools": "0.1.144"
+    },
+    "_env": "사내 프록시 호스트에서 측정 — 여정에 미러 404 workaround(overrides pin)와 pnpm 11 approve-builds 게이트가 포함되므로 청정망 수치와 직접 비교 금지. templateSha는 --local 폴백 전용이라 이 epoch 미사용(null). 이 epoch은 maxTurns=60으로 측정했고 이후 드라이버 기본은 80 — 시계열 비교 시 --max-turns 60으로 맞추거나 이 노트를 참조."
   },
   "kpi": {
     "_shape": "<taskId>.<model> = { n, provider, completionRate, tokensPerSuccessMedian, tokenCv, usdPerSuccess }. qwen 등 게이트웨이 셀은 usdPerSuccess가 캐시 제외 부분값(캐시 토큰 ≈0).",
-    "timer.claude-haiku-4-5": null,
-    "timer.claude-sonnet-4-6": null,
+    "timer.claude-haiku-4-5": {
+      "n": 5,
+      "provider": "anthropic",
+      "completionRate": 0.4,
+      "tokensPerSuccessMedian": 1166817,
+      "tokenCv": 1.084,
+      "usdPerSuccess": 0.2081
+    },
+    "timer.claude-sonnet-4-6": {
+      "n": 5,
+      "provider": "anthropic",
+      "completionRate": 0.4,
+      "tokensPerSuccessMedian": 1894035,
+      "tokenCv": 0.308,
+      "usdPerSuccess": 1.0152
+    },
     "timer.claude-opus-4-8": null,
     "timer.qwen3-coder": null,
     "coupon-shop.claude-haiku-4-5": null,
