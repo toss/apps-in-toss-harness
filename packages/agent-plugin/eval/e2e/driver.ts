@@ -47,10 +47,10 @@ const COMMANDS_SRC = join(REPO_ROOT, 'shared', 'commands');
 // `exposesKey` 가 두 형상을 모두 받아주므로 여기엔 맨 basename 을 둔다.
 //
 // 문서 표면과 같은 지점을 재려고 **문서가 안내하는 verb** 를 그대로 쓴다:
-// `/ait:new` → `shared/commands/new.md`. 번들 설정(granite.config.ts)은
-// 정본 경로(create-ait-app)에 기본 포함되므로 별도 skill 디스패치가 필요 없다
-// (aitcc 전제 skill 4종 register/deploy/status/setup-bundle 제거 — harness
-// aitcc 정리).
+// `/ait:new` → `shared/commands/new.md`. 번들 설정(정본 create-ait-app 0.2.x=
+// `apps-in-toss.config.ts`, `--local` 폴백=`granite.config.ts`)은 정본 경로
+// (create-ait-app)에 기본 포함되므로 별도 skill 디스패치가 필요 없다(aitcc 전제
+// skill 4종 register/deploy/status/setup-bundle 제거 — harness aitcc 정리).
 const DISPATCH_COMMAND = 'new';
 
 // 콘솔/인증을 변이시키는 Bash 명령 패턴 — canUseTool 게이트가 결정적으로 차단한다.
@@ -64,15 +64,30 @@ const DISPATCH_COMMAND = 'new';
 //
 // 매칭은 보수적으로 넓게: `aitcc` 전체(콘솔 자동화 CLI 전부 — harness에서는
 // 제거됐지만 모델이 훈련 지식으로 시도할 수 있어 방어로 유지), `ait deploy`/
-// `ait register`/`ait login`(번들러의 콘솔-접촉 서브명령), 그리고 Deploy Key 를
-// 싣는 `--api-key`. 번들 빌드 경로(`ait build`, `pnpm run build`,
-// `pnpm bundle:ait`, `pnpm install`, `pnpm dlx create-ait-app …` 등)는
-// 매칭하지 않는다.
+// `ait register`/`ait login`(번들러의 콘솔-접촉 서브명령), 패키지 매니저 경유
+// `deploy` 스크립트(아래), 그리고 Deploy Key 를 싣는 `--api-key`. 번들 빌드
+// 경로(`ait build`, `pnpm run build`, `pnpm bundle:ait`, `pnpm install`,
+// `pnpm dlx create-ait-app …` 등)는 매칭하지 않는다.
 export const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
   /\baitcc\b/, // 콘솔 자동화 CLI 전체 (register/deploy/app/keys/me/workspace …)
   /\bait\s+deploy\b/, // 번들러의 콘솔 업로드/검수 제출
   /\bait\s+register\b/, // (혹시 모를) 등록 서브명령
   /\bait\s+login\b/, // 콘솔 인증
+  // create-ait-app 산출물 package.json은 "deploy": "ait deploy" 스크립트를
+  // 기본 포함한다 — 위 `ait\s+deploy` 정규식은 `ait deploy`를 직접 치는 경우만
+  // 잡고, 패키지 매니저를 경유한 `pnpm deploy`/`pnpm run deploy`/`npm run deploy`
+  // /`yarn deploy` 는 스크립트 이름만 넘어가므로 우회된다(사전 존재 구멍 —
+  // 0.1.x 산출물에도 있었으나 0.2.x 핀 이관을 계기로 닫는다). new-miniapp
+  // SKILL.md 가 전 구간에서 가르치는 `pnpm --dir ./<package_name> …` 관용구가
+  // 정확히 이 구멍을 통과한다(실측: `pnpm --dir ./timer deploy`,
+  // `pnpm --dir ./timer run deploy`, `pnpm -C ./timer deploy`,
+  // `npm --prefix ./timer run deploy`, `pnpm --filter timer deploy`,
+  // `pnpm -r deploy` 전부 구 패턴을 통과했다) — pnpm 워크스페이스 스코프
+  // 플래그(값 있는 `--dir`/`--prefix`/`--filter`/`-C`/`-F`, 값 없는
+  // `--recursive`/`--workspace-root`/`-r`/`-w`)가 `deploy` 앞에 끼어드는
+  // 형태를 명시적으로 허용해 잡는다. 말미의 `(?![\w-])`는 `deploy-preview`
+  // 같은 다른 이름의 스크립트를 오탐하지 않기 위한 부정 lookahead다.
+  /\b(pnpm|npm|yarn)\s+(?:(?:(?:--dir|--prefix|--filter)(?:\s+|=)\S+|(?:-C|-F)(?:\s+|=)\S+|(?:--recursive|--workspace-root|-r|-w))\s+)*(?:run\s+|run-script\s+)?deploy(?![\w-])/,
   /--api-key\b/, // Deploy Key 를 싣는 모든 호출
 ] as const;
 

@@ -5,7 +5,7 @@
   "expect": {
     "scaffold": ["timer/package.json", "timer/index.html", "timer/src"],
     "dep": "@apps-in-toss/web-framework",
-    "bundle": ["timer/granite.config.ts"]
+    "bundle": ["timer/apps-in-toss.config.ts", "timer/granite.config.ts"]
   },
   "endpoint": "build-only"
 }

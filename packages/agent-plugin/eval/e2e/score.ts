@@ -106,9 +106,11 @@ function hasAitArtifact(projectDir: string): boolean {
 /**
  * 미치환 스캐폴드 토큰 검출. `{{SAMPLE_IMPORTS}}`처럼 **대문자+밑줄로만** 된
  * `{{TOKEN}}`을 찾는다 — JSX의 `style={{ padding: 4 }}`나 객체 리터럴은 소문자·공백을
- * 포함하므로 걸리지 않는다. create-ait-app v0.1.3이 `--sample` 없이 만들면 예제
- * placeholder를 그대로 남겨 런타임 ReferenceError로 화면이 비는데(빌드는 통과),
- * `.ait` 산출만 보는 채점은 그걸 success로 집계한다 — 이 검사가 그 구멍을 막는다.
+ * 포함하므로 걸리지 않는다. create-ait-app v0.1.3은 `--sample` 없이 만들면 예제
+ * placeholder를 그대로 남겨 런타임 ReferenceError로 화면이 비었는데(빌드는 통과),
+ * `.ait` 산출만 보는 채점은 그걸 success로 집계했다 — 이 검사가 그 구멍을 막았다.
+ * v0.2.x는 base가 순정 create-vite라 그 결함이 구조적으로 해소됐지만(placeholder
+ * 토큰 자체가 없다), 이 검사는 회귀 안전망으로 유지한다.
  */
 export function hasUnsubstitutedToken(source: string): boolean {
   return /\{\{[A-Z][A-Z0-9_]*\}\}/.test(source);
@@ -151,17 +153,34 @@ function sourceHasUnsubstitutedToken(projectDir: string): boolean {
   return false;
 }
 
+/**
+ * `rel` 이 root 직하 또는 root의 부모(cwd) 기준 어느 쪽으로 존재하나 — `rel` 이
+ * "coupon-shop/package.json" 처럼 프로젝트명을 포함할 수 있어 두 기준 다 본다.
+ * `rel` 에 `/` 가 없으면 앞부분을 잘라낸 후보가 빈 문자열이 되는데, 그 경우
+ * `join(root, '')` 은 `root` 자신이라 `existsSync`가 (root가 디렉토리로 실재하는 한)
+ * 거의 항상 true를 준다 — 그 퇴화 후보는 건너뛰어 "슬래시 없는 항목 하나만으로 전체
+ * 판정이 무력화"되는 걸 막는다.
+ */
+function existsAtEitherRoot(root: string, rel: string): boolean {
+  if (existsSync(join(root, rel))) return true;
+  const stripped = rel.split('/').slice(1).join('/');
+  return stripped !== '' && existsSync(join(root, stripped));
+}
+
 /** 경로 목록이 (프로젝트 루트 또는 cwd 기준으로) 모두 존재하나. */
 function allExist(roots: string[], rels: string[]): boolean {
-  return rels.every((rel) =>
-    roots.some((root) => {
-      // rel 이 "coupon-shop/package.json" 처럼 프로젝트명 포함일 수 있으니,
-      // root 직하 + root의 부모(cwd) 기준 둘 다 시도.
-      return (
-        existsSync(join(root, rel)) || existsSync(join(root, rel.split('/').slice(1).join('/')))
-      );
-    }),
-  );
+  return rels.every((rel) => roots.some((root) => existsAtEitherRoot(root, rel)));
+}
+
+/**
+ * 경로 목록 중 하나라도 존재하나 — 채점을 산출물 형상에 경로 불가지로 만들 때 쓴다.
+ * 정본(create-ait-app 0.2.x)=`apps-in-toss.config.ts`, `--local` 폴백(구세대
+ * wf 2.x 오프라인 경로)=`granite.config.ts` — 둘 다 유효한 번들 설정 파일명이라
+ * `bundleConfig` 판정은 any-of여야 한다. `expect.scaffold`(항상 존재해야 하는
+ * 필수 파일)는 이 헬퍼를 쓰지 않고 `allExist`(all-of)를 유지한다.
+ */
+function anyExist(roots: string[], rels: string[]): boolean {
+  return rels.some((rel) => roots.some((root) => existsAtEitherRoot(root, rel)));
 }
 
 export interface ScoreArgs {
@@ -192,7 +211,7 @@ export async function scoreBuildOnly(args: ScoreArgs): Promise<ScoreResult> {
     checks.scaffold = allExist(roots, task.expect.scaffold);
     checks.install = existsSync(join(projectDir, 'node_modules'));
     checks.dep = depPresent(projectDir, task.expect.dep);
-    checks.bundleConfig = allExist(roots, task.expect.bundle);
+    checks.bundleConfig = anyExist(roots, task.expect.bundle);
     checks.aitArtifact = hasAitArtifact(projectDir);
     checks.sourceIntact = !sourceHasUnsubstitutedToken(projectDir);
   }

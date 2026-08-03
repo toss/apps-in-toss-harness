@@ -90,7 +90,7 @@ dev 전용이다.
 - ❌ 새 프로젝트 생성 (greenfield) — `/ait:new` (`new-miniapp` skill).
 - ❌ 콘솔 인증·등록·업로드 — console MCP 도구(`miniapp_create`/`bundle_upload`/
   `bundle_upload_complete`)의 역할.
-- ❌ 번들 설정(`granite.config.ts`) 최초 생성 — 정본 경로(create-ait-app)는
+- ❌ 번들 설정(`apps-in-toss.config.ts`) 최초 생성 — 정본 경로(create-ait-app)는
   `/ait:new`에 기본 포함, `--local` 폴백만 `new-miniapp`의 L-5 절차로 추가.
 - ❌ (devtools) panel 마운트 E2E 검증 — 사용자가 직접 `pnpm dev`로 확인.
 - ❌ (devtools) Rollup/esbuild 라이브러리 빌드에 mock 주입 — 앱(미니앱) 전용.
@@ -102,12 +102,12 @@ dev 전용이다.
 
 - **create-ait-app 프로젝트에 IAP/IAA 예제 추가**: 이 skill의 두 facet과는
   무관한 별도 CLI 서브커맨드지만, 같은 brownfield 자리라 여기 남긴다 —
-  `pnpm dlx create-ait-app@0.1.3 add-sample [directory] --sample iap,iaa`
-  (`directory` 생략 시 기본값은 cwd `.`). `granite.config.ts`가 있는
-  create-ait-app 프로젝트에서만 동작하고(`@0.1.3` 소스 실측:
-  `src/detect-project.js`가 없으면 즉시 거부), `--sample`을 생략하면
+  `pnpm dlx create-ait-app@0.2.1 add-sample [directory] --inline --sample iap,iaa`
+  (`directory` 생략 시 기본값은 cwd `.`). `package.json`에 `createAitApp`
+  메타데이터가 있는 create-ait-app 프로젝트에서만 동작하고
+  (`inspectSampleProject()`가 없으면 즉시 거부), `--sample`을 생략하면
   interactive checkbox 프롬프트로 빠진다. 이 skill은 이 명령을 실행하지
-  않는다 — `new-miniapp` skill의 Step 8 완료 안내가 같은 명령을 노출한다.
+  않는다 — `new-miniapp` skill의 Step 6 완료 안내가 같은 명령을 노출한다.
 - 표준 dev 환경 셋업(브라우저 mock·실기기 미리보기) 등 주제별 가이드는 docs MCP
   (`searchDocumentation`/`getPage`)로 조회한다.
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`

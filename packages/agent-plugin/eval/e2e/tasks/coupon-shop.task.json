@@ -5,7 +5,7 @@
   "expect": {
     "scaffold": ["coupon-shop/package.json", "coupon-shop/index.html", "coupon-shop/src"],
     "dep": "@apps-in-toss/web-framework",
-    "bundle": ["coupon-shop/granite.config.ts"]
+    "bundle": ["coupon-shop/apps-in-toss.config.ts", "coupon-shop/granite.config.ts"]
   },
   "endpoint": "build-only"
 }

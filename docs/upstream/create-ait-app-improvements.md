@@ -6,20 +6,24 @@
 마찰과 gap을 정리했고, 이 목록을 근거로
 `toss/create-ait-app`에 직접 PR을 올릴 예정이다.
 
-**실측 기준일: 2026-08-03.** 기준 버전: harness가 실제로 핀 고정해 쓰는
-`create-ait-app@0.1.3`, 그리고 이 문서 작성 시점 upstream 최신인
-`create-ait-app@0.2.1`(`package.json` version 필드, GitHub Release
+**실측 기준일: 2026-08-03.** 기준 버전: harness가 이 문서 작성 당시 핀
+고정해 쓰던 `create-ait-app@0.1.3`, 그리고 이 문서 작성 시점 upstream
+최신인 `create-ait-app@0.2.1`(`package.json` version 필드, GitHub Release
 `v0.2.1` 2026-08-03T01:19:15Z 기준). 두 버전 사이에 대규모 재작성(PR #9·
 #13·#14·#16, 185파일 변경)이 있었고, harness가 소비하는 wrapper(`/ait:new`
-scaffold skill)는 여전히 `0.1.3`에 명시 핀돼 있다 — 즉 이 문서의 제안은
-harness가 실제로 밟는 v0.1.3 경로와 upstream 최신 v0.2.1 양쪽을 모두
-확인한 결과다.
+scaffold skill)는 이 문서 작성 이후 harness#68로 `0.2.1`로 이관됐다 — 즉
+이 문서의 제안은 harness가 당시 실제로 밟던 v0.1.3 경로와 upstream 최신
+v0.2.1 양쪽을 모두 확인한 결과이며, harness#68 이후로는 harness 쪽 경로도
+v0.2.1이다.
 
-harness 쪽 대응 이력(gap 분석 → wrapper 구현 → v0.2.0 drift 점검)은
-harness#6 이슈 본문과 코멘트에 기록돼 있다. 이 문서는 그 코멘트 타임라인
-마지막 시점(2026-07-31) 이후 upstream이 추가로 이슈 4건을 닫고 0.2.1을
-배포한 변화를, 그리고 harness 쪽 skill 개정(명시 핀·산출물 형상 가드 추가,
-07-31~08-03)을 함께 재확인해 반영한 것이다.
+harness 쪽 대응 이력(gap 분석 → wrapper 구현 → v0.2.0 drift 점검 → v0.2.1
+핀 이관)은 harness#6·harness#68 이슈 본문과 코멘트에 기록돼 있다. 이
+문서는 그 코멘트 타임라인 마지막 시점(2026-07-31) 이후 upstream이 추가로
+이슈 4건을 닫고 0.2.1을 배포한 변화를, 그리고 harness 쪽 skill 개정(명시
+핀·산출물 형상 가드 추가, 07-31~08-03)을 함께 재확인해 반영한 것이다.
+아래 제안 1·2 본문은 작성 시점의 v0.1.3 관측을 그대로 남겨 두되(제안
+자체의 논지는 여전히 유효), 말미 "harness 후처리 대응표"만 harness#68
+적용 결과로 갱신했다.
 
 ## 제안 1 — `@apps-in-toss/web-framework@latest` 고정을 버전 채널 옵션으로
 
@@ -64,9 +68,13 @@ harness#6 이슈 본문과 코멘트에 기록돼 있다. 이 문서는 그 코�
   경고가 추가됨
 
 **우선순위**: 高 — 이번 조사에서 유일하게 살아있는 고우선순위 제안이다.
-harness는 스캐폴드 *이후* 산출물의 `granite`/`ait` bin 존재 여부로 이
-문제를 사후 감지해 되돌리는 안전장치(버전 가드)를 skill 쪽에 갖고 있지만,
-설치 도중 창(스캐폴드 프로세스 실행 중)은 막지 못한다.
+당시(v0.1.3) harness는 스캐폴드 *이후* 산출물의 `granite` bin 존재 여부로
+이 문제를 사후 감지해 web-framework를 2.x로 되돌리는 안전장치를 skill
+쪽에 갖고 있었지만, 설치 도중 창(스캐폴드 프로세스 실행 중)은 막지
+못했다. harness#68로 핀을 0.2.1로 올리면서 이 되돌림 후처리(후처리 A)는
+0.2.x 산출물(`ait` bin, `granite` bin 부재)에서는 오탐이자 활성 버그가
+되어 **삭제**했다 — 즉 사후 감지 안전장치 자체가 사라졌으므로, 이
+제안(설치 시점 채널 통제)의 필요성은 오히려 더 커졌다.
 
 **기존 upstream 이슈와의 관계**: 없음(신규 제안) — 제안 2·pnpm 참고 항목도
 아직 미파일링이지만 우선순위는 각각 中·低이고, 이 항목이 유일한 高우선순위
@@ -178,15 +186,17 @@ v0.2.0/v0.2.1 재작성 또는 별도 PR로 이미 upstream에서 해소됐다. 
 
 ## harness 후처리 대응표
 
-upstream이 위 제안을 수용하면, harness의 `new-miniapp` skill
-(`packages/agent-plugin/shared/skills/new-miniapp/SKILL.md`)이 스캐폴드
-이후 수행하는 후처리 중 아래를 걷어내거나 축소할 수 있다.
+이 표는 원래 upstream이 제안을 수용하면 harness의 `new-miniapp` skill이
+걷어낼 수 있는 후처리를 예상한 것이었다. **harness#68(2026-08-03, 핀을
+`0.2.1`로 이관)로 실제 적용 결과가 나왔다** — upstream 제안 수용을
+기다리지 않고, 0.2.x 산출물 형상 자체가 아래 후처리 다수를 구조적으로
+불필요하게 만들었기 때문에 harness 쪽에서 선제 정리했다.
 
-| harness 후처리 | 현재 하는 일 | upstream이 제안 몇 번을 수용하면 걷어낼 수 있는가 |
+| harness 후처리 | 당시(v0.1.3) 하던 일 | harness#68 적용 결과 |
 |---|---|---|
-| 산출물 형상 버전 가드(구/신 config 파일명으로 0.1.x/0.2.x 판별 후 불일치 시 중단) | web-framework 버전 드리프트로 산출물이 기대와 달라졌을 때 조용히 진행하지 않고 명시적으로 멈춤 | 제안 1(버전 채널 옵션) 수용 시 — 스캐폴드 시점에 버전을 통제할 수 있으면 사후 감지 자체가 불필요해짐 |
-| 후처리 A — `granite`/`ait` bin 검증 및 web-framework 버전 되돌림 | 스캐폴드 후 bin이 없거나 버전이 어긋나면 web-framework를 알려진 안정 버전으로 되돌림 | 제안 1 수용 시 — 되돌릴 필요 자체가 사라짐 |
-| 후처리 B — devtools unplugin 배선(vite.config 확장 등) | devtools devDependency 추가 및 vite 설정에 플러그인 삽입을 skill이 직접 수행 | "devtools/mock SDK 배선 옵션" 참고 항목을 upstream이 채택하면 축소 가능(현재는 저우선순위 참고용) |
-| 후처리 C — `.gitignore` 생성/보강 | 스캐폴드 산출물에 `.gitignore`가 없거나 불완전할 때 채워 넣음 | 이미 해소됨(해소 확인됨 표 참고) — 0.2.x 전환 완료 시 이 부분은 제거 후보로 SKILL.md에 메모할 만함 |
-| 후처리 D — `{{TOKEN}}` placeholder 복구 | `--sample` 미지정 시 남는 미치환 토큰을 감지해 복구 | 이미 구조적으로 해소됨(해소 확인됨 표 참고) — 안전망으로만 유지 |
-| `create-ait-app@0.1.3` 명시 핀 | `@latest` 사용 시 dist-tag 승격으로 조용히 깨지는 걸 막기 위한 고정 | 제안 2(Release Notes/CHANGELOG 정비) 수용 시 — breaking change를 사전에 파악할 수 있으면 핀 승급 판단이 쉬워짐(핀 자체를 없애지는 않음) |
+| 산출물 형상 버전 가드(구/신 config 파일명으로 0.1.x/0.2.x 판별 후 불일치 시 중단) | web-framework 버전 드리프트로 산출물이 기대와 달라졌을 때 조용히 진행하지 않고 명시적으로 멈춤 | **유지 + 판정 반전** — `granite.config.ts` 존재 판정에서 `apps-in-toss.config.ts` + `package.json`의 `createAitApp` 메타데이터 존재 판정으로 뒤집었다. 가드 패턴 자체는 그대로. 제안 1(버전 채널 옵션)이 upstream에 수용되면 사후 감지 자체가 다시 불필요해질 수 있다는 전망은 여전히 유효 |
+| 후처리 A — `granite`/`ait` bin 검증 및 web-framework 버전 되돌림 | 스캐폴드 후 bin이 없거나 버전이 어긋나면 web-framework를 알려진 안정 버전(2.x)으로 되돌림 | **삭제** — 0.2.x 산출물은 애초에 `ait` bin만 제공하고 `granite` bin이 없으므로, 이 검사를 그대로 두면 오탐으로 정본 3.x 산출물을 2.x로 강등해 버리는 활성 버그였다. `node_modules/.bin/ait` 존재 확인 한 줄로 대체했고, web-framework를 2.x로 강등하는 명령은 어떤 형태로도 남기지 않았다 |
+| 후처리 B — devtools unplugin 배선(vite.config 확장 등) | devtools devDependency 추가 및 vite 설정에 플러그인 삽입을 skill이 직접 수행 | **유지** — 배선 자체는 그대로 두되, `unmet peer @apps-in-toss/web-framework` 경고(devtools peer가 `<3.0.0`)와 wf 3.x 네임스페이스 API mock 부재 경고를 skill·완료 안내에 추가했다. "devtools/mock SDK 배선 옵션" 참고 항목을 upstream이 채택하면 향후 축소 여지는 남아 있다 |
+| 후처리 C — `.gitignore` 생성/보강 | 스캐폴드 산출물에 `.gitignore`가 없거나 불완전할 때 채워 넣음 | **축소** — 0.2.x는 `.gitignore`가 이미 존재하므로(create-vite 경로 · TDS `_gitignore` rename 경로 모두), 생성이 아니라 `*.ait` 한 줄이 없을 때만 append하는 형태로 줄였다 |
+| 후처리 D — `{{TOKEN}}` placeholder 복구 | `--sample` 미지정 시 남는 미치환 토큰을 감지해 복구 | **삭제** — 0.2.x는 base가 순정 create-vite로 바뀌어 미치환 토큰이 구조적으로 발생하지 않는다(실측 grep 0건). 채점(`hasUnsubstitutedToken`)은 회귀 안전망으로만 남겼다 |
+| `create-ait-app@0.1.3` 명시 핀 | `@latest` 사용 시 dist-tag 승격으로 조용히 깨지는 걸 막기 위한 고정 | **`@0.2.1`로 이관**(핀 유지 정책 자체는 불변) — 제안 2(Release Notes/CHANGELOG 정비)가 수용되면 breaking change를 사전에 파악할 수 있어 다음 핀 승급 판단이 쉬워지지만, 이번 이관은 그 수용을 기다리지 않고 공개 registry 실측(latest=0.2.1)만으로 진행했다 |
