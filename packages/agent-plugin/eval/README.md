@@ -141,7 +141,7 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 | # | station | 명령 | 기대 산출물 | seam (다음 명령을 인쇄?) |
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add toss/apps-in-toss-harness` → `/plugin install` | `/ait *` 명령이 존재, `apps-in-toss-docs`/`apps-in-toss-console` MCP 서버가 목록에 기본 포함 | (플러그인 메커니즘) → `/ait:welcome` → `/ait:new` 안내 |
-| 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` (create-ait-app 산출물 + devtools 배선 + granite.config.ts 기본 포함) | ✅ `pnpm dev` → `/ait:design` → `ait build` → 콘솔 MCP(`miniapp_create`) 인쇄 |
+| 1 | scaffold | `/ait:new demo-shop` | `./demo-shop/` (create-ait-app 산출물 + devtools 배선 + apps-in-toss.config.ts 기본 포함(`--local` 폴백은 granite.config.ts)) | ✅ `pnpm dev` → `/ait:design` → `pnpm build` → 콘솔 MCP(`miniapp_create`) 인쇄 |
 | 2 | dev | `cd demo-shop && pnpm dev` | 브라우저에서 devtools panel 과 함께 실행 | ✅ 회귀 의심 시 `/ait:debug` 로 분기 |
 | 3 | debug | `/ait:debug` | 환경 3겹 분기 안내(환경 1 브라우저 / 2 PWA / 3 MCP attach). candidate scheme URL 이 없으면 §5-B 가 `ait build` → 콘솔 MCP 로 직접 등록·업로드 | ✅ 환경에 맞는 다음 동작(`/ait:setup-phone-preview`/`/ait:setup-debugger` 등) 또는 5-C attach |
 | 4 | design | `/ait:design` | `./assets/`(등록용 이미지 에셋) | ✅ 콘솔 MCP(`miniapp_create`) 규격 일치 안내 + `/ait:debug` (화면 회귀 점검) 인쇄 |

@@ -62,6 +62,13 @@ cd ./<package_name> && pnpm install
   가정합니다(`packageManager` 필드). 다른 매니저를 쓰려면 `--no-install`로
   만든 뒤 본인 환경에 맞게 변경하세요"로 안내하고 종료.
 
+> **구세대(wf 2.x) 오프라인 폴백**: 이 폴백은 `@apps-in-toss/web-framework`
+> 2.x + `granite.config.ts` 형상이다. 정본 경로(create-ait-app 0.2.x)는
+> wf 3.x + `apps-in-toss.config.ts`를 쓰므로 산출물 형상이 서로 다르다 —
+> 오프라인/네트워크 제한 환경 전용이며, 온라인이면 정본 경로(`/ait:new`의
+> create-ait-app 호출)를 쓴다. 상향은 별도 트리거(devtools가 peer에 wf 3.x를
+> 포함하는 릴리스) 전까지 보류한다.
+
 ## L-5. 번들 설정 추가 (배포 준비 시)
 
 이 템플릿에는 **번들 설정이 없다**(create-ait-app 템플릿과 다른 점) — 사용자가

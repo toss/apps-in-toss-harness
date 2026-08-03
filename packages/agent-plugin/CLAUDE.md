@@ -49,7 +49,7 @@
 | Skill | 책임 | command (facet) | 의존 |
 |---|---|---|---|
 | `welcome` | harness 진입 안내 — station 0 install 완료 확인 + `/mcp` 콘솔 인가 안내 + station 1(scaffold)로 hand-off | `/ait:welcome` | (없음) |
-| `new-miniapp` | `toss/create-ait-app` 비대화형(`--inline`) 호출 wrapper + 후처리(devtools 배선·granite bin 검증·.gitignore). `--local` 폴백은 내장 react-vite 복사 + 번들 설정 인라인 절차(L-5, `references/local-template.md`) | `/ait:new` | `Bash`, create-ait-app(dlx), `templates/`(폴백) |
+| `new-miniapp` | `toss/create-ait-app` 비대화형(`--inline`) 호출 wrapper + 후처리(형상 가드·devtools 배선·.gitignore). `--local` 폴백은 내장 react-vite 복사 + 번들 설정 인라인 절차(L-5, `references/local-template.md`) | `/ait:new` | `Bash`, create-ait-app(dlx), `templates/`(폴백) |
 | `plan` | 기획 station 7 — SDK 도메인/권한/약관 기획 지원, docs MCP로 문서 조회 | `/ait:plan` | `Read`, docs MCP |
 | `design` | 디자인 station 8 — Figma MCP 연동 등록용 이미지 에셋 설계, 콘솔 MCP `miniapp_create` 규격과 일치 | `/ait:design` | Figma MCP |
 | `inject` | 기존 프로젝트 빌드 셋업 패치 — **devtools facet**: `@apps-in-toss/devtools` unplugin 주입 · **debug-console facet**: `@apps-in-toss/debug-console`(on-device attach + eruda) `dependencies` 설치 + `/auto` 와이어업 | `/ait:inject-devtools`, `/ait:inject-debug-console` | `Edit`, `Bash` |
@@ -172,7 +172,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 슈트 B 불변(반드시 지킨다):
 
-- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 안 부른다(커뮤니티 시절 dog-food 타겟 구조적 무접촉). 콘솔/인증을 변이시키는 Bash 명령(`aitcc`/`ait deploy·register·login`/`--api-key`)과 콘솔 MCP(`apps-in-toss-console`) 도구 호출 둘 다 `canUseTool` 게이트로 **결정적으로 deny** — 특히 `miniapp_create`는 매 run 새 `miniAppId`를 서버 발급·자동 기록(= "lock 풀려고 새 앱 만들기" 반-패턴). deploy 격리 경로는 P2 opt-in.
+- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 안 부른다(커뮤니티 시절 dog-food 타겟 구조적 무접촉). 콘솔/인증을 변이시키는 Bash 명령(`aitcc`/`ait deploy·register·login`/패키지 매니저 경유 `deploy` 스크립트(`pnpm|npm|yarn [--dir …] [run] deploy` — create-ait-app 산출물의 `"deploy": "ait deploy"`를 우회하는 경로)/`--api-key`)과 콘솔 MCP(`apps-in-toss-console`) 도구 호출 둘 다 `canUseTool` 게이트로 **결정적으로 deny** — 특히 `miniapp_create`는 매 run 새 `miniAppId`를 서버 발급·자동 기록(= "lock 풀려고 새 앱 만들기" 반-패턴). deploy 격리 경로는 P2 opt-in.
 - **1차 신호는 토큰**(USD 아님). `total_cost_usd`는 클라이언트 추정치라 참고로만 기록하고, `runs.jsonl`의 토큰을 `pricing.json`으로 리포트 시점에 재계산한다. 가격이 바뀌면 `pricing.json`만 고쳐 과거를 다시 돈다.
 - **메인테이너 수동·오프라인** harness — runtime telemetry 아님, CI gate 아님(조직 telemetry 전면 제거 원칙). 시크릿 값은 어떤 출력에도 싣지 않는다.
 

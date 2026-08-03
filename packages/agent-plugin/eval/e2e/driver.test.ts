@@ -9,8 +9,9 @@
  * 무시할 수 있으므로 명령/도구 이름을 직접 검사하는 이 두 함수가 권위 있는 관문이다.
  *
  * 회귀 가드:
- *   - Bash: 금지 명령(aitcc / ait deploy·register·login / --api-key)은 전부 차단,
- *     정상 build-only 명령(ait build / pnpm / git 등)은 전부 통과해야 한다.
+ *   - Bash: 금지 명령(aitcc / ait deploy·register·login / 패키지 매니저 경유
+ *     deploy(pnpm|npm|yarn deploy) / --api-key)은 전부 차단, 정상 build-only
+ *     명령(ait build / pnpm / git 등)은 전부 통과해야 한다.
  *   - MCP: 콘솔 MCP 서버(apps-in-toss-console) 소속 도구는 전부 차단, docs MCP
  *     (apps-in-toss-docs, 읽기 전용)·ait-devtools·평범한 내장 도구는 통과해야 한다.
  */
@@ -43,16 +44,39 @@ describe('isForbiddenBashCommand', () => {
     'ait deploy --api-key SOMETOKEN',
     'pnpm exec ait deploy --api-key "$AITCC_API_KEY" --scheme-only',
     'echo x && aitcc app deploy bundle.ait', // 체이닝 우회 시도
+    // create-ait-app 0.2.x 산출물 package.json의 "deploy": "ait deploy" 스크립트를
+    // 패키지 매니저 경유로 우회하는 경로 (사전 존재 구멍, 이번에 닫는다).
+    'pnpm deploy',
+    'pnpm run deploy',
+    'npm run deploy',
+    'yarn deploy',
+    // pnpm 워크스페이스 스코프 플래그가 낀 형태 — new-miniapp SKILL.md가 전
+    // 구간에서 가르치는 `pnpm --dir ./<package_name> …` 관용구가 정확히 이
+    // 형태라 모델이 실제로 칠 가능성이 가장 높다(실측으로 뚫려 있던 구멍).
+    'pnpm --dir ./timer deploy',
+    'pnpm --dir ./timer run deploy',
+    'pnpm -C ./timer deploy',
+    'npm --prefix ./timer run deploy',
+    'pnpm --filter timer deploy',
+    'pnpm -r deploy',
   ];
 
   // 통과해야 하는 build-only / 일반 개발 명령.
   const ALLOWED = [
     'ait build',
     'pnpm bundle:ait',
-    'pnpm run build', // create-ait-app 산출물의 번들 빌드 (= ait build)
+    'pnpm run build', // create-ait-app 산출물의 번들 빌드 (= tsc -b && vite build && ait build)
+    'pnpm build:vite',
     // 정본 scaffold 경로 — "-ait-" 부분 문자열이 콘솔 게이트에 오탐되면 안 된다.
-    'pnpm dlx create-ait-app@0.1.3 coupon-shop --inline --pm pnpm --template react-ts',
-    'pnpm --dir ./timer add @apps-in-toss/web-framework@2', // 후처리 A granite bin 고정
+    // --template과 --tds는 0.2.x에서 동시 지정이 금지(택일)이므로 한쪽만 쓴다.
+    'pnpm dlx create-ait-app@0.2.1 coupon-shop --inline --pm pnpm --template react-ts',
+    'pnpm dlx create-ait-app@0.2.1 coupon-shop --inline --pm pnpm --tds',
+    // "deploy-" 로 시작하는 다른 이름의 스크립트/앱명 오탐 가드 (`deploy` 뒤
+    // 부정 lookahead).
+    'pnpm dlx create-ait-app@0.2.1 deploy-demo --inline --pm pnpm --template react-ts',
+    'pnpm --dir ./timer add -D @ait-co/devtools', // 후처리 B devtools 배선(0.2.x — granite bin 검증 후처리 A는 삭제됨)
+    'pnpm --dir ./timer run build', // pm 스코프 플래그 + build — deploy 패턴에 오탐되면 안 된다
+    'pnpm run deploy-preview', // "deploy" 로 시작하지만 다른 이름의 스크립트 — 오탐 가드
     'RELEASE_CHANNEL=dogfood ait build',
     'pnpm install',
     'pnpm dev',
@@ -164,9 +188,11 @@ describe('exposesKey', () => {
   });
 });
 
-// 미치환 스캐폴드 토큰 검출. create-ait-app v0.1.3 이 `--sample` 없이 만들면
-// 예제 placeholder 를 남기고, 그 앱은 빌드는 통과하지만 런타임에 안 뜬다 —
-// `.ait` 만 보는 채점이 그걸 success 로 집계하던 구멍을 막는 검사다.
+// 미치환 스캐폴드 토큰 검출. create-ait-app v0.1.3 은 `--sample` 없이 만들면
+// 예제 placeholder 를 남겼고, 그 앱은 빌드는 통과하지만 런타임에 안 떴다 —
+// `.ait` 만 보는 채점이 그걸 success 로 집계하던 구멍을 막던 검사였다. v0.2.x는
+// base가 순정 create-vite라 그 결함이 구조적으로 해소됐지만, 이 검사는 회귀
+// 안전망으로 유지한다.
 describe('hasUnsubstitutedToken', () => {
   const LEFTOVER = [
     '{{SAMPLE_IMPORTS}}',
@@ -298,22 +324,25 @@ describe('MCP 서버 키 ↔ disallowedTools 결합', () => {
 // FORBIDDEN_BASH_PATTERNS 배열 자체에서 카테고리 하나가 통째로 삭제돼도, 남은
 // 패턴이 우연히 같은 대표 명령을 잡으면(예: 다른 카테고리 정규식이 부분적으로
 // 겹치면) 그 단위 테스트는 계속 통과할 수 있다. 이 블록은 배열 자체를 검사해
-// 5개 카테고리(aitcc / ait deploy / ait register / ait login / --api-key)가
-// 전부 살아있음을 개수 + 카테고리별 존재로 직접 고정한다 — 하나라도 빠지면
-// 반드시 실패한다.
+// 6개 카테고리(aitcc / ait deploy / ait register / ait login / 패키지 매니저
+// 경유 deploy / --api-key)가 전부 살아있음을 개수 + 카테고리별 존재로 직접
+// 고정한다 — 하나라도 빠지면 반드시 실패한다.
 describe('FORBIDDEN_BASH_PATTERNS 불변 (패턴 누락 회귀 가드)', () => {
-  it('패턴 개수가 5개로 고정돼야 한다 (조용한 삭제/병합 방지)', () => {
-    expect(FORBIDDEN_BASH_PATTERNS.length).toBe(5);
+  it('패턴 개수가 6개로 고정돼야 한다 (조용한 삭제/병합 방지)', () => {
+    expect(FORBIDDEN_BASH_PATTERNS.length).toBe(6);
   });
 
-  it('5개 카테고리가 각각 최소 하나의 패턴으로 표현돼야 한다', () => {
+  it('6개 카테고리가 각각 최소 하나의 패턴으로 표현돼야 한다', () => {
     const sources = FORBIDDEN_BASH_PATTERNS.map((re) => re.source);
     expect(
       sources.some((s) => s.includes('aitcc')),
       'aitcc 카테고리 누락',
     ).toBe(true);
     expect(
-      sources.some((s) => s.includes('deploy')),
+      // `.includes('deploy')`만으로는 패키지 매니저 경유 deploy 패턴(아래)만으로도
+      // 충족돼 `ait deploy` 패턴이 통째로 바뀌어도 이 검사가 못 잡는다 — `ait\s+deploy`
+      // 부분 문자열까지 좁혀야 `ait deploy` 카테고리 자체의 존재를 확인한다.
+      sources.some((s) => s.includes('ait\\s+deploy')),
       'ait deploy 카테고리 누락',
     ).toBe(true);
     expect(
@@ -323,6 +352,13 @@ describe('FORBIDDEN_BASH_PATTERNS 불변 (패턴 누락 회귀 가드)', () => {
     expect(
       sources.some((s) => s.includes('login')),
       'ait login 카테고리 누락',
+    ).toBe(true);
+    expect(
+      // `.includes('pnpm|npm|yarn')`은 alternation 순서만 바꿔도(예:
+      // `npm|pnpm|yarn`) 깨지는 문자열 결합이다 — 세 매니저 이름과 `deploy`가
+      // 전부 소스에 나타나는지를 의미 기반으로 본다(순서 불가지).
+      sources.some((s) => /deploy/.test(s) && /pnpm/.test(s) && /npm/.test(s) && /yarn/.test(s)),
+      '패키지 매니저 경유 deploy 카테고리 누락',
     ).toBe(true);
     expect(
       sources.some((s) => s.includes('api-key')),

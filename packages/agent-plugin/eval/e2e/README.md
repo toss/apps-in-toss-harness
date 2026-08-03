@@ -8,9 +8,12 @@
 수집한다 — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(게이트웨이) 둘 다.
 번들 설정이 없는 산출물(`--local` 폴백 등)에서는 `new-miniapp` skill 자신이 절차를
 인라인으로(references/local-template.md L-5) 처리한다 — 별도 skill을 거치지 않는다.
-채점은 경로 불가지(granite.config.ts + `.ait` 존재)라 두 경로 모두 같은 기준으로 잰다.
-여기에 **앱 소스 무결성**(미치환 `{{TOKEN}}` 부재)이 함께 걸린다 — 산출물만 보는 채점은
-빌드는 통과하지만 런타임에 화면이 비는 산출물을 success로 집계하기 때문이다(실측: 아래 note).
+채점은 번들 설정 파일 존재로 경로 불가지다 — 정본(create-ait-app 0.2.x)은
+`apps-in-toss.config.ts`, `--local` 폴백(구세대 wf 2.x 오프라인 경로)은
+`granite.config.ts`이고, 둘 중 하나만 있으면 통과(any-of)한다. `.ait` 존재도 함께
+본다. 여기에 **앱 소스 무결성**(미치환 `{{TOKEN}}` 부재)이 함께 걸린다 — 산출물만 보는
+채점은 빌드는 통과하지만 런타임에 화면이 비는 산출물을 success로 집계하기 때문이다(실측:
+아래 note).
 
 > **측정 여정 변경 (harness#6)**: `/ait:new`가 로컬 템플릿 복사에서 create-ait-app 비대화형
 > wrapper로 재작성되면서 측정 여정에 create-ait-app 네트워크 설치가 포함된다. 이전
@@ -22,7 +25,16 @@
 > `--sample` 없이 만들면 예제 placeholder를 남기고, 그 앱은 `ait build`는 통과하지만
 > 브라우저에서 `ReferenceError`로 화면이 빈다. `.ait` 존재만 보던 이전 채점은 그런 run을
 > 완주로 집계했다(측정이 GREEN인데 station 2는 막힌 상태). `station`도 같은 이유로
-> `dev-able`·`bundle` 판정에 이 검사를 전제한다.
+> `dev-able`·`bundle` 판정에 이 검사를 전제한다. v0.2.x는 base가 순정 create-vite라
+> 이 결함이 구조적으로 해소됐지만(placeholder 토큰 자체가 없다), 검사 자체는 회귀
+> 안전망으로 유지한다.
+>
+> **핀 이관 (harness#68)**: 정본 scaffold 핀이 `create-ait-app@0.1.3` → `@0.2.1`로
+> 올라가며 산출물의 번들 설정 파일명이 `granite.config.ts` → `apps-in-toss.config.ts`로
+> 바뀌었다. `expect.bundle`과 `score.ts`의 `bundleConfig` 판정을 경로 불가지(any-of)로
+> 넓혀 두 형상 모두 채점되게 했다(위 "무엇을 재나" 서술 참고). 핀 변경은 `fixedInputs`
+> 변경이라 이 변경 이후의 측정은 새 epoch이며, 직전 epoch 수치와 직접 비교하지 않는다
+> (`baseline.json`은 이 변경으로 갱신하지 않는다 — 갱신은 별도 재측정 PR의 몫).
 
 슈트 A(`../promptfoo/`)는 skill **라우팅 정합성**(맞는 발화→맞는 skill, single-turn)을 본다.
 슈트 B는 그게 못 보는 **멀티턴 완주·비용·분산**을 본다. 둘은 형제이고 A는 이 작업으로 안 바뀐다.
@@ -180,11 +192,14 @@ stdout 요약 예:
   타겟은 구조적으로 못 건드린다. aitcc 전제 skill(register/deploy/status/setup-bundle)은
   harness에서 이미 제거됐지만, 모델이 학습 지식만으로 같은 명령을 시도할 수 있으므로 아래
   두 게이트는 skill 존재 여부와 무관하게 유지한다.
-- **Bash 경로 — 콘솔/인증 변이 명령은 결정적으로 차단.** `aitcc …`(커뮤니티 console-cli 전체)와
+- **Bash 경로 — 콘솔/인증 변이 명령은 결정적으로 차단.** `aitcc …`(커뮤니티 console-cli 전체),
   `ait deploy`/`ait register`/`ait login`/`--api-key`(공식 번들러 `@apps-in-toss/cli`의 API 키
-  기반 직접 콘솔 접근 서브명령)는 skill 문서에 안 나와도 모델이 프롬프트 텍스트만으로 시도할
-  수 있다 → SDK `canUseTool` 콜백이 모든 `Bash` 명령 문자열을 검사해 **결정적으로 deny**하고
-  run 을 `forbidden-dispatch` 로 중단한다(`driver.ts` `isForbiddenBashCommand` — 단위 테스트
+  기반 직접 콘솔 접근 서브명령), 그리고 패키지 매니저 경유 `deploy` 스크립트(`pnpm|npm|yarn
+  [워크스페이스 스코프 플래그…] [run] deploy` — create-ait-app 산출물 `package.json`의
+  `"deploy": "ait deploy"`를 `pnpm deploy`/`pnpm --dir ./<app> deploy` 같은 형태로 우회하는
+  경로)는 skill 문서에 안 나와도 모델이 프롬프트 텍스트만으로 시도할 수 있다 → SDK
+  `canUseTool` 콜백이 모든 `Bash` 명령 문자열을 검사해 **결정적으로 deny**하고 run 을
+  `forbidden-dispatch` 로 중단한다(`driver.ts` `isForbiddenBashCommand` — 단위 테스트
   `driver.test.ts`).
 - **MCP 경로 — 콘솔 MCP 서버(`apps-in-toss-console`) 호출도 결정적으로 차단.** 플러그인
   manifest가 이 서버(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`/
