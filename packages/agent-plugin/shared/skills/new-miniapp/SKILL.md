@@ -189,6 +189,48 @@ CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니�
   하려던 설치(`pnpm install` → `pnpm add @apps-in-toss/web-framework@latest`)를
   수동으로 이어가는 회피를 안내한다.
 
+  어느 인접 버전이 미러에 실재하는지는 후보 버전의 tarball URL을 `curl -I`로
+  HEAD 요청해 200/404로 확인한다(실측: `baseline-browser-mapping@2.11.7`이
+  404, 인접한 `2.11.1`이 200) — 에러 메시지의 registry URL 패턴에서 버전만
+  바꿔가며 확인하면 된다:
+
+  ```bash
+  curl -sI "<실패한 tarball URL에서 버전만 인접 버전으로 치환>" | head -1
+  ```
+
+### 2-1. ignored-build-scripts 게이트 (pnpm 11)
+
+pnpm 10부터 postinstall 스크립트가 있는 의존성을 기본 차단하며, pnpm 11에서는
+경고가 아닌 에러(`ERR_PNPM_IGNORED_BUILDS`)로 승격된다.
+Step 2(scaffold)·Step 5(devtools 배선) 각각의 `pnpm install`/`pnpm add`에서
+독립적으로 발생할 수 있다 — 실측(2026-08-02, create-ait-app@0.1.3 +
+web-framework 2.10.8 + devtools 0.1.144 조합)으로는 한 번의 scaffold에서
+**3회**(① 기본 설치의 `esbuild` ② web-framework 추가의 `@sentry/cli`·
+`@swc/core`·`protobufjs` ③ devtools 추가의 `cloudflared`) 떴다. 이 목록은
+**버전에 따라 달라지는 실측 예시**이지 고정 목록이 아니다 — 실제로 뜬 패키지
+이름은 항상 에러 메시지에 나열되므로 그걸 근거로 삼는다.
+
+에러가 뜨면 pnpm이 대상 디렉토리 `pnpm-workspace.yaml`에
+`onlyBuiltDependencies`/`allowBuilds` placeholder(`# set this to true or
+false`)를 자동 기록한다. 이걸 손으로 편집하지 않으면 설치가 재개되지 않는다.
+이 skill은 non-TTY로 실행되므로 **`Edit`로 `pnpm-workspace.yaml`의
+`allowBuilds:` 아래에 에러가 나열한 패키지 이름을 `true`로 직접 추가한 뒤
+`pnpm install`을 재실행**한다:
+
+```bash
+pnpm --dir ./<package_name> install
+```
+
+(`pnpm --dir ./<package_name> approve-builds`는 체크박스 UI가 뜨는 대화형
+명령이라 이 skill 흐름에서는 쓰지 않는다 — 세션이 멈춘다. 사용자가 직접
+터미널에서 승인하고 싶을 때만 안내용으로 남긴다.)
+
+에러 메시지에 없는 패키지를 임의로 allow하지 않는다 — 그 세션에서 실제로 막힌
+패키지만 승인한다. `cloudflared` 항목은 devtools README의
+["cloudflared 바이너리가 준비되지 않을 때"](https://github.com/toss/apps-in-toss-harness/blob/main/packages/devtools/README.md#cloudflared-바이너리가-준비되지-않을-때)
+절(harness#57)에 더 자세한 배경(38MB 바이너리, `onlyBuiltDependencies` vs
+`allowBuilds` 선택 기준)이 있다 — 필요하면 그쪽을 참조한다.
+
 ### 3. 후처리 0 — 버전 가드 (산출물 형상 확인)
 
 Step 2의 핀(`@0.1.3`)이 살아 있는 한 아래 후처리 A~D의 전제(`granite.config.ts`
@@ -241,6 +283,9 @@ ls ./<package_name>/node_modules/.bin/granite
   보여준다.
 
 ### 5. 후처리 B — devtools 배선 (브라우저 dev 활성화)
+
+> `pnpm add -D @ait-co/devtools`가 `cloudflared` 관련
+> `ERR_PNPM_IGNORED_BUILDS`를 낼 수 있다 — 2-1절 참조.
 
 **`--no-devtools`가 지정됐으면 이 단계 전체를 건너뛴다** — devtools는 사용자
 의향에 따르는 선택 요소다. 건너뛴 경우 Step 8 완료 안내에서 `pnpm dev` 줄의
@@ -412,6 +457,9 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 > 원시 명령이다 — dev는 일회성 액션이 아니라 연속 프로세스라 슬래시 명령으로
 > 감싸지 않는다. station 1→2 hand-off는 이 안내 블록이 `pnpm dev`를 직접
 > 인쇄하는 것으로 충분하다.)
+
+> `granite dev`가 배너보다 먼저 `Failed to find Response internal state
+> key`를 출력할 수 있다 — 무해한 노이즈이니 에러로 오인해 중단하지 않는다.
 
 ## Out of scope (이 skill이 하지 않는 것)
 
