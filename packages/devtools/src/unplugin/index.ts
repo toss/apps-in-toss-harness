@@ -264,7 +264,7 @@ const aitDevtoolsPlugin = createUnplugin((options?: AitDevtoolsOptions) => {
   const tunnelConfig = typeof tunnelOpt === 'object' ? tunnelOpt : {};
 
   return {
-    name: 'ait-co-devtools',
+    name: 'apps-in-toss-devtools',
     enforce: 'pre' as const,
 
     resolveId(id: string) {
