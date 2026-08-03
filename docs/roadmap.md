@@ -111,6 +111,8 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 스코프·링크·브랜딩을 harness 정본으로 정규화하는 작업)다 — 설치·실행 경로의
 스코프 치환만 D1(`@apps-in-toss/{devtools,debugger,debug-console}` npm 미배포)
 해소 시점까지 보류된다. 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다.
+해소 시 실행할 체크리스트는 `docs/npm-release.md` §7(scope-install flip 체크리스트)에
+고정돼 있다.
 
 ## 4. Cross-cutting 자산 거취
 

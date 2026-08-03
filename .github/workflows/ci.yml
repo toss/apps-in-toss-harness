@@ -26,11 +26,11 @@ jobs:
       # pnpm이 ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT로 실패한다(게이트가 사문화되면
       # 조용히 통과하는 대신 소리를 낸다).
       - run: pnpm -r check:dashboard-html-fresh
-      # 발행 산출물 게이트. devtools는 이 셋을 `prepublishOnly`에 묶어 뒀지만
-      # release.yml이 `pnpm pack` + `npm publish <tarball>` 경로라 그 훅은
-      # 한 번도 발화하지 않고(docs/npm-release.md §4 실측표), debugger는
-      # 애초에 `prepublishOnly`가 없다. 즉 두 발행 대상 모두에서 이 검사들이
-      # 무주공산이었다 — CI가 실제 강제 계층이다.
+      # 발행 산출물 게이트. 이 3종은 debugger가 자체 소유한다(devtools 쪽 구현·가드는
+      # harness#40으로 이관·제거 완료). debugger에는 `prepublishOnly`가 애초에 없고,
+      # devtools의 `prepublishOnly`(build·footprint·typecheck·test 체인)도 release.yml이
+      # `pnpm pack` + `npm publish <tarball>` 경로라 발화하지 않는다
+      # (docs/npm-release.md §4 실측표) — CI가 실제 강제 계층이다.
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent

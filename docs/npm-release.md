@@ -169,8 +169,13 @@ pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음
 배포 워크플로(release.yml)는 changesets를 호출하지 않고 package.json에 커밋된 버전을 그대로
 발행하므로, 이 절차는 배포 전 버전 확정 단계에서만 필요하다.
 
-## 7. 배포 성사 후 후속 작업
+## 7. scope-install flip 체크리스트 (D1 해소 직후)
 
-- 스킬·템플릿의 설치 문자열을 `@ait-co/*` → `@apps-in-toss/*`로 flip (harness#10).
-- README의 "아직 npm 미배포" 문구 제거.
-- `packages/*/README.md`·`README.en.md`의 설치 명령을 함께 갱신 (같은 PR).
+`@apps-in-toss/{devtools,debugger,debug-console}` 3패키지가 npm에 실제 배포되어 D1이 해소된 직후 실행하는 절차다.
+
+1. **정규화 스크립트로 일괄 치환** — `NORMALIZE_SCOPE_INSTALL=1`로 `normalize-upstream.mjs`를 대상 패키지에 적용한다. `scope-install`(설치 명령·npx 안내·npm 레지스트리 URL·설치 감지용 grep 문자열)과 `scope-external-target`(스캐폴드 템플릿 devDependency·주입 코드 샘플 등 외부 프로젝트로 그대로 복사되는 콘텐츠)이 같은 게이트로 함께 켜진다 — 설치·실행 안내 전반이 대상이며 구체 지점 수는 여기 하드코딩하지 않는다(`docs/upstream-sync.md` 참고).
+2. **`eval/e2e/baseline.json` 재수립 여부는 사람이 먼저 판단** — 이 파일은 `PRESERVED_FILE_PATTERNS`(메인테이너가 수동으로만 갱신하는 시계열 비교 기준선)라 자동 정규화 대상이 아니다. `@ait-co/devtools` 문자열이 남아 있으므로, 기계 치환 전에 이 스냅샷을 새로 찍을지부터 결정한다.
+3. **전체 CI 시퀀스로 검증** — `lint → build → check:dashboard-html-fresh → check:mcp-react-free → check:test-runner-dist → check:debug-surface-absent → check:footprint-absent → check:pack-manifests → qa:fidelity → typecheck → test`. agent-plugin의 `pnpm test`가 `validate-plugin.mjs` 검증(`shared/__tests__/validate.test.ts`·`validate-negative.test.ts`)을 포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인된다.
+4. **README ko/en을 같은 PR에서 동시 갱신** — "아직 npm 미배포" 문구 제거, `packages/*/README.md`·`README.en.md`의 설치 명령도 함께 갱신한다.
+
+harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip 트래킹 이슈).
