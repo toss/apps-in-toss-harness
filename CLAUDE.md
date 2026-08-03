@@ -40,7 +40,7 @@
 
 ## eval 게이트 (`packages/agent-plugin/eval/e2e`)
 
-측정 하네스는 **build-only**다 — 콘솔에 실 앱이 생성되는 누출을 막는다. `canUseTool`이 (a) `aitcc` 등 콘솔·인증 변이 Bash 패턴과 (b) `mcp__apps-in-toss-console__` prefix tool 호출을 결정적으로 차단하고, `disallowedTools`가 정적으로도 막는다. **`disallowedTools`의 서버 키 `ait-devtools`는 개명하지 마라**(개명하면 정적 차단이 조용히 무력화된다). 정책·메커니즘 정본은 `packages/agent-plugin/eval/e2e/README.md`.
+측정 하네스는 **build-only**다 — 콘솔에 실 앱이 생성되는 누출을 막는다. `canUseTool`이 (a) `aitcc` 등 콘솔·인증 변이 Bash 패턴과 (b) `mcp__apps-in-toss-console__` prefix tool 호출을 결정적으로 차단하고, `disallowedTools`가 정적으로도 막는다. **`disallowedTools`의 서버 키 `ait-devtools`는 개명하지 마라**(개명하면 정적 차단이 조용히 무력화된다). 정책·메커니즘 정본은 `packages/agent-plugin/eval/e2e/README.md`. 완주 측정을 반복 실행하는 운영 런북(셀 구성·epoch 규율·해석·진단)은 `.claude/skills/eval-suite-b/SKILL.md`.
 
 ## dog-food (콘솔 E2E 재활용 타겟)
 
