@@ -1,6 +1,7 @@
 # sdk-example Implementation Plan
 
 > **이관 이전 설계 아카이브 — 당시 경로·이슈 표기 그대로 보존.**
+> (로컬 절대경로의 홈 디렉토리만 `~`로 마스킹)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,8 +14,8 @@
 **Spec:** `docs/superpowers/specs/2026-04-12-sdk-example-design.md`
 
 **Repositories:**
-- sdk-example: `/Users/dave/Projects/github.com/apps-in-toss-community/sdk-example/`
-- devtools: `/Users/dave/Projects/github.com/apps-in-toss-community/devtools/`
+- sdk-example: `~/Projects/github.com/apps-in-toss-community/sdk-example/`
+- devtools: `~/Projects/github.com/apps-in-toss-community/devtools/`
 
 ---
 
@@ -79,12 +80,12 @@ sdk-example/
 - Create: `src/index.css`
 - Create: `src/App.tsx`
 
-All work happens in `/Users/dave/Projects/github.com/apps-in-toss-community/sdk-example/`.
+All work happens in `~/Projects/github.com/apps-in-toss-community/sdk-example/`.
 
 - [ ] **Step 1: Scaffold with Vite**
 
 ```bash
-cd /Users/dave/Projects/github.com/apps-in-toss-community/sdk-example
+cd ~/Projects/github.com/apps-in-toss-community/sdk-example
 pnpm create vite . --template react-ts
 ```
 
@@ -2346,12 +2347,12 @@ git commit -m "ci: add SDK update check workflow"
 - Modify: `package.json` (remove `example` script)
 - Modify: `CLAUDE.md` (update references)
 
-All work in `/Users/dave/Projects/github.com/apps-in-toss-community/devtools/`.
+All work in `~/Projects/github.com/apps-in-toss-community/devtools/`.
 
 - [ ] **Step 1: Delete examples directory**
 
 ```bash
-cd /Users/dave/Projects/github.com/apps-in-toss-community/devtools
+cd ~/Projects/github.com/apps-in-toss-community/devtools
 rm -rf examples/
 ```
 

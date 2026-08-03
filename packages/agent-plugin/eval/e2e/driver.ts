@@ -68,7 +68,7 @@ const DISPATCH_COMMAND = 'new';
 // 싣는 `--api-key`. 번들 빌드 경로(`ait build`, `pnpm run build`,
 // `pnpm bundle:ait`, `pnpm install`, `pnpm dlx create-ait-app …` 등)는
 // 매칭하지 않는다.
-const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
+export const FORBIDDEN_BASH_PATTERNS: readonly RegExp[] = [
   /\baitcc\b/, // 콘솔 자동화 CLI 전체 (register/deploy/app/keys/me/workspace …)
   /\bait\s+deploy\b/, // 번들러의 콘솔 업로드/검수 제출
   /\bait\s+register\b/, // (혹시 모를) 등록 서브명령
