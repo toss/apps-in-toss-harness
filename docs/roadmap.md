@@ -121,7 +121,7 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 | eval 슈트 A (promptfoo 라우팅) | 유지 — skill 목록 변경 시 함께 갱신 (validate 게이트가 동기화 강제) |
 | eval 슈트 B (e2e 완주 측정) | 유지 — 측정 여정은 scaffold 경로 전환에 이미 정합(#6 follow-up). 콘솔 게이트는 MCP GW 전환에 맞춰 tool 이름 기준(`isConsoleMcpTool`, `mcp__apps-in-toss-console__` prefix)으로 재정의 완료(harness#3, `driver.ts`) — 상세는 §5 항목4 |
 | skill 통일 규칙 (7항목 체크리스트) | 유지 — docs deep-link 규칙(4항)은 GitBook 이관(#4)과 함께 "docs MCP 조회 안내"로 재정의 완료(A2/docs-link-banned·A2/docs-mcp-mention-required가 8-skill 전수 강제, 0 error 실측 — 위 §2 docs 행 참고) |
-| docs crosslink 검증 (커뮤니티 CI) | GitBook 이관(#4) 시 무의미 — 이관 시점에 sunset |
+| docs crosslink 검증 (커뮤니티 CI) | Sunset 완료 — GitBook 이관(#4) live 확인(2026-07-30, `apps-in-toss-docs` MCP manifest 기본 포함)으로 검사 대상 자체가 소멸. 커뮤니티 CI 소유 검사라 이 repo에 이식된 적이 없어 코드 변경 불요 |
 | Deploy Key 용어·인증 모델 | 유지하되 MCP GW 인증 설계(#3)와 정합 재검토 — open question |
 
 ## 5. Open questions (확정 필요)
