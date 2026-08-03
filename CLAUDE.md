@@ -66,4 +66,6 @@ Deploy Key·TOTP 등 자격증명 값은 어떤 파일·로그·커밋에도 넣
 
 ## public flip(#8) 전 점검
 
-Dave 결정 후 착수. 최소 4항목: (1) 내부 식별자 공개 적정성 검토 — dog-food 워크스페이스·miniAppId 등이 public 산출물에 새지 않는지 전수 확인, (2) npm trusted publishing 배선, (3) README 상태 note 갱신(private staging → public, 배포 상태 반영), (4) launcher 자체 호스팅 — 실기기 attach 기본 launcher(`packages/devtools/src/shared/launcher-url.ts`의 `devtools.aitc.dev`)가 커뮤니티 인프라이므로 자체 호스팅 확보 또는 기본값 전환 정책 확정.
+Dave 결정 후 착수. 최소 4항목: (1) 내부 식별자 공개 적정성 검토 — dog-food 워크스페이스·miniAppId 등이 public 산출물에 새지 않는지 전수 확인, (2) npm trusted publishing 배선, (3) README 상태 note 갱신(private staging → public, 배포 상태 반영), (4) launcher 기본값 전환 — Pages 자체 호스팅은 이미 활성·서빙 중이고, 남은 것은 #11 실기기 스모크 통과 후 `packages/devtools/src/shared/launcher-url.ts`·`packages/debugger/src/mcp/deeplink.ts`의 `LAUNCHER_URL` 2곳 동시 교체다(flip 선행 조건 아님 — `docs/public-flip-runbook.md` §4).
+
+이 4항목의 실사 결과·판단 자료와 flip 당일 실행 순서는 **`docs/public-flip-runbook.md`**가 정본이다(준비 자료 — 실행은 Dave 결정).

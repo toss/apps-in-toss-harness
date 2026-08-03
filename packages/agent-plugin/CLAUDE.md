@@ -172,7 +172,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 슈트 B 불변(반드시 지킨다):
 
-- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 안 부른다(dog-food `31146` 구조적 무접촉). 콘솔/인증을 변이시키는 Bash 명령(`aitcc`/`ait deploy·register·login`/`--api-key`)과 콘솔 MCP(`apps-in-toss-console`) 도구 호출 둘 다 `canUseTool` 게이트로 **결정적으로 deny** — 특히 `miniapp_create`는 매 run 새 `miniAppId`를 서버 발급·자동 기록(= "lock 풀려고 새 앱 만들기" 반-패턴). deploy 격리 경로는 P2 opt-in.
+- **build-only가 기본 — 콘솔 무접촉.** 드라이버는 콘솔 API를 안 부른다(커뮤니티 시절 dog-food 타겟 구조적 무접촉). 콘솔/인증을 변이시키는 Bash 명령(`aitcc`/`ait deploy·register·login`/`--api-key`)과 콘솔 MCP(`apps-in-toss-console`) 도구 호출 둘 다 `canUseTool` 게이트로 **결정적으로 deny** — 특히 `miniapp_create`는 매 run 새 `miniAppId`를 서버 발급·자동 기록(= "lock 풀려고 새 앱 만들기" 반-패턴). deploy 격리 경로는 P2 opt-in.
 - **1차 신호는 토큰**(USD 아님). `total_cost_usd`는 클라이언트 추정치라 참고로만 기록하고, `runs.jsonl`의 토큰을 `pricing.json`으로 리포트 시점에 재계산한다. 가격이 바뀌면 `pricing.json`만 고쳐 과거를 다시 돈다.
 - **메인테이너 수동·오프라인** harness — runtime telemetry 아님, CI gate 아님(조직 telemetry 전면 제거 원칙). 시크릿 값은 어떤 출력에도 싣지 않는다.
 

@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   exposesKey,
+  FORBIDDEN_BASH_PATTERNS,
   isConsoleMcpTool,
   isForbiddenBashCommand,
   STATIC_DISALLOWED_TOOLS,
@@ -288,5 +289,44 @@ describe('MCP 서버 키 ↔ disallowedTools 결합', () => {
         true,
       );
     }
+  });
+});
+
+// --- 패턴 누락 회귀 가드 -------------------------------------------------------
+//
+// isForbiddenBashCommand 단위 테스트(위)는 대표 명령이 차단되는지만 본다 —
+// FORBIDDEN_BASH_PATTERNS 배열 자체에서 카테고리 하나가 통째로 삭제돼도, 남은
+// 패턴이 우연히 같은 대표 명령을 잡으면(예: 다른 카테고리 정규식이 부분적으로
+// 겹치면) 그 단위 테스트는 계속 통과할 수 있다. 이 블록은 배열 자체를 검사해
+// 5개 카테고리(aitcc / ait deploy / ait register / ait login / --api-key)가
+// 전부 살아있음을 개수 + 카테고리별 존재로 직접 고정한다 — 하나라도 빠지면
+// 반드시 실패한다.
+describe('FORBIDDEN_BASH_PATTERNS 불변 (패턴 누락 회귀 가드)', () => {
+  it('패턴 개수가 5개로 고정돼야 한다 (조용한 삭제/병합 방지)', () => {
+    expect(FORBIDDEN_BASH_PATTERNS.length).toBe(5);
+  });
+
+  it('5개 카테고리가 각각 최소 하나의 패턴으로 표현돼야 한다', () => {
+    const sources = FORBIDDEN_BASH_PATTERNS.map((re) => re.source);
+    expect(
+      sources.some((s) => s.includes('aitcc')),
+      'aitcc 카테고리 누락',
+    ).toBe(true);
+    expect(
+      sources.some((s) => s.includes('deploy')),
+      'ait deploy 카테고리 누락',
+    ).toBe(true);
+    expect(
+      sources.some((s) => s.includes('register')),
+      'ait register 카테고리 누락',
+    ).toBe(true);
+    expect(
+      sources.some((s) => s.includes('login')),
+      'ait login 카테고리 누락',
+    ).toBe(true);
+    expect(
+      sources.some((s) => s.includes('api-key')),
+      '--api-key 카테고리 누락',
+    ).toBe(true);
   });
 });
