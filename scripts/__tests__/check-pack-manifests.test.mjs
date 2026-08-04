@@ -41,7 +41,9 @@ async function withTempWorkspace(packageManifests, fn) {
 describe('readWorkspacePackages + findPhantomDependencies — 현재 repo 상태', () => {
   test('현재 실제 repo는 위반이 없다 (#18 해소 — internal-protocol이 shared/로 강등돼 workspace 밖)', async () => {
     const packages = await readWorkspacePackages(REPO_ROOT);
-    assert.ok(packages.length >= 4, `워크스페이스 패키지가 충분히 발견돼야 한다 (found ${packages.length})`);
+    // packages/devtools 제거(C4, 2026-08-05)로 워크스페이스 패키지가 4개에서
+    // 3개(agent-plugin/debugger/debug-console)로 줄었다.
+    assert.ok(packages.length >= 3, `워크스페이스 패키지가 충분히 발견돼야 한다 (found ${packages.length})`);
 
     const violations = findPhantomDependencies(packages);
     assert.deepEqual(violations, [], `위반이 발견됨: ${JSON.stringify(violations, null, 2)}`);

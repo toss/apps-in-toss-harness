@@ -113,5 +113,5 @@ dev 전용이다.
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`
 - debug-console facet 상세: `<이 skill의 base directory>/references/debug-console.md`
 - 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 panel·CDP relay 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 on-device 디버깅), `setup-phone-preview` (실기기 WebKit 미리보기 병행). 설정 완료 후 콘솔 등록·업로드는 console MCP 도구가 담당한다.
-- `@apps-in-toss/devtools`(mock+panel+unplugin, 브라우저 dev 전용): https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
+- `@apps-in-toss/devtools`(mock+panel+unplugin, 브라우저 dev 전용): https://github.com/toss/apps-in-toss-harness/tree/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools
 - `@apps-in-toss/debug-console`(on-device attach + eruda) · `@apps-in-toss/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger

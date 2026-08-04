@@ -28,7 +28,7 @@ scope-out(#5, 클라이언트 mock만 harness가 다룸), scaffold 축은
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — public flip(#8) 전제. 커뮤니티 marketplace와의 병존/폐기는 open question |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
-| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 배포 모델 재정의 대기) | **전환 중(전제 변경 감지 2026-08-04 — §5 문항 6 상태 갱신 참고, 아래 서술은 재정의 대기)** — 새 배포 모델(Dave 확정)에서 devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어 `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다. 소비자는 wf만 설치하면 devtools가 transitive로 도달하고 직접 설치하지 않는다 — 소비자 배선은 wf subpath re-export(`@apps-in-toss/web-framework/devtools`) import가 될 예정(platform PR에서 확정, 실배포 실증(D1b) 전에는 skill 본문 불변). `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미 변경 예정. harness `packages/devtools`는 이관·실증(D1b) 후 제거 예정 |
+| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 배포 모델 재정의 대기) | **전환 중(전제 변경 감지 2026-08-04 — §5 문항 6 상태 갱신 참고, 아래 서술은 재정의 대기)** — 새 배포 모델(Dave 확정)에서 devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어 `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다. 소비자는 wf만 설치하면 devtools가 transitive로 도달하고 직접 설치하지 않는다 — 소비자 배선은 wf subpath re-export(`@apps-in-toss/web-framework/devtools`) import가 될 예정(platform PR에서 확정, 실배포 실증(D1b) 전에는 skill 본문 불변). `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미 변경 예정. harness `packages/devtools`는 이관·실증(D1b) 후 제거 예정. **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** — D1b 실증을 기다리지 않고 maintainer 지시로 앞당겨 실행됨(이슈 #74 참고); 위 skill 재배선·`--no-devtools` 의미 변경은 아직 미완료로 남아 있다 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
 | 4 | auth | `appLogin()` mock (클라이언트만) | agent-plugin (클라이언트 mock) — 서버 연동은 harness 범위 밖 | oidc-bridge/-cloud 제거. **결정(Dave, 2026-07-31, harness#5)**: 서버 구현(공식 백엔드 토큰 검증 연동)은 harness에서 scope-out — "작동하는 미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가". station 4는 `appLogin()` mock으로 클라이언트 개발까지만 다루고, `auth-setup` skill은 신설하지 않는다 |
 | 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
@@ -227,3 +227,9 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
    attach는 harness의 `inject-debug-console` skill이 `import
    '@apps-in-toss/debug-console/auto'` 수동 배선으로 전담해야 한다 — skill
    본문 변경은 D1b 실증 후 진행한다(실배포 전 skill 불변 원칙).
+
+   **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** —
+   위 미확정 4건 중 D1b 실증 자체를 기다리지 않고 maintainer 지시로
+   harness 쪽 사본만 앞당겨 제거했다(이슈 #74 참고; sites/launcher 툴체인
+   독립도 같은 PR에서 함께 처리). (i)·(ii)·(iv)와 tunnel 거처(iii)는 여전히
+   미확정이며 다음 PR에서 다룬다.

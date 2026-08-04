@@ -10,8 +10,9 @@
 일괄 수정). 파이프라인
 (`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
 실행된다 — 아직 한 번도 배포를 실행하지 않았다. 워크플로의 `package` 선택지에
-남아 있는 `devtools` 항목은 과도기 동안의 비상용 옵션이다(harness
-`packages/devtools`가 이관·제거되기 전까지).
+있던 `devtools` 항목은 제거됐다 — harness `packages/devtools`가 C4(2026-08-05)로
+제거됐기 때문이다(당초 이관·제거 이후 제거할 예정이었으나 D1b 해소를 기다리지
+않고 조기 실행됨, §7b 참고).
 
 ## 1. npmjs.com 쪽 준비
 
@@ -34,9 +35,9 @@
    하나의 의존 없음)로 실배포한다.
 3. `npm install @apps-in-toss/debug-console@next`로 별도 환경에서 설치 실증.
 4. 문제 없으면 나머지 1개(`debugger`)를 같은 방식으로. **`devtools`는 이 순서에
-   포함하지 않는다** — platform 이관 대상이라 wf(`@apps-in-toss/web-framework`)의
-   transitive dependency로 발행된다(D1b). release.yml의 `package` 선택지에
-   남은 `devtools` 항목은 과도기 동안의 비상용 옵션일 뿐이다.
+   포함되지 않는다** — platform 이관 대상이라 wf(`@apps-in-toss/web-framework`)의
+   transitive dependency로 발행된다(D1b). release.yml의 `package` 선택지에서도
+   `devtools`는 제거됐다(harness `packages/devtools` 제거·C4, 2026-08-05).
 5. 검증이 끝나면 `npm dist-tag add @apps-in-toss/<pkg>@<version> latest`로
    승격한다.
 
@@ -86,13 +87,15 @@ npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 �
   | `npm publish <tarball>` | ✗ | ✗ |
   | `npm publish .` (디렉터리 기준) | ✓ | ✓ |
 
-  즉 `packages/devtools/package.json`의 `prepublishOnly` 체인은 **이 워크플로
-  경로에서 한 번도 돌지 않는다.** 그 체인이 부르던 `build`·`typecheck`·`test`는
-  워크플로가 별도 스텝으로 이미 돌리므로 공백이 아니지만,
-  `check:mcp-react-free`·`check:test-runner-dist`·`check:debug-surface-absent`는
-  그렇지 않아서 **CI(`ci.yml`)에서 직접 돌린다.** 새 발행 전 검사를 추가할 때도
-  `prepublishOnly`가 아니라 `ci.yml`에 넣어라 — `prepublishOnly`는 사람이
-  디렉터리에서 손으로 publish하는 경우의 최후 방어선으로만 남겨 둔다.
+  즉 (이제 제거된) `packages/devtools/package.json`의 `prepublishOnly` 체인은
+  **이 워크플로 경로에서 한 번도 돌지 않았다** — 이 예시 자체는 devtools
+  제거(C4, 2026-08-05)로 무의미해졌지만, 원칙(아래)은 남는다: 그 체인이
+  부르던 `build`·`typecheck`·`test`는 워크플로가 별도 스텝으로 이미 돌리므로
+  공백이 아니지만, `check:mcp-react-free`·`check:test-runner-dist`·
+  `check:debug-surface-absent`는 그렇지 않아서 **CI(`ci.yml`)에서 직접
+  돌린다.** 새 발행 전 검사를 추가할 때도 `prepublishOnly`가 아니라
+  `ci.yml`에 넣어라 — `prepublishOnly`는 사람이 디렉터리에서 손으로 publish하는
+  경우의 최후 방어선으로만 남겨 둔다.
 
 ## 5. internal-protocol phantom devDependency (#18) — 결정: 옵션 4
 
@@ -211,8 +214,9 @@ pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음
    결정한다.
 3. **전체 CI 시퀀스로 검증** — `lint → build → check:dashboard-html-fresh →
    check:mcp-react-free → check:test-runner-dist → check:debug-surface-absent
-   → check:footprint-absent → check:pack-manifests → qa:fidelity → typecheck
-   → test`. agent-plugin의 `pnpm test`가 `validate-plugin.mjs` 검증
+   → check:pack-manifests → typecheck → test`(`check:footprint-absent`·
+   `qa:fidelity`는 devtools 단독 소유 step이었다 — packages/devtools 제거와
+   함께 ci.yml에서도 없어졌다, C4). agent-plugin의 `pnpm test`가 `validate-plugin.mjs` 검증
    (`shared/__tests__/validate.test.ts`·`validate-negative.test.ts`)을
    포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인된다.
 4. **README ko/en을 같은 PR에서 동시 갱신** — `debugger`·`debug-console`의
@@ -244,12 +248,19 @@ wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 res
 4. **baseline epoch 판단** — 슈트 B baseline epoch을 갱신할지 사람이
    판단한다(측정 여정 자체가 바뀌므로 이전 epoch과 직접 비교가 어려울 수
    있다).
-5. **harness `packages/devtools` 제거(C4)** — 이관·실증이 끝났으므로 harness
-   쪽 패키지를 제거한다. 이관 대상·경계는
-   `packages/devtools/docs/porting-to-platform.md` 참고. 이 시점이
-   `packages/devtools/docs/porting-to-platform.md`의 "launcher URL 계약"
-   절에서 말하는 "harness 사본이 제거될 때까지" 유지되는 `LAUNCHER_URL` 2곳
-   동시 교체 규칙의 종료 시점이기도 하다.
+5. **harness `packages/devtools` 제거(C4)** — **실행 완료(2026-08-05, C4
+   조기 실행)**. 정상 순서라면 이관·실증(D1b)이 끝난 뒤 진행할 항목이지만,
+   maintainer 지시로 D1b 해소를 기다리지 않고 앞당겨 실행됐다(이슈 #74
+   참고) — wf 소스 monorepo(사내)의 자체 devtools(AIT-6577)가 harness 사본을
+   대체했다. 이관 대상·경계는 git history(commit b5515ae 이전)의
+   `packages/devtools/docs/porting-to-platform.md` 참고 — 파일 자체는 C4로
+   제거됨. 같은 PR에서 잔여 결합(sites/launcher 툴체인 독립, ci.yml의
+   devtools 전용 step 2줄 제거, release.yml `package` 선택지에서 devtools
+   제거)도 함께 처리됐다. `LAUNCHER_URL`은 이제 `packages/debugger/src/mcp/deeplink.ts`
+   1곳이 단독 정본이다(devtools 쪽 사본은 패키지와 함께 제거됨). **주의**:
+   이 5번 항목만 조기 실행됐다 — 위 1~4번(skill 재설계·템플릿 폐기·eval
+   fixture 교체·baseline epoch 판단)과 아래 6번(D1b 실증 기록)은 아직
+   미완료이며 D1b가 실제로 해소되는 시점에 별도로 진행한다.
 6. **실증(D1b) 결과 기록** — 실행 날짜, 소비자 프로젝트에서
    `require.resolve('@apps-in-toss/web-framework/devtools')` 성공 여부, dev
    server panel 렌더 확인 여부를 여기에 남긴다. *(자리만 마련 — 실증 전에는

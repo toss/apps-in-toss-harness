@@ -1,5 +1,5 @@
 {
-  "_comment": "일방향 vendored import 파이프라인 상태 파일. 각 packages/<name>이 apps-in-toss-community 조직의 어느 repo/path에서, 어느 ref까지 반영됐는지 기록한다. mode 설명: 'hardfork'는 이 repo에서 이미 갈라져 나가 자동 덮어쓰기가 금지된 패키지 — 새 상류 커밋은 patch로만 사람이 선별 cherry-pick한다(현재 5개 패키지 전부). 'snapshot'은 과거 모드로, 상류를 정본으로 통째로 덮어쓸 수 있었다(devtools/debugger/debug-console/internal-protocol이 harness#25 결정 2026-07-31로 전환되기 전까지 이 모드였다) — sync-upstream.mjs는 이 모드를 계속 지원하지만 지금 이 파일 안의 어느 패키지도 쓰지 않는다. lastImportedRef/lastImportedAt은 hardfork에서는 갱신되지 않는 고정값(패치 생성의 diff 기준점)이라 스크립트가 자동으로 건드리지 않는다 — 사람이 손으로 고치지 마라. 자세한 절차·모드 결정 근거는 docs/upstream-sync.md. `packages.<name>.localPath`(선택)는 로컬 반영 대상이 packages/<name> 기본값이 아닐 때만 명시한다 — harness#18(옵션 4)로 internal-protocol이 pnpm workspace 밖 shared/internal-protocol로 강등되며 처음 쓰였다; sync-upstream.mjs/upstream-drift-audit.mjs의 resolvePackageTargetDir()가 이 필드를 읽는다.",
+  "_comment": "일방향 vendored import 파이프라인 상태 파일. 각 packages/<name>이 apps-in-toss-community 조직의 어느 repo/path에서, 어느 ref까지 반영됐는지 기록한다. mode 설명: 'hardfork'는 이 repo에서 이미 갈라져 나가 자동 덮어쓰기가 금지된 패키지 — 새 상류 커밋은 patch로만 사람이 선별 cherry-pick한다(현재 4개 패키지 전부 — devtools는 harness packages/devtools 자체가 C4로 제거되며 이 파일에서도 제거됨, 2026-08-05). 'snapshot'은 과거 모드로, 상류를 정본으로 통째로 덮어쓸 수 있었다(devtools/debugger/debug-console/internal-protocol이 harness#25 결정 2026-07-31로 전환되기 전까지 이 모드였다) — sync-upstream.mjs는 이 모드를 계속 지원하지만 지금 이 파일 안의 어느 패키지도 쓰지 않는다. lastImportedRef/lastImportedAt은 hardfork에서는 갱신되지 않는 고정값(패치 생성의 diff 기준점)이라 스크립트가 자동으로 건드리지 않는다 — 사람이 손으로 고치지 마라. 자세한 절차·모드 결정 근거는 docs/upstream-sync.md. `packages.<name>.localPath`(선택)는 로컬 반영 대상이 packages/<name> 기본값이 아닐 때만 명시한다 — harness#18(옵션 4)로 internal-protocol이 pnpm workspace 밖 shared/internal-protocol로 강등되며 처음 쓰였다; sync-upstream.mjs/upstream-drift-audit.mjs의 resolvePackageTargetDir()가 이 필드를 읽는다.",
   "packages": {
     "agent-plugin": {
       "_comment": "hardfork 완료 (skill 7종 제거, /ait:<verb> rename, manifest 재작성 — 이 repo가 정본). 상류 재스냅샷 금지, 선별 cherry-pick만. lastImportedRef는 하드포크의 베이스가 된 커밋(harness commit d456387 'chore: monorepo 골격 + 1차 스냅샷').",
@@ -11,53 +11,6 @@
       "lastImportedRef": "fcfbec98d178b9f6abbda1f24f7172f6ebbd725a",
       "lastImportedAt": "2026-07-28T14:01:27+09:00",
       "mode": "hardfork"
-    },
-    "devtools": {
-      "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다(상류가 정본, git archive로 통째로 덮어쓰기). 전환 사유: harness가 packages/devtools 안에서 계속 손수정을 쌓는 한 localOnly 등록이 PR마다 단조 증가했고(#22 하나가 5개 추가), 등록을 빠뜨리면 다음 --write가 조용히 되돌리는 실패 모드였다(측정 기준 커밋 d7700bb, 클래스 1·2 고정 후에도 42건 잔존). lastImportedRef는 이제 갱신되지 않는 고정 기준점 — sync-upstream.mjs --package devtools를 돌리면 이 ref를 기준으로 diff patch만 생성하고 packages/devtools는 건드리지 않는다. localOnly/dropUpstreamPaths는 지우지 않고 그대로 둔다 — 선별 cherry-pick 시 '이 파일은 harness 손수정/독자 구현이라 상류 버전을 그대로 받으면 안 된다'는 대조 기준으로 계속 쓴다. 근거·절차는 docs/upstream-sync.md.",
-      "upstream": {
-        "owner": "apps-in-toss-community",
-        "repo": "devtools",
-        "path": "."
-      },
-      "lastImportedRef": "0834f986185e13af4b5ca1eb724bd7661f4d5101",
-      "lastImportedAt": "2026-07-30T23:40:22+09:00",
-      "mode": "hardfork",
-      "localOnly": [
-        "README.md",
-        "README.en.md",
-        "docs/superpowers/plans/2026-04-10-mock-panel-split.md",
-        "docs/superpowers/plans/2026-04-12-sdk-example.md",
-        "docs/superpowers/plans/2026-04-18-00-orchestration.md",
-        "docs/superpowers/plans/2026-04-18-B-ci-e2e-gating.md",
-        "docs/superpowers/plans/2026-04-18-C1-peer-range-and-proxy-throw.md",
-        "docs/superpowers/plans/2026-04-18-C2-sdk-compat-matrix.md",
-        "docs/superpowers/plans/2026-04-18-e2e-fixture.md",
-        "docs/superpowers/specs/2026-04-12-sdk-example-design.md",
-        "docs/superpowers/specs/2026-04-18-e2e-and-sdk-compat-design.md",
-        "docs/superpowers/specs/2026-04-18-e2e-fixture-design.md",
-        "docs/superpowers/specs/2026-05-18-in-app-debug-mcp.md",
-        "docs/pages-deploy-verification.md",
-        "src/shared/launcher-url.ts",
-        "src/shared/launcher-url.test.ts",
-        "e2e/fixture/index.html",
-        "assets/og/image.png",
-        "e2e/fixture/vite.config.ts",
-        "e2e/fixture/main.tsx",
-        "scripts/build-og-image.tsx",
-        "scripts/og/template.tsx",
-        "src/unplugin/tunnel.ts",
-        "src/__tests__/unplugin-tunnel.test.ts"
-      ],
-      "_localOnly_comment": "harness 커밋 89f3e33(2026-07-31, 'README 설치·import 스코프 불일치 해소 + 미배포 명시')가 설치 명령을 @apps-in-toss/*로 손으로 통일하고 '아직 npm 미배포' 문구를 추가했다 — 상류 community README는 여전히 @ait-co/*라, localOnly 없이 재동기화하면 이 수동 수정이 조용히 사라진다. docs/superpowers/**·meta/**(11+1개 파일, 커밋 bc666f0)는 normalize-upstream.mjs의 PRESERVED_FILE_PATTERNS로 정규화만 건너뛸 뿐 snapshot 덮어쓰기는 막지 않는다 — 아카이브 배너·umbrella 참조 제거가 다음 sync에 사라지지 않게 여기서도 명시한다(#21). docs/pages-deploy-verification.md·src/shared/launcher-url.ts는 상류에 대응 파일이 없는 harness 전용 신규 파일(2026-07-31 GitHub Pages 배포·launcher URL 단일화 작업) — localOnly가 없으면 상류에 없다는 이유만으로 다음 snapshot sync가 통째로 삭제한다. e2e/fixture/index.html·assets/og/image.png·e2e/fixture/vite.config.ts·e2e/fixture/main.tsx·scripts/build-og-image.tsx·scripts/og/template.tsx(2026-07-31, #25 위험 클래스 1)는 `https://toss.github.io/apps-in-toss-harness/`가 실제로 서빙하는 Pages 표면 중 devtools 패키지에 남은 부분이다(.github/workflows/deploy-fixture.yml → `e2e:build` → e2e/fixture/vite.config.ts의 build.rollupOptions.input으로 확인) — 되돌아가면 e2e/fixture/index.html의 `<title>`·canonical·og:url/og:image·JSON-LD `sameAs`가 커뮤니티 도메인·조직으로 복귀해 공개 페이지에 커뮤니티 브랜드가 그대로 노출되고(.html은 TEXT_LIKE_EXTENSIONS에 없어 정규화가 되살려주지도 않는다), vite.config.ts의 `copyOgImage` 플러그인(#15가 고친 og:image 404 재발 방지)과 base 오버라이드가 삭제된다. src/unplugin/tunnel.ts·src/__tests__/unplugin-tunnel.test.ts(2026-07-31, #25 위험 클래스 2 — PR #22 `git show --stat aa763c3`로 실제 변경 파일 확인)는 `AIT_LAUNCHER_URL` env override의 소비자·회귀 테스트다 — src/shared/launcher-url.ts(위에서 이미 보호)만 지키고 이 2개를 무방비로 두면, override 상수 자체는 살아남지만 그걸 실제로 배선하는 unplugin 코드와 TOTP 미노출을 지키는 회귀 테스트가 다음 snapshot sync에서 통째로 사라진다 — 기능이 죽은 티도 안 나면서 아무도 쓰지 않는 코드가 되고, 회귀가 재발해도 테스트가 못 잡는다. 잔재 마커가 0인 순수 신규 작업이라 '잔재 검사'로도 이 drift를 못 잡는다(#25). **harness#40(상류 df1f45e 선별 수용)로 `src/mcp/deeplink.ts`·`src/mcp/attach-orchestrator.ts`·그 테스트 2개(`src/mcp/__tests__/{deeplink,debug-server}.test.ts`)는 devtools에서 완전히 삭제됐다** — 그 4개는 이제 debugger 쪽 사본(아래 debugger 항목의 클래스 2)만 존재하므로 devtools localOnly에서도 제거했다: devtools에 없는 파일을 '지키겠다'고 등록해 두는 건 의미가 없다. tunnel.ts·unplugin-tunnel.test.ts는 debugger 쪽에 대응 파일이 없는 devtools 전용 배선이라 그대로 남는다. `meta/env3-test-execution-redesign.md`도 같은 PR에서 devtools에서 완전히 사라졌다(src/test-runner 이관과 함께 packages/debugger/docs/env3-test-execution-redesign.md로 파일 자체가 옮겨감) — devtools localOnly에서 제거하고 debugger 항목에 새로 등록했다. **launcher PWA 표면 8개(`e2e/fixture/public/letterbox-probe/{index.html,fullscreen/manifest.webmanifest}`·`e2e/fixture/launcher/{index.html,Launcher.tsx,main.tsx,navbar.ts}`·`e2e/fixture/public/launcher/{manifest.webmanifest,sw.js}`)는 docs/release-plan.md Phase 1 B4(2026-08-04)로 devtools 밖 `sites/launcher/`(pnpm workspace 비소속)로 완전히 이전됐다** — devtools 안에 더 이상 물리적으로 존재하지 않으므로 localOnly에서 제거했다(위 harness#40 사례와 동일 원칙: 없는 파일을 지키겠다고 등록해 두지 않는다). sites/launcher/는 upstream-sync.mjs의 대상이 아니다(대응하는 packages/<name> 상류가 없다) — 그 표면의 향후 보호는 이 파일이 아니라 sites/launcher/ 자체가 git 이력·리뷰로 지킨다. 남은 letterbox-probe 2개(`e2e/fixture/public/letterbox-probe/index.html`·`fullscreen/manifest.webmanifest`)의 '커뮤니티 오픈소스 문구 축약형·HTML 구조 제거' 사유는 이제 sites/launcher/ 쪽 파일에 적용되는 내용이라 이 파일에서는 의미가 없어 함께 제거했다.",
-      "dropUpstreamPaths": [
-        "e2e/shim-composition.test.ts",
-        "e2e/fixture/public/CNAME",
-        "e2e/fixture/public/llms.txt",
-        "e2e/fixture/public/robots.txt",
-        "e2e/fixture/public/sitemap.xml",
-        "e2e/fixture/public/og/image.png"
-      ],
-      "_dropUpstreamPaths_comment": "polyfill×mock 합성 e2e 테스트 — 2026-07-31 harness의 polyfill 절단(CLAUDE.md 참조)으로 함께 제거됨. 상류 devtools repo는 폐기하지 않았으므로 재동기화 시 되살아나지 않게 명시적으로 계속 제외한다. polyfill을 다시 들이는 결정이 나기 전까지 유지. e2e/fixture/public/{CNAME,llms.txt,robots.txt,sitemap.xml,og/image.png}는 커밋 33771c1이 지웠지만 .upstream.json에 기록하지 않아 다음 snapshot sync가 되살리는 구멍이었다(#21) — CNAME이 되살아나면 GitHub Pages 배포가 커뮤니티 도메인을 커스텀 도메인으로 주장하고, llms.txt/robots.txt/sitemap.xml도 커뮤니티 도메인 좌표를 공개 서빙한다. og/image.png는 처음엔 localOnly(하네스 버전이 이겨야 한다) 후보로 보였지만, e2e/fixture/vite.config.ts의 copyOgImage 플러그인이 이미 단일 소스 packages/devtools/assets/og/image.png를 빌드 시점에 dist/og/image.png로 복사하도록 되어 있어(1b72b14 머지) public/ 아래에 두 번째 사본을 두면 build:og 재실행 시 조용히 drift만 생긴다 — 그래서 다섯 개 전부 dropUpstreamPaths다."
     },
     "debugger": {
       "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다. 전환 사유는 devtools 항목과 동일(단조 증가하는 localOnly, 등록 누락 시 조용한 되돌림 — 측정 기준 커밋 d7700bb, 잔존 21건). lastImportedRef는 이제 갱신되지 않는 고정 기준점(diff patch 생성 기준)이다. 상류 debugger repo의 packages/debugger 서브디렉토리만 추출 대상이었다는 사실 자체는 바뀌지 않는다. localOnly는 지우지 않고 유지 — 선별 cherry-pick 대조 기준. .gitignore·biome.json은 초기 벤더링(커밋 1432504) 때 community debugger repo의 **repo-root** 설정을 packages/<sub> 서브트리 '안으로' 손으로 복사해 넣은 것이라 상류 서브트리 추출에는 애초에 존재하지 않는다(#21) — hardfork 하에서도 '상류에 없는 파일'이라는 사실은 그대로라 cherry-pick 시 참고 가치가 있다. debugger repo 자체는 pnpm workspace라 3패키지(debugger/debug-console/internal-protocol)가 같은 repo·같은 ref를 공유한다.",

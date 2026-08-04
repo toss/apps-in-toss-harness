@@ -15,7 +15,7 @@ argument-hint: ''
 
 `/ait:setup-phone-preview` 한 번으로 **실기기(폰) 미리보기** 환경을 준비한다.
 
-devtools `tunnel` 옵션([`@ait-co/devtools@^0.1.19`](https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools))은
+devtools `tunnel` 옵션([`@ait-co/devtools@^0.1.19`](https://github.com/toss/apps-in-toss-harness/tree/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools))은
 Vite dev server가 뜰 때 Cloudflare quick tunnel을 자동으로 열고, 터미널에
 `*.trycloudflare.com` URL + ASCII QR을 출력한다. 이 URL을 launcher PWA
 (`https://devtools.aitc.dev/launcher/`) 안에서 열면 폰 홈 화면에 고정된

@@ -3,38 +3,20 @@
 // collecting this file — see vitest.config.ts `include`.
 
 import { describe, expect, it } from 'vitest';
-// Ground truth: panel env-1 CSS constants exported from src/panel/styles.ts.
-// Any drift between the launcher constants (below) and the panel CSS values
-// (here) will be caught by the parity assertions in this file.
-//
-// NOTE (harness B4, launcher ownership move): this is a deliberate residual
-// cross-package coupling — the launcher now lives at sites/launcher/ (outside
-// the pnpm workspace) but this ONE test file still reaches back into
-// packages/devtools/src/panel/styles.ts. It is intentionally NOT duplicated
-// locally: copying the constants would make this parity check tautological
-// (it would only ever compare a local copy against itself). This file is
-// test-only — it is never imported by the shipped launcher build — so the
-// coupling doesn't affect the Pages deploy. It has to be resolved (duplicate
-// the constants, or drop the parity check) when packages/devtools is removed
-// (C4, docs/npm-release.md §7b) and this relative path stops resolving.
-import {
-  PANEL_NAVBAR_BACK_FONT_SIZE_PX,
-  PANEL_NAVBAR_BACK_GLYPH,
-  PANEL_NAVBAR_BACK_PADDING,
-  PANEL_NAVBAR_ICON_SIZE_PX,
-  PANEL_NAVBAR_TITLE_GAP_PX,
-  PANEL_NAVBAR_TITLE_MARGIN_LEFT_PX,
-} from '../../../packages/devtools/src/panel/styles.js';
+// NOTE (harness C4, packages/devtools removal): this file used to also
+// import panel env-1 CSS constants from packages/devtools/src/panel/styles.ts
+// and assert launcher/panel spacing parity against them (see git history
+// before commit b5515ae for the removed import and the "spacing parity"
+// describe block below). That parity target no longer exists — devtools was
+// removed — and duplicating the constants locally would have made the check
+// tautological (comparing a local copy against itself), so the parity
+// assertions were dropped rather than kept as dead weight. The one assertion
+// that remained meaningful standalone (a real-device measured value, not a
+// cross-package comparison) is kept below.
 import {
   AIT_NAV_BAR_HEIGHT_PARTNER,
   computeNavBarBridgeInsets,
   extractLauncherSearch,
-  LAUNCHER_NAVBAR_BACK_FONT_SIZE_PX,
-  LAUNCHER_NAVBAR_BACK_GLYPH,
-  LAUNCHER_NAVBAR_BACK_PADDING,
-  LAUNCHER_NAVBAR_ICON_SIZE_PX,
-  LAUNCHER_NAVBAR_TITLE_GAP_PX,
-  LAUNCHER_NAVBAR_TITLE_MARGIN_LEFT_PX,
   parseNavBarTheme,
   parseNavBarTransparent,
   parseNavBarType,
@@ -47,37 +29,6 @@ describe('AIT_NAV_BAR_HEIGHT_PARTNER', () => {
     // Duplicated from src/panel/viewport.ts by value (the fixture does not import
     // from src/). If this assertion fails the two constants have drifted.
     expect(AIT_NAV_BAR_HEIGHT_PARTNER).toBe(54);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Spacing parity guard (#510): bidirectional — both sides import real constants,
-// so a change to either src/panel/styles.ts OR navbar.ts will break these tests.
-// ---------------------------------------------------------------------------
-
-describe('launcher nav-bar spacing parity with panel styles.ts (#510)', () => {
-  it('icon size: launcher constant matches panel .ait-navbar-icon (width/height)', () => {
-    expect(LAUNCHER_NAVBAR_ICON_SIZE_PX).toBe(PANEL_NAVBAR_ICON_SIZE_PX);
-  });
-
-  it('title-group gap: launcher constant matches panel .ait-navbar-title gap', () => {
-    expect(LAUNCHER_NAVBAR_TITLE_GAP_PX).toBe(PANEL_NAVBAR_TITLE_GAP_PX);
-  });
-
-  it('title-group marginLeft: launcher constant matches panel .ait-navbar-title margin-left', () => {
-    expect(LAUNCHER_NAVBAR_TITLE_MARGIN_LEFT_PX).toBe(PANEL_NAVBAR_TITLE_MARGIN_LEFT_PX);
-  });
-
-  it('back-button font-size: launcher constant matches panel .ait-navbar-back font-size', () => {
-    expect(LAUNCHER_NAVBAR_BACK_FONT_SIZE_PX).toBe(PANEL_NAVBAR_BACK_FONT_SIZE_PX);
-  });
-
-  it('back-button padding: launcher constant matches panel .ait-navbar-back padding', () => {
-    expect(LAUNCHER_NAVBAR_BACK_PADDING).toBe(PANEL_NAVBAR_BACK_PADDING);
-  });
-
-  it('back glyph: launcher constant matches panel viewport.ts glyph', () => {
-    expect(LAUNCHER_NAVBAR_BACK_GLYPH).toBe(PANEL_NAVBAR_BACK_GLYPH);
   });
 });
 

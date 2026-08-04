@@ -6,7 +6,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all five packages — agent-plugin, devtools, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. We're currently in private staging, ahead of the public switch-over, and `@apps-in-toss/*` npm packages haven't been published yet. `devtools`, `debugger`, and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
+We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) We're currently in private staging, ahead of the public switch-over, and `@apps-in-toss/*` npm packages haven't been published yet. `debugger` and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
 
 ## Quick start
 
@@ -69,12 +69,11 @@ The harness's standard registration and upload flow uses only the console MCP's 
 
 ## Packages
 
-Four packages managed as a pnpm workspace.
+Three packages managed as a pnpm workspace (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed).
 
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin for Claude Code — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
-| `@apps-in-toss/devtools` | `packages/devtools` | Mock SDK + floating devtools panel + generic bundler plugin | Not yet published to npm |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | Not yet published to npm |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | Not yet published to npm |
 
