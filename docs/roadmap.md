@@ -3,8 +3,9 @@
 > **상태: 부분 확정** (harness#7). §1~§4(station map·station별 AC·1.0 정의·
 > cross-cutting 자산 거취)는 확정됐다 — 이슈 작성자가 "이 확정은 §5의 open
 > question 5건과 독립적으로 가능하다"고 명시했다(harness#7 코멘트,
-> 2026-07-31). 미확정은 두 가지뿐이다: **§5 open question**(그중 2·4·5는 이미
-> 해소/잠정 확정 — §5 참고, 나머지 1·3은 각자의 게이트 대기)과 **§3 1.0
+> 2026-07-31 — 이후 devtools 배포 모델 전환 관련 항목 1건이 추가돼 현재는
+> 6건이다). 미확정은 두 가지뿐이다: **§5 open question**(그중 2·4·5는 이미
+> 해소/잠정 확정 — §5 참고, 나머지 1·3·6은 각자의 게이트 대기)과 **§3 1.0
 > 조건4의 "배포" 정의 재확정**(검수·릴리즈를 포함하는지). 진척 추적은
 > milestone [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1)이
 > 담당한다.
@@ -27,7 +28,7 @@ scope-out(#5, 클라이언트 mock만 harness가 다룸), scaffold 축은
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — public flip(#8) 전제. 커뮤니티 marketplace와의 병존/폐기는 open question |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
-| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 잔여는 스코프·URL 전환) | 구조 유지 — devtools는 opt-in 프로젝트 devDependency, `/ait:new`가 기본 배선. 패키지 스코프만 `@apps-in-toss/*`로 전환 |
+| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 이후 wf 3.x transitive로 재이관 진행 중) | **전환 중** — 새 배포 모델(Dave 확정)에서 devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어 `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다. 소비자는 wf만 설치하면 devtools가 transitive로 도달하고 직접 설치하지 않는다 — 소비자 배선은 wf subpath re-export(`@apps-in-toss/web-framework/devtools`) import가 될 예정(platform PR에서 확정, 실배포 실증(D1b) 전에는 skill 본문 불변). `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미 변경 예정. harness `packages/devtools`는 이관·실증(D1b) 후 제거 예정 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
 | 4 | auth | `appLogin()` mock (클라이언트만) | agent-plugin (클라이언트 mock) — 서버 연동은 harness 범위 밖 | oidc-bridge/-cloud 제거. **결정(Dave, 2026-07-31, harness#5)**: 서버 구현(공식 백엔드 토큰 검증 연동)은 harness에서 scope-out — "작동하는 미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가". station 4는 `appLogin()` mock으로 클라이언트 개발까지만 다루고, `auth-setup` skill은 신설하지 않는다 |
 | 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
@@ -46,7 +47,9 @@ commit 시점에 강제한다.
 MCP 배치 원칙(#1에서 확정): **manifest 기본 포함은 remote HTTP 2종(docs MCP ·
 console MCP)뿐이고, endpoint가 실재하기 전에는 placeholder로도 넣지 않는다.**
 로컬 프로세스가 필요한 debugger MCP는 opt-in(프로젝트 `.mcp.json`)이며, devtools는
-MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`로 제외 가능).
+MCP가 아니다. devtools는 wf 3.x transitive dependency로 배포 모델이 전환 중이라
+과도기 동안은 프로젝트 devDependency로 남아 있다(`/ait:new`에서 `--no-devtools`로
+제외 가능 — 전환 완료(D1b) 후 이 플래그는 배선 skip으로 의미가 바뀔 예정).
 
 **2026-07-30 두 endpoint의 실재가 확인되어 manifest에 기본 포함됐다** (서버 키는
 공식 문서 표기와 동일):
@@ -109,10 +112,15 @@ MCP가 아니라 프로젝트 devDependency다(`/ait:new`에서 `--no-devtools`�
 deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 남는 것을 허용한다.
 `@ait-co/*` devtools 소비의 소거 경로는 커뮤니티 결합 절단 배치(B1-B9, 하드카피 후
 스코프·링크·브랜딩을 harness 정본으로 정규화하는 작업)다 — 설치·실행 경로의
-스코프 치환만 D1(`@apps-in-toss/{devtools,debugger,debug-console}` npm 미배포)
-해소 시점까지 보류된다. 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다.
-해소 시 실행할 체크리스트는 `docs/npm-release.md` §7(scope-install flip 체크리스트)에
-고정돼 있다.
+스코프 치환 게이트는 둘로 나뉜다. **D1a**: `@apps-in-toss/debugger`·
+`@apps-in-toss/debug-console` npm 실발행+latest 승격(해소 주체 Dave·
+release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가 기계 치환된다.
+**D1b**: wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 resolve
+실증(해소 주체 Dave·platform PR + wf 릴리즈) — 해소 시 devtools **설치 절차
+자체가 삭제**된다(치환이 아니다). harness `packages/devtools`도 이관·실증 후
+제거된다. 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다. D1a 해소 직후
+체크리스트는 `docs/npm-release.md` §7a, D1b 해소 직후 체크리스트는 같은 문서
+§7b에 고정돼 있다.
 
 ## 4. Cross-cutting 자산 거취
 
@@ -126,11 +134,11 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 
 ## 5. Open questions (확정 필요)
 
-5건 모두 "지금 결정 안 하면 진행이 막히는" 항목은 아니다 — 각각 확정되는 게이트
+6건 모두 "지금 결정 안 하면 진행이 막히는" 항목은 아니다 — 각각 확정되는 게이트
 시점이 다른 구조다: 1·3은 #8(public flip) 시점, 2는 #5(auth 축 재정의) 시점,
-4·5는 #3(console MCP GW) 시점에 확정한다. 2·4·5는 각자의 게이트를 이미
-지났다 — 아래 각 항목에 해소/잠정 확정 근거를 남긴다. 1·3은 해당 게이트가
-아직 열리지 않아 open으로 유지한다.
+4·5는 #3(console MCP GW) 시점, 6은 D1b(devtools wf transitive 배포 실증) 시점에
+확정한다. 2·4·5는 각자의 게이트를 이미 지났다 — 아래 각 항목에 해소/잠정 확정
+근거를 남긴다. 1·3·6은 해당 게이트가 아직 열리지 않아 open으로 유지한다.
 
 1. **station 0 marketplace 거취** — 커뮤니티 marketplace 병존 기간과 사용자 안내
    방식 (#8과 연동).
@@ -168,3 +176,31 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
    아니다). 용어 "Deploy Key"는 유지, 과도기 모델(워크스페이스-scope·1회
    노출)도 그대로 — GW가 자체 인증을 갖추면 대화형 경로는 GW 인증을 정본으로,
    Deploy Key는 CI/headless 배포 전용으로 역할을 좁힌다는 방향만 남는다 (#3).
+6. **devtools 배포 모델 전환 — 이관 경계 확정 + 잔여 미확정 4건**(2026-08-04
+   신설, 이관 경계는 같은 날 maintainer 지시로 재확정). 확정된 것부터:
+   devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어
+   `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행되고, harness
+   `packages/devtools`는 이관·실증(D1b) 후 제거된다. wf 2.x 지원은 종료되고
+   `--local` 템플릿도 D1b 시점에 폐기된다. **이관 범위는 mock + panel +
+   unplugin 코어(wf→mock alias·패널 자동 주입)로 한정** — cloudflared quick
+   tunnel·debug-console 자동 주입(`optional-peers.ts`)·launcher URL은 debug
+   표면으로 분류돼 이관에서 빠지고 harness/debugger 쪽에 남는다
+   (`packages/devtools/docs/porting-to-platform.md` 참고). **launcher URL
+   계약은 이 경계 확정으로 해소됐다** — platform 쪽 devtools는 launcher
+   코드를 아예 갖지 않으므로 `@apps-in-toss/debugger`가 단독 정본이고,
+   "2-repo 복제 계약을 어떻게 문서화할지" 같은 질문 자체가 없어졌다(harness에
+   남은 devtools 사본이 제거될 때까지만 기존 `LAUNCHER_URL` 2곳 동시 교체
+   규칙을 유지). 미확정 4건: (i) 소비자 배선 방식 — wf subpath
+   re-export(`@apps-in-toss/web-framework/devtools`)로 최종 확정할지는
+   실배포 실증(D1b) 시점에 판가름한다. (ii) devtools가 wf의 버전
+   그룹(changesets fixed)에 포함될지는 platform 관례를 따른다 — 아직 확정
+   안 됨. (iii) **tunnel(phone-preview) 기능의 새 거처** — 환경 2(Sandbox App
+   PWA) 진입에 쓰이던 cloudflared quick tunnel이 이관에서 빠지면서 갈 곳이
+   필요하다. `@apps-in-toss/debugger`로 재배치할지, `setup-phone-preview`
+   skill이 cloudflared를 직접 구동하는 형태로 갈지는 D1b 전에 결정해야
+   한다. (iv) **debug-console 자동 주입 폐지에 따른 수동 배선 일원화** —
+   지금까지 `optional-peers.ts`가 `@apps-in-toss/debug-console` 설치를
+   자동 감지해 주입 코드를 넣었지만 이 로직이 이관에서 빠지므로, 온디바이스
+   attach는 harness의 `inject-debug-console` skill이 `import
+   '@apps-in-toss/debug-console/auto'` 수동 배선으로 전담해야 한다 — skill
+   본문 변경은 D1b 실증 후 진행한다(실배포 전 skill 불변 원칙).
