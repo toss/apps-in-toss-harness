@@ -301,9 +301,12 @@ CLAUDE.md의 "자체 호스팅 확보 또는 기본값 전환 정책 확정"이�
 **(a) 준비 가능 — 세션이 미리 만들 수 있는 것**
 
 - 상수 flip 시 **동시 교체 대상 체크리스트는 이미 정본화돼 있다**
-  (`docs/release-plan.md` Phase 1 + `packages/devtools/docs/pages-deploy-verification.md`):
-  `LAUNCHER_URL` 2곳(devtools·debugger — 값-복제 관계라 하나만 바꾸면 두 MCP가
-  서로 다른 launcher를 가리키는 분열) · 테스트 리터럴 · i18n 문자열
+  (`docs/release-plan.md` Phase 1 + git history(commit b5515ae 이전)의
+  `packages/devtools/docs/pages-deploy-verification.md`, C4로 제거됨):
+  `LAUNCHER_URL` 1곳(`packages/debugger/src/mcp/deeplink.ts` 단독 정본 —
+  devtools 쪽 사본은 harness `packages/devtools` 제거·C4(2026-08-05)로
+  함께 사라져, 더 이상 "값-복제 관계라 하나만 바꾸면 두 MCP가 분열"할 위험이
+  없다) · 테스트 리터럴 · i18n 문자열
   (+`build:dashboard-html` 재생성) · `validate-plugin.mjs`의 `A6_ALLOWLIST_RES`
   정규식 · 남은 문서 일괄. **allowlist 정규식을 빠뜨리면 새 URL이 "커뮤니티
   잔재"로 오탐돼 CI가 실패한다.** 추가 준비 불요.
@@ -322,9 +325,12 @@ CLAUDE.md의 "자체 호스팅 확보 또는 기본값 전환 정책 확정"이�
 
 - **실기기 스모크**: iOS Safari / Android Chrome에서 홈 화면 추가 + attach
   deep-link 완주. 데스크톱 200 확인은 대체하지 못한다(PWA 설치 흐름은 실기기
-  전용 검증). 절차 정본은
-  `packages/devtools/docs/pages-deploy-verification.md` 4번 단계.
-- 그 통과 후에만 `LAUNCHER_URL` 상수 2곳 동시 교체 + 위 (a)의 부수 일괄 교체.
+  전용 검증). 절차 정본은 git history(commit b5515ae 이전)의
+  `packages/devtools/docs/pages-deploy-verification.md` 4번 단계였다(C4로
+  파일 제거 — 절차 자체는 위 §4.1의 `AIT_LAUNCHER_URL` env override로 여전히
+  유효하다).
+- 그 통과 후에만 `LAUNCHER_URL` 상수 1곳(`packages/debugger/src/mcp/deeplink.ts`)
+  교체 + 위 (a)의 부수 일괄 교체.
 - 완료 조건: `aitc.dev` 참조 0건(CHANGELOG·설계 아카이브 제외).
 
 **flip과의 관계**: launcher 상수 flip은 public 전환의 **선행 조건이 아니다**.
@@ -376,9 +382,11 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
    있어야 한다(2번 옵션은 flip 후에 옮기면 이미 공개된 뒤다).
 5. **README ko/en 버전 A 적용 + metadata 준비** — §3.2, §3.5. **두 README는 같은
    커밋에서 함께 바꾼다**(동등 정본 규칙). 아직 `visibility`는 건드리지 않는다.
-6. **CI 전체 시퀀스 green 확인** — `lint → build → 가드 4종 → check:footprint-absent
-   → check:pack-manifests → qa:fidelity → typecheck → test`. 2·5번이 문서·주석만
-   건드렸더라도 `validate-plugin.mjs` 게이트가 걸릴 수 있어 생략하지 않는다.
+6. **CI 전체 시퀀스 green 확인** — `lint → build → 가드 4종 → check:pack-manifests
+   → typecheck → test`(`check:footprint-absent`·`qa:fidelity`는 devtools 단독
+   소유 step이었다 — harness `packages/devtools` 제거·C4로 ci.yml에서도
+   없어졌다). 2·5번이 문서·주석만 건드렸더라도 `validate-plugin.mjs` 게이트가
+   걸릴 수 있어 생략하지 않는다.
 7. **오픈소스 공개 승인 절차 완료 확인** — `docs/release-plan.md` Phase 3 첫
    체크박스. 조직 절차·승인 라인은 maintainer-internal 기록이 정본이라 여기
    적지 않는다. 8번(visibility flip)의 하드 게이트다. **Dave 확인.**

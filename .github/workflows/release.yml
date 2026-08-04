@@ -12,7 +12,6 @@ on:
         default: all
         options:
           - all
-          - devtools
           - debugger
           - debug-console
       dist_tag:
@@ -52,10 +51,9 @@ jobs:
           PACKAGE_INPUT: ${{ inputs.package }}
         run: |
           case "$PACKAGE_INPUT" in
-            all) echo "packages=debug-console debugger devtools" >> "$GITHUB_OUTPUT" ;;
+            all) echo "packages=debug-console debugger" >> "$GITHUB_OUTPUT" ;;
             debug-console) echo "packages=debug-console" >> "$GITHUB_OUTPUT" ;;
             debugger) echo "packages=debugger" >> "$GITHUB_OUTPUT" ;;
-            devtools) echo "packages=devtools" >> "$GITHUB_OUTPUT" ;;
             *)
               echo "::error::unknown package input: ${PACKAGE_INPUT}"
               exit 1
@@ -136,11 +134,8 @@ jobs:
       # scripts/__tests__/ 같은 루트 전용 테스트를 얹을 수 있어서(`pnpm test` =
       # `pnpm -r test && pnpm test:scripts`), `pnpm -r test`만 직접 부르면 이런
       # 루트 레벨 게이트가 조용히 빠질 수 있다. build가 test보다 먼저인 것도
-      # 의도다 — 현재 사유는 devtools의 터널 테스트
-      # (packages/devtools/src/__tests__/unplugin-tunnel.test.ts)가
-      # workspace-link된 @apps-in-toss/debugger의 dist/를 동적 import하기
-      # 때문. devtools가 platform으로 이관·제거된 뒤(D1b)에도 순서를 유지해야
-      # 하는 잔여 사유 둘: (a) packages/debugger/src/mcp/__tests__/bin-shebang.test.ts가
+      # 의도다 — packages/devtools 제거(C4) 후에도 순서를 유지해야 하는 잔여
+      # 사유 둘: (a) packages/debugger/src/mcp/__tests__/bin-shebang.test.ts가
       # it.skipIf(!existsSync(dist))라 dist가 없으면 조용히 skip되어 커버리지
       # 상실, (b) debugger가 소유한 dist 기반 check 3종
       # (check:mcp-react-free·check:test-runner-dist·check:debug-surface-absent)이

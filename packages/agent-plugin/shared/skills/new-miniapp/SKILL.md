@@ -263,7 +263,7 @@ pnpm --dir ./<package_name> install
 
 에러 메시지에 없는 패키지를 임의로 allow하지 않는다 — 그 세션에서 실제로 막힌
 패키지만 승인한다. `cloudflared` 항목은 devtools README의
-["cloudflared 바이너리가 준비되지 않을 때"](https://github.com/toss/apps-in-toss-harness/blob/main/packages/devtools/README.md#cloudflared-바이너리가-준비되지-않을-때)
+["cloudflared 바이너리가 준비되지 않을 때"](https://github.com/toss/apps-in-toss-harness/blob/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools/README.md#cloudflared-바이너리가-준비되지-않을-때)
 절(harness#57)에 더 자세한 배경(38MB 바이너리, `onlyBuiltDependencies` vs
 `allowBuilds` 선택 기준)이 있다 — 필요하면 그쪽을 참조한다.
 
@@ -519,7 +519,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   위임하는 템플릿(+ `--tds` 변형), IAP/IAA 샘플, brownfield `add-sample`
   서브커맨드. 이 skill의 호출 규칙·후처리 근거는 create-ait-app 0.2.x 소스
   실측이다.
-- devtools (mock + panel + unplugin): https://github.com/toss/apps-in-toss-harness/tree/main/packages/devtools
+- devtools (mock + panel + unplugin): https://github.com/toss/apps-in-toss-harness/tree/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools
 - 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
   getPage)로 조회한다.
 - `--local` 폴백 템플릿 정책: `shared/templates/README.md` (react-vite는 wf

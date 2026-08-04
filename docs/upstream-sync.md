@@ -92,13 +92,14 @@ node scripts/upstream-drift-audit.mjs --json      # 기계 판독용
 ## mode 두 가지
 
 `.upstream.json`의 `packages.<name>.mode`가 갈래를 결정한다. **현재
-5개 패키지(agent-plugin/devtools/debugger/debug-console/internal-protocol)
-전부 `hardfork`다** — `snapshot`은 devtools 계열 4패키지가 한때 쓰던
-모드지만 harness#25 결정(2026-07-31)으로 전환됐고, `sync-upstream.mjs`는
-레거시 지원으로 계속 구현하고 있을 뿐 지금 어느 패키지도 이 모드를 쓰지
-않는다.
+4개 패키지(agent-plugin/debugger/debug-console/internal-protocol)
+전부 `hardfork`다** — devtools는 harness `packages/devtools` 자체가 C4로
+제거되며 이 파일에서도 제거됐다(2026-08-05). `snapshot`은 devtools 계열
+4패키지(devtools 포함, 당시 기준)가 한때 쓰던 모드지만 harness#25
+결정(2026-07-31)으로 전환됐고, `sync-upstream.mjs`는 레거시 지원으로 계속
+구현하고 있을 뿐 지금 어느 패키지도 이 모드를 쓰지 않는다.
 
-### `hardfork` (agent-plugin, devtools, debugger, debug-console, internal-protocol — 전 패키지)
+### `hardfork` (agent-plugin, debugger, debug-console, internal-protocol — 전 패키지)
 
 이 harness가 해당 서브트리의 정본이라 상류를 자동으로 덮어쓰지 않는다. 새
 상류 커밋은 `.upstream-patches/<pkg>-<sha12>.patch`로 diff만 떨어뜨리고,
@@ -387,24 +388,23 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
   것을 정확한 수치로 대체한다. 이 중 **가장 위험도가 높은 두 클래스는 이미
   `localOnly`로 고정했다**(harness 커밋 — 이 문단을 갱신한 PR):
   - **클래스 1 — 공개 서빙되는 Pages 표면** (`https://toss.github.io/apps-in-toss-harness/`가
-    서빙하는 파일 중 devtools 패키지에 남은 부분: `e2e/fixture/index.html`·
+    서빙하던 파일 중 devtools 패키지에 남아 있던 부분 — `e2e/fixture/index.html`·
     `assets/og/image.png`·`e2e/fixture/vite.config.ts`·`e2e/fixture/main.tsx`·
-    `scripts/build-og-image.tsx`·`scripts/og/template.tsx`, 6개 파일, devtools
-    `localOnly` 참고). 이 목록은 원래 12개였다 — launcher 축 아래 6개 파일
-    (fixture launcher 소스 4개 + 그 public 정적 자산 2개)은 release-plan
-    Phase 1 B4(2026-08-04)로 devtools 밖 워크스페이스 비소속 디렉터리로 완전히
-    이전되며 devtools localOnly에서도 제거됐다 — 이관된 곳은 대응하는
-    packages 상류가 없어 이 upstream-sync 파이프라인의 대상이 아니므로 더
-    이상 여기서 셀 항목이 아니다.
+    `scripts/build-og-image.tsx`·`scripts/og/template.tsx`, 6개 파일). **이제 이
+    클래스는 소멸했다** — packages/devtools 자체가 C4(2026-08-05)로 완전히
+    제거되며 이 6개 파일도, 그 보호 대상이던 devtools `localOnly`(및
+    `.upstream.json`의 devtools 항목 자체)도 함께 사라졌다. 더 이상 이
+    upstream-sync 파이프라인이 지킬 대상이 없다. (이 목록은 원래 12개였다 —
+    launcher 축 아래 6개 파일(fixture launcher 소스 4개 + 그 public 정적
+    자산 2개)은 release-plan Phase 1 B4(2026-08-04)로 이미 그 전에 devtools
+    밖 워크스페이스 비소속 디렉터리로 이전되며 제거됐었다.)
   - **클래스 2 — PR #22(`AIT_LAUNCHER_URL` override)의 소비자·회귀 테스트**
-    (devtools 2개: `src/unplugin/tunnel.ts`·`src/__tests__/unplugin-tunnel.test.ts`,
-    debugger 4개: `src/mcp/deeplink.ts`·`src/mcp/attach-orchestrator.ts`·
-    `src/mcp/__tests__/{deeplink,debug-server}.test.ts` — devtools/debugger 두
-    `localOnly` 참고). devtools 쪽은 원래 6개였다 — harness#40(상류 df1f45e
-    선별 수용)이 `deeplink.ts`·`attach-orchestrator.ts`와 그 테스트 2개를
-    devtools에서 완전히 삭제하고 debugger 쪽 사본만 남겼으므로, 지금은 두
-    목록이 겹치지 않는 별개의 집합이다(devtools의 `tunnel.ts`에는 애초부터
-    debugger 쪽 대응 파일이 없었다).
+    (devtools 쪽 2개: `src/unplugin/tunnel.ts`·`src/__tests__/unplugin-tunnel.test.ts`
+    — packages/devtools 자체가 C4(2026-08-05)로 제거되며 이 둘도 함께
+    사라졌다, 더 이상 보호 대상이 아니다; tunnel/phone-preview를 debugger로
+    이식하는 작업은 후속 PR 과제로 남는다. debugger 4개: `src/mcp/deeplink.ts`·
+    `src/mcp/attach-orchestrator.ts`·`src/mcp/__tests__/{deeplink,debug-server}.test.ts`
+    — debugger `localOnly` 참고, 이쪽은 그대로 유지된다).
 
   두 클래스를 등록한 뒤 남은 잔여 drift는 devtools 42건 / debugger 21건 /
   debug-console 5건 / internal-protocol 1건, 합계 **69건**(잔재 마커 46건)이다

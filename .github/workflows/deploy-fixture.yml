@@ -1,6 +1,8 @@
 name: Deploy fixture to Pages
 
-# workflow_dispatch only, intentionally — see packages/devtools/docs/pages-deploy-verification.md.
+# workflow_dispatch only, intentionally — see git history (commit b5515ae and
+# earlier) for packages/devtools/docs/pages-deploy-verification.md, removed
+# with packages/devtools (C4).
 # GitHub Pages is not enabled for this repo yet (has_pages: false). Do not add a
 # `push` trigger until Pages is enabled from the repo admin UI, or every push
 # will fail with a Pages-not-configured error. Enabling Pages is a maintainer
@@ -40,16 +42,15 @@ jobs:
 
       # The launcher PWA source lives outside the pnpm workspace at
       # sites/launcher/ by design (docs/release-plan.md Phase 1 "launcher
-      # 표면 소유권 이전(B4)") — removing packages/devtools later (D1b/C4)
-      # won't drag launcher hosting down with it. The build CONFIG still
-      # lives in packages/devtools/e2e/ for now (see that file's top comment
-      # for why — sites/launcher has no node_modules of its own yet, so a
-      # config placed there can't resolve its own `vite`/`@vitejs/plugin-react`
-      # imports). `pnpm install` above is what populates the node_modules this
-      # borrows from — no `pnpm build` (compiling devtools' own dist) is
-      # needed here since the launcher doesn't import @apps-in-toss/devtools
-      # or any other workspace package's build output.
-      - run: pnpm --filter @apps-in-toss/devtools exec vite build --config e2e/launcher-site.vite.config.ts
+      # 표면 소유권 이전(B4)") — removing packages/devtools (D1b/C4, done)
+      # didn't drag launcher hosting down with it. The build config also now
+      # lives at sites/launcher/vite.config.ts itself (toolchain independence,
+      # C4) — its deps (vite, @vitejs/plugin-react, react, ...) are root
+      # devDependencies, resolved via the repo root's node_modules, an
+      # ancestor of sites/launcher/. `pnpm install` above is what populates
+      # that node_modules — no `pnpm build` is needed here since the launcher
+      # doesn't import any workspace package's build output.
+      - run: pnpm exec vite build --config sites/launcher/vite.config.ts
         env:
           # base_path is '' (custom domain root) or '/<repo-name>' (project
           # Pages site, no trailing slash) — Vite's `base` must end in '/'.

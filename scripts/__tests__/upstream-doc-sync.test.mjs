@@ -122,6 +122,18 @@ describe('docs/upstream-sync.md ↔ normalize-upstream.mjs', () => {
 describe('docs/upstream-sync.md ↔ .upstream.json localOnly', () => {
   test('클래스 1(공개 서빙 Pages 표면) 열거가 devtools localOnly와 일치해야 한다', () => {
     const bullet = classBullet(1);
+
+    if (!UPSTREAM.packages.devtools) {
+      // harness packages/devtools 자체가 C4(2026-08-05)로 제거됐다 — .upstream.json에
+      // devtools 항목이 통째로 없으므로 지킬 localOnly도 없다. 문서가 그 소멸을
+      // 정확히 설명하는지만 확인한다 (더 이상 파일 열거 ↔ localOnly 대조는 의미가 없다).
+      assert.ok(
+        /제거/.test(bullet),
+        '클래스 1: devtools가 .upstream.json에서 사라졌는데 문서가 제거 사실을 설명하지 않는다',
+      );
+      return;
+    }
+
     const tokens = pathTokens(bullet);
     assert.ok(tokens.length >= 5, `클래스 1 경로 추출이 ${tokens.length}건뿐 — 추출기가 깨졌을 수 있다`);
 
@@ -154,16 +166,25 @@ describe('docs/upstream-sync.md ↔ .upstream.json localOnly', () => {
     const devtoolsPart = bullet.slice(0, splitMatch.index);
     const debuggerPart = bullet.slice(splitMatch.index);
 
-    const devtoolsResolved = resolveAgainstLocalOnly(
-      pathTokens(devtoolsPart),
-      localOnly('devtools'),
-      '클래스 2/devtools',
-    );
-    assert.equal(
-      devtoolsResolved.size,
-      statedCount(bullet, 'devtools'),
-      '문서가 적은 devtools 개수와 실제 열거 개수가 다르다',
-    );
+    if (!UPSTREAM.packages.devtools) {
+      // devtools가 .upstream.json에서 완전히 사라졌다(C4) — devtools 쪽 절반은
+      // 더 이상 localOnly 대조 대상이 아니다. 문서가 그 소멸을 설명하는지만 본다.
+      assert.ok(
+        /제거/.test(devtoolsPart),
+        '클래스 2/devtools: devtools가 사라졌는데 문서가 제거 사실을 설명하지 않는다',
+      );
+    } else {
+      const devtoolsResolved = resolveAgainstLocalOnly(
+        pathTokens(devtoolsPart),
+        localOnly('devtools'),
+        '클래스 2/devtools',
+      );
+      assert.equal(
+        devtoolsResolved.size,
+        statedCount(bullet, 'devtools'),
+        '문서가 적은 devtools 개수와 실제 열거 개수가 다르다',
+      );
+    }
 
     const debuggerResolved = resolveAgainstLocalOnly(
       pathTokens(debuggerPart),
