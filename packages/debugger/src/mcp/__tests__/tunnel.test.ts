@@ -2,14 +2,40 @@
  * Unit tests for src/mcp/tunnel.ts:
  *   - renderQr: unicode half-block QR output
  *   - startTunnelHealthProbe child-exit detection (FIX 1, issue #571)
+ *   - parseTrycloudflareUrl / sanitizeCloudflaredOutput (#421, ported from the
+ *     deleted devtools' `src/unplugin/tunnel.ts`, harness#79)
+ *   - startQuickTunnel timeout + stderr-tail diagnostics (#421, same port)
  */
+import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MAX_REISSUE_ATTEMPTS,
+  parseTrycloudflareUrl,
   type QuickTunnel,
   renderQr,
+  sanitizeCloudflaredOutput,
+  startQuickTunnel,
   startTunnelHealthProbe,
 } from '../tunnel.js';
+
+// startQuickTunnel spawns the `cloudflared` binary via child_process — out of
+// unit-test scope for the happy path (verified by hand / e2e, same spirit as
+// the "web 모드는 e2e" rule). The timeout/premature-exit hardening below is
+// unit-tested against a fake `cloudflared` Tunnel (never spawns a real one).
+class FakeTunnel extends EventEmitter {
+  process = { pid: 4242 };
+  stop = vi.fn();
+}
+
+let fakeTunnel: FakeTunnel;
+
+vi.mock('cloudflared', () => ({
+  bin: '/fake/cloudflared-bin-does-not-exist',
+  install: vi.fn().mockResolvedValue(undefined),
+  Tunnel: {
+    quick: vi.fn(() => fakeTunnel),
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Helper: fake QuickTunnel with controllable onUnexpectedExit
@@ -261,5 +287,170 @@ describe('startTunnelHealthProbe — FIX 1: child-exit immediate reissue', () =>
     expect(arg.childPid).toBe(childPid);
 
     stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseTrycloudflareUrl (#421, ported verbatim from devtools' deleted
+// `src/unplugin/tunnel.ts` — harness#79)
+// ---------------------------------------------------------------------------
+
+describe('parseTrycloudflareUrl', () => {
+  it('extracts the URL from a typical cloudflared log line', () => {
+    const line = '2024-01-01T00:00:00Z INF |  https://chunky-purple-frog.trycloudflare.com  |';
+    expect(parseTrycloudflareUrl(line)).toBe('https://chunky-purple-frog.trycloudflare.com');
+  });
+
+  it('returns null for an unrelated noise line', () => {
+    expect(parseTrycloudflareUrl('INF Registered tunnel connection conn=0')).toBeNull();
+  });
+
+  it('returns null when there is no match', () => {
+    expect(parseTrycloudflareUrl('https://example.com/not-a-tunnel')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sanitizeCloudflaredOutput (#421, ported verbatim from devtools' deleted
+// `src/unplugin/tunnel.ts` — harness#79) — SECRET-HANDLING
+// ---------------------------------------------------------------------------
+
+describe('sanitizeCloudflaredOutput', () => {
+  it('replaces full https:// trycloudflare URL with placeholder', () => {
+    const line = 'Registered tunnel connection: https://chunky-purple-frog.trycloudflare.com\n';
+    const result = sanitizeCloudflaredOutput(line);
+    expect(result).not.toContain('chunky-purple-frog');
+    expect(result).toContain('<HOST>.trycloudflare.com');
+  });
+
+  it('replaces wss:// trycloudflare URL with placeholder', () => {
+    const line = 'Relay URL: wss://chunky-purple-frog.trycloudflare.com/relay\n';
+    const result = sanitizeCloudflaredOutput(line);
+    expect(result).not.toContain('chunky-purple-frog');
+    expect(result).toContain('<HOST>.trycloudflare.com');
+  });
+
+  it('replaces bare trycloudflare hostname', () => {
+    const line = '{"url":"chunky-purple-frog.trycloudflare.com","level":"info"}\n';
+    const result = sanitizeCloudflaredOutput(line);
+    expect(result).not.toContain('chunky-purple-frog');
+    expect(result).toContain('<HOST>.trycloudflare.com');
+  });
+
+  it('preserves non-trycloudflare diagnostic content unchanged', () => {
+    const line = 'level=error msg="failed to serve tunnel" error="context canceled"\n';
+    const result = sanitizeCloudflaredOutput(line);
+    expect(result).toBe(line);
+  });
+
+  it('preserves generic error codes and messages (diagnostic value)', () => {
+    const line = 'error 1101: An error occurred on the server\n';
+    const result = sanitizeCloudflaredOutput(line);
+    expect(result).toBe(line);
+  });
+
+  it('handles multiple hostnames in one line', () => {
+    const line = 'http://alpha.trycloudflare.com and wss://beta.trycloudflare.com\n';
+    const result = sanitizeCloudflaredOutput(line);
+    expect(result).not.toContain('alpha');
+    expect(result).not.toContain('beta');
+    expect(result.match(/<HOST>\.trycloudflare\.com/g)?.length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startQuickTunnel — #421 hardening: 20s timeout + stderr-tail sanitization
+// (new tests, not a port — devtools' equivalent tested this against
+// `printTunnelBanner`'s sibling `startQuickTunnel`, which had a different
+// shape). Uses a fake `cloudflared` Tunnel — never spawns a real process.
+// ---------------------------------------------------------------------------
+
+describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
+  beforeEach(() => {
+    fakeTunnel = new FakeTunnel();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('rejects after 20s with a friendly manual-command fallback when no URL is reported', async () => {
+    const resultPromise = startQuickTunnel(5173).then(
+      () => {
+        throw new Error('expected startQuickTunnel to reject');
+      },
+      (err: unknown) => err,
+    );
+
+    // Let ensureCloudflaredBin's async fs/install chain settle before the
+    // 20s timer is armed.
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    const err = await resultPromise;
+    expect(err).toBeInstanceOf(Error);
+    const message = (err as Error).message;
+    expect(message).toContain('20');
+    expect(message).toContain('cloudflared tunnel --url http://localhost:5173');
+    expect(message).toContain('manually');
+    // The stalled child is stopped so it doesn't leak as an orphan process.
+    expect(fakeTunnel.stop).toHaveBeenCalled();
+  });
+
+  it('attaches a sanitized stderr tail to the timeout error — real hostnames never leak', async () => {
+    const resultPromise = startQuickTunnel(5173).then(
+      () => {
+        throw new Error('expected startQuickTunnel to reject');
+      },
+      (err: unknown) => err,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    fakeTunnel.emit('stderr', 'connecting to edge, hostname=secret-real-host.trycloudflare.com\n');
+    fakeTunnel.emit('stderr', 'level=error msg="context canceled"\n');
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    const message = ((await resultPromise) as Error).message;
+    expect(message).not.toContain('secret-real-host');
+    expect(message).toContain('<HOST>.trycloudflare.com');
+    expect(message).toContain('context canceled');
+  });
+
+  it('rejects with a sanitized stderr tail when cloudflared exits before assigning a URL', async () => {
+    const resultPromise = startQuickTunnel(5173).then(
+      () => {
+        throw new Error('expected startQuickTunnel to reject');
+      },
+      (err: unknown) => err,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    fakeTunnel.emit('stderr', 'fatal: could not reach secret-real-host.trycloudflare.com\n');
+    fakeTunnel.emit('exit', 1);
+
+    const err = await resultPromise;
+    expect(err).toBeInstanceOf(Error);
+    const message = (err as Error).message;
+    expect(message).toContain('exited');
+    expect(message).toContain('code 1');
+    expect(message).not.toContain('secret-real-host');
+    expect(message).toContain('<HOST>.trycloudflare.com');
+  });
+
+  it('does not attach a stderr tail when no stderr was captured', async () => {
+    const resultPromise = startQuickTunnel(5173).then(
+      () => {
+        throw new Error('expected startQuickTunnel to reject');
+      },
+      (err: unknown) => err,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    fakeTunnel.emit('exit', null);
+
+    const message = ((await resultPromise) as Error).message;
+    expect(message).not.toContain('cloudflared 출력');
   });
 });

@@ -64,6 +64,25 @@ export default definePhoneTestConfig({
 });
 ```
 
+### Real-device preview (`debugger --mode=phone`)
+
+Opens your local dev server (env-2, the Sandbox PWA) directly on a real device. It exposes the dev server through a cloudflared quick tunnel and prints a QR encoding the launcher PWA deep-link to STDOUT — unlike `--mode=debug`/`--mode=dev`, this mode is a plain foreground CLI process, not an MCP stdio process.
+
+```sh
+# Tunnel an already-running dev server (default port 5173)
+npx -p @apps-in-toss/debugger debugger --mode=phone
+
+# Spawn the dev server too — tokens after "-- <dev command>" are never parsed as debugger flags
+npx -p @apps-in-toss/debugger debugger --mode=phone -- vite
+
+# With a CDP relay + HTML dashboard as well (inspect console/network on the device)
+npx -p @apps-in-toss/debugger debugger --mode=phone --cdp -- vite
+```
+
+Key options: `--port <n>` (default 5173), `--cdp` (CDP relay + dashboard, also toggleable via `AIT_TUNNEL_CDP=1`), `--no-qr` (skip the QR). To wire this into project scripts, use the `/ait:setup-phone-preview` skill — it adds `dev:phone`/`dev:phone:cdp` scripts to `package.json` and configures `cloudflared`'s `allowBuilds` setting automatically.
+
+Like `--mode=debug`'s default relay tunnel, the cloudflared quick tunnel is unauthenticated and ephemeral (it disappears when the process exits) — not for production use.
+
 ## Exports / bins
 
 | subpath | contents |
@@ -106,7 +125,7 @@ A plain `pnpm add -D @apps-in-toss/debugger` can leave an "Ignored build scripts
 Most of the time this needs no action: the first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading it on that first run. If you'd rather pull that download forward to `pnpm install` time (e.g. to warm a CI cache, or to avoid the delay on first start), pick one:
 
 - **Interactive**: run `pnpm approve-builds` and select `cloudflared`.
-- **Declarative**: in a pnpm workspace, add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml` (this is what `/ait:setup-phone-preview` automates — see [`"Run on a real phone"`](../devtools/README.en.md#run-on-a-real-phone) in the `@apps-in-toss/devtools` README). In a single project (not a workspace), add `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` instead.
+- **Declarative**: in a pnpm workspace, add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml` (this is what `/ait:setup-phone-preview` automates — see [Real-device preview](#real-device-preview-debugger---modephone) above). In a single project (not a workspace), add `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` instead.
 
 npm/yarn users are unaffected — those package managers run postinstall by default.
 

@@ -64,6 +64,25 @@ export default definePhoneTestConfig({
 });
 ```
 
+### 실기기 미리보기 (`debugger --mode=phone`)
+
+로컬 dev 서버(env-2, Sandbox PWA)를 실기기에서 바로 열어보는 모드다. cloudflared quick tunnel로 dev 서버를 공개 URL로 노출하고, launcher PWA 딥링크를 인코딩한 QR을 STDOUT에 출력한다 — `--mode=debug`/`--mode=dev`와 달리 이 모드는 MCP stdio 프로세스가 아니라 평범한 foreground CLI 프로세스다.
+
+```sh
+# 이미 떠 있는 dev 서버(기본 포트 5173)를 그대로 터널링
+npx -p @apps-in-toss/debugger debugger --mode=phone
+
+# dev 서버를 함께 기동 — "-- <dev 명령>" 뒤 토큰은 절대 debugger 플래그로 해석되지 않는다
+npx -p @apps-in-toss/debugger debugger --mode=phone -- vite
+
+# CDP relay + HTML 대시보드까지 함께 (실기기에서 콘솔/네트워크 확인)
+npx -p @apps-in-toss/debugger debugger --mode=phone --cdp -- vite
+```
+
+주요 옵션: `--port <n>`(기본 5173), `--cdp`(CDP relay + 대시보드, `AIT_TUNNEL_CDP=1`로도 켤 수 있음), `--no-qr`(QR 생략). 프로젝트에 스크립트로 배선하려면 `/ait:setup-phone-preview` skill을 쓴다 — `package.json`에 `dev:phone`/`dev:phone:cdp` 스크립트를 추가하고 `cloudflared`의 `allowBuilds` 설정까지 자동으로 맞춰준다.
+
+cloudflared quick tunnel은 무인증·임시(프로세스 종료 시 소멸) URL이라는 점은 `--mode=debug`의 기본 relay 터널과 동일하다 — production 용도가 아니다.
+
 ## Exports / bin
 
 | subpath | 내용 |
@@ -106,7 +125,7 @@ export default definePhoneTestConfig({
 대부분은 별도 조치가 필요 없다 — `debugger`(relay/tunnel 대상)를 처음 기동하는 순간 `ensureCloudflaredBin`이 바이너리 부재를 감지해 `cloudflared.install()`을 lazy로 호출하므로, 첫 실행에서 자동으로 다운로드된다. 이 다운로드를 `pnpm install` 시점으로 앞당기고 싶다면(예: CI 캐시 warm-up, 첫 기동 지연 방지) 둘 중 하나를 선택한다:
 
 - **대화형으로 허용**: `pnpm approve-builds`를 실행해 `cloudflared`를 선택.
-- **설정으로 명시**: pnpm 워크스페이스라면 `pnpm-workspace.yaml`의 [`allowBuilds`](https://pnpm.io/settings#allowbuilds)에 `cloudflared: true` 추가(`/ait:setup-phone-preview`가 자동화하는 것도 이 방식이다 — `@apps-in-toss/devtools` README의 [`"Run on a real phone"`](../devtools/README.md#run-on-a-real-phone-실기기-미리보기) 참고). 단일 프로젝트(워크스페이스 아님)라면 `package.json`의 `pnpm.onlyBuiltDependencies`에 `"cloudflared"` 추가.
+- **설정으로 명시**: pnpm 워크스페이스라면 `pnpm-workspace.yaml`의 [`allowBuilds`](https://pnpm.io/settings#allowbuilds)에 `cloudflared: true` 추가(`/ait:setup-phone-preview`가 자동화하는 것도 이 방식이다 — 위 [실기기 미리보기](#실기기-미리보기-debugger---modephone) 절 참고). 단일 프로젝트(워크스페이스 아님)라면 `package.json`의 `pnpm.onlyBuiltDependencies`에 `"cloudflared"` 추가.
 
 npm/yarn 사용자는 postinstall이 기본으로 실행되므로 이 문제와 무관하다.
 

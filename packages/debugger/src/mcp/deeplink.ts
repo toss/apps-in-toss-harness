@@ -1,11 +1,14 @@
 /**
  * URL of the Sandbox launcher PWA.
  *
- * This package's single declaration — `@apps-in-toss/devtools` holds its own
- * copy in `src/shared/launcher-url.ts` (shared there between its `mcp/` and
- * `unplugin/` layers without crossing this package's boundary). Keep the two
- * packages' values — and {@link resolveLauncherUrl}'s override contract below
- * — in sync when either changes.
+ * This package's single declaration. `@apps-in-toss/devtools` used to hold a
+ * byte-identical copy in `src/shared/launcher-url.ts` (shared there between
+ * its `mcp/` and `unplugin/` layers) before that package was removed (C4,
+ * 2026-08-05) — this module is now the sole source of truth for the value.
+ * Both {@link buildLauncherAttachUrl} (env-3/4 MCP attach) and
+ * {@link buildLauncherDeepLink} (env-2/phone-preview quick tunnel, ported
+ * from the deleted `devtools`'s `src/unplugin/tunnel.ts`) read it through
+ * {@link resolveLauncherUrl}.
  */
 const LAUNCHER_URL = 'https://devtools.aitc.dev/launcher/';
 
@@ -19,10 +22,11 @@ export interface ResolvedLauncherUrl {
 
 /**
  * Resolves the launcher base URL, honoring the `AIT_LAUNCHER_URL` env override
- * (issue #19). Mirrors `@apps-in-toss/devtools`'s `src/shared/launcher-url.ts`
- * `resolveLauncherUrl` byte-for-byte — see that file's JSDoc for the full
- * rationale (breaking the chicken-and-egg cycle of issue #11's launcher
- * re-hosting). Keep both copies in sync when either changes.
+ * (issue #19). Used to mirror `@apps-in-toss/devtools`'s
+ * `src/shared/launcher-url.ts` `resolveLauncherUrl` byte-for-byte before that
+ * package was removed (C4, 2026-08-05) — this is now the sole copy. See the
+ * original rationale below (breaking the chicken-and-egg cycle of issue #11's
+ * launcher re-hosting).
  *
  * Read at CALL TIME (not module load) so tests and callers can set/unset the
  * env var per-case, mirroring the existing `AIT_TUNNEL_BASE_URL`/
@@ -191,6 +195,117 @@ export function buildLauncherAttachUrl(
   // Without this flag the output is byte-identical to the previous behaviour.
   if (opts?.selfdebug === true) {
     url += '&selfdebug=1';
+  }
+  return url;
+}
+
+/**
+ * Options for {@link buildLauncherDeepLink}.
+ *
+ * Ported VERBATIM from the deleted `@apps-in-toss/devtools`'s
+ * `src/unplugin/tunnel.ts` (harness#79, C4 devtools removal) — this producer
+ * used to stay 100% in `devtools` (see the historical scope note in
+ * `__tests__/launcher-contract.test.ts`) but relocated here with the rest of
+ * the env-2/phone-preview quick-tunnel path as `--mode=phone`
+ * (`src/dev-bridge/phone-preview.ts`).
+ */
+export interface BuildLauncherDeepLinkOptions {
+  /**
+   * `wss://` relay URL for env-2 CDP wiring. When present the deep-link carries
+   * `&debug=1&relay=<wss>`.
+   */
+  relayWssUrl?: string;
+  /**
+   * Human-readable app name shown in the partner nav bar (`name=` param, #498).
+   * Blank / whitespace-only values are not added.
+   */
+  name?: string;
+  /**
+   * The miniapp's webViewType. When `'game'`, adds `&navBarType=game` to the
+   * deep-link so the launcher enters game nav chrome automatically on scan (#584).
+   * `'partner'` (the launcher's implicit default) is not added to keep the URL
+   * clean.
+   */
+  webViewType?: 'partner' | 'game';
+  /**
+   * Whether the miniapp's navigationBar has `transparentBackground: true`
+   * (granite.config `navigationBar.transparentBackground`, SDK 2.8.0, #587).
+   * When `true`, adds `&navBarTransparent=1` to the deep-link so the launcher
+   * partner bar renders with a transparent background. Omitted when `false` /
+   * undefined to keep the URL clean (back-compat).
+   */
+  navBarTransparent?: boolean;
+  /**
+   * The miniapp's navigationBar theme (granite.config `navigationBar.theme`,
+   * SDK 2.8.0, #587). When `'light'` or `'dark'`, adds `&navBarTheme=<v>` to
+   * the deep-link so the launcher partner bar uses the matching foreground colour.
+   * Omitted when undefined / other values to keep the URL clean (back-compat).
+   */
+  navBarTheme?: 'light' | 'dark';
+}
+
+/**
+ * Build the deep-link URL that QR codes encode: when the launcher PWA is
+ * already on the phone's home screen, scanning this opens it directly into the
+ * live view for `tunnelUrl` (the launcher consumes `?url=` and clears it).
+ * Plain-text raw URL is no longer enough — the launcher gates its setup UI to
+ * the installed PWA, so a raw tunnel URL opened in a normal browser tab would
+ * land on a "please install" screen.
+ *
+ * When `opts.relayWssUrl` is given (env-2 CDP wiring), the deep-link also carries
+ * `&debug=1&relay=<wss>`; the launcher folds those onto the framed tunnel URL so
+ * the in-app debug gate's Layer C (`debug=1` opt-in + `relay=<wss>`) is met and
+ * a Chii target.js is injected into the live view.
+ *
+ * When `opts.name` is given (non-blank), it is added as `&name=` so the launcher
+ * partner bar shows the app name instead of the generic default (#498).
+ *
+ * When `opts.webViewType` is `'game'`, `&navBarType=game` is appended so the
+ * launcher enters game nav chrome (floating capsule, no full bar) automatically
+ * on scan. `'partner'` is the launcher's implicit default and is not added to
+ * keep the URL clean (#584).
+ *
+ * When `opts.navBarTransparent` is `true`, `&navBarTransparent=1` is appended
+ * so the launcher partner bar renders with a transparent background (#587).
+ *
+ * When `opts.navBarTheme` is `'light'` or `'dark'`, `&navBarTheme=<v>` is
+ * appended so the launcher partner bar uses the matching foreground colour (#587).
+ *
+ * Back-compat: the second argument may also be a plain string (`relayWssUrl`)
+ * for callers that haven't migrated to the options object yet.
+ *
+ * The launcher base URL defaults to `https://devtools.aitc.dev/launcher/` and
+ * is overridable via `AIT_LAUNCHER_URL` (issue #19) — see
+ * {@link resolveLauncherUrl}.
+ *
+ * @throws When `AIT_LAUNCHER_URL` is set to an invalid value — see
+ *   {@link resolveLauncherUrl}.
+ */
+export function buildLauncherDeepLink(
+  tunnelUrl: string,
+  optsOrRelay?: string | BuildLauncherDeepLinkOptions,
+): string {
+  // Normalise the overloaded second argument.
+  const opts: BuildLauncherDeepLinkOptions =
+    typeof optsOrRelay === 'string' ? { relayWssUrl: optsOrRelay } : (optsOrRelay ?? {});
+
+  const { url: launcherUrl } = resolveLauncherUrl();
+  const base = `${launcherUrl}?url=${encodeURIComponent(tunnelUrl)}`;
+  let url = base;
+  if (opts.relayWssUrl) {
+    url += `&debug=1&relay=${encodeURIComponent(opts.relayWssUrl)}`;
+  }
+  if (opts.name !== undefined && opts.name.trim() !== '') {
+    url += `&name=${encodeURIComponent(opts.name.trim())}`;
+  }
+  if (opts.webViewType === 'game') {
+    url += '&navBarType=game';
+  }
+  if (opts.navBarTransparent === true) {
+    url += '&navBarTransparent=1';
+  }
+  if (opts.navBarTheme === 'light' || opts.navBarTheme === 'dark') {
+    url += `&navBarTheme=${opts.navBarTheme}`;
   }
   return url;
 }

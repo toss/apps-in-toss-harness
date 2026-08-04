@@ -2,18 +2,26 @@
  * Vendored verbatim from `devtools`'s `src/unplugin/tunnel.ts`
  * (devtools@61aa2d0228df27c2c0ab2405726dd5301067981e, "SPLIT FREEZE"
  * devtools#813) — specifically the `startTunnelDashboard` slice of that file
- * (env-2 HTML dashboard parity, issue #408). The rest of `tunnel.ts`
- * (`startQuickTunnel`, `printTunnelBanner`, `buildLauncherDeepLink`,
- * `sanitizeCloudflaredOutput`, `parseTrycloudflareUrl`) stays in `devtools`'s
- * unplugin — those are `cloudflared`-spawning / ASCII-QR helpers that belong
- * to the vite-plugin dev loop, not the MCP daemon's dev-bridge.
+ * (env-2 HTML dashboard parity, issue #408). The rest of that original
+ * `tunnel.ts` (`startQuickTunnel`, `printTunnelBanner`, `buildLauncherDeepLink`,
+ * `sanitizeCloudflaredOutput`, `parseTrycloudflareUrl`) stayed in `devtools`'s
+ * unplugin at the time — those were `cloudflared`-spawning / ASCII-QR helpers
+ * that belonged to the vite-plugin dev loop, not the MCP daemon's dev-bridge.
  *
- * This is a pure relocation (D2, devtools issue #813 / this repo's issue #2)
- * — the `../mcp/*` import paths below are unchanged because `src/mcp/` is
- * vendored to the sibling `packages/debugger/src/mcp/` directory, preserving
- * the same relative layout tunnel.ts had against devtools' `src/mcp/`.
- * Renaming this module (e.g. splitting further, dropping the `dev-bridge`
- * grouping) is out of scope here — see this repo's issue #3 (D3).
+ * That relocation was a pure move (D2, devtools issue #813 / this repo's
+ * issue #2) — the `../mcp/*` import paths below are unchanged because
+ * `src/mcp/` is vendored to the sibling `packages/debugger/src/mcp/`
+ * directory, preserving the same relative layout tunnel.ts had against
+ * devtools' `src/mcp/`.
+ *
+ * `devtools` itself was later removed entirely (harness#79, C4) — the rest of
+ * its `tunnel.ts` (the pieces that stayed there above) relocated here too, as
+ * `./phone-preview.ts`'s `--mode=phone` CLI composition (`startPhonePreview`,
+ * `renderPhonePreviewBanner`, `waitForPort`, `resolveCdpOption`), re-exported
+ * below alongside this file's own `startTunnelDashboard`. `phone-preview.ts`
+ * reaches this file's `startTunnelDashboard` through a dynamic `import()`
+ * (not a static one) precisely so this file's static re-export of
+ * `phone-preview.ts` never creates an import cycle.
  *
  * The vendored slice below ends at `startTunnelDashboard`. `./cdp-relay.js`,
  * re-exported at the bottom of this file, is NOT vendored — it is the relay
@@ -213,3 +221,22 @@ export {
   type StartDevServerCdpRelayOptions,
   startDevServerCdpRelay,
 } from './cdp-relay.js';
+
+/**
+ * `--mode=phone` composition (harness#79, C4 devtools removal) — the dev-server
+ * quick tunnel + launcher QR axis relocated from the deleted devtools
+ * unplugin. See `./phone-preview.ts`'s module header for the full port
+ * rationale and the `.ait_urls` writer hand-off.
+ */
+export {
+  type PhonePreviewHandle,
+  type RenderPhonePreviewBannerOptions,
+  type RunPhonePreviewOptions,
+  renderPhonePreviewBanner,
+  resolveCdpOption,
+  runPhonePreview,
+  type StartPhonePreviewOptions,
+  startPhonePreview,
+  type WaitForPortOptions,
+  waitForPort,
+} from './phone-preview.js';
