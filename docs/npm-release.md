@@ -1,10 +1,13 @@
 # npm 배포 — Dave가 npm 쪽에서 할 일
 
 `@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2개 패키지를 harness가
-직접 배포하기 위한 준비다(D1a). `@apps-in-toss/devtools`는 새 배포 모델(Dave
-확정)에서 web-framework 소스 monorepo(사내)로 코드 통합되어
-`@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다 — **harness 발행
-대상이 아니다**(D1b, platform PR + wf 릴리즈가 담당). 파이프라인
+직접 배포하기 위한 준비다(D1a). `@apps-in-toss/devtools`는 **harness 발행
+대상이 아니다** — 배포 주체는 wf 소스 monorepo(사내)다. **전제 변경
+감지(2026-08-04)**: 그 monorepo에 독자 계보 devtools가 먼저 머지되어, 기존
+"wf dependencies로 코드 통합(transitive)" 계획은 "사내 monorepo에서 CLI 자동
+설치 devDependency로 발행"으로 재정의 대기다(`docs/roadmap.md` §5 문항 6 상태
+갱신·이슈 #74 코멘트 참고 — §7b 등 이 문서의 transitive 서술은 재정의 PR에서
+일괄 수정). 파이프라인
 (`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
 실행된다 — 아직 한 번도 배포를 실행하지 않았다. 워크플로의 `package` 선택지에
 남아 있는 `devtools` 항목은 과도기 동안의 비상용 옵션이다(harness

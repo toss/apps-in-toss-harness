@@ -1,12 +1,22 @@
 # CLAUDE.md — @apps-in-toss/devtools
 
-⚠️ **정본 이관 예정** — 이 패키지는 web-framework 소스 monorepo(사내)로
-통합되어 `@apps-in-toss/web-framework`(3.x)의 transitive dependency로
-배포될 예정이다. **이관되는 것은 SDK mock + panel + unplugin(mock
-전달체) 코어뿐이다** — cloudflared quick tunnel·debug-console 자동 주입·
-launcher URL 같은 debug 표면은 이관 시 절단되어 harness/`@apps-in-toss/debugger`
-쪽에 남는다. 이관 경계·절차는 `docs/porting-to-platform.md`(이 패키지
-내) 참고. 이관 실증(D1b) 후 harness에서 제거된다.
+⚠️ **전제 변경 감지(2026-08-04) — 이관 계획 보류, 대체·제거 궤도** — 원
+계획은 이 패키지를 web-framework 소스 monorepo(사내)로 통합해 wf 3.x
+transitive dependency로 배포하는 것(D1b)이었으나, 그 목적지에 독자 계보
+devtools(AIT-6577 — community 베이스 + 3.x 네임스페이스 facade, API
+커버리지가 이 사본의 superset, CLI 자동 설치 devDependency 모델)가 먼저
+머지됐다. 이 패키지의 종착지는 "이관"이 아니라 **대체 후 제거**이며,
+D1b는 "사내 monorepo 발행 + CLI 자동 설치 실증"으로 재정의
+대기다(`docs/roadmap.md` §5 문항 6 상태 갱신, 이슈 #74 코멘트). 잔여
+가치는 개별 기여 후보뿐 — launcher 축(`AIT_LAUNCHER_URL` override·Pages
+호스팅)·AdMob plausible 값·fidelity-qa 이식. 이관 경계 분석은
+`docs/porting-to-platform.md`(보류 상태) 참고.
+
+**이 사본에 기능 투자 금지**: 이 mock에는 wf 3.x 재편 표면 대비 export
+결손 20건(네임스페이스 facade 14종 등)이 있다 — `__typecheck`가 정합성만
+검사하고 완전성은 검사하지 않아 조용히 누적된 것이다(루트 CLAUDE.md
+"가드 설계 교훈"). 대체·제거 궤도이므로 여기서 결손을 메우지 마라 —
+수정은 유지보수(빌드·CI 유지) 한도로 제한한다.
 
 ## 패키지 목적·경계
 
@@ -29,7 +39,7 @@ launcher URL 같은 debug 표면은 이관 시 절단되어 harness/`@apps-in-to
 
 ## workspace devDep + CI 순서
 
-`@apps-in-toss/debugger`·`@apps-in-toss/debug-console`이 `devDependencies`(`workspace:*`, `peerDependenciesMeta`로 optional 표시 겸함)로 물려있다 — optional peer 게이팅(아래 절)을 테스트하기 위해서다. 루트 CI(`lint → build → … → test`)에서 build가 test보다 먼저인 것은 devtools 터널 테스트(`src/__tests__/unplugin-tunnel.test.ts`)가 workspace-link된 `@apps-in-toss/debugger`의 `dist/`를 동적 import하기 때문이다. devtools가 platform으로 이관·제거된 뒤(D1b)에도 이 순서를 유지해야 하는 잔여 사유가 둘 있다: (a) `packages/debugger/src/mcp/__tests__/bin-shebang.test.ts`가 `it.skipIf(!existsSync(dist))`라 dist가 없으면 조용히 skip되어 커버리지가 사라진다, (b) debugger가 소유한 dist 기반 check 3종(`check:mcp-react-free`·`check:test-runner-dist`·`check:debug-surface-absent`)이 dist를 읽는다 — 되돌리지 마라(루트 `CLAUDE.md` "CI·push 규약" 참고).
+`@apps-in-toss/debugger`·`@apps-in-toss/debug-console`이 `devDependencies`(`workspace:*`, `peerDependenciesMeta`로 optional 표시 겸함)로 물려있다 — optional peer 게이팅(아래 절)을 테스트하기 위해서다. 루트 CI(`lint → build → … → test`)에서 build가 test보다 먼저인 것은 devtools 터널 테스트(`src/__tests__/unplugin-tunnel.test.ts`)가 workspace-link된 `@apps-in-toss/debugger`의 `dist/`를 동적 import하기 때문이다. devtools가 platform으로 이관·제거된 뒤(D1b)에도 이 순서를 유지해야 하는 잔여 사유가 둘 있다: (a) `packages/debugger/src/mcp/__tests__/bin-shebang.test.ts`가 `it.skipIf(!existsSync(dist))`라 dist가 없으면 조용히 skip되어 커버리지가 사라진다, (b) debugger가 소유한 dist 기반 check 3종(`check:mcp-react-free`·`check:test-runner-dist`·`check:debug-surface-absent`)이 dist를 읽는다 — 되돌리지 마라(루트 `CLAUDE.md` "CI·push 규약" 참고). devtools가 "platform으로 이관"이 아니라 "대체 후 제거"로 귀결돼도(위 헤더) 이 두 사유는 그대로 유효하다.
 
 ## 개명 금지 리터럴 2건
 

@@ -1,5 +1,13 @@
 # devtools → platform 이관 경계 (D1b 준비 자료)
 
+> **상태(2026-08-04): 전제 변경 감지 — 이 문서의 계획은 보류.** 이관
+> 목적지인 wf 소스 monorepo(사내)에 독자 계보 devtools(AIT-6577)가 먼저
+> 머지되어, 이 문서가 전제한 "코드 통합 + wf transitive 발행"은 실행되지
+> 않는다. D1b는 "사내 monorepo 발행 + CLI 자동 설치 실증"으로 재정의
+> 예정(`docs/roadmap.md` §5 문항 6 상태 갱신·이슈 #74 코멘트). 재정의
+> PR까지 기록 보존용으로 유지하며, 잔여 유효분은 이관 경계 분석(무엇이
+> debug 표면인가)이다.
+
 ## 목적
 
 `@apps-in-toss/devtools`는 새 배포 모델(Dave 확정)에서 web-framework 소스
