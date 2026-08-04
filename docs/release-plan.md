@@ -11,9 +11,15 @@
 | 축 | 무엇이 공개되나 | 되돌릴 수 있나 | 상태 |
 |---|---|---|---|
 | 1. GitHub Pages | launcher PWA + fixture 데모 사이트 | 쉽다 — Pages 비활성화 | **완료** (`https://toss.github.io/apps-in-toss-harness/`) |
-| 2. npm 패키지 3종 | 빌드 산출물 + README | **사실상 불가** — 배포 후 72시간이 지나면 unpublish가 막힌다 | 파이프라인 준비 |
+| 2. npm 패키지 2종(`debugger`·`debug-console`) | 빌드 산출물 + README | **사실상 불가** — 배포 후 72시간이 지나면 unpublish가 막힌다 | 파이프라인 준비 |
 | 3. repo public 전환 | 소스 전체 + 커밋 이력 | 되돌려도 이미 클론·인덱싱된 사본은 회수 못 한다 | 미착수 (#8) |
 | 4. plugin marketplace | 사용자 진입점(station 0) | — | 3에 종속 |
+
+**축 2가 3종에서 2종으로 줄어든 이유**: `@apps-in-toss/devtools`는 새 배포
+모델(Dave 확정)에서 web-framework 소스 monorepo(사내)로 코드 통합되어
+`@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다(D1b) — harness가
+직접 npm 배포할 대상이 아니다. `docs/npm-release.md` §7a(debugger·
+debug-console, D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
 
 의존 관계는 **4 ← 3** 하나뿐이다. npm 배포(2)는 repo가 private이어도 가능하므로 3을 기다릴
 이유가 없고, Pages(1)는 이미 독립적으로 끝났다.
@@ -47,6 +53,11 @@
 - [ ] 이어서 테스트 리터럴 · i18n 문자열(+`build:dashboard-html` 재생성) ·
       `validate-plugin.mjs`의 `A6_ALLOWLIST_RES` 정규식 · 남은 문서 일괄 교체.
       **allowlist 정규식을 빠뜨리면 새 URL이 오히려 "커뮤니티 잔재"로 오탐돼 CI가 실패한다.**
+- [ ] **launcher 표면 소유권 이전(B4)** — 현재 launcher PWA 표면(fixture·e2e)이
+      `packages/devtools/e2e/fixture/` 안에 있다. devtools는 platform 이관
+      대상이라 harness에서 제거될 예정(D1b)이므로, 그 전에 이 표면을 pnpm
+      workspace 밖 `sites/launcher/`로 옮겨 devtools 제거가 launcher 서빙을
+      끌고 내려가지 않게 한다.
 
 **완료 조건**: `aitc.dev` 참조 0건(CHANGELOG·설계 아카이브 제외).
 
@@ -56,8 +67,11 @@
 
 ## Phase 2 — npm 배포
 
-`@apps-in-toss/devtools`·`debugger`·`debug-console` 3종. `agent-plugin`과
-`internal-protocol`은 `private: true`라 배포 대상이 아니다.
+`@apps-in-toss/debugger`·`debug-console` 2종. `agent-plugin`과
+`internal-protocol`은 `private: true`라 배포 대상이 아니다. `devtools`도
+이 Phase의 배포 대상이 아니다 — platform 이관 대상이라 wf
+(`@apps-in-toss/web-framework`)의 transitive dependency로 발행된다(D1b,
+`docs/npm-release.md` §7b).
 
 ### 왜 GitHub 설치가 아니라 npm인가
 
@@ -89,7 +103,8 @@
       2026-08-01) 그 devDependency 항목 자체를 없앴다 — 자세한 결정 경위·구조는
       [`docs/npm-release.md`](./npm-release.md) "internal-protocol phantom devDependency"
       절 참고. `scripts/check-pack-manifests.mjs`(baseline 비어 있음)가 CI에서 회귀를 잡는다.
-- [ ] `--tag next`로 1개 패키지 → **실제 설치 실증** → 나머지 2개
+- [ ] `--tag next`로 1개 패키지(`debug-console` 권장) → **실제 설치 실증** →
+      나머지 1개(`debugger`)
 - [ ] 검증 후 `latest` 승격
 - [ ] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip (#10),
       정규화기의 `scope-install`·`scope-external-target` 차단 해제

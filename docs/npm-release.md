@@ -1,8 +1,14 @@
 # npm 배포 — Dave가 npm 쪽에서 할 일
 
-`@apps-in-toss/devtools`·`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 3개
-패키지를 배포하기 위한 준비다. 파이프라인(`.github/workflows/release.yml`)은 이미
-있고 `workflow_dispatch`로만 실행된다 — 아직 한 번도 배포를 실행하지 않았다.
+`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2개 패키지를 harness가
+직접 배포하기 위한 준비다(D1a). `@apps-in-toss/devtools`는 새 배포 모델(Dave
+확정)에서 web-framework 소스 monorepo(사내)로 코드 통합되어
+`@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다 — **harness 발행
+대상이 아니다**(D1b, platform PR + wf 릴리즈가 담당). 파이프라인
+(`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
+실행된다 — 아직 한 번도 배포를 실행하지 않았다. 워크플로의 `package` 선택지에
+남아 있는 `devtools` 항목은 과도기 동안의 비상용 옵션이다(harness
+`packages/devtools`가 이관·제거되기 전까지).
 
 ## 1. npmjs.com 쪽 준비
 
@@ -22,9 +28,12 @@
 1. `workflow_dispatch`를 `dry_run: true`로 먼저 돌려 게이트·pack·publish 흐름을
    끝까지 통과시킨다.
 2. `dry_run: false`, `dist_tag: next`, 패키지 1개(`debug-console` 권장 — 나머지
-   둘의 의존 없음)로 실배포한다.
+   하나의 의존 없음)로 실배포한다.
 3. `npm install @apps-in-toss/debug-console@next`로 별도 환경에서 설치 실증.
-4. 문제 없으면 나머지 2개(`debugger` → `devtools` 순서 권장)를 같은 방식으로.
+4. 문제 없으면 나머지 1개(`debugger`)를 같은 방식으로. **`devtools`는 이 순서에
+   포함하지 않는다** — platform 이관 대상이라 wf(`@apps-in-toss/web-framework`)의
+   transitive dependency로 발행된다(D1b). release.yml의 `package` 선택지에
+   남은 `devtools` 항목은 과도기 동안의 비상용 옵션일 뿐이다.
 5. 검증이 끝나면 `npm dist-tag add @apps-in-toss/<pkg>@<version> latest`로
    승격한다.
 
@@ -169,13 +178,70 @@ pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음
 배포 워크플로(release.yml)는 changesets를 호출하지 않고 package.json에 커밋된 버전을 그대로
 발행하므로, 이 절차는 배포 전 버전 확정 단계에서만 필요하다.
 
-## 7. scope-install flip 체크리스트 (D1 해소 직후)
+## 7a. scope-install flip 체크리스트 (D1a 해소 직후)
 
-`@apps-in-toss/{devtools,debugger,debug-console}` 3패키지가 npm에 실제 배포되어 D1이 해소된 직후 실행하는 절차다.
+`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지가 npm에 실제
+배포되어 D1a가 해소된 직후 실행하는 절차다. `devtools`는 이 절차의 대상이
+아니다 — D1b(§7b)에서 별도로 다룬다.
 
-1. **정규화 스크립트로 일괄 치환** — `NORMALIZE_SCOPE_INSTALL=1`로 `normalize-upstream.mjs`를 대상 패키지에 적용한다. `scope-install`(설치 명령·npx 안내·npm 레지스트리 URL·설치 감지용 grep 문자열)과 `scope-external-target`(스캐폴드 템플릿 devDependency·주입 코드 샘플 등 외부 프로젝트로 그대로 복사되는 콘텐츠)이 같은 게이트로 함께 켜진다 — 설치·실행 안내 전반이 대상이며 구체 지점 수는 여기 하드코딩하지 않는다(`docs/upstream-sync.md` 참고).
-2. **`eval/e2e/baseline.json` 재수립 여부는 사람이 먼저 판단** — 이 파일은 `PRESERVED_FILE_PATTERNS`(메인테이너가 수동으로만 갱신하는 시계열 비교 기준선)라 자동 정규화 대상이 아니다. `@ait-co/devtools` 문자열이 남아 있으므로, 기계 치환 전에 이 스냅샷을 새로 찍을지부터 결정한다.
-3. **전체 CI 시퀀스로 검증** — `lint → build → check:dashboard-html-fresh → check:mcp-react-free → check:test-runner-dist → check:debug-surface-absent → check:footprint-absent → check:pack-manifests → qa:fidelity → typecheck → test`. agent-plugin의 `pnpm test`가 `validate-plugin.mjs` 검증(`shared/__tests__/validate.test.ts`·`validate-negative.test.ts`)을 포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인된다.
-4. **README ko/en을 같은 PR에서 동시 갱신** — "아직 npm 미배포" 문구 제거, `packages/*/README.md`·`README.en.md`의 설치 명령도 함께 갱신한다.
+1. **정규화 스크립트로 일괄 치환** — `NORMALIZE_SCOPE_INSTALL=1`로
+   `normalize-upstream.mjs`를 `debugger`·`debug-console` 2패키지에 적용한다.
+   `scope-install`(설치 명령·npx 안내·npm 레지스트리 URL·설치 감지용 grep
+   문자열)과 `scope-external-target`(스캐폴드 템플릿 devDependency·주입 코드
+   샘플 등 외부 프로젝트로 그대로 복사되는 콘텐츠)이 같은 게이트로 함께
+   켜진다 — 설치·실행 안내 전반이 대상이며 구체 지점 수는 여기 하드코딩하지
+   않는다(`docs/upstream-sync.md` 참고). **주의**: 이 정규화 게이트는 현재
+   devtools·debugger·debug-console 3스코프를 일괄로 켜는 형태다 — D1a가
+   D1b보다 먼저 해소되는 예상 순서라면 `devtools`는 아직 npm에 없는 상태로
+   나머지 2패키지만 먼저 치환해야 하므로, 게이트를 패키지 단위로 분리하는
+   작업이 D1a 시점에 선행 필요하다.
+2. **`eval/e2e/baseline.json` 재수립 여부는 사람이 먼저 판단** — 이 파일은
+   `PRESERVED_FILE_PATTERNS`(메인테이너가 수동으로만 갱신하는 시계열 비교
+   기준선)라 자동 정규화 대상이 아니다. `@ait-co/debugger`·`@ait-co/debug-console`
+   류 문자열이 남아 있으므로, 기계 치환 전에 이 스냅샷을 새로 찍을지부터
+   결정한다.
+3. **전체 CI 시퀀스로 검증** — `lint → build → check:dashboard-html-fresh →
+   check:mcp-react-free → check:test-runner-dist → check:debug-surface-absent
+   → check:footprint-absent → check:pack-manifests → qa:fidelity → typecheck
+   → test`. agent-plugin의 `pnpm test`가 `validate-plugin.mjs` 검증
+   (`shared/__tests__/validate.test.ts`·`validate-negative.test.ts`)을
+   포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인된다.
+4. **README ko/en을 같은 PR에서 동시 갱신** — `debugger`·`debug-console`의
+   "아직 npm 미배포" 문구 제거, `packages/{debugger,debug-console}/README.md`·
+   `README.en.md`의 설치 명령도 함께 갱신한다. `devtools`는 D1b 전까지
+   미배포 상태 문구를 그대로 유지한다.
 
-harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip 트래킹 이슈).
+harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip
+트래킹 이슈).
+
+## 7b. devtools 설치 절차 삭제 체크리스트 (D1b 해소 직후)
+
+wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 resolve 실증까지
+끝나 D1b가 해소된 직후 실행하는 절차다. D1a(§7a)와 성격이 다르다 — 스코프
+**치환**이 아니라 harness가 안내하던 devtools 설치 절차 자체의 **삭제**다
+(소비자는 wf만 설치하면 devtools가 transitive로 도달하므로, harness가 별도로
+안내할 설치 명령이 없어진다).
+
+1. **skill 재설계** — `new-miniapp` 후처리의 devtools devDependency 추가·
+   unplugin 배선 절차를, wf subpath re-export
+   (`@apps-in-toss/web-framework/devtools`) import 배선으로 교체한다(정확한
+   배선 형태는 platform PR에서 확정 — 실배포 실증 전에는 skill 본문을
+   바꾸지 않는다는 원칙에 따라 이 단계 전엔 착수하지 않는다). `--no-devtools`는
+   "설치 제외"에서 "배선 skip"으로 의미가 바뀐다.
+2. **템플릿 폐기** — `--local` 템플릿(wf 2.x 전제)을 폐기한다(wf 2.x 지원
+   종료와 동시).
+3. **eval fixture 교체** — devtools 설치를 전제하던 `eval/e2e/baseline.json`
+   등 fixture를 wf transitive 전제로 다시 찍는다.
+4. **baseline epoch 판단** — 슈트 B baseline epoch을 갱신할지 사람이
+   판단한다(측정 여정 자체가 바뀌므로 이전 epoch과 직접 비교가 어려울 수
+   있다).
+5. **harness `packages/devtools` 제거(C4)** — 이관·실증이 끝났으므로 harness
+   쪽 패키지를 제거한다. 이관 대상·경계는
+   `packages/devtools/docs/porting-to-platform.md` 참고. 이 시점이
+   `packages/devtools/docs/porting-to-platform.md`의 "launcher URL 계약"
+   절에서 말하는 "harness 사본이 제거될 때까지" 유지되는 `LAUNCHER_URL` 2곳
+   동시 교체 규칙의 종료 시점이기도 하다.
+6. **실증(D1b) 결과 기록** — 실행 날짜, 소비자 프로젝트에서
+   `require.resolve('@apps-in-toss/web-framework/devtools')` 성공 여부, dev
+   server panel 렌더 확인 여부를 여기에 남긴다. *(자리만 마련 — 실증 전에는
+   비워 둔다.)*

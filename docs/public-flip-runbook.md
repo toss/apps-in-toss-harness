@@ -390,12 +390,20 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
 11. **npm 배포** — 0번 결과에 따라 이 위치이거나 4번 앞이다. 절차는
     `docs/npm-release.md` §1~§2(trusted publisher 등록 → dry-run → `next`로 1개
     실배포 → 설치 실증 → 나머지 2개 → `latest` 승격). **Dave 게이트.**
-12. **D1 해소 후속 — `docs/npm-release.md` §7(scope-install flip 체크리스트)**.
-    11번이 끝나 3패키지가 실제로 npm에 있는 직후에만 발화한다: 정규화 스크립트
-    일괄 치환 → eval baseline 재수립 여부 사람 판단 → 전체 CI 시퀀스 → README
-    ko/en 동시 갱신(= §3.3 버전 B). **11번 전에 당기지 않는다** — 미배포 상태에서
-    설치 명령을 공식 스코프로 바꾸면 문서가 거짓이 된다.
-13. **launcher 상수 flip** — #11 실기기 스모크 통과 후. flip 축과 독립이며
+12. **D1a 해소 후속 — `docs/npm-release.md` §7a(scope-install flip
+    체크리스트)**. 11번이 끝나 `debugger`·`debug-console` 2패키지가 실제로
+    npm에 있는 직후에만 발화한다: 정규화 스크립트 일괄 치환(devtools 제외) →
+    eval baseline 재수립 여부 사람 판단 → 전체 CI 시퀀스 → 두 패키지 README
+    ko/en 동시 갱신(= §3.3 버전 B, devtools 제외). **11번 전에 당기지
+    않는다** — 미배포 상태에서 설치 명령을 공식 스코프로 바꾸면 문서가
+    거짓이 된다.
+13. **D1b 해소 후속 — `docs/npm-release.md` §7b(devtools 설치 절차 삭제
+    체크리스트)**. wf가 devtools를 transitive로 실배포하고 소비자
+    프로젝트에서 resolve 실증까지 끝난 직후에만 발화한다(Dave·platform PR +
+    wf 릴리즈가 게이트 — 이 런북의 순서와 독립적으로 그 전이나 후 어느
+    시점에나 올 수 있다). skill 재설계·`--local` 템플릿 폐기·eval fixture
+    교체·baseline epoch 판단·harness `packages/devtools` 제거까지 포함한다.
+14. **launcher 상수 flip** — #11 실기기 스모크 통과 후. flip 축과 독립이며
     (§4.2(c)) 순서상 여기 이후 아무 때나. 체크리스트는 `docs/release-plan.md`
     Phase 1.
 
