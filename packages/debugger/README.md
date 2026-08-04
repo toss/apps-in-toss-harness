@@ -83,6 +83,16 @@ npx -p @apps-in-toss/debugger debugger --mode=phone --cdp -- vite
 
 cloudflared quick tunnel은 무인증·임시(프로세스 종료 시 소멸) URL이라는 점은 `--mode=debug`의 기본 relay 터널과 동일하다 — production 용도가 아니다.
 
+vite 5.4.12+/6부터 dev 서버가 알 수 없는 Host 헤더를 기본 차단해서, `server.allowedHosts`를 설정하지 않으면 tunnel 요청이 `403 Forbidden — Blocked request. This host ("xxxx.trycloudflare.com") is not allowed.`로 막힌다. 옛 devtools unplugin은 이 옵션을 vite 내부에서 자동 주입했지만, standalone CLI인 `--mode=phone`은 그럴 수 없다 — `vite.config.ts`에 한 번 추가해야 한다:
+
+```ts
+server: {
+  allowedHosts: ['.trycloudflare.com'],
+},
+```
+
+`/ait:setup-phone-preview` skill이 이 설정을 자동으로 확인·추가한다.
+
 ## Exports / bin
 
 | subpath | 내용 |

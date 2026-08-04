@@ -44,7 +44,12 @@ export interface WaitForPortOptions {
   timeoutMs?: number;
   /** Delay between connect attempts. Default `300` ms. */
   intervalMs?: number;
-  /** Host to probe. Default `'127.0.0.1'`. */
+  /**
+   * Host to probe. Default: probes both IPv4 (`127.0.0.1`) and IPv6 (`::1`)
+   * loopback concurrently, succeeding if either accepts — some dev servers
+   * (e.g. `vite` on setups where Node resolves `localhost` to `::1` first)
+   * bind only the IPv6 loopback. Pass an explicit host to probe only that one.
+   */
   host?: string;
 }
 
@@ -63,7 +68,20 @@ function tryConnectOnce(host: string, port: number): Promise<boolean> {
 }
 
 /**
- * Polls `host:port` with a plain TCP connect attempt until it accepts a
+ * Probes IPv4 (`127.0.0.1`) and IPv6 (`::1`) loopback concurrently, resolving
+ * `true` if either accepts. On a machine without IPv6 the `::1` attempt just
+ * errors (via {@link tryConnectOnce}'s own `error` handling) and contributes
+ * `false` — it never throws or adds latency beyond the normal attempt.
+ */
+function tryConnectDualStack(port: number): Promise<boolean> {
+  return Promise.all([tryConnectOnce('127.0.0.1', port), tryConnectOnce('::1', port)]).then(
+    (results) => results.some(Boolean),
+  );
+}
+
+/**
+ * Polls `host:port` (or, when `host` is omitted, both IPv4 and IPv6 loopback
+ * concurrently) with plain TCP connect attempts until one accepts a
  * connection, or rejects once `timeoutMs` elapses. Replaces the unplugin's
  * `httpServer.once('listening', …)` hook: `--mode=phone` has no dev-server
  * plugin lifecycle to hook into, so it waits for the port from the outside
@@ -71,17 +89,21 @@ function tryConnectOnce(host: string, port: number): Promise<boolean> {
  * running server) as well as required (freshly spawned one).
  *
  * @throws When no connection succeeds within `timeoutMs`. The message names
- *   the port and suggests both remedies (`--port`, `-- <dev command>`).
+ *   the probed host (`localhost` for the default dual-stack probe, or the
+ *   explicit `opts.host`) and suggests both remedies (`--port`, `-- <dev command>`).
  */
 export async function waitForPort(port: number, opts: WaitForPortOptions = {}): Promise<void> {
-  const { timeoutMs = 60_000, intervalMs = 300, host = '127.0.0.1' } = opts;
+  const { timeoutMs = 60_000, intervalMs = 300, host } = opts;
   const deadline = Date.now() + timeoutMs;
+  const probeOnce =
+    host !== undefined ? () => tryConnectOnce(host, port) : () => tryConnectDualStack(port);
+  const label = host !== undefined ? `${host}:${port}` : `localhost:${port}`;
 
   for (;;) {
-    if (await tryConnectOnce(host, port)) return;
+    if (await probeOnce()) return;
     if (Date.now() >= deadline) {
       throw new Error(
-        `[debugger] ${host}:${port}에서 대기 중인 dev 서버를 ${
+        `[debugger] ${label}에서 대기 중인 dev 서버를 ${
           timeoutMs / 1000
         }초 안에 찾지 못했습니다. --port 값이 실제 dev 서버 포트와 맞는지 확인하거나, ` +
           '`debugger --mode=phone -- <dev 명령>`으로 dev 서버를 함께 기동하세요.',
@@ -186,6 +208,7 @@ export async function renderPhonePreviewBanner(
       ? ['  같은 스캔으로 CDP도 붙습니다 — AI host가 relay에 붙어 실기기에서 디버깅합니다.']
       : []),
     '  quick tunnel은 무인증이며 실행마다 바뀝니다 — production 용도가 아닙니다.',
+    "  vite dev 서버가 403(Blocked request)을 주면 vite config에 server.allowedHosts: ['.trycloudflare.com']을 추가하세요.",
     '',
   ];
 

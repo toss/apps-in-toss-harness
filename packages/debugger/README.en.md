@@ -83,6 +83,16 @@ Key options: `--port <n>` (default 5173), `--cdp` (CDP relay + dashboard, also t
 
 Like `--mode=debug`'s default relay tunnel, the cloudflared quick tunnel is unauthenticated and ephemeral (it disappears when the process exits) — not for production use.
 
+Starting with vite 5.4.12+/6, the dev server blocks requests with an unrecognized Host header by default, so without `server.allowedHosts` the tunnel request fails with `403 Forbidden — Blocked request. This host ("xxxx.trycloudflare.com") is not allowed.`. The old devtools unplugin injected this option from inside vite automatically; the standalone `--mode=phone` CLI can't — add it once to `vite.config.ts`:
+
+```ts
+server: {
+  allowedHosts: ['.trycloudflare.com'],
+},
+```
+
+The `/ait:setup-phone-preview` skill checks for and adds this setting automatically.
+
 ## Exports / bins
 
 | subpath | contents |

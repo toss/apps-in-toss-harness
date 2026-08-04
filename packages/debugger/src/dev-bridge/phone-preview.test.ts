@@ -60,6 +60,15 @@ describe('renderPhonePreviewBanner', () => {
     expect(text).toContain('[qr]');
   });
 
+  it('always includes the vite server.allowedHosts 403 hint line', async () => {
+    const text = await renderPhonePreviewBanner(TUNNEL_URL, {
+      renderQrFn: async () => '[qr]',
+    });
+    expect(text).toContain('server.allowedHosts');
+    expect(text).toContain(".trycloudflare.com'");
+    expect(text).toContain('403');
+  });
+
   it('with relayWssUrl, the banner mentions on-device CDP', async () => {
     const text = await renderPhonePreviewBanner(TUNNEL_URL, {
       relayWssUrl: RELAY_WSS,
@@ -186,6 +195,33 @@ describe('waitForPort', () => {
 
     try {
       await expect(waitPromise).resolves.toBeUndefined();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('resolves when the server listens only on IPv6 loopback (::1) — default opts probe both families', async () => {
+    const server = createServer();
+    let port: number;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '::1', resolve);
+      });
+      const address = server.address();
+      if (address === null || typeof address === 'string') throw new Error('expected AddressInfo');
+      port = address.port;
+    } catch {
+      // Some sandboxed/CI environments have no IPv6 loopback configured
+      // (EADDRNOTAVAIL/EAFNOSUPPORT) — skip gracefully rather than fail.
+      server.close();
+      return;
+    }
+
+    try {
+      await expect(
+        waitForPort(port, { timeoutMs: 2_000, intervalMs: 20 }),
+      ).resolves.toBeUndefined();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

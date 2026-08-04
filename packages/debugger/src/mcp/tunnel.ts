@@ -151,7 +151,11 @@ async function ensureCloudflaredBin(): Promise<void> {
 export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> {
   await ensureCloudflaredBin();
 
-  const tunnel = Tunnel.quick(`http://127.0.0.1:${localPort}`);
+  // Origin uses `localhost`, not `127.0.0.1`: cloudflared is a Go binary, and
+  // Go's dialer tries every resolved address of `localhost` (both v4 and v6)
+  // before giving up, so this tolerates dev servers bound to either loopback
+  // family — e.g. some `vite` setups bind only `[::1]` (IPv6).
+  const tunnel = Tunnel.quick(`http://localhost:${localPort}`);
 
   // #421: accumulate stderr so a timeout/premature-exit error can attach a
   // diagnostic tail. SECRET-HANDLING: lines are sanitized before inclusion in
