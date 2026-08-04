@@ -4,7 +4,8 @@ description: |
   Wire up @apps-in-toss/debugger's `--mode=phone` quick-tunnel + launcher PWA
   flow so you can preview the dev app on a real phone (environment 2, WebKit
   engine, no review needed) — adds @apps-in-toss/debugger as a devDependency,
-  patches pnpm-workspace.yaml, adds dev:phone / dev:phone:cdp scripts,
+  ensures vite.config's server.allowedHosts allows the tunnel (vite 5.4.12+/6
+  403 guard), patches pnpm-workspace.yaml, adds dev:phone / dev:phone:cdp scripts,
   pre-caches cloudflared. Idempotent. Triggered by `/ait:setup-phone-preview`,
   no args. Prerequisite for `debug`'s environment 2.
 argument-hint: ''
@@ -35,7 +36,7 @@ argument-hint: ''
 - **Vite 프로젝트**여야 한다 (`vite.config.ts` 또는 `vite.config.js`가 cwd에 있어야 함) —
   `dev:phone` 스크립트가 `debugger --mode=phone -- vite`로 Vite를 직접 감싸기 때문이다.
 - **pnpm**이 패키지 매니저여야 한다 (`pnpm-lock.yaml` 존재 확인).
-  - npm/yarn/bun 프로젝트는 3-a의 `pnpm-workspace.yaml` `allowBuilds` 패치가 해당 매니저에서 무의미하므로 사용자에게 그 점을 알리고 skip한다.
+  - npm/yarn/bun 프로젝트는 4-a의 `pnpm-workspace.yaml` `allowBuilds` 패치가 해당 매니저에서 무의미하므로 사용자에게 그 점을 알리고 skip한다.
 
 > 이 skill은 콘솔 인증을 **요구하지 않는다**. tunnel은 로컬 dev 전용.
 
@@ -93,11 +94,52 @@ pnpm add -D @apps-in-toss/debugger
 debugger`)과 달리 이 skill은 devDependency로 실제 설치한다. `cloudflared`·`qrcode`는
 `@apps-in-toss/debugger`가 이미 자기 `dependencies`로 가져오므로 별도 설치가 필요 없다.
 
-### 3. `pnpm-workspace.yaml` + `package.json` 패치 — `allowBuilds` + `dev:phone` (idempotent)
+### 3. vite config에 `server.allowedHosts` 확인/추가 (idempotent, vite 전용)
+
+vite 5.4.12+/6부터 dev 서버가 알 수 없는 `Host` 헤더로 오는 요청을 기본 차단한다
+(`server.allowedHosts` 미설정 시). `debugger --mode=phone`이 여는 cloudflared quick
+tunnel(`*.trycloudflare.com`)도 예외가 아니라서, 이 설정이 없으면 tunnel 요청이 다음
+실패 시그니처로 막힌다 — 진단 시 이 문구를 찾으면 원인은 거의 항상 이 단계 누락이다:
+
+```
+403 Forbidden
+Blocked request. This host ("xxxx.trycloudflare.com") is not allowed.
+```
+
+이 skill은 이미 1단계에서 `vite.config.ts`/`.js` 부재 시 중단하므로, 이 단계는 vite
+프로젝트에서만 실행된다(non-vite dev 서버는 애초에 도달하지 않는다).
+
+프로젝트 루트의 `vite.config.ts`(또는 `.js`)를 `Read`로 확인한다.
+
+**idempotency 체크**: `server.allowedHosts`에 이미 `'.trycloudflare.com'`(또는 이를
+포함하는 배열이나 `true`)이 설정돼 있으면:
+
+```
+vite.config에 server.allowedHosts가 이미 설정돼 있습니다. 이 단계를 건너뜁니다.
+```
+
+없으면 `Edit` tool로 최소 변경을 적용한다:
+
+- `server` 블록이 아예 없으면 신설한다:
+
+  ```ts
+  server: {
+    allowedHosts: ['.trycloudflare.com'],
+  },
+  ```
+
+- `server` 블록은 있는데 `allowedHosts`가 없으면 그 안에
+  `allowedHosts: ['.trycloudflare.com'],`만 추가한다.
+- `allowedHosts`가 이미 배열이면 `'.trycloudflare.com'` 항목만 추가한다(기존 항목 유지).
+
+기존 `server` 블록의 다른 옵션(`port`/`host`/`proxy` 등)과 파일의 나머지 구조·포맷은
+그대로 두고 `allowedHosts`만 최소 추가/변경한다.
+
+### 4. `pnpm-workspace.yaml` + `package.json` 패치 — `allowBuilds` + `dev:phone` (idempotent)
 
 두 가지를 idempotent하게 적용한다: `pnpm-workspace.yaml`의 `allowBuilds`(빌드 게이트)와 `package.json`의 `scripts.dev:phone`.
 
-#### 3-a. `pnpm-workspace.yaml`의 `allowBuilds`에 `cloudflared: true` 추가
+#### 4-a. `pnpm-workspace.yaml`의 `allowBuilds`에 `cloudflared: true` 추가
 
 이 항목은 `cloudflared` postinstall(`~38 MB` 바이너리 다운로드)이 pnpm의
 빌드 스크립트 게이트를 통과하게 해준다. pnpm 11은 이전의
@@ -132,7 +174,7 @@ allowBuilds:
 `@`로 시작하는 패키지 이름은 YAML에서 따옴표로 감싼다(`"@parcel/watcher"`).
 기존 키·주석·다른 패키지의 값은 유지하고 `cloudflared` 항목만 최소 추가/변경한다.
 
-#### 3-b. `scripts.dev:phone` 및 `scripts.dev:phone:cdp` 추가
+#### 4-b. `scripts.dev:phone` 및 `scripts.dev:phone:cdp` 추가
 
 - `scripts["dev:phone"]`이 없으면 추가: `"debugger --mode=phone -- vite"` (screen-only, 앱 HTTP 터널만).
 - `scripts["dev:phone:cdp"]`이 없으면 추가: `"debugger --mode=phone --cdp -- vite"` (CDP relay까지 boot).
@@ -168,7 +210,7 @@ cloudflared 바이너리가 postinstall에서 실패하면 다음을 실행해�
 
 `scripts.dev:phone` 추가는 매니저 무관하게 진행.
 
-#### 3-c. `.gitignore`에 `.ait_relay`·`.ait_urls` 추가 (idempotent)
+#### 4-c. `.gitignore`에 `.ait_relay`·`.ait_urls` 추가 (idempotent)
 
 프로젝트 루트의 `.gitignore`를 `Read`로 확인한다(파일이 없으면 빈 내용으로 간주).
 
@@ -192,7 +234,7 @@ cloudflared 바이너리가 postinstall에서 실패하면 다음을 실행해�
 
 **수정 원칙**: `Edit` tool로 최소 변경. 기존 `.gitignore` 내용·포맷은 유지.
 
-### 4. `pnpm install` 실행 — cloudflared 바이너리 사전 캐시
+### 5. `pnpm install` 실행 — cloudflared 바이너리 사전 캐시
 
 ```bash
 pnpm install
@@ -209,7 +251,7 @@ pnpm install 중 오류가 발생했습니다. 네트워크 연결을 확인해�
   pnpm install
 ```
 
-### 5. 완료 안내
+### 6. 완료 안내
 
 모든 단계 완료 후 안내 블록을 한 번에 출력:
 
@@ -220,6 +262,7 @@ setup-phone-preview 완료
 
 변경 내용:
   - package.json: devDependencies에 @apps-in-toss/debugger 추가
+  - vite.config: server.allowedHosts에 '.trycloudflare.com' 추가 (vite 5.4.12+/6 403 회피)
   - pnpm-workspace.yaml: allowBuilds에 cloudflared: true 추가
   - package.json: scripts.dev:phone / scripts.dev:phone:cdp 추가
   - .gitignore: .ait_relay·.ait_urls 추가 (로컬 TOTP 시크릿·터널 URL 커밋 방지)
@@ -285,8 +328,10 @@ setup-phone-preview 완료
 
 ## 하지 말아야 할 것
 
-- ❌ `vite.config.ts`를 수정. `--mode=phone`은 CLI 레벨 wrapper(`debugger` bin)이지
-  Vite plugin 옵션이 아니다 — vite.config.ts에 손댈 필요가 없다.
+- ❌ `vite.config.ts`에 `server.allowedHosts` 외의 다른 옵션을 추가/수정. `--mode=phone`은
+  CLI 레벨 wrapper(`debugger` bin)이지 Vite plugin 옵션이 아니다 — tunnel 자체를 위해
+  vite.config.ts에 손댈 필요는 없다. 유일한 예외가 3단계의 `server.allowedHosts`(vite
+  6+가 quick tunnel 요청을 403으로 막는 것에 대한 회피)다.
 - ❌ `dev:phone` 스크립트에서 `-- vite` passthrough 경계를 생략. `debugger --mode=phone
   vite`처럼 `--`를 빼면 `vite`가 debugger 자신의 (알 수 없는) 플래그로 오인될 수 있다.
 - ❌ `cloudflared`를 `devDependencies`에 직접 추가. `@apps-in-toss/debugger`가 이미

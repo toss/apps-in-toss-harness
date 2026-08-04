@@ -15,6 +15,10 @@
 
   부수적으로 `src/mcp/tunnel.ts`의 `startQuickTunnel`이 20초 타임아웃 + 정제된(sanitized) stderr tail 진단을 갖췄고(`parseTrycloudflareUrl`/`sanitizeCloudflaredOutput`도 devtools에서 함께 이식), `src/mcp/deeplink.ts`에 `buildLauncherDeepLink`(env-2 딥링크 빌더, `navBarType`/`navBarTransparent`/`navBarTheme` 포함)가 새로 노출된다 — 둘 다 `--mode=phone`이 재사용하는 devtools 이식분이다.
 
+- dual-stack loopback: `waitForPort`가 기본으로 `127.0.0.1`/`::1` 양쪽을 폴링하고 quick tunnel origin이 `http://localhost:<port>`가 되어, IPv6 loopback 전용으로 바인딩하는 vite dev 서버(granite dev의 자식 vite가 실측 사례)에서도 동작한다 (dog-food 발견 1).
+
+- vite 5.4.12+/6 `server.allowedHosts` 403 안내가 배너·README·setup skill에 추가됐다 (dog-food 발견 2 — 옛 devtools unplugin은 이를 vite 내부에서 주입했지만 standalone CLI는 사용자 설정이 필요).
+
 ## 0.1.5
 
 ### Patch Changes
