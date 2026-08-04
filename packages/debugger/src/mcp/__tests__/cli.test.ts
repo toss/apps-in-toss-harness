@@ -1,9 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   findUnknownFlags,
+  parseCdp,
   parseForce,
   parseHelp,
   parseMode,
+  parseNoQr,
+  parsePassthrough,
+  parsePort,
   parseTarget,
   parseVersion,
 } from '../cli.js';
@@ -25,12 +31,28 @@ describe('parseMode', () => {
     expect(parseMode(['--mode=debug'])).toBe('debug');
   });
 
+  it('parses --mode=phone', () => {
+    expect(parseMode(['--mode=phone'])).toBe('phone');
+  });
+
+  it('parses --mode phone (space-separated)', () => {
+    expect(parseMode(['--mode', 'phone'])).toBe('phone');
+  });
+
   it('throws on an unknown mode', () => {
     expect(() => parseMode(['--mode=bogus'])).toThrow(/Unknown --mode/);
   });
 
+  it('unknown-mode error message lists all three modes', () => {
+    expect(() => parseMode(['--mode=bogus'])).toThrow(/'debug' \(default\), 'dev', or 'phone'/);
+  });
+
   it('throws on a dangling --mode with no value', () => {
     expect(() => parseMode(['--mode'])).toThrow(/--mode requires a value/);
+  });
+
+  it('does not parse --mode after a bare -- passthrough boundary', () => {
+    expect(parseMode(['--', '--mode=phone'])).toBe('debug');
   });
 });
 
@@ -69,6 +91,88 @@ describe('parseTarget', () => {
 
   it('ignores --mode when parsing target', () => {
     expect(parseTarget(['--mode=debug', '--target=local'])).toBe('local');
+  });
+});
+
+describe('parsePort', () => {
+  it('defaults to 5173 with no flag', () => {
+    expect(parsePort([])).toBe(5173);
+  });
+
+  it('parses --port=4000', () => {
+    expect(parsePort(['--port=4000'])).toBe(4000);
+  });
+
+  it('parses --port 4000 (space-separated)', () => {
+    expect(parsePort(['--port', '4000'])).toBe(4000);
+  });
+
+  it('accepts boundary values 1 and 65535', () => {
+    expect(parsePort(['--port=1'])).toBe(1);
+    expect(parsePort(['--port=65535'])).toBe(65535);
+  });
+
+  it('throws on a non-integer value', () => {
+    expect(() => parsePort(['--port=abc'])).toThrow(/Invalid --port/);
+  });
+
+  it('throws on an out-of-range value', () => {
+    expect(() => parsePort(['--port=0'])).toThrow(/Invalid --port/);
+    expect(() => parsePort(['--port=65536'])).toThrow(/Invalid --port/);
+  });
+
+  it('throws on a dangling --port with no value', () => {
+    expect(() => parsePort(['--port'])).toThrow(/--port requires a value/);
+  });
+
+  it('does not parse --port after a bare -- passthrough boundary', () => {
+    expect(parsePort(['--', '--port=4000'])).toBe(5173);
+  });
+});
+
+describe('parseCdp', () => {
+  it('returns false with no flags', () => {
+    expect(parseCdp([])).toBe(false);
+  });
+
+  it('returns true for --cdp', () => {
+    expect(parseCdp(['--cdp'])).toBe(true);
+  });
+
+  it('does not honor --cdp after a bare -- passthrough boundary', () => {
+    expect(parseCdp(['--', '--cdp'])).toBe(false);
+  });
+});
+
+describe('parseNoQr', () => {
+  it('returns false with no flags', () => {
+    expect(parseNoQr([])).toBe(false);
+  });
+
+  it('returns true for --no-qr', () => {
+    expect(parseNoQr(['--no-qr'])).toBe(true);
+  });
+
+  it('does not honor --no-qr after a bare -- passthrough boundary', () => {
+    expect(parseNoQr(['--', '--no-qr'])).toBe(false);
+  });
+});
+
+describe('parsePassthrough', () => {
+  it('returns an empty array when there is no --', () => {
+    expect(parsePassthrough(['--mode=phone', '--port=4000'])).toEqual([]);
+  });
+
+  it('returns every token after the first bare --', () => {
+    expect(parsePassthrough(['--mode=phone', '--', 'vite', '--host'])).toEqual(['vite', '--host']);
+  });
+
+  it('returns an empty array when -- is the last token', () => {
+    expect(parsePassthrough(['--mode=phone', '--'])).toEqual([]);
+  });
+
+  it('only splits on the first --, leaving any later -- inside the passthrough', () => {
+    expect(parsePassthrough(['--', 'vite', '--', 'extra'])).toEqual(['vite', '--', 'extra']);
   });
 });
 
@@ -148,8 +252,18 @@ describe('findUnknownFlags', () => {
         '-h',
         '--version',
         '-v',
+        '--port',
+        '4000',
+        '--cdp',
+        '--no-qr',
       ]),
     ).toEqual([]);
+  });
+
+  it('does not flag tokens after a bare -- passthrough boundary', () => {
+    expect(findUnknownFlags(['--mode=phone', '--', 'vite', '--host', '--bogus-vite-flag'])).toEqual(
+      [],
+    );
   });
 
   it('does not flag a space-separated value-flag argument as unknown', () => {
@@ -181,5 +295,62 @@ describe('findUnknownFlags', () => {
   it('leaves a dangling value flag with no following token unflagged', () => {
     // parseMode/parseTarget reject this with their own, more specific error.
     expect(findUnknownFlags(['--mode'])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Install-graph invariant (source-static) — ported from the deleted devtools'
+// `src/__tests__/unplugin-tunnel.test.ts` "install-graph invariant" block
+// (harness#79). Reads the two files' OWN source text and checks only their
+// direct import specifiers (not the full transitive closure) — the same
+// scope the devtools original used. This is what stops a future refactor
+// from hoisting the `--mode=phone` dynamic import in cli.ts into a static
+// one, which would silently drag `cloudflared`/`qrcode` into
+// `--mode=debug`/`dev`'s install graph — no other gate (lint/typecheck/build)
+// catches that, since the runtime behavior is identical either way and only
+// the static graph differs.
+// ---------------------------------------------------------------------------
+
+describe('install-graph invariant (--mode=phone reached only via dynamic import)', () => {
+  // Resolved relative to this test file's own location (not process.cwd())
+  // so it works regardless of which directory vitest is invoked from.
+  const read = (rel: string) => readFileSync(join(import.meta.dirname, rel), 'utf8');
+
+  /** Top-level `import ... from '<spec>'` lines (static graph edges). */
+  function staticImportSpecifiers(source: string): string[] {
+    const specs: string[] = [];
+    // Matches `import ... from '...'` and bare `import '...'` at statement start.
+    const re = /^\s*import\b[^;]*?from\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm;
+    for (const m of source.matchAll(re)) {
+      specs.push(m[1] ?? m[2] ?? '');
+    }
+    return specs;
+  }
+
+  it('src/mcp/cli.ts has no static edge to dev-bridge/qrcode/cloudflared — --mode=phone is reached via dynamic import()', () => {
+    const src = read('../cli.ts');
+    const statics = staticImportSpecifiers(src);
+    for (const spec of statics) {
+      expect(spec).not.toMatch(/dev-bridge/);
+      expect(spec).not.toContain('qrcode');
+      expect(spec).not.toContain('cloudflared');
+    }
+    // The `--mode=phone` branch reaches phone-preview.ts through a dynamic
+    // import instead — this is the edge the loop above must never see hoisted
+    // to a static `import ... from` at the top of the file.
+    expect(src).toContain("import('../dev-bridge/phone-preview.js')");
+  });
+
+  it('src/dev-bridge/phone-preview.ts never statically imports qrcode or cloudflared', () => {
+    const src = read('../../dev-bridge/phone-preview.ts');
+    const statics = staticImportSpecifiers(src);
+    // phone-preview.ts gets QR rendering (`renderQr`) and tunnel-opening
+    // (`startQuickTunnel`) from `../mcp/tunnel.js` — neither `qrcode` nor
+    // `cloudflared` is ever named directly in this file's own imports; both
+    // heavy specifiers live one hop away, inside tunnel.js.
+    for (const spec of statics) {
+      expect(spec).not.toContain('qrcode');
+      expect(spec).not.toContain('cloudflared');
+    }
   });
 });

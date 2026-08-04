@@ -1,5 +1,20 @@
 # @ait-co/debugger
 
+## 0.2.0
+
+### Minor Changes
+
+- `debugger` bin에 새 CLI 모드 `--mode=phone`을 추가한다(harness#79, C4 devtools 제거).
+
+  `packages/devtools`가 제거되면서(2026-08-05) 그 unplugin의 `tunnel` 옵션이 담당하던 env-2(Sandbox PWA) 실기기 미리보기 — dev 서버 cloudflared quick tunnel + launcher PWA QR — 이 거처를 잃었다. `--mode=phone [--port <n>] [--cdp] [--no-qr] [-- <dev command…>]`이 그 기능을 이 패키지로 relocate한다:
+
+  - 이미 떠 있는 dev 서버(기본 포트 5173)를 터널링하거나, `-- <dev 명령>`으로 함께 기동한다.
+  - `--cdp`(또는 `AIT_TUNNEL_CDP=1` fallback)로 CDP relay + HTML 대시보드까지 wiring한다 — `--target=mobile`의 리더가 기대하는 `.ait_urls` 계약은 그대로 유지되며, WRITER만 옛 devtools unplugin에서 이 CLI로 넘어온다.
+  - 새 모듈 `src/dev-bridge/phone-preview.ts`(`waitForPort`/`resolveCdpOption`/`renderPhonePreviewBanner`/`startPhonePreview`/`runPhonePreview`)가 이 모드의 합성을 담당한다. `--mode=debug`/`dev`와 달리 MCP stdio 프로세스가 아니라 STDOUT에 출력하는 평범한 foreground CLI 프로세스다.
+  - 신규 npm 의존성 없음 — `cloudflared`/`qrcode`는 이미 이 패키지의 dependencies였다.
+
+  부수적으로 `src/mcp/tunnel.ts`의 `startQuickTunnel`이 20초 타임아웃 + 정제된(sanitized) stderr tail 진단을 갖췄고(`parseTrycloudflareUrl`/`sanitizeCloudflaredOutput`도 devtools에서 함께 이식), `src/mcp/deeplink.ts`에 `buildLauncherDeepLink`(env-2 딥링크 빌더, `navBarType`/`navBarTransparent`/`navBarTheme` 포함)가 새로 노출된다 — 둘 다 `--mode=phone`이 재사용하는 devtools 이식분이다.
+
 ## 0.1.5
 
 ### Patch Changes

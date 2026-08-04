@@ -33,6 +33,56 @@ export function generateAttachToken(): string {
   return randomBytes(32).toString('hex');
 }
 
+/**
+ * Matches the public URL cloudflared prints for an unauthenticated quick
+ * tunnel. Ported from the deleted `@apps-in-toss/devtools`'s
+ * `src/unplugin/tunnel.ts` (harness#79, C4 devtools removal) alongside the
+ * rest of the `startQuickTunnel` hardening below (#421) — this relay path
+ * already had a `url` event from the `cloudflared` lib, but the timeout +
+ * stderr-diagnostics behavior ported from devtools scans raw output too.
+ */
+const TRYCLOUDFLARE_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
+
+/**
+ * Extract the `https://<sub>.trycloudflare.com` URL from a line of cloudflared
+ * output, or `null` if the line doesn't contain one. Pulled out as a pure
+ * function so it can be unit-tested without spawning anything.
+ */
+export function parseTrycloudflareUrl(line: string): string | null {
+  const m = line.match(TRYCLOUDFLARE_RE);
+  return m ? m[0] : null;
+}
+
+/**
+ * Sanitize cloudflared stderr output for error diagnostics (#421, ported from
+ * devtools' `src/unplugin/tunnel.ts` alongside {@link parseTrycloudflareUrl}).
+ *
+ * Masks `*.trycloudflare.com` hostnames and full `https://` / `wss://` URLs
+ * that carry those hostnames so tunnel host values never appear in error
+ * messages. Diagnostic content (error codes, reasons, JSON blobs) is preserved.
+ *
+ * SECRET-HANDLING: tunnel host is SECRET-class per harness policy — only
+ * placeholder text is emitted.
+ */
+export function sanitizeCloudflaredOutput(line: string): string {
+  // Full URL forms: https://xxx.trycloudflare.com/… and wss://xxx.trycloudflare.com/…
+  let s = line.replace(/(?:https?|wss?):\/\/[a-z0-9-]+\.trycloudflare\.com(?:\/[^\s]*)*/gi, (m) =>
+    m.replace(/[a-z0-9-]+\.trycloudflare\.com/i, '<HOST>.trycloudflare.com'),
+  );
+  // Bare hostname without scheme (e.g. printed in cloudflared JSON logs)
+  s = s.replace(/[a-z0-9-]+\.trycloudflare\.com/gi, '<HOST>.trycloudflare.com');
+  return s;
+}
+
+/**
+ * How long {@link startQuickTunnel} waits for cloudflared to report a public
+ * URL before giving up (#421, ported from devtools' `src/unplugin/tunnel.ts`).
+ * A cloudflared process that never reports a URL (dead network, blocked
+ * egress) used to hang the caller forever — this bounds the wait and rejects
+ * with a friendly manual fallback plus a sanitized stderr tail.
+ */
+const URL_TIMEOUT_MS = 20_000;
+
 export interface QuickTunnel {
   /** Public `https://*.trycloudflare.com` URL the tunnel exposes. */
   url: string;
@@ -89,29 +139,78 @@ async function ensureCloudflaredBin(): Promise<void> {
  * watches the cloudflared child process for unexpected exits and calls any
  * registered `onUnexpectedExit` callback so the health probe can immediately
  * trigger reissue instead of waiting for the next poll interval.
+ *
+ * #421 (ported from devtools' `src/unplugin/tunnel.ts`, harness#79): rejects
+ * with a friendly manual-command fallback if no URL appears within
+ * {@link URL_TIMEOUT_MS}, and attaches a sanitized stderr tail (last ~15
+ * lines, hostnames masked via {@link sanitizeCloudflaredOutput}) to both the
+ * timeout error and a premature-exit error. This benefits every caller of
+ * this function, including the existing env-3/4 relay path
+ * (`debug-server.ts`) — not just `--mode=phone`.
  */
 export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> {
   await ensureCloudflaredBin();
 
   const tunnel = Tunnel.quick(`http://127.0.0.1:${localPort}`);
 
+  // #421: accumulate stderr so a timeout/premature-exit error can attach a
+  // diagnostic tail. SECRET-HANDLING: lines are sanitized before inclusion in
+  // any error message — the tunnel host must never leak.
+  const stderrLines: string[] = [];
+  const pushStderr = (line: string) => {
+    stderrLines.push(line);
+  };
+  tunnel.on('stderr', pushStderr);
+
+  /** Formats the last `n` sanitized stderr lines, or `''` if none were captured. */
+  const stderrTail = (n = 15): string => {
+    if (stderrLines.length === 0) return '';
+    const tail = stderrLines.slice(-n).map(sanitizeCloudflaredOutput).join('');
+    return `\ncloudflared 출력 (마지막 ${Math.min(n, stderrLines.length)}줄):\n${tail}`;
+  };
+
   const url = await new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      // The cloudflared child is likely still alive (it just hasn't reported a
+      // URL yet) — stop it so a timed-out tunnel doesn't leak an orphan process.
+      try {
+        tunnel.stop();
+      } catch {
+        // Ignore — the process may already be gone.
+      }
+      reject(
+        new Error(
+          `[@apps-in-toss/debugger] cloudflared did not report a tunnel URL within ${
+            URL_TIMEOUT_MS / 1000
+          }s. Check your network connection, or run \`cloudflared tunnel --url http://localhost:${localPort}\` manually.${stderrTail()}`,
+        ),
+      );
+    }, URL_TIMEOUT_MS);
     const onUrl = (assigned: string) => {
+      clearTimeout(timer);
       cleanup();
       resolve(assigned);
     };
     const onError = (err: Error) => {
+      clearTimeout(timer);
       cleanup();
       reject(err);
     };
     const onExit = (code: number | null) => {
+      clearTimeout(timer);
       cleanup();
-      reject(new Error(`cloudflared exited before assigning a URL (code ${code})`));
+      reject(
+        new Error(
+          `[@apps-in-toss/debugger] cloudflared exited before assigning a URL (code ${code}).${stderrTail()}`,
+        ),
+      );
     };
     const cleanup = () => {
       tunnel.off('url', onUrl);
       tunnel.off('error', onError);
       tunnel.off('exit', onExit);
+      tunnel.off('stderr', pushStderr);
     };
     tunnel.once('url', onUrl);
     tunnel.once('error', onError);

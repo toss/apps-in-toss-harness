@@ -221,7 +221,11 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
    PWA) 진입에 쓰이던 cloudflared quick tunnel이 이관에서 빠지면서 갈 곳이
    필요하다. `@apps-in-toss/debugger`로 재배치할지, `setup-phone-preview`
    skill이 cloudflared를 직접 구동하는 형태로 갈지는 D1b 전에 결정해야
-   한다. (iv) **debug-console 자동 주입 폐지에 따른 수동 배선 일원화** —
+   한다. **[해소, maintainer 결정 2026-08-05, harness#79]** `@apps-in-toss/debugger`
+   `--mode=phone`으로 재배치했다 — cloudflared quick tunnel + launcher QR이
+   `src/dev-bridge/phone-preview.ts`로 이전됐고, `setup-phone-preview` skill은
+   `@apps-in-toss/debugger`를 devDependency로 배선하는 형태로 갱신됐다(자체
+   cloudflared 구동 대안은 채택하지 않음). (iv) **debug-console 자동 주입 폐지에 따른 수동 배선 일원화** —
    지금까지 `optional-peers.ts`가 `@apps-in-toss/debug-console` 설치를
    자동 감지해 주입 코드를 넣었지만 이 로직이 이관에서 빠지므로, 온디바이스
    attach는 harness의 `inject-debug-console` skill이 `import
@@ -231,5 +235,5 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
    **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** —
    위 미확정 4건 중 D1b 실증 자체를 기다리지 않고 maintainer 지시로
    harness 쪽 사본만 앞당겨 제거했다(이슈 #74 참고; sites/launcher 툴체인
-   독립도 같은 PR에서 함께 처리). (i)·(ii)·(iv)와 tunnel 거처(iii)는 여전히
-   미확정이며 다음 PR에서 다룬다.
+   독립도 같은 PR에서 함께 처리). (i)·(ii)·(iv)는 여전히 미확정이며 다음
+   PR에서 다룬다. tunnel 거처(iii)는 harness#79로 해소됐다(위 참고).
