@@ -10,9 +10,9 @@
 
 import QrScanner from 'qr-scanner';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Locale } from '../../../src/i18n/index.js';
-import { setLocale } from '../../../src/i18n/index.js';
-import { useLocale, useT } from '../../../src/i18n/react.js';
+import type { Locale } from '../i18n/index.js';
+import { setLocale } from '../i18n/index.js';
+import { useLocale, useT } from '../i18n/react.js';
 import { resolveLauncherEntry } from './entry.js';
 import {
   detectLetterbox,

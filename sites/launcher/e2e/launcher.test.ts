@@ -225,7 +225,7 @@ test.describe('launcher PWA', () => {
   // Object.defineProperty throws "Cannot redefine property"). The gate's full
   // branch matrix — including the closed-gate → setup+pendingUrl outcome and the
   // "open once" / post-install re-entry that the DOM wiring consumes — is covered by
-  // the pure-logic unit tests in e2e/fixture/launcher/entry.vitest.ts. What e2e CAN
+  // the pure-logic unit tests in ../launcher/entry.vitest.ts. What e2e CAN
   // verify is the local-dev escape hatch (gate open → straight to live) and that the
   // "open once" button stays hidden when there is no preserved URL.
 

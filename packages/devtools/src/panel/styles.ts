@@ -24,7 +24,7 @@ export const VIEWPORT_STATUS_BAR_HEIGHT = 50;
 // Navbar metrics — env-1 panel ground truth (#510 parity guard).
 // Interpolated into PANEL_STYLES below (single source — the CSS rules cannot
 // drift from these values) and consumed by viewport.ts (back glyph). Tested
-// against the launcher (env-2) constants in e2e/fixture/launcher/navbar.vitest.ts.
+// against the launcher (env-2) constants in sites/launcher/launcher/navbar.vitest.ts.
 // ---------------------------------------------------------------------------
 
 /** `.ait-navbar-icon` width/height (px). */

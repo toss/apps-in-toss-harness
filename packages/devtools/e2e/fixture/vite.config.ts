@@ -46,13 +46,12 @@ function copyOgImage() {
   };
 }
 
-// Pages deploy base path override (e.g. '/apps-in-toss-harness/' when the
-// fixture — including the launcher PWA under /launcher/ — is published to a
-// GitHub Pages *project* site instead of a custom-domain root). Defaults to
-// '/' so local e2e builds/tests (`pnpm e2e:build`, `pnpm test:e2e`) are
-// unaffected. Set via the deploy workflow only — do not hardcode a non-root
-// value here.
-const base = process.env.AIT_FIXTURE_BASE_PATH || '/';
+// This fixture is no longer deployed to Pages (docs/release-plan.md Phase 1
+// B4 — the launcher PWA that used to live at e2e/fixture/launcher/ and ship
+// at /launcher/ moved to sites/launcher/, which owns its own base-path
+// handling now). base stays '/' unconditionally: this fixture only runs
+// locally (`pnpm e2e:build`, `pnpm test:e2e`) going forward.
+const base = '/';
 
 export default defineConfig({
   root: __dirname,
@@ -99,10 +98,11 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        // MPA: the panel fixture (existing e2e + Pages root) plus the launcher
-        // PWA shipped at /launcher/.
+        // Single entry — the devtools panel demo (e2e/panel.test.ts). The
+        // launcher PWA entry that used to live here moved to sites/launcher/
+        // (build config: packages/devtools/e2e/launcher-site.vite.config.ts,
+        // docs/release-plan.md Phase 1 B4).
         index: path.resolve(__dirname, 'index.html'),
-        launcher: path.resolve(__dirname, 'launcher/index.html'),
       },
     },
   },

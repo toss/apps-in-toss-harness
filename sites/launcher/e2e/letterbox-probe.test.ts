@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // Smoke tests for the letterbox-probe static pages.
-// These pages live in e2e/fixture/public/letterbox-probe/ and are copied
+// These pages live in sites/launcher/public/letterbox-probe/ and are copied
 // verbatim to dist/ by vite, so they are served at the paths below without
 // going through any build transform.
 //
