@@ -28,7 +28,7 @@ scope-out(#5, 클라이언트 mock만 harness가 다룸), scaffold 축은
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — public flip(#8) 전제. 커뮤니티 marketplace와의 병존/폐기는 open question |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
-| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 이후 wf 3.x transitive로 재이관 진행 중) | **전환 중** — 새 배포 모델(Dave 확정)에서 devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어 `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다. 소비자는 wf만 설치하면 devtools가 transitive로 도달하고 직접 설치하지 않는다 — 소비자 배선은 wf subpath re-export(`@apps-in-toss/web-framework/devtools`) import가 될 예정(platform PR에서 확정, 실배포 실증(D1b) 전에는 skill 본문 불변). `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미 변경 예정. harness `packages/devtools`는 이관·실증(D1b) 후 제거 예정 |
+| 2 | dev | `pnpm dev` | devtools (이관 완료(#2), 배포 모델 재정의 대기) | **전환 중(전제 변경 감지 2026-08-04 — §5 문항 6 상태 갱신 참고, 아래 서술은 재정의 대기)** — 새 배포 모델(Dave 확정)에서 devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어 `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다. 소비자는 wf만 설치하면 devtools가 transitive로 도달하고 직접 설치하지 않는다 — 소비자 배선은 wf subpath re-export(`@apps-in-toss/web-framework/devtools`) import가 될 예정(platform PR에서 확정, 실배포 실증(D1b) 전에는 skill 본문 불변). `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미 변경 예정. harness `packages/devtools`는 이관·실증(D1b) 후 제거 예정 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
 | 4 | auth | `appLogin()` mock (클라이언트만) | agent-plugin (클라이언트 mock) — 서버 연동은 harness 범위 밖 | oidc-bridge/-cloud 제거. **결정(Dave, 2026-07-31, harness#5)**: 서버 구현(공식 백엔드 토큰 검증 연동)은 harness에서 scope-out — "작동하는 미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가". station 4는 `appLogin()` mock으로 클라이언트 개발까지만 다루고, `auth-setup` skill은 신설하지 않는다 |
 | 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
@@ -47,9 +47,10 @@ commit 시점에 강제한다.
 MCP 배치 원칙(#1에서 확정): **manifest 기본 포함은 remote HTTP 2종(docs MCP ·
 console MCP)뿐이고, endpoint가 실재하기 전에는 placeholder로도 넣지 않는다.**
 로컬 프로세스가 필요한 debugger MCP는 opt-in(프로젝트 `.mcp.json`)이며, devtools는
-MCP가 아니다. devtools는 wf 3.x transitive dependency로 배포 모델이 전환 중이라
-과도기 동안은 프로젝트 devDependency로 남아 있다(`/ait:new`에서 `--no-devtools`로
-제외 가능 — 전환 완료(D1b) 후 이 플래그는 배선 skip으로 의미가 바뀔 예정).
+MCP가 아니다. devtools는 배포 모델 전환 중(전제 변경 감지 2026-08-04 — §5 문항 6
+상태 갱신 참고)이라 과도기 동안은 프로젝트 devDependency로 남아 있다(`/ait:new`에서
+`--no-devtools`로 제외 가능 — 전환 완료(D1b) 후 이 플래그는 배선 skip으로 의미가
+바뀔 예정).
 
 **2026-07-30 두 endpoint의 실재가 확인되어 manifest에 기본 포함됐다** (서버 키는
 공식 문서 표기와 동일):
@@ -118,7 +119,9 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
 **D1b**: wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 resolve
 실증(해소 주체 Dave·platform PR + wf 릴리즈) — 해소 시 devtools **설치 절차
 자체가 삭제**된다(치환이 아니다). harness `packages/devtools`도 이관·실증 후
-제거된다. 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다. D1a 해소 직후
+제거된다. **전제 변경 감지(2026-08-04)**: transitive가 아니라 "사내 monorepo
+발행 + CLI 자동 설치 실증"으로 재정의 대기 — §5 문항 6 상태 갱신 참고("설치
+절차 삭제"·"packages/devtools 제거" 종착지는 불변, CLI가 설치를 대행하므로). 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다. D1a 해소 직후
 체크리스트는 `docs/npm-release.md` §7a, D1b 해소 직후 체크리스트는 같은 문서
 §7b에 고정돼 있다.
 
@@ -136,7 +139,7 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
 
 6건 모두 "지금 결정 안 하면 진행이 막히는" 항목은 아니다 — 각각 확정되는 게이트
 시점이 다른 구조다: 1·3은 #8(public flip) 시점, 2는 #5(auth 축 재정의) 시점,
-4·5는 #3(console MCP GW) 시점, 6은 D1b(devtools wf transitive 배포 실증) 시점에
+4·5는 #3(console MCP GW) 시점, 6은 D1b(devtools 배포 실증 — 전제 변경으로 재정의 대기) 시점에
 확정한다. 2·4·5는 각자의 게이트를 이미 지났다 — 아래 각 항목에 해소/잠정 확정
 근거를 남긴다. 1·3·6은 해당 게이트가 아직 열리지 않아 open으로 유지한다.
 
@@ -176,8 +179,28 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
    아니다). 용어 "Deploy Key"는 유지, 과도기 모델(워크스페이스-scope·1회
    노출)도 그대로 — GW가 자체 인증을 갖추면 대화형 경로는 GW 인증을 정본으로,
    Deploy Key는 CI/headless 배포 전용으로 역할을 좁힌다는 방향만 남는다 (#3).
-6. **devtools 배포 모델 전환 — 이관 경계 확정 + 잔여 미확정 4건**(2026-08-04
-   신설, 이관 경계는 같은 날 maintainer 지시로 재확정). 확정된 것부터:
+6. **devtools 배포 모델 전환 — 전제 변경 감지, 재정의 대기**(2026-08-04
+   신설, 이관 경계는 같은 날 maintainer 지시로 재확정, 같은 날 전제 변경 감지).
+
+   **상태 갱신(2026-08-04): 아래 원 계획의 전제가 무너졌다.** 이관 목적지인
+   wf 소스 monorepo(사내)에 독자 계보 devtools(AIT-6577)가 먼저 머지됐다 —
+   community HEAD급 베이스에 3.x 네임스페이스 facade 14종(API 커버리지가
+   harness 사본의 superset), 표면 완전성 가드(check-sdk-exports, 상류 .d.ts
+   멤버 수준 대조), **CLI 자동 설치 devDependency 배포 모델**(wf 패키지
+   무변경 — transitive 아님)을 갖췄고, changesets fixed-group이라 다음
+   릴리즈에 npm 자동 발행 궤도다. 이에 따라 D1b는 "wf transitive + subpath
+   re-export 실증"에서 "**사내 monorepo 발행 + CLI 자동 설치 실증**"으로
+   재정의 예정 — 조율(Slack, Dave) 후 이 문항·§1 station 2 행·§3 D1b 정의·
+   `docs/npm-release.md` §7b·`packages/devtools/docs/porting-to-platform.md`를
+   일괄 수정한다. harness의 이관용 브랜치(feat/devtools-mock)는 폐기 권고
+   (그쪽이 superset이고 3.0.1 동기화 30건을 구조적으로 커버). 잔여 기여
+   후보: launcher 거처(아래 미확정 iii과 직결 — 그쪽 devtools는 tunnel·
+   launcher를 유지하며 소멸 예정 aitc.dev를 가리키고, harness가 Pages 자체
+   호스팅 + `AIT_LAUNCHER_URL` override를 보유)·README 잔재·unplugin name·
+   AdMob 충실도·fidelity-qa 이식. 3자 대조·검증 근거는 이슈 #74 코멘트
+   (2026-08-04). 원 서술 중 "platform 쪽 devtools는 launcher 코드를 아예
+   갖지 않는다"는 AIT-6577에는 해당하지 않는다. 아래 원 계획은 재정의 전
+   기록으로 유지한다. 확정된 것부터:
    devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어
    `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행되고, harness
    `packages/devtools`는 이관·실증(D1b) 후 제거된다. wf 2.x 지원은 종료되고
