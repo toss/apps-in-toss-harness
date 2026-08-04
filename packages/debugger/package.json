@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/debugger",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "MCP debugging daemon, on-device CDP relay, test runner, and dev bridge for Apps in Toss mini-apps — devDependency / npx tooling, never part of a production bundle",
   "type": "module",
   "engines": {
