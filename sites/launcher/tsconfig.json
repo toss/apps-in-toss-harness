@@ -1,0 +1,75 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    // "node" is needed for the ambient `declare module 'node:buffer'` etc.
+    // declarations that `import { Buffer } from 'node:buffer'`
+    // (sites/launcher/e2e/launcher.test.ts) resolves against — those aren't
+    // reachable via the `paths` remap below (paths matches specifiers, and
+    // `node:*` built-ins are ambient global augmentations, not a package tsc
+    // resolves by path), so this needs the typeRoots-based fallback instead.
+    "types": ["node"],
+    "typeRoots": ["../../packages/devtools/node_modules/@types"],
+    "noEmit": true,
+    // No `rootDir` — navbar.vitest.ts intentionally imports
+    // packages/devtools/src/panel/styles.ts (a deliberate, documented,
+    // temporary cross-package coupling — see the comment at the top of that
+    // file). A `rootDir` scoped to this directory would make tsc reject that
+    // import with TS6059 even though `noEmit` means no output layout is ever
+    // written, so there's nothing for `rootDir` to actually govern here.
+    //
+    // sites/launcher has no node_modules of its own (see the top comment in
+    // packages/devtools/e2e/launcher-site.vite.config.ts — same interim-
+    // borrowing rationale). This `paths` map is purely a type-only remap for
+    // `tsc --noEmit` — it redirects bare specifiers to the physical
+    // packages/devtools/node_modules/<dep> directories so tsc can find their
+    // .d.ts files via each package's own package.json ("exports"/"types"
+    // fields), same as if this file lived inside packages/devtools. For
+    // React specifically that means pointing at `@types/react` /
+    // `@types/react-dom` rather than the `react`/`react-dom` runtime
+    // packages themselves — those don't ship inline types (DefinitelyTyped
+    // sibling packages do), and TS's automatic "no inline types → check
+    // sibling @types/*" fallback only fires for real (non-`paths`-redirected)
+    // node_modules resolution, so redirecting straight at the runtime
+    // package here would silently degrade to implicit `any` (verified
+    // empirically — that's exactly what happened before this fix).
+    //
+    // Playwright's OWN test-file module resolution (running e2e/*.test.ts,
+    // not `tsc`) also reads tsconfig `paths` (verified empirically — it does
+    // NOT go through Vite's resolve.alias), but for `@playwright/test`
+    // specifically it needs a DIFFERENT target than tsc does: pointing at
+    // this package directory works for tsc (moduleResolution "bundler"
+    // honors the "exports" map's "types" condition → index.d.ts) but breaks
+    // Playwright's own resolver, which picks the "exports" map's CJS
+    // "require" condition regardless of ESM context, and loading that under
+    // native ESM (this package's package.json has "type": "module") then
+    // fails cjs-module-lexer's named-export detection. That Playwright-only
+    // override lives in e2e/tsconfig.json (closest-tsconfig wins for
+    // Playwright's own per-file discovery; `tsc -p` here never reads it).
+    "paths": {
+      "react": ["../../packages/devtools/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../packages/devtools/node_modules/@types/react/jsx-runtime"],
+      "react/jsx-dev-runtime": [
+        "../../packages/devtools/node_modules/@types/react/jsx-dev-runtime"
+      ],
+      "react-dom": ["../../packages/devtools/node_modules/@types/react-dom"],
+      "react-dom/client": ["../../packages/devtools/node_modules/@types/react-dom/client"],
+      "qr-scanner": ["../../packages/devtools/node_modules/qr-scanner"],
+      "@khmyznikov/pwa-install": ["../../packages/devtools/node_modules/@khmyznikov/pwa-install"],
+      "@testing-library/react": ["../../packages/devtools/node_modules/@testing-library/react"],
+      "@testing-library/dom": ["../../packages/devtools/node_modules/@testing-library/dom"],
+      "vitest": ["../../packages/devtools/node_modules/vitest"],
+      "@playwright/test": ["../../packages/devtools/node_modules/@playwright/test"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["dist", "node_modules"]
+}

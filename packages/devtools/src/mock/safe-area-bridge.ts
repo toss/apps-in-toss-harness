@@ -64,7 +64,7 @@ export const NAVIGATE_BACK_MESSAGE_TYPE = 'ait:navigate-back' as const;
  *
  * Direction: this is the SEND side's contract (posted from inside the iframe by
  * `src/in-app/attach.ts`). The launcher's receive half lives in
- * `e2e/fixture/launcher/Launcher.tsx` and mirrors the same value enum inline,
+ * `sites/launcher/launcher/Launcher.tsx` and mirrors the same value enum inline,
  * staying decoupled from the mock package internals — the same pattern the
  * other launcher message types follow.
  *

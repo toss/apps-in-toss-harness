@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Playwright discovers the CLOSEST tsconfig.json to each test file it
+    // runs (not the top-level sites/launcher/tsconfig.json) for its own
+    // tsconfig-`paths`-aware module resolution. `tsc -p sites/launcher/tsconfig.json`
+    // (the `pnpm typecheck:launcher` validation target) never reads this
+    // nested file — it only matters for `playwright test` itself.
+    //
+    // This overrides just the one entry that needs a DIFFERENT target here
+    // than tsc needs — see the long comment on `@playwright/test` in
+    // ../tsconfig.json for why. `paths` is not merged across `extends`, so
+    // this array fully replaces the parent's `paths` for files under this
+    // directory; that's fine, e2e/*.test.ts only import `@playwright/test`
+    // and relative files.
+    "paths": {
+      "@playwright/test": ["../../../packages/devtools/node_modules/@playwright/test/index.mjs"]
+    }
+  }
+}

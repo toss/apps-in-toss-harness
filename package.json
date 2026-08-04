@@ -6,15 +6,18 @@
     "node": ">=24"
   },
   "scripts": {
-    "lint": "pnpm -r lint && pnpm lint:shared",
+    "lint": "pnpm -r lint && pnpm lint:shared && pnpm lint:launcher",
     "lint:shared": "cd shared/internal-protocol && biome check .",
-    "test": "pnpm -r test && pnpm test:scripts && pnpm test:shared",
+    "lint:launcher": "cd sites/launcher && biome check .",
+    "test": "pnpm -r test && pnpm test:scripts && pnpm test:shared && pnpm test:launcher",
     "test:scripts": "node --test \"scripts/__tests__/**/*.test.mjs\"",
     "test:shared": "vitest run --root shared/internal-protocol",
+    "test:launcher": "pnpm --filter @apps-in-toss/devtools exec vitest run --config e2e/launcher-site.vitest.config.ts",
     "build": "pnpm -r --if-present build",
     "check:pack-manifests": "node scripts/check-pack-manifests.mjs",
-    "typecheck": "pnpm -r --if-present typecheck && pnpm typecheck:shared",
-    "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json"
+    "typecheck": "pnpm -r --if-present typecheck && pnpm typecheck:shared && pnpm typecheck:launcher",
+    "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json",
+    "typecheck:launcher": "tsc --noEmit -p sites/launcher/tsconfig.json"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.1",

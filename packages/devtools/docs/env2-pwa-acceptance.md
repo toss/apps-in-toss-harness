@@ -22,7 +22,7 @@ https://devtools.aitc.dev/launcher/
 
 상단의 **"Install launcher to your phone"** 버튼을 탭하거나, Safari 공유 시트 → "홈 화면에 추가"로 설치한다. 설치 후 홈 화면에 "Apps in Toss DevTools Launcher" 아이콘이 생기면 완료.
 
-iOS에서는 `beforeinstallprompt` 이벤트가 없으므로 공유 시트 경로가 정상 동작이다(`e2e/fixture/launcher/main.ts`의 `@khmyznikov/pwa-install` 커스텀 엘리먼트가 이를 처리한다).
+iOS에서는 `beforeinstallprompt` 이벤트가 없으므로 공유 시트 경로가 정상 동작이다(`sites/launcher/launcher/main.tsx`의 `@khmyznikov/pwa-install` 커스텀 엘리먼트가 이를 처리한다 — launcher 소스는 `docs/release-plan.md` Phase 1 B4로 `sites/launcher/`로 이전됨, 이 패키지에는 더 이상 없음).
 
 ---
 

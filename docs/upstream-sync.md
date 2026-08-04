@@ -387,11 +387,15 @@ prose는 보존"을 따랐다(harness 커밋 `edd5743`·`1432504` 커밋 메시�
   것을 정확한 수치로 대체한다. 이 중 **가장 위험도가 높은 두 클래스는 이미
   `localOnly`로 고정했다**(harness 커밋 — 이 문단을 갱신한 PR):
   - **클래스 1 — 공개 서빙되는 Pages 표면** (`https://toss.github.io/apps-in-toss-harness/`가
-    서빙하는 파일 전체: `e2e/fixture/index.html`·`assets/og/image.png`·
-    `e2e/fixture/vite.config.ts`·`e2e/fixture/main.tsx`·`e2e/fixture/launcher/**`·
-    `e2e/fixture/public/launcher/{manifest.webmanifest,sw.js}`·
-    `scripts/build-og-image.tsx`·`scripts/og/template.tsx`, 12개 파일, devtools
-    `localOnly` 참고).
+    서빙하는 파일 중 devtools 패키지에 남은 부분: `e2e/fixture/index.html`·
+    `assets/og/image.png`·`e2e/fixture/vite.config.ts`·`e2e/fixture/main.tsx`·
+    `scripts/build-og-image.tsx`·`scripts/og/template.tsx`, 6개 파일, devtools
+    `localOnly` 참고). 이 목록은 원래 12개였다 — launcher 축 아래 6개 파일
+    (fixture launcher 소스 4개 + 그 public 정적 자산 2개)은 release-plan
+    Phase 1 B4(2026-08-04)로 devtools 밖 워크스페이스 비소속 디렉터리로 완전히
+    이전되며 devtools localOnly에서도 제거됐다 — 이관된 곳은 대응하는
+    packages 상류가 없어 이 upstream-sync 파이프라인의 대상이 아니므로 더
+    이상 여기서 셀 항목이 아니다.
   - **클래스 2 — PR #22(`AIT_LAUNCHER_URL` override)의 소비자·회귀 테스트**
     (devtools 2개: `src/unplugin/tunnel.ts`·`src/__tests__/unplugin-tunnel.test.ts`,
     debugger 4개: `src/mcp/deeplink.ts`·`src/mcp/attach-orchestrator.ts`·

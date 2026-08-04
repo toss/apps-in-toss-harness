@@ -53,11 +53,17 @@ debug-console, D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
 - [ ] 이어서 테스트 리터럴 · i18n 문자열(+`build:dashboard-html` 재생성) ·
       `validate-plugin.mjs`의 `A6_ALLOWLIST_RES` 정규식 · 남은 문서 일괄 교체.
       **allowlist 정규식을 빠뜨리면 새 URL이 오히려 "커뮤니티 잔재"로 오탐돼 CI가 실패한다.**
-- [ ] **launcher 표면 소유권 이전(B4)** — 현재 launcher PWA 표면(fixture·e2e)이
-      `packages/devtools/e2e/fixture/` 안에 있다. devtools는 platform 이관
-      대상이라 harness에서 제거될 예정(D1b)이므로, 그 전에 이 표면을 pnpm
-      workspace 밖 `sites/launcher/`로 옮겨 devtools 제거가 launcher 서빙을
-      끌고 내려가지 않게 한다.
+- [x] **launcher 표면 소유권 이전(B4)** — launcher PWA 표면(소스·정적 자산·e2e)을
+      `packages/devtools/e2e/fixture/`에서 pnpm workspace 밖 `sites/launcher/`로
+      이전(`git mv`, 이력 보존) — devtools는 platform 이관 대상이라 harness에서
+      제거될 예정(D1b)이므로, 그 전에 이 표면을 분리해 devtools 제거가 launcher
+      서빙을 끌고 내려가지 않게 했다. 배포 URL 구조는 byte-identical(`/launcher/`,
+      manifest, sw.js 전부 동일 경로) — `.github/workflows/deploy-fixture.yml`의
+      빌드 스텝만 `sites/launcher/`를 가리키도록 갱신했다. 빌드/타입체크/테스트
+      툴체인은 아직 자체 `node_modules`가 없어 `packages/devtools`의 것을
+      상대경로로 빌려 쓴다(`resolve.alias`/`tsconfig.json` `paths`) — 완전한
+      툴체인 독립(자체 package.json + lockfile)은 devtools가 실제로 제거되는
+      C4로 미룬다.
 
 **완료 조건**: `aitc.dev` 참조 0건(CHANGELOG·설계 아카이브 제외).
 

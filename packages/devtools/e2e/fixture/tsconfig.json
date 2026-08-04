@@ -12,8 +12,8 @@
     "forceConsistentCasingInFileNames": true,
     "types": [],
     "noEmit": true,
-    "rootDir": "../../.."
+    "rootDir": ".."
   },
-  "include": ["**/*.ts", "**/*.tsx", "../panel.test.ts", "../../../src/i18n/**/*.ts"],
+  "include": ["**/*.ts", "**/*.tsx", "../panel.test.ts"],
   "exclude": ["dist", "node_modules"]
 }

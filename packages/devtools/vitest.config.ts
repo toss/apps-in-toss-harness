@@ -7,19 +7,13 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     restoreMocks: true,
-    // Default `*.test.ts` collection (src/**) PLUS the launcher's pure-logic unit
-    // tests under a distinct `*.vitest.ts` extension. The `.vitest.ts` suffix
-    // keeps Playwright (testMatch '**/*.test.ts', testDir './e2e') from picking
-    // these up, so the same launcher source is covered by both runners without
-    // collision (#411).
-    include: [
-      'src/**/*.test.ts',
-      'src/**/*.test.tsx',
-      'e2e/fixture/launcher/**/*.vitest.ts',
-      'e2e/fixture/launcher/**/*.vitest.tsx',
-    ],
-    // Only the Playwright e2e specs are excluded — the launcher `*.vitest.ts`
-    // files above stay in vitest's scope.
+    // The launcher's pure-logic `*.vitest.ts` unit tests moved to
+    // sites/launcher/ along with the rest of the launcher source
+    // (docs/release-plan.md Phase 1 B4) — see
+    // packages/devtools/e2e/launcher-site.vitest.config.ts for their runner
+    // (wired into CI via root `pnpm test` → `test:launcher`, see root
+    // package.json).
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     exclude: ['e2e/**/*.test.ts', '.tmp/**', 'node_modules/**', '.claude/**'],
     onConsoleLog(log: string) {
       if (log.includes('[@apps-in-toss/devtools]')) return false;

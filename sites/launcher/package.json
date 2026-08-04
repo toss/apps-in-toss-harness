@@ -1,0 +1,7 @@
+{
+  "name": "@apps-in-toss/launcher-site",
+  "private": true,
+  "type": "module",
+  "description": "Real-device attach launcher PWA, deployed to GitHub Pages at /launcher/ (LAUNCHER_URL target — packages/devtools/src/shared/launcher-url.ts, packages/debugger/src/mcp/deeplink.ts). Lives outside pnpm workspace (not a packages/* member, never published) — moved out of packages/devtools/e2e/fixture so removing that package (D1b/C4) doesn't drag launcher hosting down with it (docs/release-plan.md Phase 1 B4). This manifest is documentation only, not an install/resolution target: there is no node_modules here yet. tsconfig.json borrows react/react-dom/qr-scanner/@khmyznikov/pwa-install/vitest/@playwright/test straight off packages/devtools' pnpm-managed node_modules by relative path. The actual vite/vitest/playwright build and test configs (launcher-site.vite.config.ts, launcher-site.vitest.config.ts, launcher-site.playwright.config.ts) physically live in packages/devtools/e2e/ instead of here — a config file's own bare imports (vite, @vitejs/plugin-react, etc.) must resolve from where the file itself sits on disk, and this directory has no node_modules of its own yet to resolve them from (see the comment at the top of packages/devtools/e2e/launcher-site.vite.config.ts). Full toolchain independence (its own package.json + lockfile, and configs that live here) is deferred to whoever does C4, since that's the point packages/devtools disappears.",
+  "license": "BSD-3-Clause"
+}

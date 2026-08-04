@@ -62,7 +62,7 @@ harness에 남기거나(이관 안 함) 이관 시점에 폐기하는 대상.
 | 항목 | 비고 |
 |---|---|
 | `src/stubs/**` | 1.0.0 제거 예정분의 자연 제거. 단 `LEGACY_IN_APP_ID`(`@ait-co/devtools/in-app`) dedupe 인식은 `src/unplugin/optional-peers.ts`에 남겨야 한다 — 분리 전 legacy specifier로 직접 배선한 소비자가 중복 주입을 받지 않게 하는 용도라 unplugin 쪽 로직이지 stub이 아니다. 이 파일 자체가 아래 항목대로 이관에서 빠지므로, harness `packages/devtools`가 살아있는 동안만 유효한 note다 |
-| `e2e/**` | launcher 축(`e2e/fixture/launcher`)은 harness workspace 밖 `sites/launcher/`로 별도 이전한다(`docs/release-plan.md` Phase 1의 B4 항목) — platform으로 가져가지 않는다 |
+| `e2e/**` | launcher 축은 harness workspace 밖 `sites/launcher/`로 이미 이전 완료(`docs/release-plan.md` Phase 1 B4, 2026-08-04) — platform으로 가져가지 않는다. 남은 `e2e/**`(데모 fixture)는 harness 운영용이라 이관 대상이 아니다 |
 | `CHANGELOG.md`, `.changeset/` | 0.1.x는 harness 이력이라 platform 쪽 새 버전 이력과 섞지 않는다 |
 | `CLAUDE.md` | harness 전용 운영 문서 |
 | worktree·OG·redact 스크립트 (`scripts/cleanup-worktree-processes.sh`, `scripts/setup-worktree.sh`, `scripts/build-og-image.tsx`, `scripts/og/**`, `scripts/redact-crash-log.sh`) | harness 운영용, platform 관례로 대체되거나 불필요 |
