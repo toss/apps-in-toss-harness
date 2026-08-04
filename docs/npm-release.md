@@ -169,11 +169,17 @@ pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음
 
 1. `cp -r packages/<pkg>/.changeset .changeset` — 해당 패키지의 `.changeset/`을 repo 루트로 임시 복사
 2. 루트에서 `pnpm exec changeset version` 실행 — 해당 패키지만 bump된다(다른 패키지의 pending은
-   루트에 없으므로 안전)
+   루트에 없으므로 안전). 루트에 `@changesets/cli`가 devDependency로 없어 `pnpm exec`이 못 찾으면
+   `./packages/<pkg>/node_modules/.bin/changeset version`을 **cwd=repo 루트**에서 직접 실행한다
+   (2026-08-04 실측 — 루트 인식 조건은 cwd 기준이라 절차 취지는 동일하다)
 3. `rm -rf .changeset` — 임시 루트 복사본 제거 (소진된 `.md`는 1의 복사 시점에 루트로 왔다가
    여기서 같이 사라지므로, **원본 `packages/<pkg>/.changeset/`의 소진된 `.md`를 손으로 삭제**한다)
 4. `git diff`로 확인: package.json 버전 patch bump + CHANGELOG 신규 항목 + 소진된 `.md` 삭제만
-   남아야 한다
+   남아야 한다. **부수효과 주의(2026-08-04 실측)**: 다른 패키지가 bump 대상을 `workspace:*`가 아닌
+   literal semver로 참조하면(예: devtools의 `peerDependencies["@apps-in-toss/debugger"]`) changesets
+   기본 설정(`updateInternalDependencies: "patch"`)이 그 참조 필드를 자동 갱신해 의도 밖 diff를
+   만든다 — 대상 패키지 외 diff는 `git checkout -- <path>`로 원복한다(어떤 CI 가드도 이 필드를
+   검사하지 않음을 확인함)
 
 배포 워크플로(release.yml)는 changesets를 호출하지 않고 package.json에 커밋된 버전을 그대로
 발행하므로, 이 절차는 배포 전 버전 확정 단계에서만 필요하다.
