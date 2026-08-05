@@ -21,8 +21,9 @@ argument-hint: ''
 새 거처 — 과거 `@ait-co/devtools`의 `tunnel` unplugin 옵션이 하던 역할을
 이어받았다)은 dev 서버가 이미 떠 있는 포트로 Cloudflare quick tunnel을 열고,
 터미널에 `*.trycloudflare.com` URL + QR을 출력한다. 이 URL을 launcher PWA
-(`https://devtools.aitc.dev/launcher/`) 안에서 열면 폰 홈 화면에 고정된
-앱처럼 실행된다.
+(`https://toss.github.io/apps-in-toss-harness/launcher/`, harness Pages 정본 —
+구 `devtools.aitc.dev/launcher/`는 도메인 소멸, 2026-08-05 실측) 안에서 열면
+폰 홈 화면에 고정된 앱처럼 실행된다.
 
 이 skill이 완료되면:
 - `pnpm dev:phone` 한 번으로 터미널에 URL + QR이 뜬다.
@@ -269,7 +270,7 @@ setup-phone-preview 완료
   - pnpm install 완료 (cloudflared 바이너리 캐시됨)
 
 [폰에서 한 번만 하는 준비]
-  https://devtools.aitc.dev/launcher/ 를 Safari/Chrome에서 열어
+  https://toss.github.io/apps-in-toss-harness/launcher/ 를 Safari/Chrome에서 열어
   홈 화면에 추가하세요.
     iOS Safari: 공유 버튼 → "홈 화면에 추가"
     Android Chrome: ⋮ → "앱 설치" 또는 "홈 화면에 추가"
@@ -349,7 +350,7 @@ setup-phone-preview 완료
   `debug`(이 skill의 tunnel 위에서 도는 relay-sandbox on-device 디버깅, §5-B가 환경 3
   candidate 등록·업로드까지 처리). `inject`의 devtools facet(mock SDK/패널)은 이제
   이 skill과 독립적이다 — `--mode=phone`은 devtools 없이도 동작한다.
-- launcher PWA: https://devtools.aitc.dev/launcher/
+- launcher PWA: https://toss.github.io/apps-in-toss-harness/launcher/ (`AIT_LAUNCHER_URL` env override로 다른 호스트를 먼저 검증 가능)
 - cloudflared quick tunnel 문서: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/
 - `@apps-in-toss/debugger`의 `--mode=phone` 자체 문서: `packages/debugger/README.md`
   ("실기기 미리보기" 절).

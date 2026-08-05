@@ -21,7 +21,7 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
 | 환경 | 실행 면 | 이 skill의 경로 |
 |---|---|---|
 | 1. 로컬 브라우저 | desktop Chromium + mock SDK + Panel | 2-A/2-B/3 — panel · `window.__ait` · 브라우저 DevTools |
-| 2. Sandbox App (PWA) | 실기기 Safari/WebKit + installable PWA(`devtools.aitc.dev/launcher/`) + cloudflared 터널 | 5 — `start_attach({mode:'relay-sandbox'})` 1호출 QR attach (mock SDK; CDP는 실 WebKit; `setup-phone-preview`로 `dev:phone:cdp` 스크립트 + CDP relay 배선 선행, 이 skill이 dev 서버 기동 자동화) |
+| 2. Sandbox App (PWA) | 실기기 Safari/WebKit + installable PWA(`https://toss.github.io/apps-in-toss-harness/launcher/`) + cloudflared 터널 | 5 — `start_attach({mode:'relay-sandbox'})` 1호출 QR attach (mock SDK; CDP는 실 WebKit; `setup-phone-preview`로 `dev:phone:cdp` 스크립트 + CDP relay 배선 선행, 이 skill이 dev 서버 기동 자동화) |
 | 3. intoss-private relay dev | 실기기 토스 앱 WebView(dogfood) + CDP relay | 5 — `start_attach({mode:'relay-staging', scheme_url})` 1호출 QR attach |
 
 - **환경 1**은 지금 바로, 의존 없이 쓴다:
@@ -176,7 +176,8 @@ CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
 폰 디버깅은 두 환경 중 하나다. 사용자가 어느 환경을 보는지로 가른다:
 
 - **환경 2 (Sandbox App (PWA))** — 토스 앱·검수 없이 실기기 WebKit 엔진을 볼 수 있는
-  launcher PWA(`devtools.aitc.dev/launcher/`). 전제: `/ait:setup-phone-preview`가
+  launcher PWA(`https://toss.github.io/apps-in-toss-harness/launcher/`, harness Pages
+  정본 — 구 `devtools.aitc.dev/launcher/`는 도메인 소멸, 2026-08-05 실측). 전제: `/ait:setup-phone-preview`가
   `@apps-in-toss/debugger`를 devDependency로 추가하고 `dev:phone`/`dev:phone:cdp`
   스크립트(각각 `debugger --mode=phone -- vite` / `debugger --mode=phone --cdp -- vite`)를
   배선해야 한다(안 돼 있으면 먼저 실행). 이 skill이 **`pnpm dev:phone:cdp`**(`debugger

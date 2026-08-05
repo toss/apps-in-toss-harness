@@ -292,24 +292,33 @@ CLAUDE.md의 "자체 호스팅 확보 또는 기본값 전환 정책 확정"이�
 즉 **"Pages 활성화"라는 대외 공개 행위는 이미 지나간 과거형 사실**이고, 이
 항목의 상태는 "Dave 결정 대기"가 아니라 "**#11 실기기 스모크 대기**"다.
 
-기본 상수는 아직 커뮤니티 인프라(`devtools.aitc.dev`)를 가리킨다. `aitc.dev`
-참조는 실측 43개 파일 137건으로, 과거 기록보다 오히려 늘었다(상수는 그대로인
-채 관련 테스트·문서가 증가).
+**교체 완료(2026-08-05)**: `LAUNCHER_URL` 기본 상수가
+`https://toss.github.io/apps-in-toss-harness/launcher/`(harness Pages 정본)로
+바뀌었다 — 죽은 커뮤니티 도메인(`devtools.aitc.dev`, 전체 404) 참조는 코드에서
+제거됐다. `AIT_LAUNCHER_URL` env override(#19)는 그대로 유지되어, 상수를 다시
+바꾸지 않고도 새 호스트를 실기기에서 먼저 검증할 수 있다. 남은 잔여는 #11
+실기기 스모크(iOS Safari / Android Chrome 홈 화면 추가 + attach deep-link
+완주)뿐 — 데스크톱 200 확인은 이미 끝났지만 PWA 설치 흐름 자체는 실기기 전용
+검증이라 대체하지 못한다.
 
-### 4.2 3분류
+### 4.2 3분류 (2026-08-05 기준 — #11 게이트는 maintainer 승인으로 조기 해제)
 
-**(a) 준비 가능 — 세션이 미리 만들 수 있는 것**
+**(a) 완료 — 상수 flip 실행됨**
 
-- 상수 flip 시 **동시 교체 대상 체크리스트는 이미 정본화돼 있다**
-  (`docs/release-plan.md` Phase 1 + git history(commit b5515ae 이전)의
-  `packages/devtools/docs/pages-deploy-verification.md`, C4로 제거됨):
-  `LAUNCHER_URL` 1곳(`packages/debugger/src/mcp/deeplink.ts` 단독 정본 —
+- `LAUNCHER_URL` 1곳(`packages/debugger/src/mcp/deeplink.ts` 단독 정본 —
   devtools 쪽 사본은 harness `packages/devtools` 제거·C4(2026-08-05)로
   함께 사라져, 더 이상 "값-복제 관계라 하나만 바꾸면 두 MCP가 분열"할 위험이
-  없다) · 테스트 리터럴 · i18n 문자열
-  (+`build:dashboard-html` 재생성) · `validate-plugin.mjs`의 `A6_ALLOWLIST_RES`
-  정규식 · 남은 문서 일괄. **allowlist 정규식을 빠뜨리면 새 URL이 "커뮤니티
-  잔재"로 오탐돼 CI가 실패한다.** 추가 준비 불요.
+  없다) 교체 + 부수 일괄 정리(테스트 리터럴·i18n 문자열 교체·
+  `build:dashboard-html` 재생성·`validate-plugin.mjs`의 `A6_ALLOWLIST_RES`
+  항목 제거·문서 갱신)가 **실행 완료됐다** — maintainer(Dave)가 "#11 실기기
+  스모크 전 `LAUNCHER_URL` 불변" 게이트를 해제하고 이 시점의 수리를 승인했다
+  (원래 체크리스트 정본은 `docs/release-plan.md` Phase 1 + git history(commit
+  b5515ae 이전)의 `packages/devtools/docs/pages-deploy-verification.md`,
+  C4로 제거됨). 새 URL(`toss.github.io`)은 `aitc.dev` 도메인이 아니라 애초에
+  A6 스캔 대상이 아니므로 대체 정규식은 불필요했다 — **사문화된 D2
+  allowlist 항목(죽은 `devtools.aitc.dev/launcher/` 매칭용)을 남겨두면 같은
+  죽은 도메인이 skill 본문에 다시 유입돼도 이 게이트가 조용히 통과시키는
+  것**이 실제 리스크였고, 항목 제거로 해소됐다 — 실행 시 함께 확인됨.
 - Pages 배포 워크플로 상단 주석이 "Pages 미활성" 전제로 stale하다 — 정정
   필요하나 이번 라운드는 `.github/workflows/*` 편집 금지라 손대지 않았다.
   **다음 라운드 작업 항목**(주석 1블록 정정, 기능 변경 없음).
@@ -320,8 +329,9 @@ CLAUDE.md의 "자체 호스팅 확보 또는 기본값 전환 정책 확정"이�
   maintainer-internal 기록 확인 대상.
 - 장기 호스팅 정책(커스텀 도메인 vs project sub-path 유지)은 미확정이나,
   현재 sub-path로 이미 서빙 중이라 flip을 막는 결정은 아니다.
+- `LAUNCHER_URL` 상수 조기 교체 자체는 위 (a)에서 이미 **Dave가 승인·집행**했다.
 
-**(c) #11 게이트 — 통과 전엔 손대지 않음**
+**(c) #11 잔여 — 상수 교체 이후에도 남는 실기기 검증**
 
 - **실기기 스모크**: iOS Safari / Android Chrome에서 홈 화면 추가 + attach
   deep-link 완주. 데스크톱 200 확인은 대체하지 못한다(PWA 설치 흐름은 실기기
@@ -329,15 +339,19 @@ CLAUDE.md의 "자체 호스팅 확보 또는 기본값 전환 정책 확정"이�
   `packages/devtools/docs/pages-deploy-verification.md` 4번 단계였다(C4로
   파일 제거 — 절차 자체는 위 §4.1의 `AIT_LAUNCHER_URL` env override로 여전히
   유효하다).
-- 그 통과 후에만 `LAUNCHER_URL` 상수 1곳(`packages/debugger/src/mcp/deeplink.ts`)
-  교체 + 위 (a)의 부수 일괄 교체.
-- 완료 조건: `aitc.dev` 참조 0건(CHANGELOG·설계 아카이브 제외).
+- 상수 교체는 이 스모크를 **선행하지 않고 이미 끝났다** — 남은 건 새 상수
+  기준으로 실기기 설치·attach 완주를 검증하는 일뿐, 상수 자체를 바꾸는 작업은
+  아니다.
+- 완료 조건: `aitc.dev` 참조 0건(CHANGELOG·설계 아카이브 제외) — 코드 기준
+  달성. 문서 쪽 잔여 역사 서술(예: `docs/upstream-sync.md` :317 부근)은
+  CHANGELOG/설계 아카이브에 준하는 실측 기록이라 이 완료 조건에서 제외한다.
 
-**flip과의 관계**: launcher 상수 flip은 public 전환의 **선행 조건이 아니다**.
-public repo에서 기본 launcher가 커뮤니티 도메인을 가리키는 상태는 1.0 조건2
-("공식 표면만으로 완주 — 커뮤니티 잔재 없음")에는 걸리지만 flip 자체를 막지는
-않는다. 다만 flip 시점에 이 상태를 README나 릴리스 노트에 정직하게 적을지는
-판단 대상이다.
+**flip과의 관계**: launcher 상수 flip은 public 전환의 **선행 조건이 아니었고
+지금은 이미 완료됐다**. flip 이전에 이미 정리된 덕분에, public repo가
+기본 launcher로 커뮤니티 도메인(현재 전체 404)을 가리키는 상태가 될 위험이
+없어져 1.0 조건2("공식 표면만으로 완주 — 커뮤니티 잔재 없음")도 이 축에서는
+선제적으로 충족된다. 남은 건 #11 실기기 스모크뿐이며, 그 결과를 README나
+릴리스 노트에 어떻게 반영할지는 여전히 판단 대상이다.
 
 ---
 
@@ -411,9 +425,11 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
     wf 릴리즈가 게이트 — 이 런북의 순서와 독립적으로 그 전이나 후 어느
     시점에나 올 수 있다). skill 재설계·`--local` 템플릿 폐기·eval fixture
     교체·baseline epoch 판단·harness `packages/devtools` 제거까지 포함한다.
-14. **launcher 상수 flip** — #11 실기기 스모크 통과 후. flip 축과 독립이며
-    (§4.2(c)) 순서상 여기 이후 아무 때나. 체크리스트는 `docs/release-plan.md`
-    Phase 1.
+14. **launcher 상수 flip** — **완료(2026-08-05)**. maintainer가 #11 실기기
+    스모크 전 게이트를 해제하고 조기 집행을 승인했다(§4.2(a)). flip 축과
+    독립이라 순서상 원래도 아무 때나였고, 이제 선행 조건도 남아 있지 않다.
+    남은 건 #11 실기기 스모크(§4.2(c)) — 상수 자체는 더 이상 이 항목의
+    블로커가 아니다. 체크리스트는 `docs/release-plan.md` Phase 1.
 
 ---
 

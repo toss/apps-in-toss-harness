@@ -622,7 +622,7 @@ describe('idempotency — combined realistic fixture', () => {
     assert.match(once.content, /devtools#290/);
     assert.match(once.content, /apps-in-toss-harness\/tree\/main\/packages\/devtools/);
     assert.match(once.content, /apps-in-toss-docs MCP/);
-    assert.match(once.content, /devtools\.aitc\.dev\/launcher\//); // 치환 금지 보존
+    assert.match(once.content, /devtools\.aitc\.dev\/launcher\//); // 해당 문자열을 대상으로 하는 치환 규칙이 없어 그대로 보존(더 이상 PROTECTED_LITERALS 소속 아님 — harness 자체 launcher 호스팅 확보로 해제됨)
     assert.doesNotMatch(once.content, /Community open-source project\./);
   });
 });

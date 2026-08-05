@@ -139,7 +139,7 @@ describe('extractLauncherSearch (#507)', () => {
 
   it('launcher URL with name + icon + navBarType → returns its search string', () => {
     const launcherUrl =
-      'https://devtools.aitc.dev/launcher/?url=https%3A%2F%2Fexample.com%2F&name=My%20App&icon=https%3A%2F%2Fexample.com%2Ficon.png&navBarType=game';
+      'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Fexample.com%2F&name=My%20App&icon=https%3A%2F%2Fexample.com%2Ficon.png&navBarType=game';
     const result = extractLauncherSearch(launcherUrl);
     expect(result).not.toBeNull();
     const params = new URLSearchParams(result ?? '');
@@ -150,7 +150,8 @@ describe('extractLauncherSearch (#507)', () => {
   });
 
   it('launcher URL with url= but no name/icon → returns search (resolveAppTitle will return null)', () => {
-    const launcherUrl = 'https://devtools.aitc.dev/launcher/?url=https%3A%2F%2Fexample.com%2F';
+    const launcherUrl =
+      'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Fexample.com%2F';
     const result = extractLauncherSearch(launcherUrl);
     expect(result).not.toBeNull();
     // The returned search can be fed to resolveAppTitle — should yield null (no name=).
@@ -177,7 +178,7 @@ describe('extractLauncherSearch (#507)', () => {
 
   it('launcher URL with url= and name= → resolveAppTitle returns the name', () => {
     const launcherUrl =
-      'https://devtools.aitc.dev/launcher/?url=https%3A%2F%2Fexample.com%2F&name=SDK%20Example';
+      'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Fexample.com%2F&name=SDK%20Example';
     const search = extractLauncherSearch(launcherUrl);
     expect(search).not.toBeNull();
     expect(resolveAppTitle(search ?? '')).toBe('SDK Example');
@@ -185,7 +186,7 @@ describe('extractLauncherSearch (#507)', () => {
 
   it('launcher URL search can be re-parsed by parseNavBarType and resolveAppIcon', () => {
     const launcherUrl =
-      'https://devtools.aitc.dev/launcher/?url=https%3A%2F%2Fexample.com%2F&navBarType=game&icon=https%3A%2F%2Fexample.com%2Flogo.png';
+      'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Fexample.com%2F&navBarType=game&icon=https%3A%2F%2Fexample.com%2Flogo.png';
     const search = extractLauncherSearch(launcherUrl);
     expect(search).not.toBeNull();
     expect(parseNavBarType(search ?? '')).toBe('game');

@@ -62,7 +62,6 @@ export const MULTI_PACKAGE_REPOS = new Set(['debugger']);
  * 규칙도 이 정확한 문자열은 건드리지 않는다. 해제 조건은 docs/upstream-sync.md.
  */
 export const PROTECTED_LITERALS = [
-  'https://devtools.aitc.dev/launcher/', // 실기기 attach가 실제로 여는 launcher PWA — 대체 호스팅 미확보
   'https://aitc.dev/apple-touch-icon.png', // granite.config.ts brand.icon 기본값 — 토스 소유 아이콘 미확보
   '@ait-co/devtools/in-app', // 분리 전(pre-split) legacy specifier — LEGACY_IN_APP_ID가 dedupe용으로 영구 인식하는 정확한 문자열. LEGACY-named const 대입 밖(예: 테스트 fixture 문자열 안에 리터럴로 등장)에서도 절대 리네임하면 안 된다 — 실측 근거: packages/devtools/src/__tests__/unplugin.test.ts의 "#817: 분리 전 specifier로 직접 배선한 소비자도 dedupe 대상이다" 테스트가 이 정확한 문자열을 fixture로 쓴다.
 ];
@@ -562,7 +561,7 @@ export const RULES = [
     category: 'domain',
     defaultEnabled: true,
     envVar: null,
-    description: `치환 금지: ${PROTECTED_LITERALS.join(', ')} — 대체 자산(launcher 호스팅·토스 소유 아이콘) 미확보.`,
+    description: `치환 금지: ${PROTECTED_LITERALS.join(', ')} — 토스 소유 아이콘 자산 미확보.`,
   },
   {
     id: 'branding-neutralize',

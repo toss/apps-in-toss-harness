@@ -141,7 +141,7 @@ describe('buildDeepLinkAttachUrl', () => {
 // buildLauncherAttachUrl — env-2 launcher PWA deep-link (#378)
 // ---------------------------------------------------------------------------
 
-const LAUNCHER_BASE = 'https://devtools.aitc.dev/launcher/';
+const LAUNCHER_BASE = 'https://toss.github.io/apps-in-toss-harness/launcher/';
 const TUNNEL = 'https://abc-def.trycloudflare.com';
 const WSS = 'wss://relay-xyz.trycloudflare.com';
 

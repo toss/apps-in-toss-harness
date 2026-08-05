@@ -194,13 +194,19 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
    `docs/npm-release.md` §7b·`packages/devtools/docs/porting-to-platform.md`를
    일괄 수정한다. harness의 이관용 브랜치(feat/devtools-mock)는 폐기 권고
    (그쪽이 superset이고 3.0.1 동기화 30건을 구조적으로 커버). 잔여 기여
-   후보: launcher 거처(아래 미확정 iii과 직결 — 그쪽 devtools는 tunnel·
-   launcher를 유지하며 소멸 예정 aitc.dev를 가리키고, harness가 Pages 자체
-   호스팅 + `AIT_LAUNCHER_URL` override를 보유)·README 잔재·unplugin name·
-   AdMob 충실도·fidelity-qa 이식. 3자 대조·검증 근거는 이슈 #74 코멘트
-   (2026-08-04). 원 서술 중 "platform 쪽 devtools는 launcher 코드를 아예
-   갖지 않는다"는 AIT-6577에는 해당하지 않는다. 아래 원 계획은 재정의 전
-   기록으로 유지한다. 확정된 것부터:
+   후보: launcher 거처(아래 미확정 iii과 직결 — **상태 갱신(2026-08-05)**:
+   launcher 랜딩 PWA + attach 딥링크 계약은 `@apps-in-toss/debugger`의
+   `LAUNCHER_URL`이 harness Pages 정본(`https://toss.github.io/apps-in-toss-harness/launcher/`)
+   + `AIT_LAUNCHER_URL` override로 단일화됐다 — 소멸한 `devtools.aitc.dev`
+   참조는 debugger 쪽에서 제거 완료. 다만 **터널 오리진 자체는 병존**한다:
+   devtools(사내, AIT-6577)는 자기 tunnel·launcher 코드를 여전히 갖고
+   있고, harness 쪽은 `@apps-in-toss/debugger --mode=phone`이 독립
+   cloudflared quick tunnel을 띄운다(iii 해소, harness#79) — 두 계보를
+   하나로 합치는 건 이 문항의 기여 조율 범위이지 아직 실행되지 않았다)·
+   README 잔재·unplugin name·AdMob 충실도·fidelity-qa 이식. 3자 대조·검증
+   근거는 이슈 #74 코멘트(2026-08-04). 원 서술 중 "platform 쪽 devtools는
+   launcher 코드를 아예 갖지 않는다"는 AIT-6577에는 해당하지 않는다. 아래
+   원 계획은 재정의 전 기록으로 유지한다. 확정된 것부터:
    devtools는 web-framework 소스 monorepo(사내)로 코드 통합되어
    `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행되고, harness
    `packages/devtools`는 이관·실증(D1b) 후 제거된다. wf 2.x 지원은 종료되고

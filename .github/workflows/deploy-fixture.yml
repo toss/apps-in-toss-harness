@@ -1,14 +1,24 @@
 name: Deploy fixture to Pages
 
-# workflow_dispatch only, intentionally — see git history (commit b5515ae and
-# earlier) for packages/devtools/docs/pages-deploy-verification.md, removed
-# with packages/devtools (C4).
-# GitHub Pages is not enabled for this repo yet (has_pages: false). Do not add a
-# `push` trigger until Pages is enabled from the repo admin UI, or every push
-# will fail with a Pages-not-configured error. Enabling Pages is a maintainer
-# decision (issue #11) tracked separately from this workflow file.
+# Pages is enabled for this repo (repo admin, public:true — confirmed
+# 2026-08-05) and already serves this site: the /launcher/ path is live at
+# https://toss.github.io/apps-in-toss-harness/launcher/ (deployed 2026-08-04).
+# Historical context (workflow_dispatch-only era, before Pages was confirmed
+# enabled) is in git history — see commit b5515ae and earlier for
+# packages/devtools/docs/pages-deploy-verification.md, removed with
+# packages/devtools (C4).
+#
+# Triggers: workflow_dispatch is kept for manual redeploys, plus a push
+# trigger scoped to the site's own sources and this workflow file so routine
+# launcher/site changes on main deploy automatically without needing a
+# manual dispatch.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'sites/launcher/**'
+      - '.github/workflows/deploy-fixture.yml'
 
 permissions:
   contents: read

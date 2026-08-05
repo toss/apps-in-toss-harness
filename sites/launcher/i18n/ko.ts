@@ -253,7 +253,7 @@ export const ko = {
   'attach.sandbox.step4':
     '<strong>테스트가 끝날 때까지 앱을 화면 앞에 유지하세요</strong> — 백그라운드로 전환하면 디버그 세션이 끊어집니다.',
   'attach.sandbox.faq.notInstalled':
-    '<strong>launcher가 설치돼 있지 않은 경우</strong> — <code>devtools.aitc.dev/launcher/</code>를 한 번 열어 홈 화면에 추가하세요',
+    '<strong>launcher가 설치돼 있지 않은 경우</strong> — <code>toss.github.io/apps-in-toss-harness/launcher/</code>를 한 번 열어 홈 화면에 추가하세요',
   'attach.sandbox.faq.cameraApp':
     '<strong>카메라 앱으로 스캔하면 Safari 탭으로 열립니다 (하단 탭 바 노출)</strong> — launcher 아이콘으로 다시 실행해 인앱 스캔을 사용하세요',
   'attach.sandbox.faq.totp':

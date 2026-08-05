@@ -143,7 +143,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'URL from `ait deploy --scheme-only`. Splices debug=1 + relay URL into the scheme URL.\n' +
       '  • env 2 / relay-sandbox: scheme_url is NOT used. Instead, reads AIT_TUNNEL_BASE_URL ' +
       '(the https://*.trycloudflare.com app tunnel from `tunnel:{cdp:true}`) and builds a launcher PWA ' +
-      'deep-link (https://devtools.aitc.dev/launcher/?url=…&debug=1&relay=…). When projectRoot is given, ' +
+      'deep-link (https://toss.github.io/apps-in-toss-harness/launcher/?url=…&debug=1&relay=…). When projectRoot is given, ' +
       'the app name from <projectRoot>/package.json is added as name= so the launcher partner bar shows it.\n\n' +
       'Waits for a page to attach by default (up to wait_timeout_seconds, default 60 s). ' +
       'The server automatically opens the QR dashboard in the OS default browser when running on a ' +

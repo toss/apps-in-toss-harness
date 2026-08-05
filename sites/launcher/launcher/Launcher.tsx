@@ -1,7 +1,9 @@
 // Apps in Toss DevTools Launcher — client-side React component.
 //
 // This file holds the full UI of the launcher PWA. The stable shell
-// (devtools.aitc.dev/launcher/) is installed once; it keeps the chromeless
+// (default host: https://toss.github.io/apps-in-toss-harness/launcher/ —
+// Pages hosting; the community domain devtools.aitc.dev/launcher/ this
+// replaced went dark, 2026-08-05) is installed once; it keeps the chromeless
 // standalone display while framing an ephemeral Cloudflare quick-tunnel URL in
 // a full-viewport iframe every dev session.
 //
