@@ -10,7 +10,11 @@
  * from the deleted `devtools`'s `src/unplugin/tunnel.ts`) read it through
  * {@link resolveLauncherUrl}.
  */
-const LAUNCHER_URL = 'https://devtools.aitc.dev/launcher/';
+// Pages 호스팅(#11 실기기 스모크 전 임시 검증 상태) — 커뮤니티 인프라
+// (devtools.aitc.dev)가 죽어(2026-08-05 실측, 전체 404) harness Pages
+// launcher로 기본값을 교체했다. 커스텀 도메인을 확보하면 이 상수 1곳만
+// 교체하면 된다. `AIT_LAUNCHER_URL` env override는 그대로 유지된다.
+const LAUNCHER_URL = 'https://toss.github.io/apps-in-toss-harness/launcher/';
 
 /** Result of {@link resolveLauncherUrl}. */
 export interface ResolvedLauncherUrl {
@@ -130,7 +134,8 @@ export interface LauncherAttachUrlOpts {
 /**
  * Builds a launcher PWA deep-link for env-2 MCP-attach (issue #378).
  *
- * The launcher (default `https://devtools.aitc.dev/launcher/`, overridable via
+ * The launcher (default `https://toss.github.io/apps-in-toss-harness/launcher/`
+ * — Pages hosting, #11 실기기 스모크 전 임시 검증 상태; overridable via
  * `AIT_LAUNCHER_URL` — see {@link resolveLauncherUrl}, issue #19) renders
  * tunnelUrl in a full-viewport iframe. `&debug=1&relay=<wssUrl>` is forwarded
  * onto the iframe src so the framed page's in-app debug gate (Layer C) is
@@ -274,8 +279,10 @@ export interface BuildLauncherDeepLinkOptions {
  * Back-compat: the second argument may also be a plain string (`relayWssUrl`)
  * for callers that haven't migrated to the options object yet.
  *
- * The launcher base URL defaults to `https://devtools.aitc.dev/launcher/` and
- * is overridable via `AIT_LAUNCHER_URL` (issue #19) — see
+ * The launcher base URL defaults to
+ * `https://toss.github.io/apps-in-toss-harness/launcher/` (Pages hosting, #11
+ * 실기기 스모크 전 임시 검증 상태; 커스텀 도메인 확보 시 이 상수 1곳만
+ * 교체) and is overridable via `AIT_LAUNCHER_URL` (issue #19) — see
  * {@link resolveLauncherUrl}.
  *
  * @throws When `AIT_LAUNCHER_URL` is set to an invalid value — see

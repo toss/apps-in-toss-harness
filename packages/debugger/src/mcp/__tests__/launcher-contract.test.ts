@@ -1,15 +1,30 @@
 /**
- * Cross-repo contract test (issue #6 / D6): the launcher PWA deep-link query
- * shape.
+ * Cross-repo contract test (issue #6 / D6): the launcher PWA deep-link
+ * **parameter** compatibility contract.
  *
- * `buildLauncherAttachUrl` (this repo, `../deeplink.ts`) is a PRODUCER of
- * deep-links into the launcher PWA at `devtools.aitc.dev/launcher/`. The
- * launcher itself is the RECEIVER/forwarder and lives outside this repo (see
- * the `LAUNCHER_URL` module comment in `../deeplink.ts` for why the URL is
- * value-duplicated rather than imported across the repo boundary). No
- * compiler sees both sides: if this function silently drops or renames a
- * query key, the launcher keeps parsing whatever it still recognizes and
- * phone attach dies with no build error anywhere. This file is the guard.
+ * This file pins the query-key shape that `buildLauncherAttachUrl` and
+ * `buildLauncherDeepLink` (this repo, `../deeplink.ts`) are allowed to
+ * produce when building deep-links into the launcher PWA. The launcher
+ * itself is the RECEIVER/forwarder and lives outside this package (see the
+ * `LAUNCHER_URL` module comment in `../deeplink.ts`). No compiler sees both
+ * sides: if either producer silently drops or renames a query key, the
+ * launcher keeps parsing whatever it still recognizes and phone attach dies
+ * with no build error anywhere. This file is the guard.
+ *
+ * **The contract is about PARAMETERS, not about the launcher HOST.** The
+ * launcher host has already changed once — from the now-dead community
+ * domain `devtools.aitc.dev/launcher/` to this repo's harness Pages hosting
+ * `https://toss.github.io/apps-in-toss-harness/launcher/` (2026-08-05,
+ * `devtools.aitc.dev` returning a blanket 404) — and is expected to move
+ * again to a custom domain once one is secured (`LAUNCHER_URL`'s module
+ * comment in `../deeplink.ts` tracks the single source of truth for the
+ * current value; `AIT_LAUNCHER_URL` lets any caller override it per-process).
+ * Whatever the host is at any given moment, the query-key set below MUST
+ * stay exactly this shape — the launcher's receiving side is versioned
+ * independently and only understands these keys. The
+ * "host-invariant" describe block at the bottom of this file asserts this
+ * directly: swapping the base URL (via `AIT_LAUNCHER_URL`) must not change
+ * the produced parameter set byte-for-byte.
  *
  * Scope note (read before "fixing" a missing key here): the launcher has a
  * SECOND deep-link producer in this same package — `buildLauncherDeepLink`
@@ -20,14 +35,15 @@
  * has never produced and does not need to — the two producers cover
  * different environments (env-2 phone-preview vs. env-3/4 MCP attach) and the
  * launcher accepts the union. The FIRST describe block below pins
- * `buildLauncherAttachUrl`'s shape; the SECOND pins `buildLauncherDeepLink`'s.
+ * `buildLauncherAttachUrl`'s shape; the SECOND pins `buildLauncherDeepLink`'s;
+ * the THIRD (host-invariant) block covers both producers.
  *
  * SECRET-HANDLING: `tunnelUrl`/`wssUrl`/`totpCode` below are placeholder
  * shapes only (`.trycloudflare.com` example host, obviously-fake all-zero
  * TOTP code) — never a real relay URL or generated code. Assertions compare
  * parsed query-key shape, never a full URL string.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { buildLauncherAttachUrl, buildLauncherDeepLink } from '../deeplink.js';
 
 const TUNNEL = 'https://placeholder-tunnel.trycloudflare.com';
@@ -159,5 +175,81 @@ describe('launcher deep-link query shape contract — buildLauncherDeepLink (#79
     const out = buildLauncherDeepLink(TUNNEL, { webViewType: 'partner' });
     const params = new URL(out).searchParams;
     expect(params.has('navBarType')).toBe(false);
+  });
+});
+
+/**
+ * Host-invariant contract (#6 follow-up, 2026-08-05): both producers read
+ * their base URL through `resolveLauncherUrl()` (`../deeplink.ts`), which
+ * honors `AIT_LAUNCHER_URL`. Pointing that override at a completely
+ * different host must not change a single query key/value that isn't the
+ * host itself — the parameter contract this file pins is independent of
+ * *where* the launcher is hosted. This is what makes the historical host
+ * migration (`devtools.aitc.dev` → this repo's Pages hosting → any future
+ * custom domain) a one-line change in `../deeplink.ts` rather than a
+ * cross-cutting one.
+ */
+describe('launcher deep-link contract is host-invariant (#6)', () => {
+  const ORIGINAL_ENV = process.env.AIT_LAUNCHER_URL;
+
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) {
+      delete process.env.AIT_LAUNCHER_URL;
+    } else {
+      process.env.AIT_LAUNCHER_URL = ORIGINAL_ENV;
+    }
+  });
+
+  it('buildLauncherAttachUrl: overriding AIT_LAUNCHER_URL changes only the base, not the params', () => {
+    delete process.env.AIT_LAUNCHER_URL;
+    const defaultOut = buildLauncherAttachUrl(TUNNEL, WSS, FAKE_TOTP, {
+      name: 'sample-app',
+      icon: ICON,
+      selfdebug: true,
+    });
+
+    process.env.AIT_LAUNCHER_URL = 'https://example.com/custom-launcher/';
+    const overriddenOut = buildLauncherAttachUrl(TUNNEL, WSS, FAKE_TOTP, {
+      name: 'sample-app',
+      icon: ICON,
+      selfdebug: true,
+    });
+
+    const defaultParsed = new URL(defaultOut);
+    const overriddenParsed = new URL(overriddenOut);
+    // The base changed…
+    expect(overriddenParsed.origin + overriddenParsed.pathname).toBe(
+      'https://example.com/custom-launcher/',
+    );
+    expect(overriddenParsed.origin + overriddenParsed.pathname).not.toBe(
+      defaultParsed.origin + defaultParsed.pathname,
+    );
+    // …but the query string (keys AND values) is byte-identical.
+    expect(overriddenParsed.search).toBe(defaultParsed.search);
+  });
+
+  it('buildLauncherDeepLink: overriding AIT_LAUNCHER_URL changes only the base, not the params', () => {
+    delete process.env.AIT_LAUNCHER_URL;
+    const opts = {
+      relayWssUrl: WSS,
+      name: 'sample-app',
+      webViewType: 'game' as const,
+      navBarTransparent: true,
+      navBarTheme: 'dark' as const,
+    };
+    const defaultOut = buildLauncherDeepLink(TUNNEL, opts);
+
+    process.env.AIT_LAUNCHER_URL = 'https://example.com/custom-launcher/';
+    const overriddenOut = buildLauncherDeepLink(TUNNEL, opts);
+
+    const defaultParsed = new URL(defaultOut);
+    const overriddenParsed = new URL(overriddenOut);
+    expect(overriddenParsed.origin + overriddenParsed.pathname).toBe(
+      'https://example.com/custom-launcher/',
+    );
+    expect(overriddenParsed.origin + overriddenParsed.pathname).not.toBe(
+      defaultParsed.origin + defaultParsed.pathname,
+    );
+    expect(overriddenParsed.search).toBe(defaultParsed.search);
   });
 });

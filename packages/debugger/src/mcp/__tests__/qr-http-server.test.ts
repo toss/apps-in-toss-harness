@@ -1286,7 +1286,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
 describe('startQrHttpServer — /attach mode-aware chrome 분기 (#468)', () => {
   // 환경 2: launcher PWA attach URL (토스 deep-link 아님 — _deploymentId 개념 없음)
   const launcherAttachUrl =
-    'https://devtools.aitc.dev/launcher/?url=https%3A%2F%2Ftest.trycloudflare.com&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    'https://toss.github.io/apps-in-toss-harness/launcher/?url=https%3A%2F%2Ftest.trycloudflare.com&debug=1&relay=wss%3A%2F%2Fx.tc.com';
   // 환경 3·4: intoss-private deep-link attach URL
   const intossAttachUrl =
     'intoss-private://app?_deploymentId=test-mode&debug=1&relay=wss%3A%2F%2Fx.tc.com';
@@ -1335,7 +1335,7 @@ describe('startQrHttpServer — /attach mode-aware chrome 분기 (#468)', () => 
     expect(html).toContain('QR 카메라로 스캔');
     // 카메라 앱 스캔 → Safari 탭 체크리스트 항목
     expect(html).toContain('Safari 탭으로 열립니다');
-    expect(html).toContain('devtools.aitc.dev/launcher/');
+    expect(html).toContain('toss.github.io/apps-in-toss-harness/launcher/');
     // 환경 라벨
     expect(html).toContain('환경 2 — Sandbox App (PWA)');
     // 토큰 잔존 없음

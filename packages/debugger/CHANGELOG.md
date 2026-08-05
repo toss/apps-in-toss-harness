@@ -19,6 +19,8 @@
 
 - vite 5.4.12+/6 `server.allowedHosts` 403 안내가 배너·README·setup skill에 추가됐다 (dog-food 발견 2 — 옛 devtools unplugin은 이를 vite 내부에서 주입했지만 standalone CLI는 사용자 설정이 필요).
 
+- 기본 launcher URL이 죽은 커뮤니티 도메인(`devtools.aitc.dev`, 2026-08-05 실측 전체 404)에서 harness Pages 호스팅(`https://toss.github.io/apps-in-toss-harness/launcher/`)으로 교체됐다. `AIT_LAUNCHER_URL` env override는 그대로 유지된다 — 재정의가 필요 없다면 아무 것도 바꾸지 않아도 된다.
+
 ## 0.1.5
 
 ### Patch Changes

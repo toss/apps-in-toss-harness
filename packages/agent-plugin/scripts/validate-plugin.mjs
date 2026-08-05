@@ -8,7 +8,7 @@
  *   A2 — 본문 구조 + seam 검사 (hard-fail)
  *   A3 — 템플릿 + eval 동기화 (hard-fail)
  *   A5 — plugin.json ↔ package.json 버전 드리프트 (hard-fail)
- *   A6 — aitc.dev 링크 부재 검사 (opt-in warn, VALIDATE_LINKS=1 일 때만 — D2
+ *   A6 — aitc.dev 링크 부재 검사 (opt-in warn, VALIDATE_LINKS=1 일 때만 —
  *        허용 목록 외 aitc.dev 링크가 남아있지 않은지 확인. 네트워크 비의존)
  *   A7 — mcpServers npx args 해석 가능성 (hard-fail)
  *   A8 — seam /ait:verb 형태·해석 가능성 (hard-fail)
@@ -1052,24 +1052,25 @@ function checkA8(root) {
 // 살아있는지(200 응답) 네트워크로 확인했다. 절단 이후에는 목적이 바뀐다 —
 // "커뮤니티 링크가 살아있는가"가 아니라 "커뮤니티 링크 자체가 남아있는가"를
 // 묻는다. 이 repo(harness)에서 skill 본문에 남아 있어도 되는 aitc.dev 링크는
-// 딱 하나뿐이다:
-//   - `https://devtools.aitc.dev/launcher/` — D2, 실기기 attach(환경 2·3)가
-//     실제로 여는 PWA. 대체 호스팅이 확보되기 전까지는 기능 자산이라 유지.
-// (D7 `https://aitc.dev/apple-touch-icon.png`도 `ait build`의 `brand.icon`
-// 기본값으로 허용돼 있었으나, 그 기본값 자동 주입 자체가 제거되면서 skill에서
-// 참조가 0건이 됐다 — 사문화된 allowlist 항목을 남겨두면 같은 링크가 다시
-// 들어와도 이 게이트가 조용히 통과시킨다. 그래서 항목도 함께 걷어냈다.)
+// 이제 0개다 — 마지막까지 남아 있던 예외 `https://devtools.aitc.dev/launcher/`
+// (D2, 실기기 attach(환경 2·3) PWA)도 launcher가 harness Pages
+// (`https://toss.github.io/apps-in-toss-harness/launcher/`)로 옮겨가며 skill
+// 참조가 0건이 됐다 — 사문화된 allowlist 항목을 남겨두면 같은 도메인이 다시
+// 들어와도 이 게이트가 조용히 통과시키므로, 앞서 `https://aitc.dev/apple-touch-icon.png`
+// (D7, `ait build`의 `brand.icon` 기본값 자동 주입이 제거되며 참조 0건화)
+// 때와 같은 이유로 항목도 함께 걷어냈다.
 // 그 외의 *.aitc.dev(docs.aitc.dev, sdk-example.aitc.dev, 커뮤니티 자기서술
 // 등)는 전부 커뮤니티 결합의 잔재이므로 0건이어야 한다. 더 이상 네트워크가
 // 필요 없지만(순수 텍스트 스캔), 기존 CLI 계약(`VALIDATE_LINKS=1` opt-in,
 // `runChecks()` 동기 계약과 분리된 CLI 전용 실행)은 그대로 유지한다.
 // (#183 docs /intro 404, #185 외부 링크 rot 트리아지에서 출발한 검사였으나,
-// 이제는 A2 정적 검사가 못 잡는 "허용된 두 도메인 밖의 aitc.dev 잔존"만 잡는다.)
+// 이제는 A2 정적 검사가 못 잡는 "허용 목록 밖의 aitc.dev 잔존"을 잡는다 —
+// 현재 허용 목록은 비어 있다.)
 
-// D2로 명시적으로 유지가 승인된 aitc.dev 링크 — 이것만 통과.
-const A6_ALLOWLIST_RES = [
-  /^https:\/\/devtools\.aitc\.dev\/launcher\/?/, // D2 — 실기기 attach PWA, 대체 호스팅 미확보
-];
+// 명시적으로 유지가 승인된 aitc.dev 링크 allowlist — 현재는 빈 배열이다.
+// (직전까지 유일한 항목이었던 D2 `devtools.aitc.dev/launcher/` 도 위 사유로
+// 제거됨.) 새 예외가 생기면 사유를 주석으로 남기고 여기 추가한다.
+const A6_ALLOWLIST_RES = [];
 
 // 추출에서 제외하는 링크 패턴 — placeholder/template 토큰(<...>) 포함 링크는
 // 실제 링크가 아니므로 애초에 대상에서 뺀다.
@@ -1133,7 +1134,7 @@ async function checkA6(root) {
         l.file,
         l.line,
         'A6/leftover-community-link',
-        `커뮤니티 결합 잔재로 추정되는 aitc.dev 링크: ${l.url} (fix: 절단 계획서 대조 후 제거하거나, D2처럼 정말 유지해야 하면 A6_ALLOWLIST_RES 에 등재)`,
+        `커뮤니티 결합 잔재로 추정되는 aitc.dev 링크: ${l.url} (fix: 절단 계획서 대조 후 제거하거나, 정말 유지해야 하면 사유와 함께 A6_ALLOWLIST_RES 에 등재)`,
         'warn',
       ),
     );
@@ -1144,7 +1145,7 @@ async function checkA6(root) {
         '',
         0,
         'A6/ok',
-        `aitc.dev 링크 부재 검사 통과 (허용된 D2 외 잔존 링크 0건, 총 ${links.length}개 스캔)`,
+        `aitc.dev 링크 부재 검사 통과 (허용 목록 외 잔존 링크 0건, 총 ${links.length}개 스캔)`,
         'warn',
       ),
     );

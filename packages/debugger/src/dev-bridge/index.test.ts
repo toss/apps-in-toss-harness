@@ -114,7 +114,7 @@ describe('startTunnelDashboard', () => {
       expect(html).toContain('<img class="qr" src="data:image/png;base64,');
       // Dashboard surfaces the attach URL in the url-box; that URL carries the
       // launcher deep-link with the relay folded in (the QR encodes the same).
-      expect(html).toContain('devtools.aitc.dev/launcher');
+      expect(html).toContain('toss.github.io/apps-in-toss-harness/launcher');
     } finally {
       await handle.close();
     }

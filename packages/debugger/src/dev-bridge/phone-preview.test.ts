@@ -98,7 +98,7 @@ describe('renderPhonePreviewBanner', () => {
   it('AIT_LAUNCHER_URL unset: no override notice line, uses the default launcher host', async () => {
     const text = await renderPhonePreviewBanner(TUNNEL_URL, { renderQrFn: async () => '[qr]' });
     expect(text).not.toContain('override active');
-    expect(text).toContain('devtools.aitc.dev/launcher/');
+    expect(text).toContain('toss.github.io/apps-in-toss-harness/launcher/');
   });
 
   it('AIT_LAUNCHER_URL set (valid): override notice line names the overridden host', async () => {

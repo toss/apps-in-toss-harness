@@ -54,7 +54,7 @@ export const en: Record<StringKey, string> = {
   'attach.sandbox.step4':
     '<strong>Keep the app in the foreground until the test run finishes</strong> — backgrounding it will drop the debug session.',
   'attach.sandbox.faq.notInstalled':
-    '<strong>Launcher is not installed</strong> — open <code>devtools.aitc.dev/launcher/</code> once and add it to your home screen',
+    '<strong>Launcher is not installed</strong> — open <code>toss.github.io/apps-in-toss-harness/launcher/</code> once and add it to your home screen',
   'attach.sandbox.faq.cameraApp':
     '<strong>Scanning with the camera app opens a Safari tab (bottom tab bar visible)</strong> — relaunch from the launcher icon and use the in-app scanner',
   'attach.sandbox.faq.totp':
