@@ -93,6 +93,8 @@ server: {
 
 The `/ait:setup-phone-preview` skill checks for and adds this setting automatically.
 
+**This coexists with the `@apps-in-toss/devtools` vite plugin's own tunnel — it's not a replacement.** The old devtools unplugin referenced above (the harness copy that auto-injected this option from inside vite) has since been removed; the separately maintained `@apps-in-toss/devtools` (npm-published) vite plugin also has tunnel functionality, but it's opt-in — enable it with the unplugin option `tunnel: true` or the `AIT_TUNNEL=1` env var, and only then does it auto-discover the port, auto-inject `server.allowedHosts`, and print a QR inside the dev server process. `debugger --mode=phone` is a standalone path for consumers outside the dev server — agents and automation — such as MCP/CDP debugging and the env-3 test runner. The deep-link parameter contract (query shape: `url`/`name`/`navBarType`/`navBarTransparent`/`navBarTheme`) is the same across both lineages, and on this repo's side that shape is pinned host-invariant by the launcher-contract tests (`packages/debugger/src/mcp/__tests__/launcher-contract.test.ts`). The choice is simple: if you want an always-on QR in a vite project, turn on tunnel in the devtools plugin; if an agent or automation needs to consume the flow, use this mode.
+
 ## Exports / bins
 
 | subpath | contents |
