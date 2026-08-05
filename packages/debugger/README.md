@@ -93,6 +93,8 @@ server: {
 
 `/ait:setup-phone-preview` skill이 이 설정을 자동으로 확인·추가한다.
 
+**`@apps-in-toss/devtools` vite 플러그인의 tunnel과는 병존 관계다.** 위 문단이 지칭하는 옛 devtools unplugin(이 옵션을 vite 내부에서 자동 주입하던 harness 사본)은 이미 제거됐고, 별도로 유지되는 계보인 `@apps-in-toss/devtools`(npm 발행본)의 vite 플러그인에도 tunnel 기능이 있다 — 다만 opt-in이다: unplugin 옵션 `tunnel: true` 또는 `AIT_TUNNEL=1` env로 켜야 하고, 켰을 때만 dev 서버 프로세스 안에서 포트를 자동 발견하고 `server.allowedHosts`를 자동 주입하고 QR을 출력한다. `debugger --mode=phone`은 그 대체가 아니라 병존이다: MCP/CDP 디버그·env-3 test-runner 등 dev 서버 밖(에이전트·자동화) 소비자를 위한 standalone 경로다. 딥링크 파라미터 계약(쿼리 shape: `url`/`name`/`navBarType`/`navBarTransparent`/`navBarTheme`)은 두 계보가 동일하며, 이 repo 쪽은 그 shape을 launcher-contract 테스트(`packages/debugger/src/mcp/__tests__/launcher-contract.test.ts`)가 host-불변으로 고정한다. 선택 기준은 간단하다 — vite 프로젝트에서 tunnel을 켜 QR을 쓰고 싶으면 devtools 플러그인 쪽을, 에이전트·자동화가 소비하는 경로가 필요하면 이 모드를 쓴다.
+
 ## Exports / bin
 
 | subpath | 내용 |
