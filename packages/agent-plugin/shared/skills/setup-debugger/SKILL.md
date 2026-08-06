@@ -31,7 +31,7 @@ adapter-note: 'Project-scope `.mcp.json` MCP registration is Claude Code-only �
 
 - **`package.json`이 cwd에 있어야 한다** — `.mcp.json`은 프로젝트 루트 스코프다.
   없으면 프로젝트 루트로 이동을 안내하고 중단.
-- npx가 `@ait-co/debugger`를 내려받아 실행하므로 전역 설치는 필요 없다.
+- npx가 Release tarball(`@apps-in-toss/debugger`)을 내려받아 실행하므로 전역 설치는 필요 없다.
 
 > 이 skill은 콘솔 인증을 요구하지 않는다. 로컬 설정 파일 하나만 만진다.
 
@@ -70,7 +70,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-y", "-p", "@ait-co/debugger", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz", "debugger"]
     }
   }
 }
@@ -80,7 +80,8 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
   `/ait:debug`의 도구 참조가 이 문자열에 결합돼 있다. 이 결합은
   `eval/e2e/driver.test.ts`가 검사한다(위 json 블록의 키를 실제로 읽어
   `STATIC_DISALLOWED_TOOLS`와 대조) — 개명하면 CI가 실패한다.
-- `npx -y -p @ait-co/debugger debugger` 형태를 유지한다 — `-p` 없이 bare로 쓰면
+- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger`
+  형태를 유지한다 — `-p` 없이 bare로 쓰면
   패키지가 bin을 2개(`debugger`·`debugger-test`) 게시해 npm이 실행파일을 추론하지
   못한다. 머신 절대경로 launcher는 박지 않는다(다른 머신 clone에서 깨진다).
 
@@ -100,8 +101,8 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 ## Out of scope (이 skill이 하지 않는 것)
 
 - ❌ 디버깅 실행 — attach·QR·관측은 `/ait:debug`(§5). 이 skill은 그 전제(서버 등록)만 채운다.
-- ❌ MCP 서버 구현·기동 — 서버는 `@ait-co/debugger`가 제공하고, 기동은 Claude Code가
-  `.mcp.json`을 읽어 한다.
+- ❌ MCP 서버 구현·기동 — 서버는 `@apps-in-toss/debugger`(Release tarball)가 제공하고,
+  기동은 Claude Code가 `.mcp.json`을 읽어 한다.
 - ❌ 환경 2 터널 인프라 배선(`tunnel:{cdp:true}` + `dev:phone:cdp`) — `/ait:setup-phone-preview`.
 - ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debug-console` `dependencies`) — `/ait:inject-debug-console`.
 - ❌ user/global scope MCP 등록 — 디버깅은 프로젝트 전제라 프로젝트 scope(`.mcp.json`)만.
@@ -110,7 +111,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 
 - ❌ server key `ait-devtools`를 개명하거나 다른 키로 중복 등록.
 - ❌ 기존 `.mcp.json`의 다른 서버 항목을 삭제·수정.
-- ❌ `args`에서 `-p` 생략(bare `npx @ait-co/debugger debugger`) — bin 추론 실패로
+- ❌ `args`에서 `-p` 생략(bare `npx <Release tarball URL> debugger`) — bin 추론 실패로
   MCP 등록이 조용히 깨진다.
 - ❌ 머신 절대경로 launcher(`node /Users/…/dist/cli.js` 류) — 머신 종속.
 - ❌ 시크릿/토큰 값을 `.mcp.json`이나 로그에 기록 — 이 서버는 인자·env 시크릿이 필요 없다.

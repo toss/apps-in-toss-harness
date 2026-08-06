@@ -2,17 +2,16 @@
 
 [한국어](./README.md) · **English**
 
-[![npm](https://img.shields.io/npm/v/@apps-in-toss/debug-console)](https://www.npmjs.com/package/@apps-in-toss/debug-console)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
 On-device attach + eruda console for Apps in Toss mini-apps. **The only package in this split that can enter a production bundle** — it has exactly one dependency, [`eruda`](https://github.com/liriliri/eruda), and zero peerDependencies, so it is completely agnostic to the SDK version (2.x/3.x) it ships alongside.
 
 ## Install
 
-Not yet published to npm. Until it is, use it inside this monorepo workspace.
+Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-pnpm add @apps-in-toss/debug-console
+pnpm add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"
 ```
 
 With no peerDependency, you can add this regardless of whether `@apps-in-toss/web-framework` is installed or which version it is. The SDK bridge (`window.__sdk` below) probes for the SDK at runtime via a dynamic import and silently skips itself when the SDK is absent.

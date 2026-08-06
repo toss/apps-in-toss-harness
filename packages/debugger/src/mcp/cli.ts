@@ -392,7 +392,7 @@ async function main(): Promise<void> {
  * bin shim that's the symlink in `node_modules/.bin/` (or a wrapper), whereas
  * `import.meta.url` resolves to the realpath inside the package. Comparing
  * the two raw paths gives a false negative on every install that goes through
- * a bin shim — exactly the dominant path for `npx -p @ait-co/debugger
+ * a bin shim — exactly the dominant path for `npx -p <tarball URL>
  * debugger` (see `RESTART_CMD` in `restart-hint.ts`). Resolve `argv[1]` to
  * its realpath before comparing.
  */

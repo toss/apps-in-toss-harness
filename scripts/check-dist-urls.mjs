@@ -23,6 +23,12 @@
  *   - packages/agent-plugin/shared/**   (스킬·템플릿 Markdown 등)
  *   - packages/*\/src/**                 (각 패키지 소스)
  *   - packages/agent-plugin/.claude-plugin/**  (plugin manifest)
+ *   - README.md · README.en.md (루트)
+ *   - packages/*\/README.md · packages/*\/README.en.md (패키지별)
+ *
+ *   설치 명령이 실제로 사는 자리가 README라 표면에 넣었다. `docs/`·
+ *   `CHANGELOG.md`는 넣지 않는다 — 정책 서술·이력 prose가 많아 false
+ *   positive가 나기 때문이다.
  *
  * 규칙 3종:
  *
@@ -33,11 +39,17 @@
  *      않으면 그 자체가 위반이다(오타·개명 드리프트를 함께 잡는다).
  *
  *   ② self-arming — 어떤 패키지든 이 repo의 Release URL이 표면에 **1개라도**
- *      존재하면, 설치·실행 명령 문맥(npx/npm/pnpm/yarn/bun 호출, package.json
- *      의 dependencies/devDependencies 키, MCP `.mcp.json` 페이로드의 `args`)
- *      에서 `@ait-co/debugger`·`@ait-co/debug-console` 참조가 **0건**이어야
- *      한다. 혼재(=일부만 Release URL로 전환하고 나머지는 구 org 참조로
- *      남음) = RED.
+ *      존재하면, 표면 파일 안에서 `@ait-co/debugger`·`@ait-co/debug-console`
+ *      문자열의 **모든 등장**이 위반이다 — 문맥(명령 줄인지, 산문인지)은
+ *      더 이상 따지지 않는다. 혼재(=일부만 Release URL로 전환하고 나머지는
+ *      구 org 참조로 남음) = RED.
+ *
+ *      과거 버전은 "같은 줄에 npx/npm/pnpm 등 명령 키워드가 있어야 위반"
+ *      으로 좁혀뒀었는데, 그 조건이 우회 클래스 둘을 통째로 놓쳤다 —
+ *      멀티라인으로 쪼개진 설치 명령(`pnpm add -D \` 다음 줄에 스코프만
+ *      있는 경우)과 pretty-print된 `.mcp.json`의 `args` 배열(각 원소가
+ *      한 줄씩 있어 `"args":`와 스코프 문자열이 다른 줄인 경우)이다. 이제는
+ *      줄 문맥과 무관하게 문자열 등장 자체를 잡는다.
  *
  *      **휴면 상태**: Release URL이 아직 0개인 동안(오늘의 실제 상태 —
  *      npm-less 설계 Wave 0 시점, Release는 아직 한 번도 잘리지 않았다)
@@ -81,6 +93,12 @@ export const SURFACE_DIRS = ['packages/agent-plugin/shared', 'packages/agent-plu
 /** `packages/*\/src` 는 와일드카드라 별도로 workspace 패키지 목록에서 계산한다. */
 const SRC_SUBDIR = 'src';
 
+/**
+ * 설치 명령이 실제로 사는 README 파일들 — 루트와 각 workspace 패키지
+ * 디렉터리 양쪽에 같은 파일명으로 존재한다(ko primary + en sub).
+ */
+export const README_FILENAMES = ['README.md', 'README.en.md'];
+
 /** repo가 고정해야 하는 Release 호스트/owner/repo. */
 export const EXPECTED_HOST = 'github.com';
 export const EXPECTED_OWNER = 'toss';
@@ -103,18 +121,6 @@ const RELEASE_URL_RE =
 /** 태그를 `<pkg>-v<ver>` 로 쪼갠다. pkg 자체에 하이픈이 있을 수 있으므로
  * "마지막에 등장하는 -v<숫자로 시작하는 버전>" 을 경계로 삼는다. */
 const TAG_RE = /^(?<pkg>.+)-v(?<ver>\d[\w.+-]*)$/;
-
-/**
- * 설치·실행 명령 문맥으로 인정하는 라인 패턴. `@ait-co/<pkg>` 문자열이
- * 같은 라인에 있을 때, 이 중 하나라도 매치하면 "명령 문맥"으로 카운트한다.
- * 순수 산문 서술(예: 표 안의 설명 문구)은 여기 안 걸리면 카운트하지 않는다.
- */
-const COMMAND_CONTEXT_LINE_PATTERNS = [
-  /\b(npx|npm|pnpm|yarn|bun)\b/i, // 설치·실행 CLI 호출
-  /^\s*import\b.*from/, // import specifier
-  /require\(/, // require() 호출
-  /"(dependencies|devDependencies|peerDependencies|optionalDependencies|args)"\s*:/, // package.json / .mcp.json 페이로드
-];
 
 /**
  * 디렉터리를 재귀적으로 순회해 텍스트 파일 절대경로 배열을 반환한다.
@@ -142,6 +148,8 @@ async function walkFiles(absDir) {
  */
 export async function collectSurfaceFiles(repoRoot) {
   const dirs = [...SURFACE_DIRS.map((d) => join(repoRoot, d))];
+  /** @type {string[]} */
+  const readmeFiles = README_FILENAMES.map((name) => join(repoRoot, name));
 
   const packagesDir = join(repoRoot, 'packages');
   const packageEntries = await readdir(packagesDir, { withFileTypes: true }).catch(() => []);
@@ -149,12 +157,16 @@ export async function collectSurfaceFiles(repoRoot) {
     if (!entry.isDirectory()) continue;
     if (entry.name === EXCLUDED_SCOPE_PACKAGE) continue; // devtools 축 제외
     dirs.push(join(packagesDir, entry.name, SRC_SUBDIR));
+    for (const readmeName of README_FILENAMES) {
+      readmeFiles.push(join(packagesDir, entry.name, readmeName));
+    }
   }
 
   const all = [];
   for (const dir of dirs) {
     all.push(...(await walkFiles(dir)));
   }
+  all.push(...readmeFiles);
   return all;
 }
 
@@ -241,9 +253,7 @@ export function checkArmedScopeReferences(lines, armed) {
     for (const scopePkg of ARMED_SCOPE_PACKAGES) {
       const needle = `@ait-co/${scopePkg}`;
       if (!text.includes(needle)) continue;
-      if (COMMAND_CONTEXT_LINE_PATTERNS.some((re) => re.test(text))) {
-        violations.push({ file, line, text: text.trim(), scopePackage: scopePkg });
-      }
+      violations.push({ file, line, text: text.trim(), scopePackage: scopePkg });
     }
   }
   return violations;
@@ -340,14 +350,14 @@ async function main() {
     failed = true;
     console.error(
       '\n규칙 ② 위반 (self-arming — 표면에 Release URL이 존재해 무장됨) — ' +
-        '설치·실행 명령 문맥에 (구) 커뮤니티 org 스코프 참조가 남아 있다:',
+        '표면 파일 안에 (구) 커뮤니티 org 스코프 참조가 남아 있다:',
     );
     for (const v of scopeViolations) {
       console.error(`  ${v.file}:${v.line} — @ait-co/${v.scopePackage} 참조: ${v.text}`);
     }
     console.error(
       '\nRelease URL 전환이 시작된 이상, 남은 @ait-co/debugger·@ait-co/debug-console ' +
-        '설치·실행 명령 문맥 참조도 같은 커밋에서 Release URL로 함께 바꿔라.',
+        '참조(명령이든 산문 서술이든)도 같은 커밋에서 Release URL로 함께 바꿔라.',
     );
   }
 

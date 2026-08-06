@@ -46,8 +46,9 @@ dev 전용이다.
 
 ## debug-console facet — `/ait:inject-debug-console`
 
-`@apps-in-toss/debug-console`을 **runtime dependency**로 설치하고, 진입점에 self-gating
-`import '@ait-co/debug-console/auto'`를 멱등하게 삽입한다. 이 패키지는 예전
+`@apps-in-toss/debug-console`을 **runtime dependency**로 설치하고(harness GitHub Release
+tarball URL — npm 미발행), 진입점에 self-gating `import '@apps-in-toss/debug-console/auto'`를
+멱등하게 삽입한다. 이 패키지는 예전
 `@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP 데몬·on-device attach
 표면이 `debugger` 패키지(`@apps-in-toss/debugger` + `@apps-in-toss/debug-console`)로
 분리되면서 나뉘었다.
@@ -76,7 +77,7 @@ dev 전용이다.
 **debug-console facet** 완료 후:
 
 ```
-@ait-co/debug-console 설정 완료 · <진입점>에 /auto import 삽입
+@apps-in-toss/debug-console 설정 완료 · <진입점>에 /auto import 삽입
 
 다음 단계:
   RELEASE_CHANNEL=dogfood ait build   # candidate 빌드에 attach 표면 포함
