@@ -16,13 +16,15 @@
 | 4. plugin marketplace | 사용자 진입점(station 0) | — | 3에 종속 |
 
 **축 2가 npm 패키지 3종에서 GitHub Release 에셋 2종으로 바뀐 이유**: 두 가지가
-겹쳐 있다. (a) `@apps-in-toss/devtools`는 새 배포 모델(Dave 확정)에서
-web-framework 소스 monorepo(사내)로 코드 통합되어
-`@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다(D1b) — harness가
-직접 배포할 대상이 아니다. (b) `debugger`·`debug-console` 2종은 npm-less
-전환 결정(2026-08-06, 오너 지시)으로 npmjs.com 발행 자체를 그만두고 GitHub
-Releases 에셋으로 유통한다. `docs/release.md` §7a(debugger·debug-console,
-D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
+겹쳐 있다. (a) `@apps-in-toss/devtools`는 wf 소스 monorepo(사내)가 소유·발행한다
+(AIT-6577) — 소비자 프로젝트에는 **CLI 자동 설치 devDependency**로 배선되고
+**wf 패키지 자체는 변경되지 않는다**(종전 "wf 3.x dependencies 통합" 계획은
+폐기 — **배포 모델 재정의 확정 2026-08-04, 실증은 잔여(D1b)**,
+`docs/roadmap.md` §5 문항 6). harness가 직접 배포할 대상이 아니다. (b)
+`debugger`·`debug-console` 2종은 npm-less 전환 결정(2026-08-06, 오너
+지시)으로 npmjs.com 발행 자체를 그만두고 GitHub Releases 에셋으로 유통한다.
+`docs/release.md` §7a(debugger·debug-console, D1a)·§7b(devtools 설치 절차
+삭제, D1b) 참고.
 
 의존 관계는 **4 ← 3** 하나뿐이다. Release 배포(2)는 repo가 private이어도 가능하므로 3을 기다릴
 이유가 없고, Pages(1)는 이미 독립적으로 끝났다.
@@ -79,9 +81,9 @@ D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
 
 `@apps-in-toss/debugger`·`debug-console` 2종. `agent-plugin`과
 `internal-protocol`은 `private: true`라 배포 대상이 아니다. `devtools`도
-이 Phase의 배포 대상이 아니다 — platform 이관 대상이라 wf
-(`@apps-in-toss/web-framework`) 쪽 배포 모델을 따른다(D1b,
-`docs/release.md` §7b).
+이 Phase의 배포 대상이 아니다 — 발행 주체가 wf 소스 monorepo(사내)라 그쪽
+배포 모델(CLI 자동 설치 devDependency)을 따른다(D1b, `docs/release.md`
+§7b).
 
 ### 왜 npm이 아니라 GitHub Release 에셋인가
 
