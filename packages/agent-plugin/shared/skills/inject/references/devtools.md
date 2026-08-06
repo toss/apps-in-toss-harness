@@ -13,7 +13,7 @@
 - **pnpm / npm / yarn / bun** 중 하나. 감지 순서: `pnpm-lock.yaml` → `package-lock.json` →
   `yarn.lock` → `bun.lockb`. 아무것도 없으면 `pnpm`으로 가정.
 - **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동하도록 안내하고 중단.
-- 인터넷 연결 필요 (`@ait-co/devtools` npm 설치).
+- 인터넷 연결 필요 (`@apps-in-toss/devtools` npm 설치).
 
 ## 1. 프로젝트 루트 확인
 
@@ -70,11 +70,11 @@ ls pnpm-lock.yaml package-lock.json yarn.lock bun.lockb 2>/dev/null
 
 ## 4. 이미 설치됐는지 확인 (idempotency)
 
-`package.json`의 `devDependencies`에 `@ait-co/devtools`가 있으면 설치 단계를 건너뛴다.
+`package.json`의 `devDependencies`에 `@apps-in-toss/devtools`가 있으면 설치 단계를 건너뛴다.
 있더라도 config 패치 단계(step 6)는 진행한다 — config가 누락됐을 수 있기 때문.
 
 ```bash
-grep '"@ait-co/devtools"' package.json
+grep '"@apps-in-toss/devtools"' package.json
 ```
 
 ## 5. 패키지 설치
@@ -82,10 +82,10 @@ grep '"@ait-co/devtools"' package.json
 Step 4에서 이미 있으면 skip.
 
 ```bash
-pnpm add -D @ait-co/devtools            # pnpm
-npm install --save-dev @ait-co/devtools # npm
-yarn add -D @ait-co/devtools            # yarn
-bun add -d @ait-co/devtools             # bun
+pnpm add -D @apps-in-toss/devtools            # pnpm
+npm install --save-dev @apps-in-toss/devtools # npm
+yarn add -D @apps-in-toss/devtools            # yarn
+bun add -d @apps-in-toss/devtools             # bun
 ```
 
 설치 시 `unmet peer react-native` 경고가 나올 수 있다 — **무시해도 된다**. 웹 미니앱은 RN을
@@ -93,12 +93,12 @@ bun add -d @ait-co/devtools             # bun
 
 ## 6. config 파일 패치 (idempotency)
 
-config 파일을 **Read**로 읽어 내용을 파악한 뒤, `@ait-co/devtools/unplugin` import와 plugin
+config 파일을 **Read**로 읽어 내용을 파악한 뒤, `@apps-in-toss/devtools/unplugin` import와 plugin
 등록이 이미 있으면 skip. 없으면 최소 변경으로 추가. **idempotency 체크**: config 파일에
-`@ait-co/devtools` 문자열이 있으면 skip:
+`@apps-in-toss/devtools` 문자열이 있으면 skip:
 
 ```
-이미 @ait-co/devtools 설정이 있습니다. 설정 파일을 확인하고 필요하면 수동으로 조정하세요.
+이미 @apps-in-toss/devtools 설정이 있습니다. 설정 파일을 확인하고 필요하면 수동으로 조정하세요.
 ```
 
 ### Vite (`vite.config.ts` / `vite.config.js`)
@@ -110,7 +110,7 @@ import를 파일 맨 위 기존 import 블록 끝에 추가하고, `plugins` 배
 
 ```ts
 // 추가 후
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -144,7 +144,7 @@ export default defineConfig({
 Next.js는 `webpack()` 플러그인을 사용한다. `config.plugins` 배열에 push하는 패턴을 따른다.
 
 ```ts
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -161,7 +161,7 @@ export default nextConfig;
 ### Rspack (`rspack.config.ts` / `rspack.config.js`)
 
 ```ts
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 export default {
   // 기존 설정 유지
@@ -172,7 +172,7 @@ export default {
 ### Webpack (`webpack.config.ts` / `webpack.config.js`)
 
 ```ts
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 
 module.exports = {
   // 기존 설정 유지
@@ -191,10 +191,10 @@ module.exports = {
 ## 7. devtools facet 완료 seam
 
 ```
-@ait-co/devtools 설정 완료
+@apps-in-toss/devtools 설정 완료
 
 변경 내용:
-  - devDependencies에 @ait-co/devtools 추가 (또는 이미 있어서 skip)
+  - devDependencies에 @apps-in-toss/devtools 추가 (또는 이미 있어서 skip)
   - <config-file>에 unplugin 설정 추가 (또는 이미 있어서 skip)
 
 다음 단계:
@@ -208,7 +208,7 @@ module.exports = {
 참고:
   - AIT DevTools 패널은 진입점(main/index/entry/app.{ts,tsx,js,jsx})에 자동으로 마운트됩니다 — 별도 설정 불필요.
   - 진입점 파일명이 위 패턴과 다르면 패널이 자동 주입되지 않을 수 있습니다. 그럴 때만 진입점에 수동으로 추가하세요:
-      import '@ait-co/devtools/panel';
+      import '@apps-in-toss/devtools/panel';
   - devtools는 NODE_ENV=development 에서만 활성화됩니다 (production 빌드엔 미포함).
   - 문서: https://github.com/toss/apps-in-toss-harness/tree/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools
 ```
@@ -220,6 +220,6 @@ module.exports = {
 - ❌ production 빌드에 devtools를 강제로 포함시키기 — `NODE_ENV=development`에서만
   활성화되도록 두어야 한다(production 산출물에 mock이 섞이면 앱 스토어 심사에서 문제가 될 수
   있다). 옵션으로 dev-mode를 강제하지 말 것.
-- ❌ `@ait-co/devtools` 외의 다른 패키지 설치·변경.
+- ❌ `@apps-in-toss/devtools` 외의 다른 패키지 설치·변경.
 - ❌ devtools를 Rollup/esbuild 라이브러리 빌드에 주입 — 앱(미니앱) 전용.
 - ❌ 사용자 프로젝트에 홍보성 주석·배너 삽입. 생성하는 주석은 배선을 설명하는 최소한으로.

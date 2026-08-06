@@ -1,4 +1,4 @@
-import aitDevtools from '@ait-co/devtools/unplugin';
+import aitDevtools from '@apps-in-toss/devtools/unplugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 

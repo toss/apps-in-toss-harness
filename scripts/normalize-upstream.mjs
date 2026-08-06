@@ -9,20 +9,31 @@
  *
  * 설계 원칙 (docs/upstream-sync.md에 상세):
  *   - 규칙은 파일 전체가 아니라 "줄" 단위로 문맥을 분류한다. 스코프(@ait-co/*)
- *     치환은 LEGACY 명명 상수·external-target 콘텐츠·install 문맥(npm 미배포라
- *     블록)만 보수적으로 예외 처리하고 그 외(functional import/pkgjson/const는
- *     물론 prose·주석·JSDoc까지)는 전부 @apps-in-toss/*로 치환한다 — 실측 근거:
- *     harness 커밋 33771c1(전면 스코프 sweep, #21)이 예외 없이 이 정책을
- *     적용했다. 이 스크립트는 그 판단을 최대한 규칙화한 것이지 완벽한 AST
- *     이해는 아니다 — 애매한 줄은 보수적으로(치환 안 함) 처리하고 dry-run
- *     리포트로 사람이 검토한다.
+ *     치환은 LEGACY 명명 상수·external-target 콘텐츠(예외 패키지가 남아있다면
+ *     그 install 문맥)만 보수적으로 예외 처리하고 그 외(functional
+ *     import/pkgjson/const는 물론 prose·주석·JSDoc까지)는 전부 @apps-in-toss/*로
+ *     치환한다 — 실측 근거: harness 커밋 33771c1(전면 스코프 sweep, #21)이 예외
+ *     없이 이 정책을 적용했다. 이 스크립트는 그 판단을 최대한 규칙화한 것이지
+ *     완벽한 AST 이해는 아니다 — 애매한 줄은 보수적으로(치환 안 함) 처리하고
+ *     dry-run 리포트로 사람이 검토한다.
+ *   - `scope-install`(설치 명령·npm 레지스트리 URL·설치 감지 grep)은 패키지
+ *     단위로 게이트된다(`NPM_PUBLISHED_SCOPED_PACKAGES`). devtools가 2026-08-04
+ *     `@apps-in-toss/devtools`로 공개 npm 발행되면서 devtools에 한해 기본
+ *     on으로 전환됐다 — debugger·debug-console은 npm-less 전환(GitHub Releases
+ *     tarball 유통)이 설계 의도라 npmjs에는 앞으로도 발행되지 않으므로 계속
+ *     기본 skip이다(internal-protocol은 애초에 `private: true`). 한 줄에 미발행
+ *     패키지가 섞여 있으면(예: INSTALL_HINT처럼 devtools+debugger를 함께
+ *     언급) 전체를 install-blocked로 유지한다. `NORMALIZE_SCOPE_INSTALL=0`으로
+ *     devtools를 포함해 전부 일시적으로 끌 수 있다(escape hatch,
+ *     docs/upstream-sync.md 참고) — 반대로 `=1`이 debugger·debug-console 같은
+ *     영구 미발행 패키지까지 강제로 리네임하지는 않는다.
  *   - 모든 규칙은 멱등이다: 규칙의 매치 패턴은 "치환 전" 형태만 잡고, 치환
  *     결과는 같은 패턴으로 다시 매치되지 않는다. 두 번 돌려도 결과가 같다.
  *   - `--dry-run`이 기본. `--write`를 줘야 실제로 파일을 고친다.
  *
  * CLI:
  *   node scripts/normalize-upstream.mjs [--write] [--dry-run] <path> [<path> ...]
- *   NORMALIZE_SCOPE_INSTALL=1 node scripts/normalize-upstream.mjs --write <path>
+ *   NORMALIZE_SCOPE_INSTALL=0 node scripts/normalize-upstream.mjs --write <path>   # scope-install을 일시적으로 끄고 싶을 때
  *
  * 라이브러리로 쓸 때:
  *   import { normalizeContent, normalizeFile, RULES } from './normalize-upstream.mjs';
@@ -37,6 +48,19 @@ import { extname, basename, relative, sep, join as joinPath } from 'node:path';
 
 /** normalize 대상 npm 스코프 패키지 4개 (polyfill은 제외 — 동기화 대상 아님). */
 export const SCOPED_PACKAGES = ['devtools', 'debugger', 'debug-console', 'internal-protocol'];
+
+/**
+ * SCOPED_PACKAGES 중 실제로 `@apps-in-toss/*`로 공개 npm(registry.npmjs.org)에
+ * 발행된 패키지만. `scope-install`(설치 명령·npm 레지스트리 URL·설치 감지 grep)
+ * 리네임은 이 집합에 속한 패키지에만 적용된다 — SCOPED_PACKAGES 전체에 일괄
+ * 적용하면 안 된다. `devtools`는 wf 소스 monorepo(사내)가 발행 주체가 되어
+ * 2026-08-04 `@apps-in-toss/devtools@3.0.2`로 공개 npm에 실제 배포됐다. 반면
+ * `debugger`·`debug-console`은 npm-less 전환(GitHub Releases tarball 유통)이
+ * **설계 의도**라 npmjs에는 앞으로도 발행되지 않는다 — "아직 배포 안 됨"이
+ * 아니라 "영구 미발행"이므로 이 집합에 추가하면 안 된다. `internal-protocol`은
+ * `private: true`라 애초에 배포 대상이 아니다.
+ */
+export const NPM_PUBLISHED_SCOPED_PACKAGES = new Set(['devtools']);
 
 /** 커뮤니티 org → harness repo. */
 export const COMMUNITY_ORG = 'apps-in-toss-community';
@@ -127,9 +151,11 @@ function makeCounter() {
 //                 JSDoc 언급까지 전부 포함(#21 — 커밋 33771c1 전면 스코프
 //                 sweep 실측 반영). 기본 치환.
 //   install     — 설치 명령(npm/npx/pnpm/yarn/bun), npm 레지스트리 URL,
-//                 설치 감지 grep 문자열. 대상 패키지가 아직 @apps-in-toss로
-//                 npm 배포되지 않아 지금 바꾸면 실제로 깨진다 — 기본 skip,
-//                 NORMALIZE_SCOPE_INSTALL=1로 켠다 (blockedUntilPublished).
+//                 설치 감지 grep 문자열. NPM_PUBLISHED_SCOPED_PACKAGES에 속한
+//                 패키지(현재 devtools만 — 2026-08-04 @apps-in-toss로 공개 npm
+//                 발행)에 한해 기본 on. debugger·debug-console은 npm-less가
+//                 설계 의도라 계속 기본 off. NORMALIZE_SCOPE_INSTALL=0으로
+//                 devtools까지 포함해 일시적으로 전부 끌 수 있다.
 //   preserve    — LEGACY 명명 상수(과거 스펙 감지용)만 영구 보존한다. 그
 //                 외에는 더 이상 예외가 없다 — "애매하면 보존"이 아니라
 //                 "애매하면 컨텍스트 규칙(LEGACY/external-target/install)에
@@ -138,6 +164,33 @@ function makeCounter() {
 
 const SCOPE_ALT = SCOPED_PACKAGES.join('|');
 const SCOPE_TOKEN_RE = new RegExp(`@ait-co/(?:${SCOPE_ALT})(?:/[\\w.\\-/]*)?`);
+// SCOPE_TOKEN_RE과 동일 패턴이지만 패키지 이름을 캡처한다 — scope-install
+// 게이트가 "이 줄에 언급된 패키지가 전부 NPM_PUBLISHED_SCOPED_PACKAGES에
+// 속하는가"를 판단하는 데 쓴다(한 줄에 여러 패키지가 섞여 있을 수 있다 —
+// 예: INSTALL_HINT 상수).
+const SCOPE_TOKEN_CAPTURE_RE = new RegExp(`@ait-co/(${SCOPE_ALT})(?:/[\\w.\\-/]*)?`, 'g');
+
+/**
+ * 이 줄에 등장하는 `@ait-co/<pkg>` 토큰이 하나 이상이고, 전부
+ * NPM_PUBLISHED_SCOPED_PACKAGES에 속하는지. 한 줄이라도 미발행 패키지를
+ * 섞어 언급하면(예: `pnpm add -D @ait-co/devtools @ait-co/debugger`)
+ * 전체를 install-blocked로 유지한다 — 부분 치환은 같은 줄 안에서 "발행된
+ * 패키지는 새 스코프, 미발행 패키지는 옛 스코프"로 갈라져 더 혼란스럽다.
+ */
+function allScopeTokensPublished(line) {
+  const packages = new Set();
+  SCOPE_TOKEN_CAPTURE_RE.lastIndex = 0;
+  let m = SCOPE_TOKEN_CAPTURE_RE.exec(line);
+  while (m) {
+    packages.add(m[1]);
+    m = SCOPE_TOKEN_CAPTURE_RE.exec(line);
+  }
+  if (packages.size === 0) return false;
+  for (const pkg of packages) {
+    if (!NPM_PUBLISHED_SCOPED_PACKAGES.has(pkg)) return false;
+  }
+  return true;
+}
 
 const IMPORT_SPECIFIER_RE = new RegExp(
   `((?:from\\s+|require\\(\\s*|import\\(\\s*|import\\.meta\\.resolve\\(\\s*)['"])@ait-co/(${SCOPE_ALT})((?:/[\\w.\\-/]*)?)(['"])`,
@@ -161,13 +214,17 @@ const GREP_DETECTION_RE = /\bgrep\b/;
  * "외부 타겟 프로젝트" 콘텐츠 — 이 harness 자신의 pnpm workspace로 로컬 해석되는
  * import/의존성 선언이 아니라, 스캐폴드 템플릿이 그대로 복사되거나 inject 계열
  * skill이 "다른(외부) 프로젝트"에 주입하는 코드 샘플·의존성 선언이다. import
- * 특정자나 package.json 키 모양이어도 실제로는 대상 패키지가 아직 npm 미배포라
+ * 특정자나 package.json 키 모양이어도, 대상 패키지가 npm 미배포인 동안은 실제로
  * scope-install과 동일한 문제(설치·모듈 resolve 실패)를 겪는다 — 그래서 이
  * 경로 아래에서는 "functional" 분류(2~4단계)를 건너뛰고 곧장 scope-install
- * 게이트로 보낸다. 실측 근거: 절단 이후 packages/ 전체 dry-run에서 이 경로들이
- * (설치 명령은 old-scope로 남겨두면서) 문법상 import/package.json 모양이라는
- * 이유만으로 코드 샘플만 새 스코프로 리네임돼, 같은 문서 안에서 설치 명령과
- * import 예시의 스코프가 서로 어긋나는 내부 불일치가 발생했다.
+ * 게이트로 보낸다(devtools 언급은 공개 npm 발행으로 게이트 기본값이 on이라
+ * 이 경로도 함께 새 스코프로 넘어가지만, debugger·debug-console 언급은
+ * NPM_PUBLISHED_SCOPED_PACKAGES에 없어 계속 옛 스코프로 남는다 — 게이트
+ * 자체는 향후 다른 패키지가 새로 발행될 경우를 위해 패키지 단위로 남겨둔다).
+ * 실측 근거: 절단 이후 packages/ 전체 dry-run에서
+ * 이 규칙 없이는(설치 명령은 old-scope로 남겨두면서) 문법상 import/package.json
+ * 모양이라는 이유만으로 코드 샘플만 새 스코프로 리네임돼, 같은 문서 안에서
+ * 설치 명령과 import 예시의 스코프가 서로 어긋나는 내부 불일치가 발생했다.
  */
 const EXTERNAL_TARGET_PATH_PATTERNS = [
   /(^|\/)packages\/agent-plugin\/shared\/templates\//, // /ait:new가 외부 프로젝트로 그대로 복사하는 스캐폴드 템플릿
@@ -200,9 +257,10 @@ function normalizeScopeLine(line, opts) {
   }
 
   // 1.5) 외부 타겟 프로젝트 콘텐츠 — import/package.json 모양이어도 functional로
-  // 취급하지 않는다. 항상 scope-install 게이트를 그대로 적용한다.
+  // 취급하지 않는다. 항상 scope-install 게이트를 그대로 적용한다(패키지별
+  // 발행 여부까지 확인 — allScopeTokensPublished).
   if (opts.externalTarget) {
-    if (opts.allowScopeInstall) {
+    if (opts.allowScopeInstall && allScopeTokensPublished(line)) {
       return { line: renameScopeInMatch(line), category: 'install-forced' };
     }
     return { line, category: 'install-blocked' };
@@ -232,7 +290,7 @@ function normalizeScopeLine(line, opts) {
     (INSTALL_CMD_RE.test(line) || NPM_REGISTRY_URL_RE.test(line) || GREP_DETECTION_RE.test(line)) &&
     !IMPORT_SPECIFIER_RE.test(line);
   if (isInstallContext) {
-    if (opts.allowScopeInstall) {
+    if (opts.allowScopeInstall && allScopeTokensPublished(line)) {
       return { line: renameScopeInMatch(line), category: 'install-forced' };
     }
     return { line, category: 'install-blocked' };
@@ -514,10 +572,10 @@ export const RULES = [
   {
     id: 'scope-install',
     category: 'scope',
-    defaultEnabled: false,
+    defaultEnabled: true,
     envVar: 'NORMALIZE_SCOPE_INSTALL',
     description:
-      'npm 스코프 치환을 설치 명령(npm/npx/pnpm/yarn/bun)·npm 레지스트리 URL·설치 감지 grep 문자열까지 확장. 대상 패키지가 npm 미배포라 기본 skip — 배포 후 NORMALIZE_SCOPE_INSTALL=1로 켠다.',
+      'npm 스코프 치환을 설치 명령(npm/npx/pnpm/yarn/bun)·npm 레지스트리 URL·설치 감지 grep 문자열까지 확장. 패키지 단위 게이트(NPM_PUBLISHED_SCOPED_PACKAGES) — devtools가 2026-08-04 `@apps-in-toss/devtools`로 공개 npm 발행되면서 devtools에 한해 기본 on. debugger·debug-console은 npm-less 전환(GitHub Releases tarball 유통)이 설계 의도라 npmjs에는 앞으로도 발행되지 않으므로 계속 기본 off — "아직 미배포"가 아니라 "영구 미발행"이라 NORMALIZE_SCOPE_INSTALL=1로도 강제 리네임되지 않는다. NORMALIZE_SCOPE_INSTALL=0으로 devtools를 포함해 전부 일시적으로 끌 수 있다(escape hatch).',
   },
   {
     id: 'scope-preserve',
@@ -532,7 +590,7 @@ export const RULES = [
     defaultEnabled: true,
     envVar: null,
     description:
-      'agent-plugin의 스캐폴드 템플릿(shared/templates/)과 외부 프로젝트 주입 안내(shared/skills/inject/references/, new-miniapp·setup-phone-preview의 SKILL.md)는 import/package.json 키 모양이어도 functional로 치환하지 않는다 — 이 harness 자신의 workspace가 아니라 "다른 프로젝트"에 그대로 복사·주입되는 콘텐츠라 scope-install과 동일한 미배포 문제를 겪는다. EXTERNAL_TARGET_PATH_PATTERNS로 경로 판별, scope-install 게이트를 그대로 공유한다(NORMALIZE_SCOPE_INSTALL=1이면 같이 풀린다).',
+      'agent-plugin의 스캐폴드 템플릿(shared/templates/)과 외부 프로젝트 주입 안내(shared/skills/inject/references/, new-miniapp·setup-phone-preview의 SKILL.md)는 import/package.json 키 모양이어도 functional로 치환하지 않는다 — 이 harness 자신의 workspace가 아니라 "다른 프로젝트"에 그대로 복사·주입되는 콘텐츠라 scope-install과 동일한 미배포 문제를 겪는다. EXTERNAL_TARGET_PATH_PATTERNS로 경로 판별, scope-install 게이트(패키지 단위 NPM_PUBLISHED_SCOPED_PACKAGES 포함)를 그대로 공유한다 — devtools 언급만 풀리고, debugger·debug-console 언급은 NORMALIZE_SCOPE_INSTALL=1이어도 계속 install-blocked로 남는다.',
   },
   {
     id: 'github-issue-degrade',
@@ -607,7 +665,13 @@ export function normalizeContent(content, ctx) {
   const isMarkdown = extname(toPosix(filePath)) === '.md';
 
   // 스코프 치환은 코드/JSON/마크다운 어디든 줄 단위로 동작.
-  const allowScopeInstall = env.NORMALIZE_SCOPE_INSTALL === '1';
+  // 전역 kill switch. 실제 적용 여부는 이것과 별개로 줄마다
+  // allScopeTokensPublished()로 패키지 단위 게이트를 한 번 더 통과해야 한다 —
+  // devtools(공개 npm 발행, 2026-08-04)만 기본 on이고 debugger·debug-console은
+  // NORMALIZE_SCOPE_INSTALL=1이어도 install-blocked로 남는다(npm-less가 설계
+  // 의도라 "아직 미배포"가 아니라 "영구 미발행"이기 때문).
+  // NORMALIZE_SCOPE_INSTALL=0으로 devtools까지 포함해 전부 끌 수 있다(escape hatch).
+  const allowScopeInstall = env.NORMALIZE_SCOPE_INSTALL !== '0';
   const externalTarget = isExternalTargetContent(filePath);
   out = out
     .split('\n')

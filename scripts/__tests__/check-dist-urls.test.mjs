@@ -193,7 +193,7 @@ describe('checkArmedScopeReferences — 규칙② self-arming (문맥 무관 전
     assert.equal(violations[0].scopePackage, 'debug-console');
   });
 
-  test('무장(armed=true) — devtools 스코프(@ait-co/devtools)는 계속 제외된다 (#74 대기)', () => {
+  test('무장(armed=true) — devtools 스코프(@ait-co/devtools)는 계속 제외된다 (npm-less 전환 범위 밖 — devtools는 공개 npm 발행이라 이 GitHub Release URL 가드 대상이 아니다, harness#74)', () => {
     const lines = toLines('fixture.md', 'pnpm add -D @ait-co/devtools');
     const violations = checkArmedScopeReferences(lines, true);
     assert.deepEqual(violations, []);

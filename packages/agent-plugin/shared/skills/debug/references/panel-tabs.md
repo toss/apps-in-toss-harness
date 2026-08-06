@@ -17,7 +17,7 @@
 패널이 안 보이면 진입점(`main.ts`/`index.ts`)에 아래가 있는지 확인:
 
 ```ts
-import '@ait-co/devtools/panel';
+import '@apps-in-toss/devtools/panel';
 ```
 
 (unplugin이 자동 주입하지만, rolldown/Vite 8 환경에서는 명시 import이 안전.)

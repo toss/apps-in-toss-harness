@@ -211,7 +211,12 @@ Release로 배포하므로, 이 절차는 배포 전 버전 확정 단계에서�
 `@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의 GitHub
 Release 에셋 다운로드 URL이 `curl -sI`로 200을 반환했다(§1의 3번, 위 발행
 기록) — 이 실증을 반영한 스코프 치환·README 갱신·CI 검증까지 같은 PR에서
-마쳤다. `devtools`는 이 절차의 대상이 아니다 — D1b(§7b)에서 별도로 다룬다.
+마쳤다. `devtools`는 이 절차(D1a — GitHub Release URL 기준 npm-less 전환)의
+대상이 아니다 — devtools는 npm-less가 아니라 오히려 반대로 공개 npm에 새로
+발행됐고(`3.0.2`, 2026-08-04), 그 install-command 스코프 치환은 D1a·D1b
+어느 쪽도 아닌 별도 축(`normalize-upstream.mjs`의 패키지 단위 게이트
+`NPM_PUBLISHED_SCOPED_PACKAGES` — `docs/upstream-sync.md` 참고, harness#74)이다.
+D1b(§7b)는 그와 또 다른 잔여 항목(CLI 자동 설치 실증)만 다룬다.
 
 1. **정규화 스크립트로 일괄 치환 — 완료(2026-08-06, PR #85).**
    `NORMALIZE_SCOPE_INSTALL=1`로 `normalize-upstream.mjs`를 `debugger`·
@@ -245,8 +250,12 @@ Release 에셋 다운로드 URL이 `curl -sI`로 200을 반환했다(§1의 3번
    `debugger`·`debug-console`의 "아직 배포 전" 문구를 제거했고,
    `packages/{debugger,debug-console}/README.md`·`README.en.md`의 설치
    명령도 GitHub Release URL 기준으로 함께 갱신했다. `devtools`는 이 단계의
-   대상이 아니다 — harness에 README 자체가 남아 있지 않고(C4), skill·템플릿에
-   남은 devtools 설치 안내의 정리는 D1b 해소 시 §7b가 담당한다.
+   대상이 아니다 — harness에 devtools README 자체가 남아 있지 않다(C4).
+   skill·템플릿에 남아 있던 devtools 설치 안내(`@ait-co/devtools` →
+   `@apps-in-toss/devtools`)는 D1b를 기다리지 않고, 공개 npm 발행 사실을
+   근거로 별도 축에서 먼저 정리된다(harness#74, `docs/upstream-sync.md`의
+   `NPM_PUBLISHED_SCOPED_PACKAGES` 게이트) — D1b(§7b)는 그 뒤에 남는 CLI
+   자동 설치 실증만 다룬다.
 
 harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip
 트래킹 이슈).
@@ -258,10 +267,13 @@ wf 소스 monorepo(사내)가 발행해 **공개 npm에 올라온** `@apps-in-to
 mock·panel이 뜨는 것까지 실증돼 D1b가 해소된 직후 실행하는 절차다(배포 모델은
 2026-08-04 재정의 확정이고 공개 npm 발행도 같은 날 완료됐다(`3.0.2`) —
 `docs/roadmap.md` §5 문항 6·이슈 #74. 남은 것은 CLI 자동 설치 실증뿐이다).
-D1a(§7a)와 성격이
-다르다 — 스코프 **치환**이 아니라 harness가 안내하던 devtools 설치 절차 자체의
-**삭제**다(CLI가 설치를 대행하므로 harness가 별도로 안내할 설치 명령이
-없어진다).
+D1a(§7a)와 성격이 다르다 — 스코프 **치환**이 아니라 harness가 안내하던
+devtools 설치 절차 자체의 **삭제**다(CLI가 설치를 대행하므로 harness가
+별도로 안내할 설치 명령이 없어진다). devtools의 install-command 스코프
+치환(`@ait-co/devtools` → `@apps-in-toss/devtools`) 자체는 이 절차를 기다리지
+않고 이미 별도 축에서 진행 중이다(harness#74, `docs/upstream-sync.md`의
+`NPM_PUBLISHED_SCOPED_PACKAGES` 게이트) — 여기서 삭제하는 것은 스코프가
+아니라 "harness가 devtools 설치를 안내한다"는 절차 자체다.
 
 1. **skill 재설계** — `new-miniapp` 후처리와 `inject`(devtools facet)에서
    devtools devDependency 추가 단계를 **삭제**한다(CLI가 이미 넣어 준다).

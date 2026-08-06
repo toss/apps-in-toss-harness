@@ -325,11 +325,13 @@ ls ./<package_name>/node_modules/.bin/ait
 
 ### 4. 후처리 B — devtools 배선 (브라우저 dev 활성화)
 
-> `pnpm add -D @ait-co/devtools`가 `cloudflared` 관련
-> `ERR_PNPM_IGNORED_BUILDS`를 낼 수 있다 — 2-1절 참조. 또한 `@ait-co/devtools`는
-> peer로 `@apps-in-toss/web-framework >=2.6.0 <3.0.0`을 선언하는데, 정본
-> scaffold는 wf 3.x를 설치하므로 **`unmet peer` 경고가 뜨는 게 정상**이다 —
-> 설치 자체는 막히지 않으니 경고만 보고 넘어간다.
+> `pnpm add -D @apps-in-toss/devtools`가 `cloudflared` 관련
+> `ERR_PNPM_IGNORED_BUILDS`를 낼 수 있다 — 2-1절 참조. `@apps-in-toss/devtools`(공개 npm
+> 발행본, 2026-08-04부터 `@apps-in-toss/*`)는 peer로
+> `@apps-in-toss/web-framework >=2.6.0 <3.0.0 || >=3.0.1 <4.0.0`을 선언한다 — wf 3.x는
+> 정확히 `3.0.0`만 이 범위에서 빠진다. 정본 scaffold가 설치한 wf 버전이 이 gap(정확히
+> `3.0.0`)과 겹치면 `unmet peer` 경고가 뜨고, 그 외 3.x 버전이면 경고 없이 설치된다 —
+> 경고가 뜨더라도 설치 자체는 막히지 않으니 넘어가면 된다.
 
 **`--no-devtools`가 지정됐으면 이 단계 전체를 건너뛴다** — devtools는 사용자
 의향에 따르는 선택 요소다. 건너뛴 경우 Step 6 완료 안내에서 `pnpm dev` 줄의
@@ -340,7 +342,7 @@ ls ./<package_name>/node_modules/.bin/ait
 directory>/../inject/references/devtools.md**.
 
 1. ```bash
-   pnpm --dir ./<package_name> add -D @ait-co/devtools
+   pnpm --dir ./<package_name> add -D @apps-in-toss/devtools
    ```
 2. vite.config 파일을 수정한다. **실제 존재하는 파일을 먼저 확인**한다:
 
@@ -357,7 +359,7 @@ directory>/../inject/references/devtools.md**.
    목록을 사용자에게 보고한다.
 
    확인된 그 파일에:
-   - `import aitDevtools from '@ait-co/devtools/unplugin';`
+   - `import aitDevtools from '@apps-in-toss/devtools/unplugin';`
    - `plugins` 배열에 `aitDevtools.vite({ panel: true })` 추가 (배열이 없으면 생성 —
      vanilla `js`/`ts` 템플릿도 Vite이므로 동일하게 적용된다).
    - `optimizeDeps.exclude`에 `@apps-in-toss/web-framework` 계열 추가
@@ -367,13 +369,17 @@ directory>/../inject/references/devtools.md**.
 `--sample`로 넣은 IAP/IAA 예제가 브라우저에서 "샌드박스앱/토스앱에서
 실행해주세요" alert만 띄운다.
 
-> **브라우저 mock은 wf 2.x 표면 기준이다** — `@ait-co/devtools`의 mock
-> 모듈은 wf 3.x가 새로 추가한 네임스페이스 API(`Clipboard.*`·`Device.*`·
-> `Screen.*`·`TossPay.*`·`createAsyncBridge` 등 18종)를 아직 mock하지 않는다.
-> 개별 함수(flat) API ~90종은 mock과 1:1로 일치하고, create-ait-app이 생성하는
-> `iap`/`iaa` 샘플도 flat 스타일만 쓰므로 이 skill이 만드는 기본 산출물은
-> 영향이 없다. 네임스페이스 API를 직접 호출하는 코드를 추가하면 브라우저에서
-> `undefined`가 될 수 있다 — Step 6 완료 안내가 이 경고를 다시 알린다.
+> **`@apps-in-toss/devtools`(`3.0.2`)의 mock은 wf 2.x·3.x 두 표면을 모두
+> 지원한다** — `./mock/2x`(개별 함수 flat API)와 `./mock/3x`(네임스페이스 API:
+> `Clipboard.*`·`Device.*`·`Screen.*`·`TossPay.*`·`createAsyncBridge` 등)
+> 둘 다 패키지에 포함돼 있고, unplugin의 `sdkVersion` 옵션(`'auto'`가 기본 —
+> 소비자 프로젝트의 `@apps-in-toss/web-framework` major를 자동 감지)이 둘 중
+> 하나를 고른다. 이 skill이 만드는 scaffold(wf 3.x)에서는 auto-detect가
+> 3x facade를 골라 네임스페이스 API도 flat API도 브라우저에서 정상 동작한다.
+> **주의**: 모노레포·virtual store처럼 auto-detect가 실제 설치된 wf major를
+> 못 읽는 환경에서는 `aitDevtools.vite({ sdkVersion: '3' })`처럼 명시적으로
+> 지정해야 한다 — auto-detect가 잘못된 표면을 고르면 그 표면에 없는 API만
+> 브라우저에서 `undefined`가 된다.
 
 ### 5. 후처리 C — .gitignore
 
@@ -419,9 +425,10 @@ test -f ./<package_name>/.gitignore && { \
 주의: ait build를 단독으로 실행하면 dist/가 없어 실패합니다 — 항상 pnpm build
   (또는 vite build 이후)로 실행하세요.
 
-참고: 브라우저 mock은 web-framework 2.x 표면 기준입니다 — 3.x의 네임스페이스
-  API(Clipboard.*, Device.* 등)는 mock되지 않아 브라우저에서 undefined가 됩니다.
-  브라우저 개발 중에는 개별 함수(flat) API를 쓰세요.
+참고: 브라우저 mock은 web-framework 2.x(flat 함수)·3.x(네임스페이스,
+  Clipboard.* 등) 표면을 모두 지원하며, 이 프로젝트(wf 3.x)에서는 자동
+  감지(sdkVersion: 'auto')로 3.x 표면이 선택됩니다. 모노레포 등 자동 감지가
+  어긋나는 환경이면 vite.config의 sdkVersion을 명시적으로 지정하세요.
 
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```

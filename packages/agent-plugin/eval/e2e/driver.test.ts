@@ -74,7 +74,7 @@ describe('isForbiddenBashCommand', () => {
     // "deploy-" 로 시작하는 다른 이름의 스크립트/앱명 오탐 가드 (`deploy` 뒤
     // 부정 lookahead).
     'pnpm dlx create-ait-app@0.2.1 deploy-demo --inline --pm pnpm --template react-ts',
-    'pnpm --dir ./timer add -D @ait-co/devtools', // 후처리 B devtools 배선(0.2.x — granite bin 검증 후처리 A는 삭제됨)
+    'pnpm --dir ./timer add -D @apps-in-toss/devtools', // 후처리 B devtools 배선(0.2.x — granite bin 검증 후처리 A는 삭제됨)
     'pnpm --dir ./timer run build', // pm 스코프 플래그 + build — deploy 패턴에 오탐되면 안 된다
     'pnpm run deploy-preview', // "deploy" 로 시작하지만 다른 이름의 스크립트 — 오탐 가드
     'RELEASE_CHANNEL=dogfood ait build',
@@ -85,7 +85,7 @@ describe('isForbiddenBashCommand', () => {
     'mkdir -p src',
     'node -v',
     'cat package.json',
-    'pnpm add @ait-co/devtools', // 패키지 설치 — 콘솔 무접촉
+    'pnpm add @apps-in-toss/devtools', // 패키지 설치 — 콘솔 무접촉
   ];
 
   for (const cmd of FORBIDDEN) {
