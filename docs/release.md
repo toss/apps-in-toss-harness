@@ -4,8 +4,8 @@
 생성됐다 — `debugger-v0.2.0`(에셋 `apps-in-toss-debugger-0.2.0.tgz`),
 `debug-console-v0.1.4`(에셋 `apps-in-toss-debug-console-0.1.4.tgz`). 두 에셋
 다운로드 URL 모두 `curl -sI` **200** 확인 완료 — §1의 3번 조건과 D1a
-게이트(`docs/roadmap.md` §3)가 해소됐다. §7a 체크리스트가 이제 실행
-대상이다.
+게이트(`docs/roadmap.md` §3)가 해소됐다. §7a 체크리스트는 같은 날
+PR #85에서 전항 완료됐다.
 
 **2026-08-06, 오너 지시로 npm-less 전환 결정.** `@apps-in-toss/debugger`·
 `@apps-in-toss/debug-console` 2개 패키지는 npmjs.com에 발행하지 않고,
@@ -201,42 +201,45 @@ Release로 배포하므로, 이 절차는 배포 전 버전 확정 단계에서�
 
 ## 7a. scope-install flip 체크리스트 (D1a 해소 직후)
 
-**상태(2026-08-06): D1a 해소됨.** `@apps-in-toss/debugger`·
-`@apps-in-toss/debug-console` 2패키지의 GitHub Release 에셋 다운로드 URL이
-`curl -sI`로 200을 반환했다(§1의 3번, 위 발행 기록) — 아래 절차가 이제 실행
-대상이다. `devtools`는 이 절차의 대상이 아니다 — D1b(§7b)에서 별도로 다룬다.
+**상태(2026-08-06): D1a 해소됨, 아래 절차 전항 완료(Wave 2, PR #85).**
+`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의 GitHub
+Release 에셋 다운로드 URL이 `curl -sI`로 200을 반환했다(§1의 3번, 위 발행
+기록) — 이 실증을 반영한 스코프 치환·README 갱신·CI 검증까지 같은 PR에서
+마쳤다. `devtools`는 이 절차의 대상이 아니다 — D1b(§7b)에서 별도로 다룬다.
 
-1. **정규화 스크립트로 일괄 치환** — `NORMALIZE_SCOPE_INSTALL=1`로
-   `normalize-upstream.mjs`를 `debugger`·`debug-console` 2패키지에 적용한다.
-   `scope-install`(설치 명령·npx 안내·**Release 다운로드 URL**·설치 감지용
-   grep 문자열)과 `scope-external-target`(스캐폴드 템플릿 devDependency·주입
-   코드 샘플 등 외부 프로젝트로 그대로 복사되는 콘텐츠)이 같은 게이트로 함께
-   켜진다 — 설치·실행 안내 전반이 대상이며 구체 지점 수는 여기 하드코딩하지
-   않는다(`docs/upstream-sync.md` 참고). **주의**: 이 정규화 게이트는 현재
-   devtools·debugger·debug-console 3스코프를 일괄로 켜는 형태다 — D1a가
-   D1b보다 먼저 해소되는 예상 순서라면 `devtools`는 아직 배포 대상이 아닌
-   상태로 나머지 2패키지만 먼저 치환해야 하므로, 게이트를 패키지 단위로
-   분리하는 작업이 D1a 시점에 선행 필요하다.
+1. **정규화 스크립트로 일괄 치환 — 완료(2026-08-06, PR #85).**
+   `NORMALIZE_SCOPE_INSTALL=1`로 `normalize-upstream.mjs`를 `debugger`·
+   `debug-console` 2패키지에 적용했다. `scope-install`(설치 명령·npx 안내·
+   **Release 다운로드 URL**·설치 감지용 grep 문자열)과 `scope-external-target`
+   (스캐폴드 템플릿 devDependency·주입 코드 샘플 등 외부 프로젝트로 그대로
+   복사되는 콘텐츠)이 같은 게이트로 함께 켜졌다 — 설치·실행 안내 전반이
+   대상이며 구체 지점 수는 여기 하드코딩하지 않는다(`docs/upstream-sync.md`
+   참고). 스킬·소스 표면에는 더 이상 살아있는 `@ait-co/debugger`·
+   `@ait-co/debug-console` 참조가 없다(남은 등장은 전부 CHANGELOG 이력·
+   `check-dist-urls.mjs` 자체의 검사 대상 문자열·테스트 픽스처뿐).
    **URL은 패키지명이 아니라 버전 고정 URL(§2)이다** — import specifier(소스
    코드의 `import '@apps-in-toss/debug-console/auto'` 같은 문)는 설치 후
    `node_modules` 상의 정식 스코프 이름을 그대로 쓰고, URL은 설치 스펙에만
    쓴다. 이 비대칭을 놓치면 import까지 URL로 잘못 바꾸게 된다.
-2. **`eval/e2e/baseline.json` 재수립 여부는 사람이 먼저 판단** — 이 파일은
-   `PRESERVED_FILE_PATTERNS`(메인테이너가 수동으로만 갱신하는 시계열 비교
-   기준선)라 자동 정규화 대상이 아니다. `@ait-co/debugger`·`@ait-co/debug-console`
-   류 문자열이 남아 있으므로, 기계 치환 전에 이 스냅샷을 새로 찍을지부터
-   결정한다.
-3. **전체 CI 시퀀스로 검증** — `lint → build → check:dashboard-html-fresh →
+2. **`eval/e2e/baseline.json` 재수립 여부 — 해당 없음으로 판단 완료.** 이
+   파일은 `PRESERVED_FILE_PATTERNS`(메인테이너가 수동으로만 갱신하는 시계열
+   비교 기준선)라 자동 정규화 대상이 아니다. 확인 결과 `templateBaseline`에는
+   `web-framework`·`@ait-co/devtools`만 있고 `@ait-co/debugger`·
+   `@ait-co/debug-console` 문자열은 애초에 없었다 — 이 두 패키지의 스코프
+   치환이 baseline 스냅샷 재수립을 요구하지 않는다.
+3. **전체 CI 시퀀스로 검증 — 완료(2026-08-06, PR #85, commit `6d03f9c` check
+   run green).** `lint → build → check:dashboard-html-fresh →
    check:mcp-react-free → check:test-runner-dist → check:debug-surface-absent
    → check:pack-manifests → typecheck → test`(`check:footprint-absent`·
    `qa:fidelity`는 devtools 단독 소유 step이었다 — packages/devtools 제거와
    함께 ci.yml에서도 없어졌다, C4). agent-plugin의 `pnpm test`가 `validate-plugin.mjs` 검증
    (`shared/__tests__/validate.test.ts`·`validate-negative.test.ts`)을
-   포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인된다.
-4. **README ko/en을 같은 PR에서 동시 갱신** — `debugger`·`debug-console`의
-   "아직 배포 전" 문구 제거, `packages/{debugger,debug-console}/README.md`·
-   `README.en.md`의 설치 명령도 GitHub Release URL 기준으로 함께 갱신한다.
-   `devtools`는 D1b 전까지 미배포 상태 문구를 그대로 유지한다.
+   포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인됐다.
+4. **README ko/en을 같은 PR에서 동시 갱신 — 완료(2026-08-06, PR #85).**
+   `debugger`·`debug-console`의 "아직 배포 전" 문구를 제거했고,
+   `packages/{debugger,debug-console}/README.md`·`README.en.md`의 설치
+   명령도 GitHub Release URL 기준으로 함께 갱신했다. `devtools`는 D1b
+   전까지 미배포 상태 문구를 그대로 유지한다.
 
 harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip
 트래킹 이슈).

@@ -7,7 +7,7 @@
 | `mode` 값 | 환경 | 특이사항 |
 |---|---|---|
 | `local-browser` | 환경 1 — mock Chromium panel / 브라우저 CDP | 기본값. panel 모드와 CDP 직접 연결 모두 이 mode 사용 |
-| `relay-sandbox` | 환경 2 — 실기기 PWA (외부 relay) | mock SDK; `dev:phone:cdp` 스크립트 + `tunnel:{cdp:true}`가 띄운 relay에 붙는다. 데몬이 런타임에 이 외부 relay 패밀리를 lazy-boot한다 — 아래 사전 조건 참조 |
+| `relay-sandbox` | 환경 2 — 실기기 PWA (외부 relay) | mock SDK; `dev:phone:cdp` 스크립트(`debugger --mode=phone --cdp -- vite`)가 띄운 relay에 붙는다. 데몬이 런타임에 이 외부 relay 패밀리를 lazy-boot한다 — 아래 사전 조건 참조 |
 | `relay-staging` | 환경 3 — intoss-private candidate relay | side-effect unguarded (dogfood) |
 
 ## `start_debug` vs `start_attach`
@@ -25,7 +25,7 @@
 ## `relay-sandbox`(환경 2) 진입 — 기본 데몬에서 런타임 전환 가능
 
 환경 3(`relay-staging`)은 MCP 데몬이 자체 relay를 띄우지만,
-환경 2는 Vite dev 서버의 unplugin(`tunnel:{cdp:true}`)이 **먼저 띄운 외부 relay**에
+환경 2는 `debugger --mode=phone --cdp` CLI 래퍼(`dev:phone:cdp` 스크립트)가 **먼저 띄운 외부 relay**에
 MCP가 CDP 클라이언트로 붙는 구조다(아키텍처 상수 — 데몬이 이 relay를 스스로 못 만든다).
 
 프로젝트 `.mcp.json`이 등록하는 기본 데몬(`npx -y -p <Release tarball URL> debugger`)은
@@ -37,7 +37,7 @@ dual-connection 라우터로 동작하므로, `start_debug({mode:'relay-sandbox'
 `pnpm dev:phone:cdp`를 기동하면 `<projectRoot>/.ait_urls`(또는 `AIT_RELAY_BASE_URL`
 env var)가 채워지고, 데몬이 이를 읽어 relay endpoint를 구성한다. 이 주소가 없으면
 `start_attach`는 **relay 주소 미설정 에러**(env var 이름을 짚고 "dev 서버를
-`tunnel:{cdp:true}`로 기동하라"는 안내)를 돌려준다 — "데몬을 재시작하라"가 아니라
+`debugger --mode=phone --cdp`(`dev:phone:cdp`)로 기동하라"는 안내)를 돌려준다 — "데몬을 재시작하라"가 아니라
 "환경 2를 먼저 배선하라"는 뜻이다. 따라서 진입 순서는 `/ait:setup-phone-preview`
 → `pnpm dev:phone:cdp` → `start_attach({mode:'relay-sandbox'})`이다(SKILL.md 5-C relay-sandbox 분기).
 

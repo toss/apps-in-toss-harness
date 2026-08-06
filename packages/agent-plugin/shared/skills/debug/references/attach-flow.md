@@ -4,7 +4,7 @@
 
 ## 환경 2 (relay-sandbox) 경로
 
-0. **사전 조건 확인**: `vite.config`에 tunnel 옵션(`tunnel: process.env.AIT_TUNNEL ? {...} : false` 형태)이 있고 `package.json`에 `dev:phone:cdp` 스크립트가 있는지 확인한다.
+0. **사전 조건 확인**: `package.json`의 `scripts.dev:phone:cdp`가 `debugger --mode=phone --cdp -- vite`(`@apps-in-toss/debugger`의 `--mode=phone` CLI 래퍼) 형태로 배선돼 있는지 확인한다.
    - 없으면: **환경 2 배선이 아직 완료되지 않았습니다. 먼저 `/ait:setup-phone-preview`를 실행하세요.** 여기서 중단.
 
 1. **dev 서버 기동 (idempotent)**: `<projectRoot>/.ait_urls` 파일이 이미 존재하면 dev 서버가 이미 기동 중이므로 이 단계를 건너뛴다. 존재하지 않으면 에이전트가 Bash 도구로 **`pnpm dev:phone:cdp`를 백그라운드에서 기동**한다(`run_in_background: true`):
@@ -14,9 +14,9 @@
    pnpm dev:phone:cdp
    ```
 
-   이 명령이 `AIT_TUNNEL=1 AIT_TUNNEL_CDP=1` 조건으로 Vite를 기동하고, 두 개의 cloudflared 터널(앱 HTTP + relay wss)을 boot한다.
+   이 명령이 `debugger --mode=phone --cdp -- vite` CLI 래퍼로 Vite를 하위 프로세스로 기동하고, 두 개의 cloudflared 터널(앱 HTTP + relay wss)을 boot한다.
 
-2. **준비 완료 대기**: `<projectRoot>/.ait_urls` 파일이 생성될 때까지 폴링한다(터널 boot 소요 시간은 보통 2~15초). 파일은 devtools unplugin이 터널 resolve 후 기록하는 준비 완료 신호다.
+2. **준비 완료 대기**: `<projectRoot>/.ait_urls` 파일이 생성될 때까지 폴링한다(터널 boot 소요 시간은 보통 2~15초). 파일은 `debugger --mode=phone --cdp`가 터널 resolve 후 기록하는 준비 완료 신호다.
 
    ```bash
    # 파일 존재 여부만 확인 — 내용을 읽거나 출력하지 않는다 (SECRET-HANDLING)

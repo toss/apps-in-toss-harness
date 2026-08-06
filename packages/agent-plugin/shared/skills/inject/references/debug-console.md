@@ -137,7 +137,7 @@ if (__DEBUG_BUILD__) {
   RELEASE_CHANNEL=dogfood ait build   # candidate 빌드에 attach 표면 포함
   /ait:debug                          # 환경 3 QR attach로 on-device 디버깅
 
-참고: https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
+참고: https://github.com/toss/apps-in-toss-harness/tree/main/packages/debug-console · https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
 ```
 
 ## debug-console facet 하지 말아야 할 것
