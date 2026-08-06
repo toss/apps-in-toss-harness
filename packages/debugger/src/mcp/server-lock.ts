@@ -38,6 +38,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isPidAlive as _isPidAlive } from './parent-watcher.js';
+import { RESTART_CMD_FORCE } from './restart-hint.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -315,7 +316,7 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
           existing.wssUrl != null ? `wssUrl=${existing.wssUrl}` : 'wssUrl=(tunnel starting)';
         process.stderr.write(
           `[ait-debug] 기존 debug-mode 세션이 이미 실행 중 — PID=${existing.pid}, started ${existing.startedAt}, ${urlPart}\n` +
-            `[ait-debug] 회복: \`kill ${existing.pid}\` 또는 \`npx -p @ait-co/debugger debugger --force\`\n`,
+            `[ait-debug] 회복: \`kill ${existing.pid}\` 또는 \`${RESTART_CMD_FORCE}\`\n`,
         );
         throw new ServerLockConflictError(existing.pid, existing.wssUrl, existing.startedAt);
       }

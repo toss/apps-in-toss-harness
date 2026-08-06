@@ -95,10 +95,18 @@ MCP가 아니다. devtools는 배포 모델 전환 중(전제 변경 감지 2026
 커뮤니티 로드맵의 "9 station 전부 GREEN" 기준을 공식 표면 기준으로 재작성한다.
 **1.0 = 아래 5개 조건의 동시 충족:**
 
-1. **public 전환 완료** — repo public + 첫 `@apps-in-toss/*` npm 배포 (#8).
+1. **public 전환 완료(2026-08 달성)** — repo public (#8). **npm 배포 축은 이
+   조건에서 분리됐다** — 2026-08-06 오너 지시로 npm-less 전환이 결정되어,
+   harness는 자체 패키지(`debugger`·`debug-console`)를 npmjs.com에 발행하지
+   않고 GitHub Releases로 유통한다(`docs/release.md`). 조건 1은 이제 repo
+   public 전환만으로 충족되고, 배포 채널의 진행 상태는 아래 조건 2·D1a가
+   추적한다.
 2. **공식 표면만으로 완주 가능** — station 0~8의 정규 경로에 커뮤니티 잔재
    의존이 없다: `@ait-co/*` 패키지, 커뮤니티 도메인 링크, oidc-bridge 경로가
-   정규 흐름에서 제거됨. (과도기 허용 항목이 전부 소거된 상태.)
+   정규 흐름에서 제거됨. (과도기 허용 항목이 전부 소거된 상태.) **npm-less
+   전환으로 이 조건이 비로소 도달 가능해졌다** — 종전 계획(D1a=npm 실발행)은
+   npmjs 등록이라는 선행조건에 막혀 있었지만, GitHub Release 에셋 URL 설치는
+   그 선행조건 없이 `@ait-co/*` 참조를 지금 당장 소거할 수 있다.
 3. **remote MCP 2종 기본 탑재** — docs MCP(#4)·console MCP(#3)가 실재하는
    endpoint로 manifest에 포함.
 4. **완주 실증 1회** — 빈 디렉토리에서 시작해 scaffold → 브라우저 dev → 번들 →
@@ -113,16 +121,19 @@ MCP가 아니다. devtools는 배포 모델 전환 중(전제 변경 감지 2026
 deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 남는 것을 허용한다.
 `@ait-co/*` devtools 소비의 소거 경로는 커뮤니티 결합 절단 배치(B1-B9, 하드카피 후
 스코프·링크·브랜딩을 harness 정본으로 정규화하는 작업)다 — 설치·실행 경로의
-스코프 치환 게이트는 둘로 나뉜다. **D1a**: `@apps-in-toss/debugger`·
-`@apps-in-toss/debug-console` npm 실발행+latest 승격(해소 주체 Dave·
-release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가 기계 치환된다.
+스코프 치환 게이트는 둘로 나뉜다. **D1a — 재정의(2026-08-06, npm-less 전환)**:
+`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의 **harness
+Release 에셋 발행 + URL 설치 실증**(해소 주체 Dave·release.yml — 종전
+"npm 실발행+`latest` 승격"에서 npm 발행 없이 지금 해소 가능한 형태로 재정의됨,
+`docs/release.md` §1) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가 기계
+치환된다.
 **D1b**: wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 resolve
 실증(해소 주체 Dave·platform PR + wf 릴리즈) — 해소 시 devtools **설치 절차
 자체가 삭제**된다(치환이 아니다). harness `packages/devtools`도 이관·실증 후
 제거된다. **전제 변경 감지(2026-08-04)**: transitive가 아니라 "사내 monorepo
 발행 + CLI 자동 설치 실증"으로 재정의 대기 — §5 문항 6 상태 갱신 참고("설치
 절차 삭제"·"packages/devtools 제거" 종착지는 불변, CLI가 설치를 대행하므로). 축별 대체 완료가 곧 해당 허용 항목의 소거 시점이다. D1a 해소 직후
-체크리스트는 `docs/npm-release.md` §7a, D1b 해소 직후 체크리스트는 같은 문서
+체크리스트는 `docs/release.md` §7a, D1b 해소 직후 체크리스트는 같은 문서
 §7b에 고정돼 있다.
 
 ## 4. Cross-cutting 자산 거취
@@ -191,7 +202,7 @@ release.yml) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가
    릴리즈에 npm 자동 발행 궤도다. 이에 따라 D1b는 "wf transitive + subpath
    re-export 실증"에서 "**사내 monorepo 발행 + CLI 자동 설치 실증**"으로
    재정의 예정 — 조율(Slack, Dave) 후 이 문항·§1 station 2 행·§3 D1b 정의·
-   `docs/npm-release.md` §7b·`packages/devtools/docs/porting-to-platform.md`를
+   `docs/release.md` §7b·`packages/devtools/docs/porting-to-platform.md`를
    일괄 수정한다. harness의 이관용 브랜치(feat/devtools-mock)는 폐기 권고
    (그쪽이 superset이고 3.0.1 동기화 30건을 구조적으로 커버). 잔여 기여
    후보: launcher 거처(아래 미확정 iii과 직결 — **상태 갱신(2026-08-05)**:

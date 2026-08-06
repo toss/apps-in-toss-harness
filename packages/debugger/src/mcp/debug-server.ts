@@ -122,6 +122,7 @@ import {
   startQrHttpServer,
 } from './qr-http-server.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
+import { RESTART_CMD } from './restart-hint.js';
 import { acquireLock, readServerLock } from './server-lock.js';
 import {
   BOOTSTRAP_TOOL_NAMES,
@@ -1742,7 +1743,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
         onPermanentDrop: (droppedAt) => {
           tunnelStatus = makeTunnelStatus(false, null, droppedAt, 3);
           logError('tunnel.down', {
-            msg: `tunnel permanently dropped (${droppedAt}). Restart: npx -p @ait-co/debugger debugger`,
+            msg: `tunnel permanently dropped (${droppedAt}). Restart: ${RESTART_CMD}`,
           });
           // Wake open dashboard SSE clients immediately so the render gate
           // swaps the now-dead QR for the tunnel-down error state (issue #631).

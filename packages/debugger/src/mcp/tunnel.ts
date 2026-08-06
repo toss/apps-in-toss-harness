@@ -26,6 +26,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { bin, install, Tunnel } from 'cloudflared';
+import { RESTART_CMD } from './restart-hint.js';
 import type { TunnelStatus } from './tools.js';
 
 /** Generates a 32-byte hex attach token shown as a pairing hint (relay-side validation is a later phase). */
@@ -503,7 +504,7 @@ export function startTunnelHealthProbe(
         const droppedAt = new Date().toISOString();
         log(
           `[ait-debug] tunnel permanently dropped after ${MAX_REISSUE_ATTEMPTS} reissue attempts — ` +
-            'restart the debug server to continue (npx -p @ait-co/debugger debugger).\n',
+            `restart the debug server to continue (${RESTART_CMD}).\n`,
         );
         onPermanentDrop(droppedAt);
       }
