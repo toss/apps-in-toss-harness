@@ -1,12 +1,13 @@
 name: Release
 
-# 수동 발행 전용. push/tag 트리거 없음 — 사고로 배포되면 npm unpublish는
-# 24시간·의존성 조건 제약이 커서 되돌리기 어렵다.
+# 수동 발행 전용. push/tag 트리거 없음 — 사고로 릴리즈가 생성되면 GitHub
+# Release·태그 자체는 삭제할 수 있지만 이미 tarball을 받아간 사용자를
+# 되돌릴 수는 없다.
 on:
   workflow_dispatch:
     inputs:
       package:
-        description: 'Publish which package(s)?'
+        description: 'Release which package(s)?'
         required: true
         type: choice
         default: all
@@ -14,20 +15,21 @@ on:
           - all
           - debugger
           - debug-console
-      dist_tag:
-        description: 'npm dist-tag'
+      prerelease:
+        description: 'Mark the GitHub Release as prerelease (staging concept — promote later by editing the release, no separate command)'
         required: true
-        type: string
-        default: next
+        type: boolean
+        default: true
       dry_run:
-        description: 'Dry run (no actual publish)'
+        description: 'Dry run (pack only, no release created)'
         required: true
         type: boolean
         default: true
 
-# 진행 중인 발행 job은 취소하지 않는다 — 취소가 half-published 상태를 만들 수 있다.
+# 진행 중인 릴리즈 job은 취소하지 않는다 — 취소가 half-released 상태를
+# 만들 수 있다(예: 태그는 생겼는데 에셋 업로드가 중단된 릴리즈).
 concurrency:
-  group: npm-release
+  group: gh-release
   cancel-in-progress: false
 
 permissions:
@@ -36,10 +38,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # npm trusted publishing(OIDC)에 id-token: write가 필요하다.
+    # gh release create에는 contents: write가 필요하다. 그 외 권한은
+    # 요구하지 않는다 — npm 발행을 하지 않으므로 id-token(OIDC)·registry
+    # 관련 권한은 전량 불필요.
     permissions:
-      id-token: write
-      contents: read
+      contents: write
     steps:
       # 아래 두 스텝(패키지 결정 + 입력 검증)은 checkout·pnpm install도 필요
       # 없다 — 되돌릴 수 없는 액션이니 잘못된 입력은 CI 시간을 쓰기 전에
@@ -60,22 +63,17 @@ jobs:
               ;;
           esac
 
-      # 되돌릴 수 없는 액션에 걸맞은 3개 가드:
-      #   1) dry-run은 fail-closed다 — 정확히 "false"일 때만 실배포, 그 외
+      # 되돌릴 수 없는 액션에 걸맞은 2개 가드:
+      #   1) dry-run은 fail-closed다 — 정확히 "false"일 때만 실릴리즈, 그 외
       #      (예상 못한 값 포함)는 dry-run이거나 아예 job을 실패시킨다.
-      #      "조용히 실배포"보다 "명시적으로 멈춤"이 안전하다.
-      #   2) dist_tag는 화이트리스트로 검증하고 "latest" 직행은 거부한다 —
-      #      이 워크플로는 항상 next 같은 비-latest 태그로만 배포하고,
-      #      latest 승격은 별도의 수동 `npm dist-tag add`로만 한다
-      #      (docs/npm-release.md §4). 자동화 경로에 latest를 열어두면
-      #      "먼저 next로 검증 후 승격" 규율이 강제되지 않는다.
-      #   3) 실배포는 main 브랜치에서만 허용한다 — 리뷰 안 된 피처 브랜치의
-      #      코드가 그대로 npm에 올라가는 걸 막는다. dry-run은 이 워크플로
-      #      자체를 테스트하는 방법이므로 아무 브랜치에서나 허용한다.
+      #      "조용히 실릴리즈"보다 "명시적으로 멈춤"이 안전하다.
+      #   2) 실릴리즈는 main 브랜치에서만 허용한다 — 리뷰 안 된 피처
+      #      브랜치의 코드가 그대로 릴리즈되는 걸 막는다. dry-run은 이
+      #      워크플로 자체를 테스트하는 방법이므로 아무 브랜치에서나
+      #      허용한다.
       - name: Validate inputs
         id: validate
         env:
-          DIST_TAG: ${{ inputs.dist_tag }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           case "$DRY_RUN" in
@@ -88,17 +86,8 @@ jobs:
           esac
           echo "real_publish=${real_publish}" >> "$GITHUB_OUTPUT"
 
-          if [ "$DIST_TAG" = "latest" ]; then
-            echo "::error::dist_tag 'latest' is not allowed via this workflow. Publish to a non-latest tag (e.g. 'next') first, verify install, then promote manually: npm dist-tag add <pkg>@<version> latest. See docs/npm-release.md."
-            exit 1
-          fi
-          if ! [[ "$DIST_TAG" =~ ^[a-z][a-z0-9-]*$ ]]; then
-            echo "::error::dist_tag '${DIST_TAG}' does not match ^[a-z][a-z0-9-]*\$ — refusing to proceed"
-            exit 1
-          fi
-
           if [ "$real_publish" = "true" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::real publish is only allowed from refs/heads/main (current: ${GITHUB_REF}). Re-run with dry_run: true to test from a feature branch."
+            echo "::error::real release is only allowed from refs/heads/main (current: ${GITHUB_REF}). Re-run with dry_run: true to test from a feature branch."
             exit 1
           fi
 
@@ -110,21 +99,31 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          # trusted publishing(OIDC)을 쓰려면 registry-url이 설정된 .npmrc가 있어야
-          # npm CLI가 이 레지스트리를 OIDC 대상으로 인식한다.
-          registry-url: 'https://registry.npmjs.org'
 
-      # npm trusted publishing(OIDC)은 npm CLI >= 11.5.1 (Node >= 22.14.0)이
-      # 필요하다. .nvmrc의 Node 버전에 번들된 npm이 이보다 낮을 수 있으니 명시적으로
-      # 올린다. (공식 가이드: https://docs.npmjs.com/trusted-publishers)
-      # 버전을 pin하지 않는 이유: npm 공식 가이드가 이 형태(latest)를 그대로 쓰고,
-      # pin하면 OIDC 관련 개선이 나와도 이 워크플로가 못 따라간다 — 공급망
-      # 관점에서는 pin이 더 안전하지만, install 대상이 npm 공식 CLI 자체이고
-      # trusted publishing이 아직 성숙 중인 기능이라 최신 추종을 택했다.
-      - name: Ensure npm CLI supports trusted publishing (OIDC)
+      # 태그 규약: <pkg>-v<version> (예: debugger-v0.2.0). 버전은 항상 해당
+      # package.json에서 동적으로 읽는다 — 워크플로에 하드코딩하지 않는다.
+      # 실릴리즈일 때만 중복 태그를 검사한다: 같은 태그의 릴리즈가 이미
+      # 있으면 gate(lint/build/typecheck/test, 몇 분 소요)를 돌리기 전에
+      # 여기서 즉시 실패시킨다(fail fast). dry-run은 이 워크플로 자체를
+      # 반복 테스트하는 용도라 기존 릴리즈 존재 여부와 무관하게 통과시킨다.
+      - name: Resolve versions and guard against duplicate releases
+        id: versions
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+          REAL_PUBLISH: ${{ steps.validate.outputs.real_publish }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          npm install --global npm@latest
-          npm --version
+          for pkg in $TARGET_PACKAGES; do
+            version="$(node -p "require('./packages/${pkg}/package.json').version")"
+            tag="${pkg}-v${version}"
+            echo "${pkg}: version=${version} tag=${tag}"
+            if [ "$REAL_PUBLISH" = "true" ]; then
+              if gh release view "$tag" >/dev/null 2>&1; then
+                echo "::error::release ${tag} already exists — refusing to overwrite. Bump the version in packages/${pkg}/package.json first."
+                exit 1
+              fi
+            fi
+          done
 
       - run: pnpm install --frozen-lockfile
 
@@ -146,9 +145,10 @@ jobs:
       - run: pnpm test
 
       # @apps-in-toss/agent-plugin과 @apps-in-toss/internal-protocol은 private: true라
-      # workflow_dispatch의 package 선택지에 애초에 없다(구조적 배제). pnpm publish
-      # 자체도 private 패키지를 거부하지만, 실수로 이 경계가 흐트러지는 것을 막기
-      # 위해 여기서도 명시적으로 한 번 더 확인한다.
+      # workflow_dispatch의 package 선택지에 애초에 없다(구조적 배제). 그래도
+      # 실수로 이 경계가 흐트러지는 것을 막기 위해 여기서도 명시적으로 한 번 더
+      # 확인한다 — private:true 패키지가 GitHub Release 에셋으로 노출되는 일은
+      # 없어야 한다.
       - name: Guard against private packages
         env:
           TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
@@ -156,45 +156,40 @@ jobs:
           for pkg in $TARGET_PACKAGES; do
             is_private="$(node -p "require('./packages/${pkg}/package.json').private === true")"
             if [ "$is_private" = "true" ]; then
-              echo "::error::packages/${pkg} is private:true — refusing to publish"
+              echo "::error::packages/${pkg} is private:true — refusing to release"
               exit 1
             fi
           done
 
-      # pnpm pack으로 tarball을 먼저 만드는 이유: workspace:* devDependency를 실제
-      # 버전으로 치환하는 건 pnpm의 역할이고(npm publish는 workspace: 프로토콜을
-      # 모른다), 반면 이 시점(pnpm 11.17.0)의 pnpm publish는 npm trusted
-      # publishing(OIDC)을 지원하지 않는다(npm CLI 11.5.1+ 전용 기능). 그래서
-      # "pnpm pack으로 정확한 tarball을 만들고 npm publish로 그 tarball을 올린다"는
-      # 하이브리드 경로를 쓴다 — 두 도구의 강점만 취한다.
+      # pnpm pack 산출 tarball을 그대로 GitHub Release 에셋으로 올린다. workspace:*
+      # devDependency를 실제 버전으로 치환하는 건 pnpm pack의 역할이고, tarball은
+      # 이미 자립적(internal-protocol은 dist에 인라인 흡수, 런타임 dependencies에
+      # workspace: 프로토콜 없음)임이 실측으로 확인됐다 — 별도 변환 없이 그대로
+      # 배포 가능하다.
       #
       # inputs.*는 여기서 셸에 직접 보간하지 않는다 — env로 넘겨 "$VAR"로
-      # 참조한다. `${{ inputs.dist_tag }}`를 run: 블록에 텍스트로 그대로 박으면
-      # GitHub가 bash 파싱 전에 치환하므로, dist_tag에 따옴표를 닫고 명령을
-      # 이어붙이는 값이 들어오면 이 job이 쥔 OIDC publish 자격까지 노출될 수
-      # 있다(이 job의 트리거 권한은 repo write라 외부 공격면은 아니지만, 되돌릴
-      # 수 없는 액션이라 방어적으로 막는다).
+      # 참조한다. `${{ inputs.prerelease }}`를 run: 블록에 텍스트로 그대로 박으면
+      # GitHub가 bash 파싱 전에 치환하므로, 예상 못한 값이 들어오면 명령
+      # 인젝션 표면이 될 수 있다(이 job의 트리거 권한은 repo write라 외부
+      # 공격면은 아니지만, 되돌릴 수 없는 액션이라 방어적으로 막는다).
       #
       # real_publish 판정은 validate 스텝이 이미 fail-closed로 내렸지만, 여기
-      # 실행 지점에서도 다시 3갈래로 명시적으로 분기한다 — "빈 값·예상 못한
-      # 값이면 기본 동작이 dry-run(혹은 실배포)"가 아니라 "기본 동작이 멈춤"이
-      # 되도록. validate가 항상 먼저 돌고 실패 시 job이 멈추므로 지금 당장
-      # 뚫리는 경로는 없지만, 판단이 두 스텝에 걸쳐 있고 실행 쪽 예전 형태
-      # (`[ -n "$DRY_RUN_FLAG" ]`)는 그 값이 빈 문자열이 되는 쪽(=output 이름
-      # 변경, 스텝 재배치 등)이 실배포로 fail-open이었다. output 하나(real_publish)
-      # 만 넘기고 여기서 다시 검증해 그 재발 경로를 구조적으로 없앤다.
-      - name: Pack and publish
+      # 실행 지점에서도 다시 명시적으로 분기한다 — "빈 값·예상 못한 값이면
+      # 기본 동작이 dry-run(혹은 실릴리즈)"가 아니라 "기본 동작이 멈춤"이
+      # 되도록.
+      - name: Pack and release
         env:
           TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
-          DIST_TAG: ${{ inputs.dist_tag }}
           REAL_PUBLISH: ${{ steps.validate.outputs.real_publish }}
-          NPM_CONFIG_PROVENANCE: 'true'
+          PRERELEASE: ${{ inputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          case "$REAL_PUBLISH" in
-            true) dry_run_flag="" ;;
-            false) dry_run_flag="--dry-run" ;;
+          prerelease_flag=()
+          case "$PRERELEASE" in
+            true) prerelease_flag=(--prerelease) ;;
+            false) prerelease_flag=() ;;
             *)
-              echo "::error::real_publish is '${REAL_PUBLISH}' (expected 'true' or 'false') — refusing to publish"
+              echo "::error::prerelease must be exactly 'true' or 'false', got: '${PRERELEASE}' — refusing to proceed"
               exit 1
               ;;
           esac
@@ -202,19 +197,32 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/release-tarballs"
           for pkg in $TARGET_PACKAGES; do
             echo "::group::${pkg}"
+            version="$(node -p "require('./packages/${pkg}/package.json').version")"
+            tag="${pkg}-v${version}"
+
             (
               cd "packages/${pkg}"
               pnpm pack --pack-destination "$GITHUB_WORKSPACE/release-tarballs"
             )
             tarball="$(ls "$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-*.tgz)"
-            echo "tarball: ${tarball}"
+            asset_name="$(basename "$tarball")"
 
-            publish_args=(publish "${tarball}" --tag "$DIST_TAG" --access public --provenance)
-            if [ -n "$dry_run_flag" ]; then
-              publish_args+=("$dry_run_flag")
-            fi
-
-            npm "${publish_args[@]}"
+            case "$REAL_PUBLISH" in
+              true)
+                gh release create "$tag" "$tarball" \
+                  --title "$tag" \
+                  --generate-notes \
+                  "${prerelease_flag[@]}"
+                echo "released: ${tag} (asset: ${asset_name})"
+                ;;
+              false)
+                echo "[dry-run] would create release ${tag} (asset: ${asset_name}, prerelease=${PRERELEASE}) — no release created"
+                ;;
+              *)
+                echo "::error::REAL_PUBLISH is '${REAL_PUBLISH}' (expected 'true' or 'false') — refusing to release"
+                exit 1
+                ;;
+            esac
             echo "::endgroup::"
           done
 
@@ -222,24 +230,13 @@ jobs:
         if: always()
         env:
           TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
-          DIST_TAG: ${{ inputs.dist_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           {
-            echo "### npm release"
+            echo "### GitHub Release"
             echo ""
             echo "- packages: ${TARGET_PACKAGES}"
-            echo "- dist-tag: ${DIST_TAG}"
+            echo "- prerelease: ${PRERELEASE}"
             echo "- dry-run: ${DRY_RUN}"
           } >> "$GITHUB_STEP_SUMMARY"
-
-  # NODE_AUTH_TOKEN(GitHub secret) 폴백 — OIDC trusted publishing이 npmjs.com에
-  # 배선되기 전까지 쓸 수 있는 경로. 기본 job(release)은 건드리지 않고, 이 폴백이
-  # 필요해지면 위 release job의 "Pack and publish" 스텝에 아래를 추가한다:
-  #
-  #   env:
-  #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-  #
-  # 그리고 release job의 permissions에서 id-token: write는 빼도 된다(OIDC를 안
-  # 쓰므로). NPM_TOKEN은 npmjs.com에서 발급한 automation 토큰을 GitHub repo
-  # secret으로 저장한 것 — 값은 로그·커밋 어디에도 남기지 않는다.

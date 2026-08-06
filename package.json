@@ -15,6 +15,7 @@
     "test:launcher": "vitest run --root sites/launcher",
     "build": "pnpm -r --if-present build",
     "check:pack-manifests": "node scripts/check-pack-manifests.mjs",
+    "check:dist-urls": "node scripts/check-dist-urls.mjs",
     "typecheck": "pnpm -r --if-present typecheck && pnpm typecheck:shared && pnpm typecheck:launcher",
     "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json",
     "typecheck:launcher": "tsc --noEmit -p sites/launcher/tsconfig.json"

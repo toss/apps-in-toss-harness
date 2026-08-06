@@ -29,13 +29,19 @@ jobs:
       # 발행 산출물 게이트. 이 3종은 debugger가 자체 소유한다(devtools 쪽 구현·가드는
       # harness#40으로 이관·제거 완료). debugger에는 `prepublishOnly`가 애초에 없고,
       # devtools의 `prepublishOnly`(build·footprint·typecheck·test 체인)도 release.yml이
-      # `pnpm pack` + `npm publish <tarball>` 경로라 발화하지 않는다
-      # (docs/npm-release.md §4 실측표) — CI가 실제 강제 계층이다.
+      # `pnpm pack` + `gh release create` 경로라 발화하지 않는다
+      # (docs/release.md §4) — CI가 실제 강제 계층이다.
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
       # 발행 manifest phantom 의존 게이트(#18, PR #37). npm 버전은 불변이라
       # 첫 배포 전이 유일한 차단 시점 — baseline에 없는 새 위반이 나오면 실패한다.
       - run: pnpm check:pack-manifests
+      # npm-less 전환 드리프트 가드. 스킬/소스에 박힌 GitHub Release 다운로드
+      # URL의 버전이 package.json과 일치하는지, 호스트가 이 repo로 고정돼
+      # 있는지, Release URL 전환이 시작된 뒤 (구) 커뮤니티 org 스코프
+      # 참조가 설치·실행 명령 문맥에 남아있지 않은지를 검사한다. Release가
+      # 아직 0개인 지금은 대부분 휴면 상태로 통과한다.
+      - run: pnpm check:dist-urls
       - run: pnpm typecheck
       - run: pnpm test

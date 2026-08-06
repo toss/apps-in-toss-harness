@@ -2,7 +2,7 @@
 
 ## 프로젝트 성격 (중요)
 
-이 패키지는 `toss/apps-in-toss-harness` monorepo 소속 **토스 공식** 패키지다 — hardfork 완료(aitcc 트리밍, manifest 재작성, `/ait:<verb>` rename이 전부 이 repo에서 수행됨). 과거 `apps-in-toss-community/agent-plugin`의 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다. 동시에 과장도 금지 — 아직 npm 미배포·public 전환 준비 중이라는 상태는 정직하게 쓴다. 자세한 원칙은 루트 `CLAUDE.md` "노출 산출물" 섹션.
+이 패키지는 `toss/apps-in-toss-harness` monorepo 소속 **토스 공식** 패키지다 — hardfork 완료(aitcc 트리밍, manifest 재작성, `/ait:<verb>` rename이 전부 이 repo에서 수행됨). 과거 `apps-in-toss-community/agent-plugin`의 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다. 동시에 과장도 금지 — repo는 public 전환을 완료했고, 패키지는 npm에는 발행하지 않고 GitHub Releases로 유통한다(전환 중)는 상태는 정직하게 쓴다. 자세한 원칙은 루트 `CLAUDE.md` "노출 산출물" 섹션.
 
 **톤 가이드**: 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, `unofficial`/`비공식` 같은 방어적 라벨은 쓰지 않는다. 한 파일 안에서 영/한 병기 금지(다중 언어는 ko/en 별도 파일로 분리).
 

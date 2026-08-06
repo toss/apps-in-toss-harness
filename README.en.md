@@ -6,13 +6,11 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) We're currently in private staging, ahead of the public switch-over, and `@apps-in-toss/*` npm packages haven't been published yet. `debugger` and `debug-console` under `packages/` have public publishing configured via `publishConfig`, but none have been published to the npm registry yet.
+We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) The repo has completed its public switch-over. Packages are distributed via GitHub Releases (first release in preparation) — there is no plan to publish to npmjs. `debugger` and `debug-console` under `packages/` follow this same distribution model.
 
 ## Quick start
 
 You'll need Node 24+, pnpm 11.17.0 (pinned via the root `package.json`'s `packageManager`), and an Apps in Toss console account.
-
-> This repo is still in private staging. The two commands below only work if you have access to this repo — until the public switch-over, there's no way in if you don't have access.
 
 From Claude Code, enter the harness with these two commands:
 
@@ -74,8 +72,8 @@ Three packages managed as a pnpm workspace (devtools has been replaced by an in-
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin for Claude Code — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | Not yet published to npm |
-| `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | Not yet published to npm |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (in preparation) |
+| `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (in preparation) |
 
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (#18 option 4) — it lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 

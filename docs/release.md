@@ -1,101 +1,95 @@
-# npm 배포 — Dave가 npm 쪽에서 할 일
+# GitHub Releases 배포 — Dave가 할 일
 
-`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2개 패키지를 harness가
-직접 배포하기 위한 준비다(D1a). `@apps-in-toss/devtools`는 **harness 발행
-대상이 아니다** — 배포 주체는 wf 소스 monorepo(사내)다. **전제 변경
-감지(2026-08-04)**: 그 monorepo에 독자 계보 devtools가 먼저 머지되어, 기존
-"wf dependencies로 코드 통합(transitive)" 계획은 "사내 monorepo에서 CLI 자동
-설치 devDependency로 발행"으로 재정의 대기다(`docs/roadmap.md` §5 문항 6 상태
-갱신·이슈 #74 코멘트 참고 — §7b 등 이 문서의 transitive 서술은 재정의 PR에서
-일괄 수정). 파이프라인
+**2026-08-06, 오너 지시로 npm-less 전환 결정.** `@apps-in-toss/debugger`·
+`@apps-in-toss/debug-console` 2개 패키지는 npmjs.com에 발행하지 않고,
+`.github/workflows/release.yml`의 `pnpm pack` tarball을 **GitHub Releases
+에셋으로 첨부**해 배포한다 — D1a는 "npm 실발행+`latest` 승격"에서 "harness
+Release 에셋 발행 + URL 설치 실증"으로 재정의됐다(`docs/roadmap.md` §3).
+`@apps-in-toss/devtools`는 원래도 harness 발행 대상이 아니다 — 배포 주체는 wf
+소스 monorepo(사내)다. **전제 변경 감지(2026-08-04)**: 그 monorepo에 독자
+계보 devtools가 먼저 머지되어, 기존 "wf dependencies로 코드 통합(transitive)"
+계획은 "사내 monorepo에서 CLI 자동 설치 devDependency로 발행"으로 재정의
+대기다(`docs/roadmap.md` §5 문항 6 상태 갱신·이슈 #74 코멘트 참고 — §7b 등 이
+문서의 transitive 서술은 재정의 PR에서 일괄 수정). 파이프라인
 (`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
-실행된다 — 아직 한 번도 배포를 실행하지 않았다. 워크플로의 `package` 선택지에
-있던 `devtools` 항목은 제거됐다 — harness `packages/devtools`가 C4(2026-08-05)로
-제거됐기 때문이다(당초 이관·제거 이후 제거할 예정이었으나 D1b 해소를 기다리지
-않고 조기 실행됨, §7b 참고).
+실행된다 — 아직 한 번도 배포를 실행하지 않았다(Releases 0개, 2026-08-06
+실측). 워크플로의 `package` 선택지에 있던 `devtools` 항목은 제거됐다 —
+harness `packages/devtools`가 C4(2026-08-05)로 제거됐기 때문이다(당초
+이관·제거 이후 제거할 예정이었으나 D1b 해소를 기다리지 않고 조기 실행됨,
+§7b 참고).
 
-## 1. npmjs.com 쪽 준비
+> **npm-less의 정확한 범위**: "우리 패키지를 npmjs에 *발행*하지 않는다"는
+> 뜻이지 "npm 레지스트리를 *쓰지* 않는다"는 뜻이 아니다. 서드파티 의존성
+> 해결(설치 시 `node_modules`를 채우는 다수의 transitive 패키지 — `chii`·
+> `cloudflared`·`esbuild`·`qrcode`·`ws`·`@modelcontextprotocol/sdk` 등, 실측
+> 확인)과 `create-ait-app`(harness 소유 아님, 별도 계보, `0.2.1`로 npm에 정상
+> 발행 중)은 레지스트리에 계속 의존한다. 이 구분을 놓치면 "오프라인 동작"으로
+> 오독하게 된다.
 
-1. `@apps-in-toss` 스코프에 대한 publish 권한(조직 owner 또는 해당 권한을 가진
-   멤버)이 있는지 확인한다.
-2. **trusted publisher(GitHub Actions OIDC) 등록**: 각 패키지 설정 페이지의
-   "Trusted Publisher" 섹션에서 `Organization/repo: toss/apps-in-toss-harness`,
-   `Workflow filename: release.yml`, environment는 비워도 된다(이 워크플로는
-   GitHub Environment를 쓰지 않는다).
-3. **새 패키지(0 versions)는 발행 전에 trusted publisher를 등록할 수 있는지
-   npm 공식 문서상 명확하지 않다.** 안 되면 최초 1회는 classic/automation
-   token으로 발행한 뒤 trusted publisher를 등록한다 — 이 경우
-   `.github/workflows/release.yml`의 "NODE_AUTH_TOKEN 폴백" 주석을 참고해라.
+## 1. GitHub Release 생성 절차
 
-## 2. 권장 순서
-
-1. `workflow_dispatch`를 `dry_run: true`로 먼저 돌려 게이트·pack·publish 흐름을
+1. `workflow_dispatch`를 `dry_run: true`로 먼저 돌려 게이트·pack·release 흐름을
    끝까지 통과시킨다.
-2. `dry_run: false`, `dist_tag: next`, 패키지 1개(`debug-console` 권장 — 나머지
-   하나의 의존 없음)로 실배포한다.
-3. `npm install @apps-in-toss/debug-console@next`로 별도 환경에서 설치 실증.
-4. 문제 없으면 나머지 1개(`debugger`)를 같은 방식으로. **`devtools`는 이 순서에
-   포함되지 않는다** — platform 이관 대상이라 wf(`@apps-in-toss/web-framework`)의
-   transitive dependency로 발행된다(D1b). release.yml의 `package` 선택지에서도
-   `devtools`는 제거됐다(harness `packages/devtools` 제거·C4, 2026-08-05).
-5. 검증이 끝나면 `npm dist-tag add @apps-in-toss/<pkg>@<version> latest`로
-   승격한다.
+2. `dry_run: false`, 패키지 1개(`debug-console` 권장 — 나머지 하나의 의존
+   없음)로 실배포한다. 종착 스텝은 `pnpm pack` 결과물을 `gh release create`로
+   에셋 첨부하는 것이다 — `npm publish`는 이 경로에서 더 이상 호출되지 않는다.
+3. 릴리즈 에셋 다운로드 URL이 `curl -sI`로 **200**을 반환하는지 확인한다 —
+   이것이 D1a 게이트 해제 조건이자(§7a) placeholder URL 금지 원칙의 실행
+   확인이다. **릴리즈를 자르고 200을 확인하기 전에는 어떤 스킬·소스 파일에도
+   실 다운로드 URL을 커밋하지 않는다.**
+4. 문제 없으면 나머지 1개(`debugger`)를 같은 방식으로. `devtools`는 이 순서에
+   포함되지 않는다 — platform 이관 대상이라 wf(`@apps-in-toss/web-framework`)
+   쪽 배포 모델을 따른다(D1b, 위 전제 변경 참고).
 
-## 3. 배포는 되돌릴 수 없다
+## 2. 태그·에셋·URL 규칙
 
-npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 않는 경우로 제약이
-크다. 잘못된 버전을 배포하면 사실상 새 버전을 다시 올려 덮는 방식으로만 대응할
-수 있다. `dist_tag: next`를 기본값으로 둔 것도 이 위험을 줄이기 위해서다 — 첫
-배포가 `latest`를 차지하지 않는다.
+- **모노레포 독립 버전이므로 태그도 패키지별이다**: `debugger-v0.2.0`,
+  `debug-console-v0.1.4` 형태. 에셋 파일명은 `pnpm pack`이 만든 그대로
+  (`apps-in-toss-debugger-0.2.0.tgz`).
+- **URL은 버전 고정으로 스킬·소스에 박는다.** Pages처럼 "latest" 포인터를
+  두는 안은 채택하지 않는다 — 가변 URL은 npm이 주던 캐시 결정성을 깨고,
+  재현 불가능한 표적을 되살린다.
+- (이제 제거된) npm `dist_tag: next` 개념은 GitHub Release의 **prerelease
+  플래그**로 매핑한다 — 검증 전 배포는 prerelease로 올리고, 검증 후 정식
+  release로 전환(또는 재발행)한다.
+- **드리프트는 CI 가드로 막는다** — 버전을 범프하면서 URL을 같이 안 바꾸면
+  CI가 RED가 되도록, 스킬·docs·소스에 박힌 URL에서 뽑은 버전이 해당
+  `package.json` 버전과 일치하는지 검사하는 게이트를 둔다. 이 게이트는
+  `scripts/check-pack-manifests.mjs`와 같은 계열(네트워크 미사용, 정적 파싱)로
+  release.yml 교체 작업과 함께 신설된다 — 신설 여부·경로는 이 문서가 아니라
+  해당 작업의 산출물을 확인해라.
+
+## 3. 릴리즈 에셋은 버전 고정이며 사실상 되돌릴 수 없다
+
+npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 않는 경우로
+제약이 컸다. GitHub Release 에셋은 기술적으로는 언제든 삭제·교체할 수
+있지만, **운영 규율상 취급은 동일하게 가져간다** — 배포 직후부터 스킬·
+소스에 그 버전 URL이 그대로 박히므로(위 §2), 삭제·교체는 그 URL을 참조하는
+모든 소비자(스킬을 이미 실행한 사용자·pnpm store에 캐시된 소비자)를
+깨뜨린다. 잘못된 버전을 배포하면 지우지 않고 **새 버전 태그를 잘라 참조를
+갱신하는 방식으로만** 대응한다 — 기존 `dist_tag: next`를 기본값으로 둔 것과
+같은 동기(첫 배포가 광범위하게 참조되는 상태를 피한다)를, prerelease
+플래그 + 버전 고정 URL로 재구현한 것이다.
 
 ## 4. 워크플로에 내장된 안전장치
 
-`release.yml`을 직접 읽지 않아도 알아야 할 것 — 되돌릴 수 없는 액션이라 아래는
-전부 fail-closed(애매하면 막는 쪽)로 짜여 있다:
+`release.yml`을 직접 읽지 않아도 알아야 할 것 — 되돌릴 수 없는 액션이라
+아래는 fail-closed(애매하면 막는 쪽)로 짜여 있다:
 
 - **dry-run은 기본값이자 fail-closed다.** `dry_run` 입력이 정확히 `false`일
-  때만 실제로 배포한다. `true`는 물론이고, 그 외 예상 못한 값이 들어와도 job이
-  즉시 실패한다 — "조용히 실배포"보다 "명시적으로 멈춤"을 택한다.
+  때만 실제로 배포한다. `true`는 물론이고, 그 외 예상 못한 값이 들어와도
+  job이 즉시 실패한다 — "조용히 실배포"보다 "명시적으로 멈춤"을 택한다.
 - **실배포는 `main` 브랜치에서만 허용한다.** 다른 브랜치에서
   `workflow_dispatch`를 `dry_run: false`로 돌리면 즉시 실패한다. dry-run은
   이 워크플로 자체를 검증하는 용도라 어느 브랜치에서든 돌릴 수 있다.
-- **`dist_tag`는 화이트리스트(`^[a-z][a-z0-9-]*$`)로 검증하고, `latest`는
-  이 워크플로로 직접 배포하는 것 자체를 거부한다.** `latest` 승격은 항상
-  §2의 5번처럼 검증 후 별도의 수동 `npm dist-tag add`로만 한다 — 자동화
-  경로에 `latest` 직행을 열어두면 "먼저 next로 검증 후 승격" 규율이
-  강제되지 않는다.
-- `dist_tag`·`package` 입력은 워크플로의 `run:` 셸 블록에 직접 텍스트로
-  보간하지 않고 `env:`로 넘겨 `"$VAR"`로만 참조한다 — 임의 문자열이 셸
-  명령으로 이어붙는 걸 구조적으로 막는다.
-- **dry-run이 실증하지 못하는 것: provenance(Sigstore) 생성.** npm CLI
-  소스(`lib/commands/publish.js` → `libnpmpublish`의 `publish()`) 기준으로,
-  `--dry-run`이면 실제 레지스트리 publish 호출 자체를 건너뛰고 그 호출 안에
-  있는 provenance attestation 빌드(`buildMetadata`)도 함께 건너뛴다 —
-  `--provenance`를 같이 줘도 마찬가지다. trusted-publishing OIDC 토큰
-  교환은 dry-run에서도 시도는 하지만, 실패해도 에러가 아니라 경고만 내고
-  넘어간다. 즉 **dry-run 통과가 "provenance까지 성공한다"의 증거는 아니다**
-  — 그 경로는 `dry_run: false`(실배포)에서 처음 실증된다. §2의 2번(첫
-  실배포는 의존 없는 `debug-console` 하나로)이 이 잔여 리스크를 좁히는
-  역할도 한다.
-- **`prepublishOnly`는 이 경로에서 발화하지 않는다 — 안전장치를 거기 두지 마라.**
-  워크플로는 `pnpm pack`으로 tarball을 만들고 `npm publish <tarball>`로 올린다
-  (§4 위쪽의 pnpm/npm 역할 분담 참고). 실측으로 확인한 lifecycle 발화표:
-
-  | 명령 | `prepublishOnly` | `prepack` |
-  |---|---|---|
-  | `pnpm pack` | ✗ | ✓ |
-  | `npm publish <tarball>` | ✗ | ✗ |
-  | `npm publish .` (디렉터리 기준) | ✓ | ✓ |
-
-  즉 (이제 제거된) `packages/devtools/package.json`의 `prepublishOnly` 체인은
-  **이 워크플로 경로에서 한 번도 돌지 않았다** — 이 예시 자체는 devtools
-  제거(C4, 2026-08-05)로 무의미해졌지만, 원칙(아래)은 남는다: 그 체인이
-  부르던 `build`·`typecheck`·`test`는 워크플로가 별도 스텝으로 이미 돌리므로
-  공백이 아니지만, `check:mcp-react-free`·`check:test-runner-dist`·
-  `check:debug-surface-absent`는 그렇지 않아서 **CI(`ci.yml`)에서 직접
-  돌린다.** 새 발행 전 검사를 추가할 때도 `prepublishOnly`가 아니라
-  `ci.yml`에 넣어라 — `prepublishOnly`는 사람이 디렉터리에서 손으로 publish하는
-  경우의 최후 방어선으로만 남겨 둔다.
+- `package` 입력은 워크플로의 `run:` 셸 블록에 직접 텍스트로 보간하지 않고
+  `env:`로 넘겨 `"$VAR"`로만 참조한다 — 임의 문자열이 셸 명령으로 이어붙는 걸
+  구조적으로 막는다.
+- **OIDC trusted publisher·provenance(Sigstore)·`dist_tag` 화이트리스트·
+  `latest` 승격 거부·`prepublishOnly` lifecycle 표는 이 문서에서 제거됐다** —
+  전부 `npm publish` 호출을 전제로 한 안전장치였고, 이 워크플로는 이제
+  `npm publish`를 한 번도 호출하지 않는다(`gh release create`가 종착
+  스텝이다). npm-less 전환 전 버전의 이 문서는 git 이력에서 확인할 수 있다.
 
 ## 5. internal-protocol phantom devDependency (#18) — 결정: 옵션 4
 
@@ -132,6 +126,11 @@ devDep 한 줄보다 "내부 프로토콜인데 왜 공개 스코프에 있나"�
 되돌릴 수 있고(원하면 다시 패키지로 승격 가능), 비용이 빌드 설정 수준이며,
 `internal-protocol`의 `exports`가 이미 raw TS(`./src/*.ts`)를 가리켜 소비자
 번들러가 소스째 흡수하는 구조라 개념적으로도 애초에 패키지일 필요가 없었다.
+
+**이 결정은 원래 npm registry 발행을 겨냥했지만, 배당은 npm-less 전환에서
+돌아왔다** — `workspace:` 프로토콜이 남지 않고 internal-protocol이 인라인
+흡수되는 tarball은 npm 레지스트리 밖(워크스페이스 밖 빈 디렉터리)에서도 그대로
+자립적으로 설치된다는 것이 실측으로 확인됐다(§1의 URL 설치가 기대는 성질).
 
 ### 구조
 
@@ -171,7 +170,9 @@ devDep 한 줄보다 "내부 프로토콜인데 왜 공개 스코프에 있나"�
 항상 monorepo 루트로 resolve한다. 그래서 `pnpm --filter <pkg> exec changeset version`은 어느
 패키지에서도 동작하지 않고 `There is no .changeset folder`로 실패한다(2026-08-02 실측, PR #53).
 
-pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음 절차를 쓴다:
+이 절차는 배포 채널(npm이든 GitHub Release든)과 무관하다 — 버전 확정 단계이지
+발행 단계가 아니다. pending changeset을 소진해 버전을 확정할 때는 패키지별로
+다음 절차를 쓴다:
 
 1. `cp -r packages/<pkg>/.changeset .changeset` — 해당 패키지의 `.changeset/`을 repo 루트로 임시 복사
 2. 루트에서 `pnpm exec changeset version` 실행 — 해당 패키지만 bump된다(다른 패키지의 pending은
@@ -188,25 +189,30 @@ pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음
    검사하지 않음을 확인함)
 
 배포 워크플로(release.yml)는 changesets를 호출하지 않고 package.json에 커밋된 버전을 그대로
-발행하므로, 이 절차는 배포 전 버전 확정 단계에서만 필요하다.
+Release로 배포하므로, 이 절차는 배포 전 버전 확정 단계에서만 필요하다.
 
 ## 7a. scope-install flip 체크리스트 (D1a 해소 직후)
 
-`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지가 npm에 실제
-배포되어 D1a가 해소된 직후 실행하는 절차다. `devtools`는 이 절차의 대상이
-아니다 — D1b(§7b)에서 별도로 다룬다.
+`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의 **GitHub
+Release 에셋 다운로드 URL이 `curl -sI`로 200을 반환해**(§1의 3번) D1a가 해소된
+직후 실행하는 절차다. `devtools`는 이 절차의 대상이 아니다 — D1b(§7b)에서
+별도로 다룬다.
 
 1. **정규화 스크립트로 일괄 치환** — `NORMALIZE_SCOPE_INSTALL=1`로
    `normalize-upstream.mjs`를 `debugger`·`debug-console` 2패키지에 적용한다.
-   `scope-install`(설치 명령·npx 안내·npm 레지스트리 URL·설치 감지용 grep
-   문자열)과 `scope-external-target`(스캐폴드 템플릿 devDependency·주입 코드
-   샘플 등 외부 프로젝트로 그대로 복사되는 콘텐츠)이 같은 게이트로 함께
+   `scope-install`(설치 명령·npx 안내·**Release 다운로드 URL**·설치 감지용
+   grep 문자열)과 `scope-external-target`(스캐폴드 템플릿 devDependency·주입
+   코드 샘플 등 외부 프로젝트로 그대로 복사되는 콘텐츠)이 같은 게이트로 함께
    켜진다 — 설치·실행 안내 전반이 대상이며 구체 지점 수는 여기 하드코딩하지
    않는다(`docs/upstream-sync.md` 참고). **주의**: 이 정규화 게이트는 현재
    devtools·debugger·debug-console 3스코프를 일괄로 켜는 형태다 — D1a가
-   D1b보다 먼저 해소되는 예상 순서라면 `devtools`는 아직 npm에 없는 상태로
-   나머지 2패키지만 먼저 치환해야 하므로, 게이트를 패키지 단위로 분리하는
-   작업이 D1a 시점에 선행 필요하다.
+   D1b보다 먼저 해소되는 예상 순서라면 `devtools`는 아직 배포 대상이 아닌
+   상태로 나머지 2패키지만 먼저 치환해야 하므로, 게이트를 패키지 단위로
+   분리하는 작업이 D1a 시점에 선행 필요하다.
+   **URL은 패키지명이 아니라 버전 고정 URL(§2)이다** — import specifier(소스
+   코드의 `import '@apps-in-toss/debug-console/auto'` 같은 문)는 설치 후
+   `node_modules` 상의 정식 스코프 이름을 그대로 쓰고, URL은 설치 스펙에만
+   쓴다. 이 비대칭을 놓치면 import까지 URL로 잘못 바꾸게 된다.
 2. **`eval/e2e/baseline.json` 재수립 여부는 사람이 먼저 판단** — 이 파일은
    `PRESERVED_FILE_PATTERNS`(메인테이너가 수동으로만 갱신하는 시계열 비교
    기준선)라 자동 정규화 대상이 아니다. `@ait-co/debugger`·`@ait-co/debug-console`
@@ -220,9 +226,9 @@ pending changeset을 소진해 버전을 확정할 때는 패키지별로 다음
    (`shared/__tests__/validate.test.ts`·`validate-negative.test.ts`)을
    포함하므로 별도 명령이 아니라 이 시퀀스 안에서 함께 확인된다.
 4. **README ko/en을 같은 PR에서 동시 갱신** — `debugger`·`debug-console`의
-   "아직 npm 미배포" 문구 제거, `packages/{debugger,debug-console}/README.md`·
-   `README.en.md`의 설치 명령도 함께 갱신한다. `devtools`는 D1b 전까지
-   미배포 상태 문구를 그대로 유지한다.
+   "아직 배포 전" 문구 제거, `packages/{debugger,debug-console}/README.md`·
+   `README.en.md`의 설치 명령도 GitHub Release URL 기준으로 함께 갱신한다.
+   `devtools`는 D1b 전까지 미배포 상태 문구를 그대로 유지한다.
 
 harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip
 트래킹 이슈).

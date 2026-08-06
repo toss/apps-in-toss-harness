@@ -11,17 +11,20 @@
 | 축 | 무엇이 공개되나 | 되돌릴 수 있나 | 상태 |
 |---|---|---|---|
 | 1. GitHub Pages | launcher PWA + fixture 데모 사이트 | 쉽다 — Pages 비활성화 | **완료** (`https://toss.github.io/apps-in-toss-harness/`) |
-| 2. npm 패키지 2종(`debugger`·`debug-console`) | 빌드 산출물 + README | **사실상 불가** — 배포 후 72시간이 지나면 unpublish가 막힌다 | 파이프라인 준비 |
-| 3. repo public 전환 | 소스 전체 + 커밋 이력 | 되돌려도 이미 클론·인덱싱된 사본은 회수 못 한다 | 미착수 (#8) |
+| 2. GitHub Releases 에셋 2종(`debugger`·`debug-console`) | 빌드 산출물(`pnpm pack` tarball) + README | 기술적으로는 삭제 가능하지만, 배포 직후 스킬·소스에 버전 고정 URL이 박히므로 **운영 규율상 사실상 불가**로 취급 — 잘못되면 새 버전으로 대응 | 파이프라인 준비 |
+| 3. repo public 전환 | 소스 전체 + 커밋 이력 | 되돌려도 이미 클론·인덱싱된 사본은 회수 못 한다 | **완료** (2026-08-06, `private:false` 확인) |
 | 4. plugin marketplace | 사용자 진입점(station 0) | — | 3에 종속 |
 
-**축 2가 3종에서 2종으로 줄어든 이유**: `@apps-in-toss/devtools`는 새 배포
-모델(Dave 확정)에서 web-framework 소스 monorepo(사내)로 코드 통합되어
+**축 2가 npm 패키지 3종에서 GitHub Release 에셋 2종으로 바뀐 이유**: 두 가지가
+겹쳐 있다. (a) `@apps-in-toss/devtools`는 새 배포 모델(Dave 확정)에서
+web-framework 소스 monorepo(사내)로 코드 통합되어
 `@apps-in-toss/web-framework`(3.x)의 dependencies로 발행된다(D1b) — harness가
-직접 npm 배포할 대상이 아니다. `docs/npm-release.md` §7a(debugger·
-debug-console, D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
+직접 배포할 대상이 아니다. (b) `debugger`·`debug-console` 2종은 npm-less
+전환 결정(2026-08-06, 오너 지시)으로 npmjs.com 발행 자체를 그만두고 GitHub
+Releases 에셋으로 유통한다. `docs/release.md` §7a(debugger·debug-console,
+D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
 
-의존 관계는 **4 ← 3** 하나뿐이다. npm 배포(2)는 repo가 private이어도 가능하므로 3을 기다릴
+의존 관계는 **4 ← 3** 하나뿐이다. Release 배포(2)는 repo가 private이어도 가능하므로 3을 기다릴
 이유가 없고, Pages(1)는 이미 독립적으로 끝났다.
 
 ---
@@ -42,9 +45,10 @@ debug-console, D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
       못한다(PWA 설치 흐름은 실기기에서만 검증된다).
       상수를 바꾸지 않고 새 launcher를 가리키게 하는 수단은 `AIT_LAUNCHER_URL` env
       override다(#19) — 이게 없으면 "상수를 바꿔야 검증할 수 있는데 검증해야 상수를
-      바꾼다"는 순환이 된다. 절차는
-      [`packages/devtools/docs/pages-deploy-verification.md`](../packages/devtools/docs/pages-deploy-verification.md)
-      4번 단계가 정본이다. **override에는 launcher의 base URL만 넣는다** — 회전하는
+      바꾼다"는 순환이 된다. 절차 정본이던
+      `packages/devtools/docs/pages-deploy-verification.md`는 packages/devtools
+      제거(C4, 2026-08-05)와 함께 트리에서 없어졌다 — git history(커밋 `b5515ae`
+      이전) 참조. **override에는 launcher의 base URL만 넣는다** — 회전하는
       TOTP `at=`가 실린 attach deep-link 전체를 붙여넣지 않는다.
 - [ ] 위가 통과한 뒤에만 `LAUNCHER_URL` 상수 **2곳을 동시에** 교체 —
       `packages/devtools/src/shared/launcher-url.ts`,
@@ -71,53 +75,78 @@ debug-console, D1a)·§7b(devtools 설치 절차 삭제, D1b) 참고.
 
 ---
 
-## Phase 2 — npm 배포
+## Phase 2 — GitHub Release 배포
 
 `@apps-in-toss/debugger`·`debug-console` 2종. `agent-plugin`과
 `internal-protocol`은 `private: true`라 배포 대상이 아니다. `devtools`도
 이 Phase의 배포 대상이 아니다 — platform 이관 대상이라 wf
-(`@apps-in-toss/web-framework`)의 transitive dependency로 발행된다(D1b,
-`docs/npm-release.md` §7b).
+(`@apps-in-toss/web-framework`) 쪽 배포 모델을 따른다(D1b,
+`docs/release.md` §7b).
 
-### 왜 GitHub 설치가 아니라 npm인가
+### 왜 npm이 아니라 GitHub Release 에셋인가
 
-"npm 배포 전까지 GitHub에서 직접 설치"를 검토했으나 세 벽에 막혀 성립하지 않는다:
+**2026-08-06, 오너 지시로 npm-less 전환이 결정됐다** — harness는 자체
+패키지를 npmjs.com에 발행하지 않는다. "npm 배포 전까지 GitHub에서 직접
+설치"(= git clone 기반 설치)는 세 벽에 막혀 여전히 성립하지 않지만, 그
+결론에서 "그러니 npm으로 간다"로 건너뛰는 대신 실측으로 확인한 **세 번째
+유통 방식**을 택했다 — **GitHub Releases 에셋(= `pnpm pack` tarball)을
+URL로 직접 설치**하는 방식이다. 이 방식은 git clone 설치가 막히는 세 벽을
+전부 비켜간다:
 
-1. **`prepare` 부재** — `dist/`가 `.gitignore`라 git-install 시 빈 패키지가 된다.
-   `main`/`exports`/`bin`이 전부 `./dist/*`를 가리키므로 기능 저하가 아니라 완전 비기능이다.
-   (이건 `prepare` 추가로 넘을 수 있다.)
-2. **`workspace:*` devDependency** — 워크스페이스 밖에서는 해석되지 않는다. 예:
-   `debugger`가 `debug-console`을 `workspace:*` devDependency로 문다. 패키징
-   아키텍처를 바꿔야 넘을 수 있다. (`internal-protocol`은 harness#18로
-   pnpm workspace 밖 `shared/internal-protocol`로 강등되며 애초에 이 문제 축에서
-   빠졌다 — devDependencies에 그 항목 자체가 더는 없다.)
-3. **private repo 인증** — 접근권이 없는 사용자에게는 인증 단계에서 실패한다. 즉 이 harness의
-   원래 대상 독자에게는 애초에 닫힌 경로다.
+1. **`prepare` 부재는 문제가 안 된다** — `pnpm pack`이 이미 `dist/`를 포함한
+   완성된 tarball을 만든다. git clone 설치만 `.gitignore`된 `dist/`를 못
+   받는다(`main`/`exports`/`bin`이 전부 `./dist/*`를 가리키므로 완전
+   비기능이 된다).
+2. **`workspace:*` devDependency도 문제가 안 된다** — `pnpm pack`이 이미
+   `workspace:*`를 실제 버전 문자열로 치환한 manifest를 tarball에 넣는다.
+   (`internal-protocol`은 harness#18로 pnpm workspace 밖
+   `shared/internal-protocol`로 강등되며 애초에 이 문제 축에서 빠졌다 —
+   devDependencies에 그 항목 자체가 더는 없다.)
+3. **private repo 인증도 문제가 안 된다** — repo는 이미 public 전환
+   완료(2026-08-06)됐고, public repo의 Release 에셋은 인증 없이 다운로드된다.
+
+**실측 확인(2026-08-06)**: 패킹한 debugger tarball을 workspace 밖 빈
+프로젝트에 `npm install <URL>`·`npx -y -p <URL> <bin>`·`pnpm add <URL>` 세
+경로 전부로 설치해 정상 동작을 확인했다(235개 transitive 패키지 해결,
+`node_modules/.bin/debugger --help` 정상 출력). **git clone 직접 설치
+자체는 여전히 기각이다** — `dist/`가 여전히 `.gitignore`돼 있고 `prepare`
+스크립트가 없으며, npm은 git subdirectory(`#path:`)를 지원하지 않는다
+(모노레포라 패키지가 하위 디렉터리에 있다).
 
 ### 순서
 
-- [ ] npm 스코프 publish 권한 확인, trusted publisher(GitHub Actions OIDC) 등록
-- [x] 배포 워크플로 — `workflow_dispatch` 전용, dry-run 기본값, dist-tag 기본 `next`
+- [ ] `.github/workflows/release.yml` 종착 스텝을 `npm publish`에서
+      `gh release create`(에셋 첨부)로 교체 — OIDC·provenance·`dist_tag`
+      화이트리스트/`latest` 거부 로직 제거. `workflow_dispatch` 전용·dry-run
+      기본값·main 브랜치 강제·gate(lint/build/typecheck/test)는 유지
       (`.github/workflows/release.yml`, #16). 안전장치는
-      [`docs/npm-release.md`](./npm-release.md) §4 참고 — dry-run은 fail-closed이고,
-      실제 publish는 `main`에서만 허용되며, `dist_tag`는 화이트리스트 검사를 통과해야 한다.
-- [ ] `npm pack` 산출물 검증 — `dist` 포함, `bin`·`exports`가 실존 파일을 가리킴, README 포함,
-      시크릿·내부 경로 미포함. **발행 manifest phantom 의존은 해소됨(#18)** — `pnpm pack`이
-      `workspace:`를 `devDependencies`에서도 실제 버전으로 치환해 `debug-console`·`debugger`
-      발행 manifest에 npm에 존재하지 않는 `@apps-in-toss/internal-protocol@0.0.0`이 박히던
-      문제를, internal-protocol을 pnpm workspace 밖 `shared/internal-protocol`로 강등해(옵션 4,
-      2026-08-01) 그 devDependency 항목 자체를 없앴다 — 자세한 결정 경위·구조는
-      [`docs/npm-release.md`](./npm-release.md) "internal-protocol phantom devDependency"
-      절 참고. `scripts/check-pack-manifests.mjs`(baseline 비어 있음)가 CI에서 회귀를 잡는다.
-- [ ] `--tag next`로 1개 패키지(`debug-console` 권장) → **실제 설치 실증** →
-      나머지 1개(`debugger`)
-- [ ] 검증 후 `latest` 승격
-- [ ] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip (#10),
-      정규화기의 `scope-install`·`scope-external-target` 차단 해제
+      [`docs/release.md`](./release.md) §4 참고 — dry-run은 fail-closed이고
+      실제 배포는 `main`에서만 허용된다.
+- [ ] `pnpm pack` 산출물 검증 — `dist` 포함, `bin`·`exports`가 실존 파일을
+      가리킴, README 포함, 시크릿·내부 경로 미포함. **발행 manifest phantom
+      의존은 해소됨(#18)** — `pnpm pack`이 `workspace:`를 `devDependencies`
+      에서도 실제 버전으로 치환해 `debug-console`·`debugger` manifest에
+      존재하지 않는 `@apps-in-toss/internal-protocol@0.0.0`이 박히던 문제를,
+      internal-protocol을 pnpm workspace 밖 `shared/internal-protocol`로
+      강등해(옵션 4, 2026-08-01) 그 devDependency 항목 자체를 없앴다 — 자세한
+      결정 경위·구조는 [`docs/release.md`](./release.md) "internal-protocol
+      phantom devDependency" 절 참고. `scripts/check-pack-manifests.mjs`
+      (baseline 비어 있음)가 CI에서 회귀를 잡는다 — npm 레지스트리의 사전
+      검증이 없는 URL 설치 모델에서는 이 게이트가 더 load-bearing하다.
+- [ ] prerelease 태그로 1개 패키지(`debug-console` 권장) → **실제 설치
+      실증**(`curl -sI` 200 + `npx`/`pnpm add`) → 나머지 1개(`debugger`)
+- [ ] 검증 후 정식 release로 전환
+- [ ] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip
+      (#10), 정규화기의 `scope-install`·`scope-external-target` 차단 해제.
+      **URL은 설치 스펙에만 쓰고, import specifier는 정식 스코프 이름을
+      그대로 쓴다**(`docs/release.md` §7a) — 이 비대칭을 놓치면 import까지
+      URL로 잘못 바꾸게 된다.
 - [ ] 패키지 README의 "미배포" 문구 제거
 
-**로컬에서 배포하지 않는다.** 사내 프록시가 `registry.npmjs.org`를 MITM 인터셉트하므로 로컬
-publish는 내부 레지스트리로 샐 수 있다. 배포는 CI에서만 한다.
+**로컬에서 릴리즈를 자르지 않는다.** `pnpm pack` 자체는 안전하나, 그 전
+`pnpm install`이 non-frozen으로 돌면 사내망 프록시 경유 해시가 lockfile에
+재유입될 수 있다(루트 CLAUDE.md의 lockfile integrity quirk). 배포는 CI에서만
+한다 — `dry_run: true`가 기본값인 현재 설계가 이를 유도한다.
 
 **완료 조건**: 설치 경로의 `@ait-co/*` 참조 0건, 문서대로 따라 한 설치가 실제로 성공.
 
@@ -131,7 +160,7 @@ publish는 내부 레지스트리로 샐 수 있다. 배포는 CI에서만 한�
 - [ ] **git history 시크릿 스캔** — 커뮤니티 이력을 승계하지 않은 신규 이력이라 위험은 낮지만
       건너뛰지 않는다
 - [ ] 노출 산출물 최종 점검 — README ko/en, 라이선스 고지, 톤
-- [ ] public 전환
+- [x] public 전환 — **완료(2026-08-06)**, `private:false` 실측 확인
 - [ ] **marketplace 진입 실증** — `/plugin marketplace add` → `/plugin install` →
       `/ait:welcome`. station 0이 실제로 열리는지 확인해야 harness가 완결된다.
 
@@ -165,9 +194,12 @@ debug-console 5 / internal-protocol 1), `localOnly` 등록은 PR마다 계속 �
 
 ## 되돌릴 수 없는 것에 대한 규율
 
-- npm publish는 72시간이 지나면 사실상 되돌릴 수 없다. 그래서 배포 워크플로는
-  `workflow_dispatch` 전용이고 dry-run이 기본값이며 첫 dist-tag가 `next`다.
+- GitHub Release 에셋은 배포 직후부터 스킬·소스에 버전 고정 URL이 박히므로
+  사실상 되돌릴 수 없다(§Phase 2). 그래서 배포 워크플로는 `workflow_dispatch`
+  전용이고 dry-run이 기본값이며 첫 배포는 prerelease로 올린다(npm-less 전환
+  전에는 이 규율이 `dist_tag: next` 기본값으로 구현돼 있었다 — npm publish의
+  72시간 unpublish 제약이 그 근거였다).
 - Pages는 켜는 순간 사이트가 public이 된다(조직 플랜상 열람 제한 옵션이 없다).
-- public 전환은 되돌려도 이미 나간 사본을 회수하지 못한다.
+- public 전환은 되돌려도 이미 나간 사본을 회수하지 못한다 — **완료(2026-08-06)**.
 
 세 경우 모두 **검증을 마친 뒤에 실행하고, 실행 전에는 준비만 한다**는 순서를 지킨다.

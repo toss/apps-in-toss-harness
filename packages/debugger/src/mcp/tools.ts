@@ -42,6 +42,7 @@ import type {
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
 import type { McpEnvironment } from './environment.js';
 import { isRelayEnv, toLegacyEnv } from './environment.js';
+import { RESTART_CMD } from './restart-hint.js';
 import { lookupSignature, warnPassthrough } from './sdk-signatures.js';
 import { isPidAlive } from './server-lock.js';
 import { generateTotp, RELAY_VERIFY_SKEW_STEPS } from './totp.js';
@@ -112,7 +113,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'Also returns whether the cloudflared tunnel is up and the public wss relay URL. ' +
       'The `tunnel` field includes `droppedAt` (ISO timestamp or null/undefined): when non-null ' +
       'the tunnel has permanently dropped after 3 failed reissue attempts — restart the debug ' +
-      'server with `npx -p @ait-co/debugger debugger`. ' +
+      `server with \`${RESTART_CMD}\`. ` +
       'Each page entry includes a `lastSeenAt` ISO timestamp (last inbound CDP message from ' +
       'that target — useful to detect stale entries when the phone app backgrounded). ' +
       'The result also includes `crashDetectedAt` (ISO timestamp or null): when non-null, ' +
@@ -2100,7 +2101,7 @@ export function computeNextRecommendedAction(
       tool: 'restart',
       reason:
         `tunnel permanently dropped at ${tunnel.droppedAt} after ${tunnel.reissueAttempts} reissue attempt(s) — ` +
-        'restart the MCP server (npx -p @ait-co/debugger debugger)',
+        `restart the MCP server (${RESTART_CMD})`,
     };
   }
 
@@ -2125,7 +2126,7 @@ export function computeNextRecommendedAction(
       // Rule 1 (relay env): tunnel must be up for relay to work — restart.
       return {
         tool: 'restart',
-        reason: 'tunnel not up — run `npx -p @ait-co/debugger debugger` to restart',
+        reason: `tunnel not up — run \`${RESTART_CMD}\` to restart`,
       };
     }
   }
