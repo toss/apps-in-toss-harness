@@ -127,9 +127,11 @@ deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 �
 종전 "npm 실발행+`latest` 승격"에서 npm 발행 없이 지금 해소 가능한 형태로
 재정의됨, `docs/release.md` §1) — **에셋 발행 자체는 2026-08-06에 완료**됐다
 (`debugger-v0.2.0`·`debug-console-v0.1.4`, 다운로드 URL 200 확인,
-`docs/release.md` 발행 기록). URL 설치 실증(빈 디렉토리에서 `npx`/`pnpm add`
-정상 동작 확인)은 이 스코프 치환을 반영하는 PR의 검증 단계에서 수행된다 —
-실증 완료 후 이 두 패키지의 설치·npx 안내 스코프가 기계 치환된다.
+`docs/release.md` 발행 기록). **URL 설치 실증도 같은 날 완료**됐다(Wave 2,
+PR #85) — 빈 프로젝트에서 `pnpm add -D`·`npx -p`·`.mcp.json` args 배열 3종
+설치 경로가 Release 다운로드 URL로 정상 동작함을 확인했고, 이 스코프
+치환을 반영해 이 두 패키지의 설치·npx 안내 스코프를 기계 치환하는 표면
+플립까지 같은 PR에서 마쳤다.
 **D1b**: wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 resolve
 실증(해소 주체 Dave·platform PR + wf 릴리즈) — 해소 시 devtools **설치 절차
 자체가 삭제**된다(치환이 아니다). harness `packages/devtools`도 이관·실증 후

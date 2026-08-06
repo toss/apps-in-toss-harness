@@ -38,6 +38,17 @@
  *      불일치 = RED. `<pkg>`가 어느 workspace 패키지 디렉터리와도 대응되지
  *      않으면 그 자체가 위반이다(오타·개명 드리프트를 함께 잡는다).
  *
+ *      태그(디렉터리 이름)만 검사하고 실제 다운로드되는 파일명
+ *      (`apps-in-toss-<pkg>-<ver>.tgz`)을 안 보면 우회가 생긴다 — GitHub
+ *      Release는 같은 태그 아래 임의 파일명의 에셋을 허용하므로, 태그는
+ *      최신 버전을 가리키는데 그 아래 실제 에셋 파일명은 옛 버전으로 남아
+ *      있어도(예: 태그 `debugger-v0.2.0` 아래 에셋
+ *      `apps-in-toss-debugger-0.1.9.tgz`) 태그만 보는 검사는 통과시킨다.
+ *      그래서 filename에서도 `<pkg>`·`<ver>`를 분해해 (a) filename의 pkg가
+ *      태그의 pkg와, (b) filename의 ver가 태그의 ver·package.json 버전과
+ *      모두 일치하도록 강제한다. filename을 `apps-in-toss-<pkg>-<ver>.tgz`
+ *      형태로 해석 못 해도, pkg가 달라도, ver가 달라도 전부 RED.
+ *
  *   ② self-arming — 어떤 패키지든 이 repo의 Release URL이 표면에 **1개라도**
  *      존재하면, 표면 파일 안에서 `@ait-co/debugger`·`@ait-co/debug-console`
  *      문자열의 **모든 등장**이 위반이다 — 문맥(명령 줄인지, 산문인지)은
@@ -51,15 +62,16 @@
  *      한 줄씩 있어 `"args":`와 스코프 문자열이 다른 줄인 경우)이다. 이제는
  *      줄 문맥과 무관하게 문자열 등장 자체를 잡는다.
  *
- *      **휴면 상태**: Release URL이 아직 0개인 동안(오늘의 실제 상태 —
- *      npm-less 설계 Wave 0 시점, Release는 아직 한 번도 잘리지 않았다)
- *      이 규칙은 검사하지 않는다. 지금 표면에는 `@ait-co/debugger`·
- *      `@ait-co/debug-console` 참조가 실제로 남아 있고(스킬 문서 전환은
- *      Wave 2 W-F의 몫), 그 상태에서 이 스크립트가 RED를 내면 존재하지
- *      않는 문제로 CI를 막는 셈이다. **무장 시점**: 첫 Release URL이 이
- *      repo 커밋에 등장하는 순간(Wave 2 W-F) 자동으로 무장되어, 그 이후
- *      남겨진 구 org 참조를 잡아낸다. 별도 스위치·플래그는 없다 — URL
- *      존재 여부 자체가 무장 조건이다.
+ *      **휴면/무장 판정은 상태가 아니라 규칙**: Release URL이 0개인
+ *      동안은 이 규칙이 검사하지 않는다(존재하지 않는 문제로 CI를 막지
+ *      않기 위함) — 하지만 그 상태는 npm-less 설계 초기(Wave 0, Release가
+ *      아직 한 번도 잘리지 않았던 시점)의 이야기다. **오늘의 실제 상태
+ *      (Wave 2, PR #85 이후)는 무장이다**: 표면에서 Release URL 31개가
+ *      발견되고, `@ait-co/debugger`·`@ait-co/debug-console` 구 스코프
+ *      참조는 스킬 문서 전환(Wave 2 W-F)으로 이미 0건이다. **무장 시점**:
+ *      첫 Release URL이 이 repo 커밋에 등장하는 순간(Wave 2 W-F) 자동으로
+ *      무장되어, 그 이후 남겨진 구 org 참조를 잡아낸다. 별도 스위치·
+ *      플래그는 없다 — URL 존재 여부 자체가 무장 조건이다.
  *
  *   ③ 호스트 고정 — `releases/download` 형상의 URL은 호스트·owner·repo가
  *      `github.com/toss/apps-in-toss-harness`로 고정돼야 한다. 다른 호스트나
@@ -121,6 +133,10 @@ const RELEASE_URL_RE =
 /** 태그를 `<pkg>-v<ver>` 로 쪼갠다. pkg 자체에 하이픈이 있을 수 있으므로
  * "마지막에 등장하는 -v<숫자로 시작하는 버전>" 을 경계로 삼는다. */
 const TAG_RE = /^(?<pkg>.+)-v(?<ver>\d[\w.+-]*)$/;
+
+/** 에셋 filename을 `apps-in-toss-<pkg>-<ver>.tgz` 로 쪼갠다. TAG_RE와 같은
+ * 이유로 "마지막에 등장하는 -<숫자로 시작하는 버전>.tgz" 를 경계로 삼는다. */
+const FILENAME_RE = /^apps-in-toss-(?<pkg>.+)-(?<ver>\d[\w.+-]*)\.tgz$/;
 
 /**
  * 디렉터리를 재귀적으로 순회해 텍스트 파일 절대경로 배열을 반환한다.
@@ -197,6 +213,18 @@ export function parseTag(tag) {
 }
 
 /**
+ * 에셋 filename `apps-in-toss-<pkg>-<ver>.tgz` 를 pkg/ver로 분해한다.
+ * 매치 실패 시 null.
+ * @param {string} filename
+ * @returns {{ pkg: string, ver: string } | null}
+ */
+export function parseFilename(filename) {
+  const m = FILENAME_RE.exec(filename);
+  if (!m || !m.groups) return null;
+  return { pkg: m.groups.pkg, ver: m.groups.ver };
+}
+
+/**
  * 순수 판정 함수(①③) — I/O 없음. urlFindings 각각에 file을 붙인 배열과
  * workspace 패키지 버전 맵을 받아 위반 목록을 반환한다.
  * @param {Array<{ file: string, line: number, url: string, host: string, owner: string, repo: string, tag: string, filename: string }>} findings
@@ -233,6 +261,42 @@ export function checkUrlRules(findings, versionByPkgDir) {
         expectedVersion: actualVersion,
         taggedVersion: parsed.ver,
         taggedPkg: parsed.pkg,
+      });
+      continue; // 태그 자체가 이미 어긋났다 — filename 대조는 태그가 맞을 때만 의미가 있다
+    }
+
+    // filename 검증 — 태그만 보고 실제 에셋 filename을 안 보면, 태그는
+    // 최신인데 그 아래 파일명은 옛 버전인 우회(§rule① docstring 참고)를
+    // 놓친다. filename의 pkg·ver가 태그의 pkg·package.json 버전과 모두
+    // 일치해야 한다.
+    const filenameParsed = parseFilename(f.filename);
+    if (!filenameParsed) {
+      versionViolations.push({
+        ...f,
+        reason: 'filename-unparseable',
+        expectedVersion: actualVersion,
+        taggedPkg: parsed.pkg,
+      });
+      continue;
+    }
+
+    if (filenameParsed.pkg !== parsed.pkg) {
+      versionViolations.push({
+        ...f,
+        reason: 'filename-pkg-mismatch',
+        expectedVersion: actualVersion,
+        taggedPkg: parsed.pkg,
+        filenamePkg: filenameParsed.pkg,
+      });
+    }
+
+    if (filenameParsed.ver !== actualVersion) {
+      versionViolations.push({
+        ...f,
+        reason: 'filename-version-mismatch',
+        expectedVersion: actualVersion,
+        taggedPkg: parsed.pkg,
+        filenameVersion: filenameParsed.ver,
       });
     }
   }
@@ -339,6 +403,21 @@ async function main() {
         console.error(
           `  ${v.file}:${v.line} — ${v.url}\n` +
             `    태그의 패키지 "${v.taggedPkg}"에 대응하는 packages/${v.taggedPkg}/package.json이 없다`,
+        );
+      } else if (v.reason === 'filename-unparseable') {
+        console.error(
+          `  ${v.file}:${v.line} — ${v.url}\n` +
+            `    filename "${v.filename}"을 apps-in-toss-<pkg>-<ver>.tgz 형태로 해석할 수 없다`,
+        );
+      } else if (v.reason === 'filename-pkg-mismatch') {
+        console.error(
+          `  ${v.file}:${v.line} — ${v.url}\n` +
+            `    filename의 패키지: ${v.filenamePkg}, 태그의 패키지: ${v.taggedPkg}`,
+        );
+      } else if (v.reason === 'filename-version-mismatch') {
+        console.error(
+          `  ${v.file}:${v.line} — ${v.url}\n` +
+            `    filename 버전: ${v.filenameVersion}, packages/${v.taggedPkg}/package.json 버전: ${v.expectedVersion}`,
         );
       } else {
         console.error(`  ${v.file}:${v.line} — ${v.url}\n    태그 "${v.tag}"를 <pkg>-v<ver> 형태로 해석할 수 없다`);

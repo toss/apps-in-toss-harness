@@ -40,8 +40,9 @@ jobs:
       # npm-less 전환 드리프트 가드. 스킬/소스에 박힌 GitHub Release 다운로드
       # URL의 버전이 package.json과 일치하는지, 호스트가 이 repo로 고정돼
       # 있는지, Release URL 전환이 시작된 뒤 (구) 커뮤니티 org 스코프
-      # 참조가 설치·실행 명령 문맥에 남아있지 않은지를 검사한다. Release가
-      # 아직 0개인 지금은 대부분 휴면 상태로 통과한다.
+      # 참조가 설치·실행 명령 문맥에 남아있지 않은지를 검사한다. 첫 Release
+      # 2건(debugger-v0.2.0·debug-console-v0.1.4, 2026-08-06)이 발행되고
+      # 스코프 치환까지 끝난 지금은 무장 상태로 실질 검사한다.
       - run: pnpm check:dist-urls
       - run: pnpm typecheck
       - run: pnpm test

@@ -103,7 +103,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 - ❌ 디버깅 실행 — attach·QR·관측은 `/ait:debug`(§5). 이 skill은 그 전제(서버 등록)만 채운다.
 - ❌ MCP 서버 구현·기동 — 서버는 `@apps-in-toss/debugger`(Release tarball)가 제공하고,
   기동은 Claude Code가 `.mcp.json`을 읽어 한다.
-- ❌ 환경 2 터널 인프라 배선(`tunnel:{cdp:true}` + `dev:phone:cdp`) — `/ait:setup-phone-preview`.
+- ❌ 환경 2 터널 인프라 배선(`debugger --mode=phone --cdp` + `dev:phone:cdp`) — `/ait:setup-phone-preview`.
 - ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debug-console` `dependencies`) — `/ait:inject-debug-console`.
 - ❌ user/global scope MCP 등록 — 디버깅은 프로젝트 전제라 프로젝트 scope(`.mcp.json`)만.
 

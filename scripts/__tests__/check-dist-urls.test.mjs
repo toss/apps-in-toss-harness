@@ -5,6 +5,9 @@
 // 확인한다 — 통과만 하는 테스트는 게이트를 증명하지 못한다. 검사 로직은
 // ../check-dist-urls.mjs에서 그대로 import한다(로직을 여기 복붙하지 않는다).
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -14,11 +17,13 @@ import {
   checkUrlRules,
   collectSurfaceFiles,
   findReleaseUrls,
+  parseFilename,
   parseTag,
 } from '../check-dist-urls.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..', '..');
+const SCRIPT_PATH = path.join(__dirname, '..', 'check-dist-urls.mjs');
 
 /** 텍스트를 `checkArmedScopeReferences`가 기대하는 라인 배열로 펼친다. */
 function toLines(file, text) {
@@ -96,6 +101,57 @@ describe('checkUrlRules — 규칙① 버전 일치 · 규칙③ 호스트 고�
   test('parseTag — 패키지명에 하이픈이 있어도 마지막 -v<버전> 경계로 분해된다', () => {
     assert.deepEqual(parseTag('debug-console-v0.1.4'), { pkg: 'debug-console', ver: '0.1.4' });
     assert.equal(parseTag('not-a-valid-tag'), null);
+  });
+
+  test('규칙①b 위반 — 태그 버전은 맞는데 filename 버전이 옛 버전으로 남아 있으면 RED (재현된 우회)', () => {
+    // 재현 사례: 태그는 debugger-v0.2.0(=package.json과 일치)인데, 그 태그
+    // 아래 실제 에셋 filename은 0.1.9로 남아 있다 — 태그만 보는 검사는 이걸
+    // 놓친다.
+    const text =
+      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.1.9.tgz"';
+    const findings = findReleaseUrls(text).map((f) => ({ file: 'fixture.md', ...f }));
+    const versionByPkgDir = new Map([['debugger', '0.2.0']]);
+    const { hostViolations, versionViolations } = checkUrlRules(findings, versionByPkgDir);
+    assert.deepEqual(hostViolations, []);
+    assert.equal(versionViolations.length, 1);
+    assert.equal(versionViolations[0].reason, 'filename-version-mismatch');
+    assert.equal(versionViolations[0].expectedVersion, '0.2.0');
+    assert.equal(versionViolations[0].filenameVersion, '0.1.9');
+  });
+
+  test('규칙①b 위반 — filename의 패키지가 태그의 패키지와 다르면 RED', () => {
+    const text =
+      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"';
+    const findings = findReleaseUrls(text).map((f) => ({ file: 'fixture.md', ...f }));
+    const versionByPkgDir = new Map([
+      ['debugger', '0.2.0'],
+      ['debug-console', '0.2.0'],
+    ]);
+    const { hostViolations, versionViolations } = checkUrlRules(findings, versionByPkgDir);
+    assert.deepEqual(hostViolations, []);
+    assert.equal(versionViolations.length, 1);
+    assert.equal(versionViolations[0].reason, 'filename-pkg-mismatch');
+    assert.equal(versionViolations[0].taggedPkg, 'debugger');
+    assert.equal(versionViolations[0].filenamePkg, 'debug-console');
+  });
+
+  test('규칙①b — 태그·filename의 pkg·버전이 모두 package.json과 일치하면 위반 없음', () => {
+    const text =
+      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"';
+    const findings = findReleaseUrls(text).map((f) => ({ file: 'fixture.md', ...f }));
+    const versionByPkgDir = new Map([['debug-console', '0.1.4']]);
+    const { hostViolations, versionViolations } = checkUrlRules(findings, versionByPkgDir);
+    assert.deepEqual(hostViolations, []);
+    assert.deepEqual(versionViolations, []);
+  });
+
+  test('parseFilename — 패키지명에 하이픈이 있어도 마지막 -<버전>.tgz 경계로 분해된다', () => {
+    assert.deepEqual(parseFilename('apps-in-toss-debug-console-0.1.4.tgz'), {
+      pkg: 'debug-console',
+      ver: '0.1.4',
+    });
+    assert.deepEqual(parseFilename('apps-in-toss-debugger-0.2.0.tgz'), { pkg: 'debugger', ver: '0.2.0' });
+    assert.equal(parseFilename('not-a-valid-filename.tgz'), null);
   });
 });
 
@@ -197,5 +253,68 @@ describe('현재 실제 repo 표면 — 종합 GREEN 확인', () => {
     assert.deepEqual(hostViolations, [], `규칙③ 위반: ${JSON.stringify(hostViolations, null, 2)}`);
     assert.deepEqual(versionViolations, [], `규칙① 위반: ${JSON.stringify(versionViolations, null, 2)}`);
     assert.deepEqual(scopeViolations, [], `규칙② 위반: ${JSON.stringify(scopeViolations, null, 2)}`);
+  });
+});
+
+describe('main() 진입 경로 — 실제 프로세스로 spawn해 exitCode·출력을 검증 (QA 지적: 종합 경로 커버리지 공백)', () => {
+  // check-dist-urls.mjs는 REPO_ROOT를 항상 "자기 파일 위치의 부모 디렉터리"로
+  // 계산한다(인자를 받지 않는다) — 그래서 main()을 실제로 다른 fixture
+  // 상태에 대해 돌리려면, 스크립트 파일 자체를 fixture 디렉터리 트리
+  // 안(scripts/check-dist-urls.mjs 상대 위치)에 복사해 그 트리를 REPO_ROOT로
+  // 삼게 만든다. cwd는 REPO_ROOT 계산에 영향을 주지 않으므로(스크립트 자기
+  // 경로 기준) 무관하다.
+  function makeFixtureRepo({ pkgName, pkgVersion, readmeText }) {
+    // realpath로 정규화한다 — macOS의 os.tmpdir()은 심볼릭 링크
+    // (/var/folders/... -> /private/var/folders/...)라, 정규화하지 않으면
+    // 스크립트 안 `isMainModule`(import.meta.url vs process.argv[1] 비교)이
+    // 두 경로의 symlink 해석 차이로 어긋나 main()이 아예 실행되지 않는다.
+    const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'check-dist-urls-e2e-')));
+    const scriptsDir = path.join(tmpDir, 'scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.copyFileSync(SCRIPT_PATH, path.join(scriptsDir, 'check-dist-urls.mjs'));
+
+    const pkgDir = path.join(tmpDir, 'packages', pkgName);
+    fs.mkdirSync(pkgDir, { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: pkgName, version: pkgVersion }), 'utf8');
+
+    fs.writeFileSync(path.join(tmpDir, 'README.md'), readmeText, 'utf8');
+
+    return { tmpDir, scriptPath: path.join(scriptsDir, 'check-dist-urls.mjs') };
+  }
+
+  test('GREEN — 태그·filename·package.json 버전이 모두 일치하면 exit 0, 성공 메시지 출력', () => {
+    const { tmpDir, scriptPath } = makeFixtureRepo({
+      pkgName: 'debugger',
+      pkgVersion: '0.2.0',
+      readmeText:
+        'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"\n',
+    });
+    try {
+      const stdout = execFileSync('node', [scriptPath], { encoding: 'utf8' });
+      assert.match(stdout, /check:dist-urls/);
+      assert.match(stdout, /새 위반 없음/);
+      assert.match(stdout, /규칙 ② 무장됨/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test('RED — filename 버전이 태그·package.json과 다르면(재현된 우회) exit 1, 규칙① 위반 출력', () => {
+    const { tmpDir, scriptPath } = makeFixtureRepo({
+      pkgName: 'debugger',
+      pkgVersion: '0.2.0',
+      readmeText:
+        'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.1.9.tgz"\n',
+    });
+    try {
+      execFileSync('node', [scriptPath], { encoding: 'utf8' });
+      assert.fail('filename 버전 불일치가 있으면 0이 아닌 exit code로 실패해야 한다');
+    } catch (err) {
+      assert.equal(err.status, 1);
+      assert.match(err.stderr, /규칙 ① 위반/);
+      assert.match(err.stderr, /filename 버전: 0\.1\.9/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
