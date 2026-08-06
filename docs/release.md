@@ -1,5 +1,12 @@
 # GitHub Releases 배포 — Dave가 할 일
 
+**발행 기록(2026-08-06)**: 첫 릴리즈 2건이 GitHub Actions(`release.yml`)에서
+생성됐다 — `debugger-v0.2.0`(에셋 `apps-in-toss-debugger-0.2.0.tgz`),
+`debug-console-v0.1.4`(에셋 `apps-in-toss-debug-console-0.1.4.tgz`). 두 에셋
+다운로드 URL 모두 `curl -sI` **200** 확인 완료 — §1의 3번 조건과 D1a
+게이트(`docs/roadmap.md` §3)가 해소됐다. §7a 체크리스트가 이제 실행
+대상이다.
+
 **2026-08-06, 오너 지시로 npm-less 전환 결정.** `@apps-in-toss/debugger`·
 `@apps-in-toss/debug-console` 2개 패키지는 npmjs.com에 발행하지 않고,
 `.github/workflows/release.yml`의 `pnpm pack` tarball을 **GitHub Releases
@@ -12,8 +19,9 @@ Release 에셋 발행 + URL 설치 실증"으로 재정의됐다(`docs/roadmap.m
 대기다(`docs/roadmap.md` §5 문항 6 상태 갱신·이슈 #74 코멘트 참고 — §7b 등 이
 문서의 transitive 서술은 재정의 PR에서 일괄 수정). 파이프라인
 (`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
-실행된다 — 아직 한 번도 배포를 실행하지 않았다(Releases 0개, 2026-08-06
-실측). 워크플로의 `package` 선택지에 있던 `devtools` 항목은 제거됐다 —
+실행된다 — 2026-08-06에 첫 배포 2건(`debugger`·`debug-console`)을 실행했다
+(위 발행 기록 참고). 워크플로의 `package` 선택지에 있던 `devtools` 항목은
+제거됐다 —
 harness `packages/devtools`가 C4(2026-08-05)로 제거됐기 때문이다(당초
 이관·제거 이후 제거할 예정이었으나 D1b 해소를 기다리지 않고 조기 실행됨,
 §7b 참고).
@@ -193,10 +201,10 @@ Release로 배포하므로, 이 절차는 배포 전 버전 확정 단계에서�
 
 ## 7a. scope-install flip 체크리스트 (D1a 해소 직후)
 
-`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의 **GitHub
-Release 에셋 다운로드 URL이 `curl -sI`로 200을 반환해**(§1의 3번) D1a가 해소된
-직후 실행하는 절차다. `devtools`는 이 절차의 대상이 아니다 — D1b(§7b)에서
-별도로 다룬다.
+**상태(2026-08-06): D1a 해소됨.** `@apps-in-toss/debugger`·
+`@apps-in-toss/debug-console` 2패키지의 GitHub Release 에셋 다운로드 URL이
+`curl -sI`로 200을 반환했다(§1의 3번, 위 발행 기록) — 아래 절차가 이제 실행
+대상이다. `devtools`는 이 절차의 대상이 아니다 — D1b(§7b)에서 별도로 다룬다.
 
 1. **정규화 스크립트로 일괄 치환** — `NORMALIZE_SCOPE_INSTALL=1`로
    `normalize-upstream.mjs`를 `debugger`·`debug-console` 2패키지에 적용한다.

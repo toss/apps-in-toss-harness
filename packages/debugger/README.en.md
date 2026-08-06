@@ -2,24 +2,23 @@
 
 [한국어](./README.md) · **English**
 
-[![npm](https://img.shields.io/npm/v/@apps-in-toss/debugger)](https://www.npmjs.com/package/@apps-in-toss/debugger)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
 Remote-debugging infrastructure for Apps in Toss mini-apps — the MCP debugging daemon, on-device CDP relay, test runner, and dev bridge in a single package. **devDependency / `npx` only — this package's code never enters a production bundle.** The absence of a root (`.`) export makes that boundary explicit: there is no surface here an app could accidentally import.
 
 ## Install
 
-Not yet published to npm. Until it is, use it inside this monorepo workspace.
+Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-pnpm add -D @apps-in-toss/debugger
+pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"
 ```
 
-To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx @apps-in-toss/debugger` will not work:
+To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx <URL>` will not work:
 
 ```sh
-npx -p @apps-in-toss/debugger debugger
-npx -p @apps-in-toss/debugger debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger-test --help
 ```
 
 ## Usage
@@ -33,7 +32,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "@apps-in-toss/debugger", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz", "debugger"]
     }
   }
 }
@@ -42,7 +41,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
 The default is `--mode=debug --target=relay` (real-device attach). For attaching a local browser only, use `--target=local`, and point the target dev server at a loopback address only:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @apps-in-toss/debugger debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger --target=local
 ```
 
 ### Test runner (`debugger-test`)
@@ -50,7 +49,7 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p @apps-in-toss/debugger debugger --
 Runs test files against a real device's Toss app WebView. `--scheme-url` takes the `intoss-private://` URL printed by `ait deploy --scheme-only` (a different CLI — see below) as-is:
 
 ```sh
-npx -p @apps-in-toss/debugger debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 Import the `test-runner` config helper via its subpath:
@@ -70,13 +69,13 @@ Opens your local dev server (env-2, the Sandbox PWA) directly on a real device. 
 
 ```sh
 # Tunnel an already-running dev server (default port 5173)
-npx -p @apps-in-toss/debugger debugger --mode=phone
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger --mode=phone
 
 # Spawn the dev server too — tokens after "-- <dev command>" are never parsed as debugger flags
-npx -p @apps-in-toss/debugger debugger --mode=phone -- vite
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger --mode=phone -- vite
 
 # With a CDP relay + HTML dashboard as well (inspect console/network on the device)
-npx -p @apps-in-toss/debugger debugger --mode=phone --cdp -- vite
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger --mode=phone --cdp -- vite
 ```
 
 Key options: `--port <n>` (default 5173), `--cdp` (CDP relay + dashboard, also toggleable via `AIT_TUNNEL_CDP=1`), `--no-qr` (skip the QR). To wire this into project scripts, use the `/ait:setup-phone-preview` skill — it adds `dev:phone`/`dev:phone:cdp` scripts to `package.json` and configures `cloudflared`'s `allowBuilds` setting automatically.
@@ -132,7 +131,7 @@ This ecosystem has two similarly-named but different CLIs — do not conflate th
 
 ### cloudflared binary not installed
 
-A plain `pnpm add -D @apps-in-toss/debugger` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
+A plain `pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
 
 Most of the time this needs no action: the first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading it on that first run. If you'd rather pull that download forward to `pnpm install` time (e.g. to warm a CI cache, or to avoid the delay on first start), pick one:
 

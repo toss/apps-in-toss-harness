@@ -75,7 +75,9 @@ Next.js / Rspack / Webpack 프로젝트에서 cloudflared tunnel을 쓰려면
 
 `package.json`을 `Read`로 확인한다.
 
-**idempotency 체크**: `devDependencies`에 `@apps-in-toss/debugger`가 이미 있으면:
+**idempotency 체크**: `devDependencies`에 `@apps-in-toss/debugger` 키가 이미 있으면
+(값이 harness Release tarball URL인 경우 포함 — URL로 설치해도 키는 패키지명
+`@apps-in-toss/debugger` 그대로 기록되고 값만 URL 스펙이 된다) 이 단계를 건너뛴다:
 
 ```
 @apps-in-toss/debugger가 이미 devDependencies에 있습니다. 이 단계를 건너뜁니다.
@@ -84,14 +86,17 @@ Next.js / Rspack / Webpack 프로젝트에서 cloudflared tunnel을 쓰려면
 없으면 추가한다:
 
 ```bash
-pnpm add -D @apps-in-toss/debugger
+pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"
 ```
 
-(npm/yarn/bun 프로젝트는 해당 매니저의 동등한 add 명령을 사용한다.)
+(npm/yarn/bun 프로젝트는 해당 매니저의 동등한 add 명령을 사용한다.) `@apps-in-toss/debugger`는
+npm에는 발행하지 않고 GitHub Releases로 유통하므로, 설치는 패키지명이 아니라 이 버전
+고정 tarball URL로 한다 — 설치 후 `package.json`의 키는 그대로 `@apps-in-toss/debugger`로
+기록되지만 값은 이 URL이 된다.
 
 `--mode=phone` CLI(bin `debugger`)는 이 패키지가 제공한다 — `dev:phone` 스크립트가
 `debugger --mode=phone -- vite`로 이 bin을 직접 호출하므로(로컬 `node_modules/.bin`
-경유), MCP 데몬 배선(`setup-debugger` skill이 하는 `npx -y -p @ait-co/debugger
+경유), MCP 데몬 배선(`setup-debugger` skill이 하는 `npx -y -p <Release tarball URL>
 debugger`)과 달리 이 skill은 devDependency로 실제 설치한다. `cloudflared`·`qrcode`는
 `@apps-in-toss/debugger`가 이미 자기 `dependencies`로 가져오므로 별도 설치가 필요 없다.
 

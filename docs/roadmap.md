@@ -121,12 +121,15 @@ MCP가 아니다. devtools는 배포 모델 전환 중(전제 변경 감지 2026
 deep-link는 각 축(#3·#4)이 대체를 완성할 때까지 정규 경로에 남는 것을 허용한다.
 `@ait-co/*` devtools 소비의 소거 경로는 커뮤니티 결합 절단 배치(B1-B9, 하드카피 후
 스코프·링크·브랜딩을 harness 정본으로 정규화하는 작업)다 — 설치·실행 경로의
-스코프 치환 게이트는 둘로 나뉜다. **D1a — 재정의(2026-08-06, npm-less 전환)**:
-`@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의 **harness
-Release 에셋 발행 + URL 설치 실증**(해소 주체 Dave·release.yml — 종전
-"npm 실발행+`latest` 승격"에서 npm 발행 없이 지금 해소 가능한 형태로 재정의됨,
-`docs/release.md` §1) — 해소 시 이 두 패키지의 설치·npx 안내 스코프가 기계
-치환된다.
+스코프 치환 게이트는 둘로 나뉜다. **D1a — 재정의(2026-08-06, npm-less 전환),
+발행 완료**: `@apps-in-toss/debugger`·`@apps-in-toss/debug-console` 2패키지의
+**harness Release 에셋 발행 + URL 설치 실증**(해소 주체 Dave·release.yml —
+종전 "npm 실발행+`latest` 승격"에서 npm 발행 없이 지금 해소 가능한 형태로
+재정의됨, `docs/release.md` §1) — **에셋 발행 자체는 2026-08-06에 완료**됐다
+(`debugger-v0.2.0`·`debug-console-v0.1.4`, 다운로드 URL 200 확인,
+`docs/release.md` 발행 기록). URL 설치 실증(빈 디렉토리에서 `npx`/`pnpm add`
+정상 동작 확인)은 이 스코프 치환을 반영하는 PR의 검증 단계에서 수행된다 —
+실증 완료 후 이 두 패키지의 설치·npx 안내 스코프가 기계 치환된다.
 **D1b**: wf가 devtools를 transitive로 실배포하고 소비자 프로젝트에서 resolve
 실증(해소 주체 Dave·platform PR + wf 릴리즈) — 해소 시 devtools **설치 절차
 자체가 삭제**된다(치환이 아니다). harness `packages/devtools`도 이관·실증 후

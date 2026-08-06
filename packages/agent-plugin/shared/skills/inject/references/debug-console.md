@@ -26,7 +26,7 @@ attach + eruda) 2개 패키지로 나뉘었다.
 - **pnpm / npm / yarn / bun** 중 하나. 감지 순서: `pnpm-lock.yaml` → `package-lock.json` →
   `yarn.lock` → `bun.lockb`. 아무것도 없으면 `pnpm`으로 가정.
 - **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동하도록 안내하고 중단.
-- 인터넷 연결 필요 (`@ait-co/debug-console` npm 설치).
+- 인터넷 연결 필요 (`@apps-in-toss/debug-console` GitHub Release tarball 설치, 아래 §3).
 
 ## 1. 프로젝트 루트 확인
 
@@ -43,33 +43,45 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 
 ## 2. 이미 설치됐는지 확인 (idempotency)
 
-`package.json`의 `dependencies`에 `@ait-co/debug-console`이 있으면 설치 단계를 건너뛴다.
-있더라도 진입점 와이어업 단계(step 4)는 진행한다 — import가 누락됐을 수 있기 때문.
+`package.json`의 `dependencies`에 `@apps-in-toss/debug-console` 키가 있거나(과거 설치),
+그 값이 아래 §3의 harness Release URL이면(URL 설치는 키가 패키지명, 값이 URL이 된다)
+설치 단계를 건너뛴다. 있더라도 진입점 와이어업 단계(step 4)는 진행한다 — import가
+누락됐을 수 있기 때문.
 
 ```bash
-node -e "const p=require('./package.json'); process.exit(p.dependencies?.['@ait-co/debug-console'] ? 0 : 1)"
+node -e "
+const p = require('./package.json');
+const v = p.dependencies?.['@apps-in-toss/debug-console'];
+process.exit(v ? 0 : 1);
+"
 ```
 
 ## 3. 패키지 설치
 
 Step 2에서 이미 있으면 skip. **반드시 `dependencies`다 — `devDependencies`가 아니다**
-(devtools·debugger와 달리 이 패키지만 프로덕션 번들에 실제로 들어간다):
+(devtools·debugger와 달리 이 패키지만 프로덕션 번들에 실제로 들어간다). npm에는 발행하지
+않으므로 harness GitHub Release tarball URL을 설치 스펙으로 준다 — 설치 후
+`package.json`의 `dependencies` 키는 `@apps-in-toss/debug-console`, 값은 이 URL이 된다:
 
 ```bash
-pnpm add @ait-co/debug-console      # pnpm
-npm install @ait-co/debug-console   # npm
-yarn add @ait-co/debug-console      # yarn
-bun add @ait-co/debug-console       # bun
+pnpm add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"      # pnpm
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"   # npm
+yarn add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"       # yarn
+bun add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"        # bun
 ```
+
+※ **설치 스펙(위 URL)과 import specifier(아래 §4)는 다르다.** URL은 "어디서 받는가"를
+지정하는 설치 문맥 전용이고, 설치되고 나면 `node_modules` 상의 패키지 이름은 그대로
+`@apps-in-toss/debug-console`이므로 코드에서는 항상 정식 스코프로 import한다.
 
 ## 4. 진입점 와이어업 (멱등)
 
 진입점(`--entry` 없음 — 자동 감지 순서: `src/main.tsx` → `src/main.ts` → `src/index.tsx` →
-`src/index.ts` → `index.tsx` → `index.ts`)을 `Read`로 열어 `@ait-co/debug-console`이 이미
+`src/index.ts` → `index.tsx` → `index.ts`)을 `Read`로 열어 `@apps-in-toss/debug-console`이 이미
 import되어 있는지 확인. 있으면:
 
 ```
-@ait-co/debug-console import가 이미 있습니다. 와이어업을 건너뜁니다.
+@apps-in-toss/debug-console import가 이미 있습니다. 와이어업을 건너뜁니다.
 ```
 
 없으면 두 가지 와이어업 방식 중 하나를 안내한다 — 이 skill은 기본으로 **방식 A**를
@@ -78,7 +90,7 @@ import되어 있는지 확인. 있으면:
 **방식 A — `/auto` self-gating entry (기본)**:
 
 ```ts
-import '@ait-co/debug-console/auto';
+import '@apps-in-toss/debug-console/auto';
 ```
 
 런타임 self-gate다 — DEV 빌드이거나 URL에 `?debug=1`+`?relay=`가 함께 있을 때만(즉 환경 3
@@ -90,7 +102,7 @@ debug relay deep-link로 열렸을 때만) 활성화되고, 일반 프로덕션 
 
 ```ts
 if (__DEBUG_BUILD__) {
-  import('@ait-co/debug-console').then((m) => m.maybeAttach());
+  import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());
 }
 ```
 
@@ -99,21 +111,21 @@ if (__DEBUG_BUILD__) {
 수행하는 self-gating 함수다 — 호출부에 별도 boolean 조건을 씌울 필요가 없고, 반환값은
 `void`(Promise 아님). 대신 `__DEBUG_BUILD__`는 consumer 번들러의 `define`(예: Vite
 `define: { __DEBUG_BUILD__: 'false' }`) 값이다 — release 빌드에서 `false`로 두면
-번들러가 `@ait-co/debug-console` 그래프 전체를 dead-code-eliminate한다(방식 A의 "잠든
+번들러가 `@apps-in-toss/debug-console` 그래프 전체를 dead-code-eliminate한다(방식 A의 "잠든
 청크"가 아예 남지 않는다). `__DEBUG_BUILD__`는 ambient global이므로 consumer 쪽에
 `declare const __DEBUG_BUILD__: boolean;` 선언이 필요하다.
 
 ## 5. debug-console facet 완료 seam
 
 ```
-@ait-co/debug-console 설정 완료
+@apps-in-toss/debug-console 설정 완료
 
 변경 내용:
-  - dependencies에 @ait-co/debug-console 추가 (또는 이미 있어서 skip)
-  - <진입점 파일>에 import '@ait-co/debug-console/auto' 삽입 (또는 이미 있어서 skip)
+  - dependencies에 @apps-in-toss/debug-console 추가 (또는 이미 있어서 skip)
+  - <진입점 파일>에 import '@apps-in-toss/debug-console/auto' 삽입 (또는 이미 있어서 skip)
 
 [알아야 할 것]
-  - @ait-co/debug-console은 dependencies입니다 — 프로덕션 번들에 실제로 포함되는
+  - @apps-in-toss/debug-console은 dependencies입니다 — 프로덕션 번들에 실제로 포함되는
     유일한 디버그 패키지입니다. attach 표면을 남기고 싶지 않으면 이 skill을
     실행하지 마세요.
   - /auto는 런타임 self-gate — DEV 빌드이거나 URL에 debug=1+relay=가 있을 때만 활성화,

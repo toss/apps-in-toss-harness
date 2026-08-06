@@ -4,7 +4,7 @@
  *
  * Uses Node's built-in `fs/promises` `glob` (Node 22+) — no extra dependency,
  * which keeps the MCP daemon install graph lean (a plain glob lib would land in
- * the `npx -p @ait-co/debugger debugger` path — see `RESTART_CMD` in
+ * the `npx -p <tarball URL> debugger` path — see `RESTART_CMD` in
  * `mcp/restart-hint.ts` — for no benefit).
  *
  * Pure Node IO only (`node:fs/promises` + `node:path`) — react-free, so it is

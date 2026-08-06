@@ -2,17 +2,16 @@
 
 **한국어** · [English](./README.en.md)
 
-[![npm](https://img.shields.io/npm/v/@apps-in-toss/debug-console)](https://www.npmjs.com/package/@apps-in-toss/debug-console)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
 앱인토스(Apps in Toss) 미니앱의 on-device attach + eruda 콘솔. **이번 분리에서 프로덕션 번들에 들어갈 수 있는 유일한 패키지**다 — dependency는 [`eruda`](https://github.com/liriliri/eruda) 하나뿐이고 peerDependency는 0개라, SDK 버전(2.x/3.x)과 완전히 무관하게 동작한다.
 
 ## 설치
 
-아직 npm에 배포되지 않았습니다. 배포 전까지는 이 monorepo 워크스페이스 안에서 사용합니다.
+npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-pnpm add @apps-in-toss/debug-console
+pnpm add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"
 ```
 
 peerDependency가 없으므로 `@apps-in-toss/web-framework`의 설치 여부·버전과 무관하게 그대로 추가할 수 있다. SDK 브릿지(아래 `window.__sdk`)는 런타임에 동적 import로 SDK 존재 여부를 probe하며, SDK가 없으면 조용히 스킵된다.

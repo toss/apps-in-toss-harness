@@ -9,11 +9,13 @@
  * `server-lock.ts`, `tunnel.ts`); a future version bump now touches one line
  * instead of six.
  *
- * Wave 2 will replace this npm-registry-shaped invocation with a harness
- * Release tarball URL (see `docs/release.md`) once that asset exists —
- * `AIT_LAUNCHER_URL`-style single-point-of-truth swap, same as `LAUNCHER_URL`.
+ * Points at the harness Release tarball (`docs/release.md`) rather than the
+ * npm registry — the community org (`@ait-co/*`) this package used to name
+ * here is a severed lineage this harness does not control, and npmjs
+ * publishing is out of scope for this package (npm-less distribution).
  */
-export const RESTART_CMD = 'npx -p @ait-co/debugger debugger';
+export const RESTART_CMD =
+  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger';
 
 /** {@link RESTART_CMD} with `--force`, for the server-lock recovery hint. */
 export const RESTART_CMD_FORCE = `${RESTART_CMD} --force`;
