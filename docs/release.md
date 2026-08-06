@@ -12,14 +12,17 @@ PR #85에서 전항 완료됐다.
 `.github/workflows/release.yml`의 `pnpm pack` tarball을 **GitHub Releases
 에셋으로 첨부**해 배포한다 — D1a는 "npm 실발행+`latest` 승격"에서 "harness
 Release 에셋 발행 + URL 설치 실증"으로 재정의됐다(`docs/roadmap.md` §3).
-`@apps-in-toss/devtools`는 원래도 harness 발행 대상이 아니다 — 배포 주체는 wf
-소스 monorepo(사내)다. **배포 모델 재정의(2026-08-04)**: 그 monorepo에 독자
-계보 devtools(AIT-6577)가 먼저 머지되어, 기존 "wf dependencies로 코드
-통합(transitive)" 계획은 "**사내 monorepo에서 발행 + CLI 자동 설치
-devDependency**"(wf 패키지 무변경 — transitive 아님)로 재정의됐다. **모델은
-확정, 실증(D1b)은 잔여**다(`docs/roadmap.md` §5 문항 6·이슈 #74 코멘트).
-그쪽 발행 채널은 발행 주체가 다르므로 harness의 npm-less 전환과 무관한
-축이다. 파이프라인
+`@apps-in-toss/devtools`는 원래도 harness 발행 대상이 아니다 — 소유·발행 주체는
+wf 소스 monorepo(사내)이고, 패키지는 **공개 npm(registry.npmjs.org)에 올라간다**
+(changesets fixed-group: cli·web-framework·devtools 동일 버전 —
+`@apps-in-toss/devtools@3.0.2`가 2026-08-04 첫 발행). **배포 모델
+재정의(2026-08-04)**: 그 monorepo에 독자 계보 devtools(AIT-6577)가 먼저 머지되어,
+기존 "wf dependencies로 코드 통합(transitive)" 계획은 "**공개 npm 발행 + CLI
+자동 설치 devDependency**"(wf 패키지 무변경 — transitive 아님)로 재정의됐다.
+**모델·발행은 확정, CLI 자동 설치 실증(D1b)은 잔여**다(`docs/roadmap.md` §5
+문항 6·이슈 #74 코멘트). **발행 주체가 harness가 아니기 때문에** 이 축은
+harness의 npm-less 전환(바로 아래 callout — harness 소유 2패키지 한정)과
+무관하다. devtools는 계속 공개 npm에서 받는다. 파이프라인
 (`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
 실행된다 — 2026-08-06에 첫 배포 2건(`debugger`·`debug-console`)을 실행했다
 (위 발행 기록 참고). 워크플로의 `package` 선택지에 있던 `devtools` 항목은
@@ -48,8 +51,9 @@ harness `packages/devtools`가 C4(2026-08-05)로 제거됐기 때문이다(당�
    확인이다. **릴리즈를 자르고 200을 확인하기 전에는 어떤 스킬·소스 파일에도
    실 다운로드 URL을 커밋하지 않는다.**
 4. 문제 없으면 나머지 1개(`debugger`)를 같은 방식으로. `devtools`는 이 순서에
-   포함되지 않는다 — 발행 주체가 wf 소스 monorepo(사내)라 그쪽 배포 모델
-   (CLI 자동 설치 devDependency)을 따른다(D1b, 위 재정의 참고).
+   포함되지 않는다 — 발행 주체가 harness가 아니라 wf 소스 monorepo(사내)이고,
+   그쪽이 공개 npm에 발행한 것을 CLI가 devDependency로 자동 설치하는 모델을
+   따른다(D1b, 위 재정의 참고).
 
 ## 2. 태그·에셋·URL 규칙
 
@@ -249,10 +253,12 @@ harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-i
 
 ## 7b. devtools 설치 절차 삭제 체크리스트 (D1b 해소 직후)
 
-사내 monorepo가 `@apps-in-toss/devtools`를 발행하고, **CLI 자동 설치**로 소비자
-프로젝트에 devDependency가 배선돼 dev 서버에서 mock·panel이 뜨는 것까지 실증돼
-D1b가 해소된 직후 실행하는 절차다(배포 모델은 2026-08-04에 재정의 확정 —
-`docs/roadmap.md` §5 문항 6·이슈 #74. 남은 것은 실증뿐이다). D1a(§7a)와 성격이
+wf 소스 monorepo(사내)가 발행해 **공개 npm에 올라온** `@apps-in-toss/devtools`를
+**CLI가 자동 설치**해 소비자 프로젝트에 devDependency가 배선되고 dev 서버에서
+mock·panel이 뜨는 것까지 실증돼 D1b가 해소된 직후 실행하는 절차다(배포 모델은
+2026-08-04 재정의 확정이고 공개 npm 발행도 같은 날 완료됐다(`3.0.2`) —
+`docs/roadmap.md` §5 문항 6·이슈 #74. 남은 것은 CLI 자동 설치 실증뿐이다).
+D1a(§7a)와 성격이
 다르다 — 스코프 **치환**이 아니라 harness가 안내하던 devtools 설치 절차 자체의
 **삭제**다(CLI가 설치를 대행하므로 harness가 별도로 안내할 설치 명령이
 없어진다).
@@ -260,8 +266,9 @@ D1b가 해소된 직후 실행하는 절차다(배포 모델은 2026-08-04에 �
 1. **skill 재설계** — `new-miniapp` 후처리와 `inject`(devtools facet)에서
    devtools devDependency 추가 단계를 **삭제**한다(CLI가 이미 넣어 준다).
    설치 후에도 배선이 필요한 부분(unplugin의 vite 설정 삽입 등)이 남는지·어떤
-   형태인지는 실증 시점의 CLI 산출물을 보고 확정한다 — 실배포 실증 전에는
-   skill 본문을 바꾸지 않는다는 원칙에 따라 이 단계 전엔 착수하지 않는다.
+   형태인지는 실증 시점의 CLI 산출물을 보고 확정한다 — CLI 자동 설치 실증
+   전에는 skill 본문을 바꾸지 않는다는 원칙에 따라 이 단계 전엔 착수하지
+   않는다.
    import specifier는 `@apps-in-toss/devtools` 그대로다(subpath re-export
    경로로 바뀌지 않는다 — 재정의로 폐기된 전제다). `--no-devtools`는
    "설치 제외"에서 "배선 skip"으로 의미가 바뀐다.
@@ -287,8 +294,9 @@ D1b가 해소된 직후 실행하는 절차다(배포 모델은 2026-08-04에 �
    조기 실행됐다 — 위 1~4번(skill 재설계·템플릿 폐기·eval fixture 교체·
    baseline epoch 판단)과 아래 6번(D1b 실증 기록)은 아직 미완료이며 D1b가
    실제로 해소되는 시점에 별도로 진행한다.
-6. **실증(D1b) 결과 기록** — 실행 날짜, 사내 monorepo의 devtools 발행 버전,
-   CLI 자동 설치 후 소비자 프로젝트에서
-   `require.resolve('@apps-in-toss/devtools')` 성공 여부(= devDependency로
-   실제 배선됐는지), dev server panel 렌더 확인 여부를 여기에 남긴다.
+6. **CLI 자동 설치 실증(D1b) 결과 기록** — 실행 날짜, 실증에 쓴 devtools 공개
+   npm 버전(발행 자체는 `3.0.2`/2026-08-04에 이미 됐다), CLI 자동 설치 후
+   소비자 프로젝트에서 `require.resolve('@apps-in-toss/devtools')` 성공 여부
+   (= devDependency로 실제 배선됐는지), dev server panel 렌더 확인 여부를
+   여기에 남긴다.
    *(자리만 마련 — 실증 전에는 비워 둔다.)*
