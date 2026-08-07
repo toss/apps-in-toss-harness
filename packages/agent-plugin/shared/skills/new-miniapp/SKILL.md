@@ -232,7 +232,9 @@ pnpm --dir ./<package_name> install
 - `pnpm dlx`를 쓴다 — `pnpm create`의 플래그 전달 방식 차이로 인한 오동작을
   피하고 인자를 그대로 CLI에 넘긴다.
 
-CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니다!`)를 내면 다음으로.
+**성공 판정은 exit code로 한다** — 완료 메시지 문구는 버전마다 다르다(실측
+2026-08-07, `create-ait-app@0.2.1`은 `✅ 프로젝트가 생성됐어요.`를 낸다). 문구
+문자열 매칭으로 판정하면 CLI가 문구를 바꿀 때 조용히 오탐한다.
 에러로 끝나면 stderr를 그대로 사용자에게 전하고 중단한다:
 
 - **완전 오프라인**으로 보이면 `--local` 폴백을 안내한다.
@@ -286,8 +288,12 @@ Step 2가 이제 전 경로(`--template`·`--tds` 공통)에서 `--skip-install`
 1. Step 2의 두 명령(scaffold `--skip-install` → `pnpm --dir ./<package_name>
    install`)을 실행한다.
 2. install 명령이 `ERR_PNPM_IGNORED_BUILDS`로 실패하면, 이미 존재하는
-   `pnpm-workspace.yaml`의 `allowBuilds:` 아래에 **에러 메시지가 나열한
-   패키지 이름만** `Edit`로 `true`로 추가한다. 이 skill은 non-TTY로
+   `pnpm-workspace.yaml`의 `allowBuilds:` 아래에서 **에러 메시지가 나열한
+   패키지만** `Edit`로 `true`로 만든다. 대개 항목을 새로 쓰는 게 아니라
+   **값만 고치는** 작업이다 — pnpm이 실패하면서 그 키를
+   `<패키지>: set this to true or false` 플레이스홀더로 미리 심어 두기 때문이다
+   (실측 2026-08-07: devtools 배선 시 `cloudflared` 키가 그렇게 생성됐고,
+   `true`로 고치자 통과). 키가 없으면 그때만 새로 추가한다. 이 skill은 non-TTY로
    실행되므로 `pnpm --dir ./<package_name> approve-builds`(체크박스 UI가
    뜨는 대화형 명령)는 쓰지 않는다 — 세션이 멈춘다(사용자가 직접
    터미널에서 승인하고 싶을 때만 안내용으로 남긴다). 그 뒤 재실행:

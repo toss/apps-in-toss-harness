@@ -19,8 +19,9 @@ wf 소스 monorepo(사내)이고, 패키지는 **공개 npm(registry.npmjs.org)�
 재정의(2026-08-04)**: 그 monorepo에 독자 계보 devtools(AIT-6577)가 먼저 머지되어,
 기존 "wf dependencies로 코드 통합(transitive)" 계획은 "**공개 npm 발행 + CLI
 자동 설치 devDependency**"(wf 패키지 무변경 — transitive 아님)로 재정의됐다.
-**모델·발행은 확정, CLI 자동 설치 실증(D1b)은 잔여**다(`docs/roadmap.md` §5
-문항 6·이슈 #74 코멘트). **발행 주체가 harness가 아니기 때문에** 이 축은
+**모델·발행에 이어 CLI 자동 설치 실증도 완료(2026-08-07, 미러 registry
+경유) — D1b 해소**다(`docs/roadmap.md` §5 문항 6·이슈 #74 코멘트). **발행
+주체가 harness가 아니기 때문에** 이 축은
 harness의 npm-less 전환(바로 아래 callout — harness 소유 2패키지 한정)과
 무관하다. devtools는 계속 공개 npm에서 받는다. 파이프라인
 (`.github/workflows/release.yml`)은 이미 있고 `workflow_dispatch`로만
@@ -216,7 +217,8 @@ Release 에셋 다운로드 URL이 `curl -sI`로 200을 반환했다(§1의 3번
 발행됐고(`3.0.2`, 2026-08-04), 그 install-command 스코프 치환은 D1a·D1b
 어느 쪽도 아닌 별도 축(`normalize-upstream.mjs`의 패키지 단위 게이트
 `NPM_PUBLISHED_SCOPED_PACKAGES` — `docs/upstream-sync.md` 참고, harness#74)이다.
-D1b(§7b)는 그와 또 다른 잔여 항목(CLI 자동 설치 실증)만 다룬다.
+D1b(§7b)는 그와 또 다른 항목 — 이제 완료된 CLI 자동 설치 실증에 따른 후속
+절차만 다룬다.
 
 1. **정규화 스크립트로 일괄 치환 — 완료(2026-08-06, PR #85).**
    `NORMALIZE_SCOPE_INSTALL=1`로 `normalize-upstream.mjs`를 `debugger`·
@@ -254,33 +256,38 @@ D1b(§7b)는 그와 또 다른 잔여 항목(CLI 자동 설치 실증)만 다룬
    skill·템플릿에 남아 있던 devtools 설치 안내(`@ait-co/devtools` →
    `@apps-in-toss/devtools`)는 D1b를 기다리지 않고, 공개 npm 발행 사실을
    근거로 별도 축에서 먼저 정리된다(harness#74, `docs/upstream-sync.md`의
-   `NPM_PUBLISHED_SCOPED_PACKAGES` 게이트) — D1b(§7b)는 그 뒤에 남는 CLI
-   자동 설치 실증만 다룬다.
+   `NPM_PUBLISHED_SCOPED_PACKAGES` 게이트) — D1b(§7b)는 그 뒤에 남는, 이제
+   완료된 CLI 자동 설치 실증에 따른 후속 절차만 다룬다.
 
 harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-in-toss/*` flip
 트래킹 이슈).
 
 ## 7b. devtools 설치 절차 삭제 체크리스트 (D1b 해소 직후)
 
-wf 소스 monorepo(사내)가 발행해 **공개 npm에 올라온** `@apps-in-toss/devtools`를
-**CLI가 자동 설치**해 소비자 프로젝트에 devDependency가 배선되고 dev 서버에서
-mock·panel이 뜨는 것까지 실증돼 D1b가 해소된 직후 실행하는 절차다(배포 모델은
-2026-08-04 재정의 확정이고 공개 npm 발행도 같은 날 완료됐다(`3.0.2`) —
-`docs/roadmap.md` §5 문항 6·이슈 #74. 남은 것은 CLI 자동 설치 실증뿐이다).
-D1a(§7a)와 성격이 다르다 — 스코프 **치환**이 아니라 harness가 안내하던
-devtools 설치 절차 자체의 **삭제**다(CLI가 설치를 대행하므로 harness가
-별도로 안내할 설치 명령이 없어진다). devtools의 install-command 스코프
-치환(`@ait-co/devtools` → `@apps-in-toss/devtools`) 자체는 이 절차를 기다리지
-않고 이미 별도 축에서 진행 중이다(harness#74, `docs/upstream-sync.md`의
+**발화 조건 충족(2026-08-07)**: wf 소스 monorepo(사내)가 발행해 **공개
+npm에 올라온** `@apps-in-toss/devtools`를 **CLI가 자동 설치**해 소비자
+프로젝트에 devDependency가 배선되고 dev 서버에서 mock·panel이 뜨는 것까지
+실증됐다(`create-ait-app@0.2.3`, 미러 registry 경유 — 공개 registry의 wf
+`latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼 직결 경로도 같은 버전으로
+해석될 것으로 보이나 직접 재현은 미확인, 근거는 이슈 #74 2026-08-07
+코멘트). 배포 모델은 2026-08-04 재정의 확정, 공개 npm 발행도
+같은 날 완료됐다(`3.0.2`) — `docs/roadmap.md` §5 문항 6·이슈 #74. **D1b는
+해소됐다.** 아래 체크리스트는 발화 조건을 충족했을 뿐 실행되지 않았다 —
+착수 여부·순서·시점은 maintainer 결정이다. D1a(§7a)와 성격이 다르다 —
+스코프 **치환**이 아니라 harness가 안내하던 devtools 설치 절차 자체의
+**삭제**다(CLI가 설치를 대행하므로 harness가 별도로 안내할 설치 명령이
+없어진다). devtools의 install-command 스코프 치환(`@ait-co/devtools` →
+`@apps-in-toss/devtools`) 자체는 이 절차를 기다리지 않고 이미 별도 축에서
+진행 중이다(harness#74, `docs/upstream-sync.md`의
 `NPM_PUBLISHED_SCOPED_PACKAGES` 게이트) — 여기서 삭제하는 것은 스코프가
 아니라 "harness가 devtools 설치를 안내한다"는 절차 자체다.
 
 1. **skill 재설계** — `new-miniapp` 후처리와 `inject`(devtools facet)에서
    devtools devDependency 추가 단계를 **삭제**한다(CLI가 이미 넣어 준다).
    설치 후에도 배선이 필요한 부분(unplugin의 vite 설정 삽입 등)이 남는지·어떤
-   형태인지는 실증 시점의 CLI 산출물을 보고 확정한다 — CLI 자동 설치 실증
-   전에는 skill 본문을 바꾸지 않는다는 원칙에 따라 이 단계 전엔 착수하지
-   않는다.
+   형태인지는 실증 시점의 CLI 산출물을 보고 확정한다 — CLI 자동 설치 실증은
+   완료됐으나(2026-08-07) skill 본문 갱신 자체는 아직 착수 전이다. 착수
+   시점·순서는 maintainer 결정이다.
    import specifier는 `@apps-in-toss/devtools` 그대로다(subpath re-export
    경로로 바뀌지 않는다 — 재정의로 폐기된 전제다). `--no-devtools`는
    "설치 제외"에서 "배선 skip"으로 의미가 바뀐다.
@@ -304,11 +311,44 @@ devtools 설치 절차 자체의 **삭제**다(CLI가 설치를 대행하므로 
    `LAUNCHER_URL`은 이제 `packages/debugger/src/mcp/deeplink.ts` 1곳이 단독
    정본이다(devtools 쪽 사본은 패키지와 함께 제거됨). **주의**: 이 5번 항목만
    조기 실행됐다 — 위 1~4번(skill 재설계·템플릿 폐기·eval fixture 교체·
-   baseline epoch 판단)과 아래 6번(D1b 실증 기록)은 아직 미완료이며 D1b가
-   실제로 해소되는 시점에 별도로 진행한다.
-6. **CLI 자동 설치 실증(D1b) 결과 기록** — 실행 날짜, 실증에 쓴 devtools 공개
-   npm 버전(발행 자체는 `3.0.2`/2026-08-04에 이미 됐다), CLI 자동 설치 후
-   소비자 프로젝트에서 `require.resolve('@apps-in-toss/devtools')` 성공 여부
-   (= devDependency로 실제 배선됐는지), dev server panel 렌더 확인 여부를
-   여기에 남긴다.
-   *(자리만 마련 — 실증 전에는 비워 둔다.)*
+   baseline epoch 판단)과 아래 6·7번(D1b 실증 기록·create-ait-app 핀 상향)은
+   아직 미완료다. D1b는 2026-08-07에 해소됐으므로 발화 조건은 갖췄지만,
+   착수 여부·순서·시점은 maintainer 결정으로 남는다.
+6. **CLI 자동 설치 실증(D1b) 결과 기록 — 완료(2026-08-07).**
+
+   - **실행 날짜**: 2026-08-07.
+   - **경로**: `create-ait-app@0.2.3`(공개 npm latest) + `--template react-ts`
+     + `--inline --pm pnpm`. `--skip-install`은 쓰지 않았다 — CLI가 스스로
+     무엇을 하는지 보는 것이 목적이었다. 이 머신의 registry 응답이 0.2.3을
+     내려주지 않아 `PNPM_CONFIG_REGISTRY=https://registry.npmmirror.com/`로
+     미러를 경유했다(루트 `CLAUDE.md` dist-tag quirk의 "숨기는 방향" 항목).
+   - **devtools 버전**: `3.0.2`(발행 자체는 2026-08-04). wf도 `3.0.2`.
+   - **배선 결과 — 예**: CLI가 `ait init --app-name <name> --skip-input`을
+     호출하고, 그 실행이 `package.json` devDependencies에
+     `"@apps-in-toss/devtools": "^3.0.2"`를 추가하고 `vite.config.ts`에
+     `import aitDevtools from "@apps-in-toss/devtools/unplugin";` +
+     `plugins: [aitDevtools.vite(), react()]`를 자동 주입했다.
+     `node_modules/@apps-in-toss/devtools`도 실제로 설치됐고
+     `apps-in-toss.config.ts`(3.x 형상)가 생성됐다.
+   - **dev server panel 렌더 — 예**: `pnpm dev` 후 브라우저에서 devtools
+     패널 버튼(`AIT`) 렌더 확인.
+   - **완전하지 않은 지점**: `ait init`이 devtools 배선 뒤 실행하는 내부
+     `pnpm install`이 `cloudflared@0.7.1`의
+     `ERR_PNPM_IGNORED_BUILDS`로 중단되는데, `ait init`은 그 실패를 삼키고
+     "완료"로 끝난다 — `pnpm-workspace.yaml`의 `allowBuilds.cloudflared`를
+     `true`로 고치고 `pnpm install`을 재실행해야 정상 상태가 된다
+     (`docs/upstream/create-ait-app-improvements.md`에 upstream 보고 후보로
+     기록).
+   - **미확인**: 미러가 아닌 공개 registry 직결 경로에서의 재현. 다만 wf의
+     공개 `dist-tags.latest`가 그 사이 `3.0.2`로 바뀐 것이 확인돼 직결
+     경로도 같은 버전으로 해석될 것으로 보인다.
+   - **근거 정본**: 이슈 #74의 2026-08-07 코멘트(첫 판정은 `0.2.1`로 측정해
+     "미충족"이었고, 같은 날 `0.2.3`으로 재측정해 뒤집혔다 — 정정 코멘트 포함).
+7. **create-ait-app 핀 상향 + Step 4 정리** — `packages/agent-plugin/shared/
+   skills/new-miniapp/SKILL.md`가 여전히 `create-ait-app@0.2.1`을 명시
+   핀한다. 0.2.1은 devtools를 자동 배선하지 않지만 0.2.3(CLI 자동 설치
+   실증에 쓰인 버전, 2026-08-07)은 배선한다 — 즉 지금 skill의 Step 4
+   (devtools devDependency·vite 설정 수동 배선)는 0.2.3 기준으로 보면 CLI가
+   이미 해 주는 일의 중복이다. 핀을 0.2.3으로 올릴지, Step 4를 축소·삭제할지
+   는 위 1번(skill 재설계)과 함께 묶어 maintainer가 결정한다.
+   *(미체크 — 이 조사에서 skill 파일 자체는 손대지 않았다.)*

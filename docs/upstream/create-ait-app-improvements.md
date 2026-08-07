@@ -124,10 +124,11 @@ devDependency와 vite 플러그인 배선을 대신 수행하고 있다(과도�
 wf 소스 monorepo(사내)가 소유·발행하고(AIT-6577) 패키지는 **공개 npm에**
 올라오며(`3.0.2`, 2026-08-04 첫 발행), 소비자 프로젝트에는 **CLI 자동 설치
 devDependency**로 배선되는 모델로 **재정의 확정(2026-08-04)**됐다 — wf 패키지
-자체는 변경되지 않는다(transitive 아님). **모델·발행은 확정, CLI 자동 설치
-실증은 잔여(D1b)**다(`docs/roadmap.md` §5 문항 6). 실증 후에는 CLI가 설치를
-대행하므로 이 후처리에서 devDependency 추가 단계가 없어지고 vite 설정
-배선만 남을 예정이다). `--devtools`류
+자체는 변경되지 않는다(transitive 아님). **모델·발행에 이어 CLI 자동 설치
+실증도 완료(2026-08-07, 미러 registry 경유) — D1b 해소**다(`docs/roadmap.md`
+§5 문항 6). skill 쪽 재설계는 아직 착수 전이라, 이 후처리에서 devDependency
+추가 단계를 없애고 vite 설정 배선만 남기는 작업은 maintainer 결정
+대기다(`docs/release.md` §7b)). `--devtools`류
 옵션으로 upstream이 직접 배선을 제공하면 이 후처리를 줄일 수 있지만, 이건
 harness 쪽 고유 요구사항 성격이 강해 upstream이 채택하지 않아도 문제
 없다. PR로 올리기보다는 논의 차원에서만 언급하는 편을 권장한다.
@@ -175,6 +176,23 @@ harness 쪽 고유 요구사항 성격이 강해 upstream이 채택하지 않아
 
 **기존 upstream 이슈와의 관계**: 없음(신규, harness#58에서 처음 관측).
 
+**추가 관측(2026-08-07, D1b CLI 자동 설치 실증에서 재확인)**
+
+`create-ait-app@0.2.3`으로 devtools 자동 배선(D1b) 실증을 수행하는 과정에서
+같은 게이트가 다시 걸렸는데, 이번에는 스캐폴드 자체가 아니라 `ait init`이
+devtools 배선 뒤 실행하는 **내부** `pnpm install`에서 발생했다 —
+`cloudflared@0.7.1`(devtools가 tunnel용으로 끌어옴)이
+`ERR_PNPM_IGNORED_BUILDS`를 내며 그 install을 중단시켰다. 위 harness#58
+관측과 원인은 같지만(협의 `allowBuilds` 목록에 `cloudflared` 부재), 증상은
+더 나쁘다 — **`ait init`은 이 실패를 삼키고 "완료"로 끝난다.** 사용자
+입장에서는 스캐폴드가 성공한 것처럼 보이지만 실제로는 `node_modules`가
+비어 있거나 불완전한 상태로 남고, `pnpm-workspace.yaml`의
+`allowBuilds.cloudflared`를 `true`로 고친 뒤 `pnpm install`을 수동으로
+재실행해야 정상 상태가 된다. 위 제안(협의 `allowBuilds` 목록에 cloudflared
+포함)이 이 경로에도 그대로 적용되지만, 여기서는 한 가지가 더 필요하다 —
+`ait init`이 내부 install 실패를 삼키지 않고 종료 코드·안내 메시지로
+드러내는 것(현재는 "완료" 출력과 실제 설치 상태가 어긋난다).
+
 ## 해소 확인됨 — 중복 PR 방지용
 
 아래 항목은 harness#6 gap 분석 당시(v0.1.3 기준) 유효했던 제안이었으나,
@@ -203,7 +221,7 @@ v0.2.0/v0.2.1 재작성 또는 별도 PR로 이미 upstream에서 해소됐다. 
 |---|---|---|
 | 산출물 형상 버전 가드(구/신 config 파일명으로 0.1.x/0.2.x 판별 후 불일치 시 중단) | web-framework 버전 드리프트로 산출물이 기대와 달라졌을 때 조용히 진행하지 않고 명시적으로 멈춤 | **유지 + 판정 반전** — `granite.config.ts` 존재 판정에서 `apps-in-toss.config.ts` + `package.json`의 `createAitApp` 메타데이터 존재 판정으로 뒤집었다. 가드 패턴 자체는 그대로. 제안 1(버전 채널 옵션)이 upstream에 수용되면 사후 감지 자체가 다시 불필요해질 수 있다는 전망은 여전히 유효 |
 | 후처리 A — `granite`/`ait` bin 검증 및 web-framework 버전 되돌림 | 스캐폴드 후 bin이 없거나 버전이 어긋나면 web-framework를 알려진 안정 버전(2.x)으로 되돌림 | **삭제** — 0.2.x 산출물은 애초에 `ait` bin만 제공하고 `granite` bin이 없으므로, 이 검사를 그대로 두면 오탐으로 정본 3.x 산출물을 2.x로 강등해 버리는 활성 버그였다. `node_modules/.bin/ait` 존재 확인 한 줄로 대체했고, web-framework를 2.x로 강등하는 명령은 어떤 형태로도 남기지 않았다 |
-| 후처리 B — devtools unplugin 배선(vite.config 확장 등) | devtools devDependency 추가 및 vite 설정에 플러그인 삽입을 skill이 직접 수행 | **유지** — 배선 자체는 그대로 두되, `unmet peer @apps-in-toss/web-framework` 경고(devtools peer가 `<3.0.0`)와 wf 3.x 네임스페이스 API mock 부재 경고를 skill·완료 안내에 추가했다. "devtools/mock SDK 배선 옵션" 참고 항목을 upstream이 채택하면 향후 축소 여지는 남아 있다. **전환 예정 note**: devtools 배포 모델은 "wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시 → CLI가 devDependency로 자동 설치"(wf 패키지 무변경 — transitive 아님)로 재정의 확정됐고 공개 npm 발행도 완료됐다(`3.0.2`, 2026-08-04, `docs/roadmap.md` §5 문항 6) — CLI 자동 설치 실증(D1b)이 끝나면 이 후처리에서 devDependency 추가 단계는 사라지고 vite 설정 배선만 남는다 |
+| 후처리 B — devtools unplugin 배선(vite.config 확장 등) | devtools devDependency 추가 및 vite 설정에 플러그인 삽입을 skill이 직접 수행 | **유지** — 배선 자체는 그대로 두되, `unmet peer @apps-in-toss/web-framework` 경고(devtools peer가 `<3.0.0`)와 wf 3.x 네임스페이스 API mock 부재 경고를 skill·완료 안내에 추가했다. "devtools/mock SDK 배선 옵션" 참고 항목을 upstream이 채택하면 향후 축소 여지는 남아 있다. **전환 예정 note**: devtools 배포 모델은 "wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시 → CLI가 devDependency로 자동 설치"(wf 패키지 무변경 — transitive 아님)로 재정의 확정됐고 공개 npm 발행도 완료됐다(`3.0.2`, 2026-08-04, `docs/roadmap.md` §5 문항 6) — CLI 자동 설치 실증도 완료됐다(2026-08-07, 미러 registry 경유 — D1b 해소). skill 재설계(이 후처리에서 devDependency 추가 단계를 없애고 vite 설정 배선만 남기는 것)는 아직 착수 전이며 착수 여부·시점은 maintainer 결정이다(`docs/release.md` §7b) |
 | 후처리 C — `.gitignore` 생성/보강 | 스캐폴드 산출물에 `.gitignore`가 없거나 불완전할 때 채워 넣음 | **축소** — 0.2.x는 `.gitignore`가 이미 존재하므로(create-vite 경로 · TDS `_gitignore` rename 경로 모두), 생성이 아니라 `*.ait` 한 줄이 없을 때만 append하는 형태로 줄였다 |
 | 후처리 D — `{{TOKEN}}` placeholder 복구 | `--sample` 미지정 시 남는 미치환 토큰을 감지해 복구 | **삭제** — 0.2.x는 base가 순정 create-vite로 바뀌어 미치환 토큰이 구조적으로 발생하지 않는다(실측 grep 0건). 채점(`hasUnsubstitutedToken`)은 회귀 안전망으로만 남겼다 |
 | `create-ait-app@0.1.3` 명시 핀 | `@latest` 사용 시 dist-tag 승격으로 조용히 깨지는 걸 막기 위한 고정 | **`@0.2.1`로 이관**(핀 유지 정책 자체는 불변) — 제안 2(Release Notes/CHANGELOG 정비)가 수용되면 breaking change를 사전에 파악할 수 있어 다음 핀 승급 판단이 쉬워지지만, 이번 이관은 그 수용을 기다리지 않고 공개 registry 실측(latest=0.2.1)만으로 진행했다 |
