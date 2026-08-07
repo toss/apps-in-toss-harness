@@ -42,7 +42,10 @@ codex plugin add ait@apps-in-toss
 codex mcp login apps-in-toss-console
 ```
 
-**Claude Code와 다른 점**: `/ait:<verb>` 슬래시 명령 네임스페이스는 Codex에 그대로 오지 않습니다. Codex는 플러그인의 명령을 skill로 자동 변환하는데, 본문에서 `$ARGUMENTS` 치환을 쓰는 `new`·`plan` 두 개는 이 변환에서 빠집니다. 다만 두 명령의 실체인 `new-miniapp`·`plan` skill 자체는 설치되므로, 슬래시 명령 대신 자연어로 요청하면(예: "새 미니앱 my-app을 만들어 줘") 같은 절차를 탑니다.
+**Claude Code와 다른 점**이 둘 있습니다.
+
+- `/ait:<verb>` 슬래시 명령 네임스페이스는 Codex에 그대로 오지 않습니다. Codex는 플러그인의 명령을 skill로 자동 변환하는데, 본문에서 `$ARGUMENTS` 치환을 쓰는 `new`·`plan` 두 개는 이 변환에서 빠집니다. 다만 두 명령의 실체인 `new-miniapp`·`plan` skill 자체는 설치되므로, 슬래시 명령 대신 자연어로 요청하면(예: "새 미니앱 my-app을 만들어 줘") 같은 절차를 탑니다.
+- **디버그 배선은 Claude Code 전용 메커니즘에 기댑니다.** `setup-debugger`는 프로젝트 scope `.mcp.json`에 MCP를 배선하고, `debug` skill의 on-device attach 절은 백그라운드 실행·`/mcp` 자동 시작을 전제합니다 — 둘 다 Claude Code 고유라 Codex에서는 그대로 동작하지 않습니다(각 skill의 `adapter-note`에 명시). scaffold·개발·문서 조회·콘솔 등록/업로드는 Codex에서도 그대로 됩니다.
 
 플러그인 없이 **MCP 서버만** 쓰고 싶다면 직접 등록할 수도 있습니다.
 
