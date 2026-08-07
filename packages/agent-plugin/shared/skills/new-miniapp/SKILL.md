@@ -73,24 +73,32 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   (`"--template과 --tds는 함께 사용할 수 없어요."`, `assertNonInteractiveArgs`
   실측). `--tds`는 **단독**으로 지정한다.
 
-  > **알려진 실패(실측 2026-08-03, 3/3 재현)**: 일반 `--install` 경로의
-  > `--tds`는 **항상 실패한다**. TDS 템플릿이 끌어오는 `vite@6.4.3`(→
-  > `esbuild@0.25.12`)가 pnpm 11에서 `ERR_PNPM_IGNORED_BUILDS`를 내고,
-  > **CLI가 실패 시 생성 디렉터리를 통째로 삭제한다**(`--template react-ts`는
-  > `vite@8.2.0`을 받아 같은 문제가 없다). 미리 `pnpm-workspace.yaml`을
-  > 만들어 두는 우회도 "디렉터리가 이미 있고 비어있지 않다"로 거부돼 무효다
-  > (실측 확인). 아래 §2-1의 대안 절차(`--skip-install`)로 우회한다. CLI
-  > `--help`도 "에이전트는 TDS를 충분히 활용하지 못하므로, 사용자에게 TDS
-  > 사용을 비권장한다고 안내해 주세요"라고 명시한다 — 사용자가 TDS를 꼭
-  > 요구하는 경우가 아니면 `--template`(기본값)을 권한다.
+  > **알려진 실패(실측 2026-08-03, 3/3 재현)**: `--skip-install` 없이 CLI
+  > 내장 install까지 한 번에 하는 호출의 `--tds`는 **항상 실패한다**. TDS
+  > 템플릿이 끌어오는 `vite@6.4.3`(→ `esbuild@0.25.12`)가 pnpm 11에서
+  > `ERR_PNPM_IGNORED_BUILDS`를 내고, **CLI가 실패 시 생성 디렉터리를 통째로
+  > 삭제한다**(`--template react-ts`는 당시 `vite@8.2.0`을 받아 이 특정
+  > 문제는 없었다 — 단, `--template` 경로도 다른 원인으로 같은 종류의
+  > 실패를 만날 수 있다는 건 이후 확인됐다, 아래 §2 참조). 미리
+  > `pnpm-workspace.yaml`을 만들어 두는 우회도 "디렉터리가 이미 있고
+  > 비어있지 않다"로 거부돼 무효다(실측 확인). Step 2가 전 경로 기본으로
+  > `--skip-install`을 쓰므로(harness#90 항목2) 아래 정본 명령을 그대로
+  > 따르면 되고, 별도 우회 절차는 필요 없다. CLI `--help`도 "에이전트는
+  > TDS를 충분히 활용하지 못하므로, 사용자에게 TDS 사용을 비권장한다고
+  > 안내해 주세요"라고 명시한다 — 사용자가 TDS를 꼭 요구하는 경우가 아니면
+  > `--template`(기본값)을 권한다.
 - `--sample <ids>` (선택): `iap`, `iaa` 콤마 구분 — 인앱결제·인앱광고 예제
   페이지를 scaffold에 포함.
 - `--local` (선택): create-ait-app을 쓰지 않고 plugin 내장 `react-vite`
   템플릿을 복사한다. 오프라인/네트워크 제한 환경 폴백 — wf 2.x 기반
   **구세대 폴백**이다(정본 3.x와 형상이 다르다, 상세는
   `references/local-template.md`). 이 경로에서만 `--no-install`을 지원한다.
-  create-ait-app 0.2.x는 `--skip-install`을 지원하지만, 이 skill은 install까지
-  끝난 상태를 station 1의 완료 조건으로 삼으므로 정본 호출에서는 쓰지 않는다.
+  정본 호출도 이제 create-ait-app의 `--skip-install` + 이 skill이 뒤이어
+  실행하는 명시적 `pnpm install`을 쓴다(harness#90 항목2, 2026-08-07 실측)
+  — station 1의 완료 조건(install까지 끝난 상태)은 그 명시적 install
+  단계로 달성된다. `--local` 경로는 그 두 단계를 하나로 합친
+  `--no-install` 플래그만 지원한다(react-vite 템플릿 고유 옵션 —
+  create-ait-app의 `--skip-install`과는 별개).
 - `--no-devtools` (선택): 후처리 B(devtools 배선)를 건너뛴다 — mock 없이
   실기기/샌드박스 위주로 개발하려는 경우. 나중에 필요해지면
   `/ait:inject-devtools`로 언제든 배선할 수 있다.
@@ -113,12 +121,14 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   지원하지만(`--pm <name>`), 이 skill은 후속 `pnpm dev`/`pnpm --dir` 흐름과
   통일하려고 항상 `--pm pnpm`으로 호출한다). **Step 0이 실행 전 자동으로
   검사·안내**하므로 수동 확인 불필요.
-- **인터넷 필요** — `pnpm dlx`가 create-ait-app을 받고, CLI가 내부적으로
-  `pnpm install` **1회**를 실행한다(`@apps-in-toss/web-framework`는
+- **인터넷 필요** — `pnpm dlx`가 create-ait-app을 받아 파일만 생성하고,
+  install은 이 skill이 Step 2에서 별도 명령으로 실행한다(`--skip-install`
+  기본, harness#90 항목2, 2026-08-07 실측). `@apps-in-toss/web-framework`는
   `initializeAitProject`가 `package.json`의 `dependencies`에 `"latest"`
-  리터럴로 미리 기록해두고, 그 설치가 `pnpm install` 한 번에 함께 해석된다 —
-  해석되는 실제 버전은 설치 시점의 registry `latest`에 따라 달라진다). 오프라인이면
-  `--local` 폴백.
+  리터럴로 미리 기록해두므로, 해석되는 실제 버전은 그 install 시점의
+  registry `latest`에 따라 달라진다(harness#90 항목1 — 공개 registry
+  `latest`가 3.x 출시 이후에도 한동안 2.10.8을 계속 가리키는 어긋남이
+  확인됨, 근본 수정은 upstream 조율 대기). 오프라인이면 `--local` 폴백.
 
 > 이 skill은 콘솔 인증을 **요구하지 않는다**. 로그인 없이 빈 프로젝트만
 > 만들고 끝낸다. 콘솔 등록은 사용자가 준비됐을 때 별도로.
@@ -141,9 +151,23 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 
 ### 1. 입력 정규화 + 충돌 검사
 
-- `<app-name>`이 비었으면 되묻는다 (예: `"앱 이름을 알려주세요 (예: my-toss-app)"`).
+- `<app-name>`이 비었으면 되묻는다 (예: `"앱 이름을 알려주세요 (예: my-mini-app)"`).
 - `package_name = slugify(app_name)` — 소문자 → 비-alphanumeric을 `-`로 →
   연속 `-` 압축 → 양 끝 trim. 빈 문자열/숫자 시작이면 npm 호환 이름을 되묻는다.
+- 콘솔 등록 시 `appName`(=`package_name`)에는 별도 규칙이 있다고
+  보고됐다(harness#90 항목3, 2026-08-07 — 규칙 자체를 이 skill이 콘솔
+  공식 문서로 직접 검증한 것은 아니다): 영문 소문자·숫자·하이픈, 63자
+  이하, `toss` 포함 금지(`apps-in-toss`도 `toss`를 부분 문자열로
+  포함하므로 `/toss/` 정규식 하나로 충분하다). create-ait-app도 이 skill의
+  slugify도 이 규칙을 검사하지 않아, 위반 시 콘솔 등록(`miniapp_create`)
+  단계에서야 거부된다는 보고다 — scaffold를 시작하기 전에 여기서 먼저
+  막는다. `package_name`이 63자를 넘거나 `toss`를 포함하면 scaffold를
+  시작하지 않고 되묻는다:
+
+  ```
+  package_name이 콘솔 appName 규칙(영문 소문자·숫자·하이픈, 63자 이하,
+  "toss" 포함 불가)을 위반합니다 — 다른 이름을 알려주세요.
+  ```
 - 대상은 **현재 cwd 하위 `<package_name>/`**. 이미 존재하고 비어있지 않으면 거부:
 
   ```
@@ -159,8 +183,17 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 
 ### 2. scaffold — create-ait-app 비대화형 호출
 
+scaffold(파일 생성)와 install(의존성 설치)을 **두 명령으로 분리**해서
+실행한다 — `--skip-install`로 먼저 파일만 만들고, install은 이 skill이
+별도로 이어받는다. `--template`·`--tds` 어느 경로든 공통이다(harness#90
+항목2, 2026-08-07 실측: `--template` 경로도 scaffold 내장 install에서
+`ERR_PNPM_IGNORED_BUILDS`를 만나면 CLI가 생성 디렉터리를 통째로 삭제해
+버려 이후 우회 절차(§2-1)를 적용할 대상 자체가 사라진다 — 예전엔 `--tds`
+고유 위험이라고 봤지만 이제는 전 경로 공통 위험이다):
+
 ```bash
-pnpm dlx create-ait-app@0.2.1 <package_name> --inline --pm pnpm (--template <template> | --tds) [--sample iap,iaa]
+pnpm dlx create-ait-app@0.2.1 <package_name> --inline --pm pnpm (--template <template> | --tds) [--sample iap,iaa] --skip-install
+pnpm --dir ./<package_name> install
 ```
 
 > `@latest`가 아니라 **`@0.2.1`로 명시 핀**한다 — 산출물 형상
@@ -175,9 +208,11 @@ pnpm dlx create-ait-app@0.2.1 <package_name> --inline --pm pnpm (--template <tem
 > 환경에서는 버전 판단을 공개 미러로 교차 확인하고, 일회용 `.npmrc` registry
 > override나 `--local` 폴백으로 우회한다(호스트명을 하드코드하지 않는다).
 >
-> **`--tds`를 쓸 때는 위 명령을 그대로 쓰지 않는다** — 그대로 쓰면 3/3
-> 재현되는 실패다(알려진 실패는 위 `--tds` 입력 절 참조). 아래 §2-1의
-> `--skip-install` 대안 절차를 따른다.
+> 첫 번째 명령(scaffold)의 완료 메시지(`✅ 프로젝트가 성공적으로
+> 생성되었습니다!`)는 **파일 생성 성공**만 의미한다 — install은 두 번째
+> 명령이 별도로 수행하므로, 그 명령이 `ERR_PNPM_IGNORED_BUILDS`로 실패하면
+> 아래 §2-1 절차로 넘어간다(디렉터리는 이미 살아있으므로 그대로 적용
+> 가능하다).
 
 호출 규칙 (create-ait-app v0.2.1 소스 실측 근거):
 
@@ -212,14 +247,17 @@ CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니�
   그대로 해석되므로 같은 명령이라도 시점마다 다른 버전이 설치될 수 있다
   (실측: 공개 `latest`가 `3.0.1`인 시점에 `3.0.0`이 설치됨). 검증·측정
   맥락에서는 실제로 해석된 버전을 `pnpm --dir ./<package_name> ls
-  @apps-in-toss/web-framework`로 확인해 항상 함께 기록한다.
+  @apps-in-toss/web-framework`로 확인해 항상 함께 기록한다. 이 어긋남을
+  build 전에 잡는 게이트는 후처리 0(Step 3)의 major 확인이다 — 아래 그
+  절차를 반드시 거친다.
 - **온라인인데 특정 transitive dep만 `ERR_PNPM_FETCH_404`로 죽는 경우**
   (프록시/미러 registry가 일부 버전을 못 주는 환경 — 실측)는 `--local`도 같은
   vite 툴체인을 설치하다 같은 문제를 밟을 수 있다. 파일 복사는 설치 전에 이미
   끝나 있으므로, 생성된 디렉토리 루트에 `pnpm-workspace.yaml`을 만들어
-  `overrides`로 문제 패키지를 미러에 존재하는 인접 버전으로 고정한 뒤, CLI가
-  하려던 설치(`pnpm install` → `pnpm add @apps-in-toss/web-framework@latest`)를
-  수동으로 이어가는 회피를 안내한다.
+  `overrides`로 문제 패키지를 미러에 존재하는 인접 버전으로 고정한 뒤, Step 2의
+  두 번째 명령(`pnpm --dir ./<package_name> install`)을 이어서 재실행하는
+  회피를 안내한다(create-ait-app 0.2.1은 `pnpm add`를 실행하지 않는다 —
+  install은 이 명령 하나뿐이다).
 
   어느 인접 버전이 미러에 실재하는지는 후보 버전의 tarball URL을 `curl -I`로
   HEAD 요청해 200/404로 확인한다(실측: `baseline-browser-mapping@2.11.7`이
@@ -234,32 +272,31 @@ CLI가 완료 메시지(`✅ 프로젝트가 성공적으로 생성되었습니�
 
 pnpm 10부터 postinstall 스크립트가 있는 의존성을 기본 차단하며, pnpm 11에서는
 경고가 아닌 에러(`ERR_PNPM_IGNORED_BUILDS`)로 승격된다.
-Step 2(scaffold)·Step 4(devtools 배선) 각각의 `pnpm install`/`pnpm add`에서
-독립적으로 발생할 수 있다. create-ait-app 0.2.x는 스캐폴드 시점에
-`pnpm-workspace.yaml`을 `allowBuilds:\n  protobufjs: true`로 **이미 만들어
-둔다**(`configurePnpmInstallCompatibility` — 산출물 실측 확인: `--template
-react-ts`·`--tds` 둘 다 이 파일이 그 내용으로 생성된다) — 파일·키를 새로
-만드는 게 아니라 그 키 아래에 항목을 덧붙이는 것이다. 실측(2026-08-03,
-create-ait-app@0.2.1 + web-framework 3.0.0 + devtools 조합, `--template
-react-ts` 경로)으로는 **scaffold 자체의 install에서는 에러가 뜨지 않고**,
-devtools 추가(Step 4) 한 번에 `esbuild`·`cloudflared` 둘이 **같은
-`ERR_PNPM_IGNORED_BUILDS` 이벤트로 동시에** 떴다. 이 목록·발생 시점은
-**버전에 따라 달라지는 실측 예시**이지 고정 규칙이 아니다 — 실제로 뜬 패키지
-이름은 항상 에러 메시지에 나열되므로 그걸 근거로 삼는다(`--tds` 경로는 §2
-경고대로 scaffold 자체의 install에서 `esbuild` 하나로 이미 실패한다).
+Step 2(scaffold 뒤 install)·Step 4(devtools 배선) 각각의 `pnpm install`/
+`pnpm add`에서 독립적으로 발생할 수 있다. create-ait-app 0.2.x는 스캐폴드
+시점에 `pnpm-workspace.yaml`을 `allowBuilds:\n  protobufjs: true`로 **이미
+만들어 둔다**(`configurePnpmInstallCompatibility` — 산출물 실측 확인:
+`--template react-ts`·`--tds` 둘 다 이 파일이 그 내용으로 생성된다) —
+파일·키를 새로 만드는 게 아니라 그 키 아래에 항목을 덧붙이는 것이다.
 
-에러가 뜨면 이미 존재하는 `pnpm-workspace.yaml`의 `allowBuilds:` 아래에
-에러가 나열한 패키지 이름을 추가해야 설치가 재개된다. 이 skill은 non-TTY로
-실행되므로 **`Edit`로 `allowBuilds:` 아래에 에러가 나열한 패키지 이름을
-`true`로 직접 추가한 뒤 `pnpm install`을 재실행**한다:
+Step 2가 이제 전 경로(`--template`·`--tds` 공통)에서 `--skip-install` +
+별도 `pnpm install`이므로, 이 게이트는 그 별도 install 명령에서 만난다.
+절차는 하나다:
 
-```bash
-pnpm --dir ./<package_name> install
-```
+1. Step 2의 두 명령(scaffold `--skip-install` → `pnpm --dir ./<package_name>
+   install`)을 실행한다.
+2. install 명령이 `ERR_PNPM_IGNORED_BUILDS`로 실패하면, 이미 존재하는
+   `pnpm-workspace.yaml`의 `allowBuilds:` 아래에 **에러 메시지가 나열한
+   패키지 이름만** `Edit`로 `true`로 추가한다. 이 skill은 non-TTY로
+   실행되므로 `pnpm --dir ./<package_name> approve-builds`(체크박스 UI가
+   뜨는 대화형 명령)는 쓰지 않는다 — 세션이 멈춘다(사용자가 직접
+   터미널에서 승인하고 싶을 때만 안내용으로 남긴다). 그 뒤 재실행:
 
-(`pnpm --dir ./<package_name> approve-builds`는 체크박스 UI가 뜨는 대화형
-명령이라 이 skill 흐름에서는 쓰지 않는다 — 세션이 멈춘다. 사용자가 직접
-터미널에서 승인하고 싶을 때만 안내용으로 남긴다.)
+   ```bash
+   pnpm --dir ./<package_name> install
+   ```
+
+3. install이 에러 없이 끝날 때까지 2를 반복한다.
 
 에러 메시지에 없는 패키지를 임의로 allow하지 않는다 — 그 세션에서 실제로 막힌
 패키지만 승인한다. `cloudflared` 항목은 devtools README의
@@ -267,25 +304,17 @@ pnpm --dir ./<package_name> install
 절(harness#57)에 더 자세한 배경(38MB 바이너리, `onlyBuiltDependencies` vs
 `allowBuilds` 선택 기준)이 있다 — 필요하면 그쪽을 참조한다.
 
-**`--tds` 대안 절차(실측 2026-08-03, 검증 완료)**: `--tds`는 install까지
-한 번에 하는 일반 호출로는 위 게이트를 CLI 내부에서 만나 디렉터리째
-롤백된다 — 위 Edit-then-reinstall 절차는 대상 디렉터리가 존재해야 적용
-가능하므로 `--tds`에는 그대로 못 쓴다. `--skip-install`로 scaffold만
-먼저 수행해 디렉터리를 살려둔 뒤 install을 이 skill이 직접 이어받는다:
-
-```bash
-pnpm dlx create-ait-app@0.2.1 <package_name> --inline --pm pnpm --tds --skip-install [--sample iap,iaa]
-pnpm --dir ./<package_name> install
-```
-
-두 번째 명령이 `ERR_PNPM_IGNORED_BUILDS`(실측: `esbuild`)로 실패하면 위와
-같은 방식으로 `pnpm-workspace.yaml`의 `allowBuilds:` 아래에 에러가 나열한
-패키지를 `true`로 추가하고 `pnpm --dir ./<package_name> install`을
-재실행한다 — 이번엔 디렉터리가 이미 있으므로 절차가 그대로 적용된다. 이
-대안은 scaffold(빈 디렉터리에서 `--tds --skip-install`) → 실패한 install →
-`allowBuilds` 보강 → 재install 순서로 실측 성공을 확인했다(`apps-in-toss.config.ts`·
-`.gitignore`·`node_modules/.bin/ait` 모두 생성 확인). 정본 `--template` 경로는
-이 우회가 필요 없다 — CLI 내부 install 1회로 끝난다.
+**실측 이력**: `--tds`는 이 게이트를 가장 먼저·가장 확실하게 만났다(실측
+2026-08-03, 3/3 재현) — TDS 템플릿이 끌어오는 `vite@6.4.3`(→
+`esbuild@0.25.12`)가 원인이다(`--template react-ts`는 당시 `vite@8.2.0`을
+받아 이 문제가 없었다). 이후 `--template` 경로도 같은 게이트에 걸리는
+사례가 보고됐다(harness#90 항목2, 2026-08-07 실측) — npm의 `latest`
+dist-tag 어긋남(Step 3 major 가드 참조)으로 wf 2.x가 설치되면서 그쪽이
+끌어오는 React Native 툴체인 의존성(`@sentry/cli`·`@swc/core`·`esbuild`
+여러 버전)이 원인으로 보고됐다. 원인은 서로 다르지만(vite 6.x 대 wf 2.x
+RN 툴체인) 대응 절차는 같으므로, 이제는 두 경로 모두 위 절차를 그대로
+쓴다 — Step 2가 전 경로에서 `--skip-install`을 기본으로 쓰는 이유가
+이것이다.
 
 ### 3. 후처리 0 — 형상 가드 (산출물 형상 확인)
 
@@ -300,7 +329,9 @@ test -f ./<package_name>/apps-in-toss.config.ts && \
   echo "형상 일치(0.2.x)" || echo "형상 불일치"
 ```
 
-- **둘 다 통과하면** 형상 일치 — 후처리 B로 진행.
+- **둘 다 통과하면** 형상 파일 체크는 통과 — 아직 후처리 B로 넘어가지 않는다.
+  바로 아래 **wf major 확인 → `ait` bin 확인** 두 서브체크를 계속 이어서
+  수행하고, 그 셋을 모두 통과한 뒤에야 후처리 B로 진행한다.
 - **하나라도 실패하면** 아래 후처리 B·C를 진행하지 않고 즉시 중단한다. 사용자에게
   한 블록으로 보고하고 멈춘다:
 
@@ -310,9 +341,65 @@ test -f ./<package_name>/apps-in-toss.config.ts && \
   어긋났습니다. 이후 후처리를 진행하지 않고 여기서 중단합니다.
   ```
 
-같은 자리에서 `ait` bin 존재도 함께 확인한다 — wf 3.x는 `ait` bin만 제공하고
-(`granite` bin은 wf 2.x 전용), 이 확인이 없으면 이후 `pnpm build`/`ait build`가
-조용히 실패한 채로 후처리를 계속 진행하게 된다:
+**설치된 `@apps-in-toss/web-framework`의 major도 함께 확인한다** — 위 형상
+파일 체크만으로는 부족하다. npm의 `latest` dist-tag가 3.x 출시 이후에도
+한동안 2.10.8을 계속 가리키는 어긋남이 있어(harness#90 항목1, 2026-08-07
+실측 — harness가 직접 고칠 수 없는 upstream 문제, 근본 수정은 #6 축
+upstream 조율 대기) `package.json`의 `"latest"` 리터럴이 조용히 2.x를
+해석해 설치할 수 있고, 아래 `ait` bin 확인만으로는 이걸 잡지 못한다
+(2.10.8도 `ait` bin을 제공한다 — harness#90 실측):
+
+```bash
+node -p "require('./<package_name>/node_modules/@apps-in-toss/web-framework/package.json').version"
+```
+
+(pnpm의 direct dependency 심볼릭 링크 구조를 전제한 경로다 — 모노레포·
+virtual store 등 node_modules 형상이 다른 환경에서는 이 경로도 깨질 수
+있다. 아래 devtools `sdkVersion` auto-detect 항목과 같은 부류의 제약이다.)
+
+major가 `3`이 아니면(예: `2.10.8`) **여기서 사용자 응답을 기다리지 않고
+아래 세 단계를 지금 바로 직접 수행한다** — 이건 사용자에게 읽어주고 끝내는
+안내문이 아니라 에이전트가 실행하는 복구 절차다:
+
+1. `./<package_name>/package.json`을 `Edit`으로 열어
+   `"@apps-in-toss/web-framework": "latest"`를 `"@apps-in-toss/web-framework":
+   "^3.0.2"`로 고친다.
+2. 다음 명령을 실행한다:
+
+   ```bash
+   pnpm --dir ./<package_name> install
+   ```
+
+3. 위 major 확인 커맨드(`node -p "require(...).version"`)를 다시 실행해 `3.`으로
+   시작하는지 확인한다. **여기서 3.x가 확인되기 전에는 아래 `ait` bin 확인
+   이하로 넘어가지 않는다** — 재확인 없이 다음 단계로 진행하면 이 가드
+   자체가 없는 것과 같다.
+
+세 단계를 마친 뒤, 사용자에게는 결과만 한 블록으로 보고한다:
+
+```
+설치된 @apps-in-toss/web-framework가 <원래 출력된 버전>(2.x)이었습니다 — npm의
+latest dist-tag가 3.x 출시 이후에도 한동안 2.10.8을 가리키는 알려진
+어긋남입니다(harness#90). package.json을 "^3.0.2"로 고치고 재설치해 3.x
+설치를 확인했습니다.
+```
+
+재설치 후에도 major가 `3`이 아니면(예: 재설치가 여전히 2.x를 해석하는 등) 더
+이상 자동 재시도하지 않고 중단해, 재확인 결과를 그대로 사용자에게 보고한다.
+
+major가 `3`이면 다음(`ait` bin 확인)으로 진행한다. 이 major 확인이 1차
+게이트다 — 아래 `ait` bin 확인은 이 major 확인을 통과한 뒤의 보조 확인일
+뿐, 단독으로는 2.x/3.x를 구분하지 못한다(위에서 확인). 이 우회는 "하지
+말아야 할 것"의 "`@apps-in-toss/web-framework`를 2.x로 강등하는 명령
+금지"와 모순되지 않는다 — 여기서 하는 건 강등이 아니라, 이미 잘못 설치된
+2.x를 정본 3.x로 승격하는 것이다.
+
+위 major 확인을 통과한 뒤, 같은 자리에서 `ait` bin 존재도 보조로
+확인한다 — 이 확인 단독으로는 2.x/3.x를 구분하지 못하지만(2.10.8도 `ait`
+bin을 제공한다 — harness#90 실측; `granite` bin은 wf 2.x 전용), major
+확인 이후엔 설치 과정의 다른 이상으로 bin이 안 생겼는지 잡아주는 역할을
+한다. 이 확인이 없으면 이후 `pnpm build`/`ait build`가 조용히 실패한 채로
+후처리를 계속 진행하게 된다:
 
 ```bash
 ls ./<package_name>/node_modules/.bin/ait
