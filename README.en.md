@@ -42,7 +42,10 @@ Installing brings all 8 skills plus both MCP servers — the MCP servers are reg
 codex mcp login apps-in-toss-console
 ```
 
-**What differs from Claude Code**: the `/ait:<verb>` slash-command namespace does not carry over. Codex auto-migrates a plugin's commands into skills, but `new` and `plan` — the two whose bodies rely on `$ARGUMENTS` substitution — are dropped by that migration. The skills behind them (`new-miniapp`, `plan`) are still installed, so ask in plain language instead (e.g. "scaffold a new mini-app called my-app") and you get the same procedure.
+**Two things differ from Claude Code.**
+
+- The `/ait:<verb>` slash-command namespace does not carry over. Codex auto-migrates a plugin's commands into skills, but `new` and `plan` — the two whose bodies rely on `$ARGUMENTS` substitution — are dropped by that migration. The skills behind them (`new-miniapp`, `plan`) are still installed, so ask in plain language instead (e.g. "scaffold a new mini-app called my-app") and you get the same procedure.
+- **The debug wiring depends on Claude Code-only mechanisms.** `setup-debugger` registers the MCP server in a project-scope `.mcp.json`, and the on-device attach section of the `debug` skill assumes background execution and `/mcp` auto-start — both are Claude Code-specific and won't work as written in Codex (each skill's `adapter-note` says so). Scaffolding, development, docs lookup, and console registration/upload all work from Codex.
 
 If you want **only the MCP servers** without the plugin, register them directly.
 
