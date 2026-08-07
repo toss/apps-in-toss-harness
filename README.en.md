@@ -12,16 +12,37 @@ We hard-copied the tools that used to be scattered across the `apps-in-toss-comm
 
 You'll need Node 24+, pnpm 11.17.0 (pinned via the root `package.json`'s `packageManager`), and an Apps in Toss console account.
 
-From Claude Code, enter the harness with these two commands:
+From Claude Code, run these two commands in order to enter the harness. Copy and paste them one line at a time.
 
 ```
 /plugin marketplace add toss/apps-in-toss-harness
+```
+
+```
 /plugin install ait@apps-in-toss
 ```
 
 Right after installing, authorize `apps-in-toss-console` once via OAuth from `/mcp`. The docs MCP (`apps-in-toss-docs`) connects automatically, no auth required. From there, run `/ait:welcome` to see the entry map, or jump straight to `/ait:new my-app` to scaffold your first mini-app.
 
-Claude Code is the first-class target for now. Support for other agents such as Codex is planned but not started — this repo doesn't yet ship a Codex-specific manifest.
+### Using it from Codex
+
+Claude Code is the first-class target for now — the `/ait:*` slash commands and skills use the Claude Code plugin format, so they don't work in other agents yet, and this repo ships no Codex-specific manifest. That said, **both MCP servers are plain HTTP MCP, so you can register them in Codex as-is**. Docs lookup and console registration/upload work from Codex too; only the scaffold and debug automation is missing.
+
+```
+codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
+```
+
+```
+codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
+```
+
+The console MCP needs a one-time OAuth authorization.
+
+```
+codex mcp login apps-in-toss-console
+```
+
+Don't drop `--oauth-client-id mcp-gateway` — the auth server doesn't support dynamic client registration (DCR), so a static client id is required. Check the result with `codex mcp list` (the docs MCP shows `Auth` as `Unsupported` since it needs none; the console MCP shows `Not logged in` until you authorize). These commands were verified against codex-cli `0.146.0`.
 
 ## Development journey
 
@@ -56,7 +77,7 @@ Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands 
 
 ## MCP servers
 
-Installing the plugin registers two MCP servers.
+Installing the plugin registers two MCP servers. Outside Claude Code there's no plugin, so you register the same two servers yourself — see [Using it from Codex](#using-it-from-codex) above for the Codex steps.
 
 | Server | Auth | Key tools |
 |---|---|---|
