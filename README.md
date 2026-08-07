@@ -12,16 +12,37 @@ AI 코딩 에이전트(Claude Code 등) 안에서, 빈 디렉토리부터 앱인
 
 준비물은 Node 24 이상, pnpm 11.17.0(루트 `package.json`의 `packageManager`로 고정), 그리고 앱인토스 콘솔 계정입니다.
 
-Claude Code에서 아래 두 명령으로 harness에 진입합니다.
+Claude Code에서 아래 두 명령을 차례로 실행해 harness에 진입합니다. 한 줄씩 복사해 붙여넣으면 됩니다.
 
 ```
 /plugin marketplace add toss/apps-in-toss-harness
+```
+
+```
 /plugin install ait@apps-in-toss
 ```
 
 설치 직후 `/mcp`에서 `apps-in-toss-console`을 한 번 인가(OAuth)합니다. 문서 MCP(`apps-in-toss-docs`)는 인증 없이 자동으로 연결됩니다. 그다음 `/ait:welcome`으로 진입 지도를 보거나, 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수 있습니다.
 
-지금은 Claude Code가 1급 지원 대상입니다. Codex 등 다른 에이전트 지원은 계획 단계이며, 이 repo에 Codex 전용 manifest는 아직 없습니다.
+### Codex에서 쓰기
+
+지금은 Claude Code가 1급 지원 대상입니다 — `/ait:*` 슬래시 명령과 skill은 Claude Code 플러그인 포맷이라 다른 에이전트에서는 아직 동작하지 않고, Codex 전용 manifest도 이 repo에 없습니다. 다만 **MCP 서버 두 개는 표준 HTTP MCP라 Codex에도 그대로 등록**할 수 있습니다. 문서 조회와 콘솔 등록·업로드는 Codex에서도 쓸 수 있고, scaffold·debug 절차 자동화만 빠집니다.
+
+```
+codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
+```
+
+```
+codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
+```
+
+콘솔 MCP는 OAuth 인가를 한 번 거쳐야 합니다.
+
+```
+codex mcp login apps-in-toss-console
+```
+
+`--oauth-client-id mcp-gateway`는 생략하면 안 됩니다 — 인증 서버가 동적 클라이언트 등록(DCR)을 지원하지 않아 정적 client id가 필요합니다. 등록 결과는 `codex mcp list`로 확인합니다(문서 MCP는 무인증이라 `Auth`가 `Unsupported`, 콘솔 MCP는 인가 전까지 `Not logged in`으로 표시됩니다). 위 명령은 codex-cli `0.146.0`에서 확인했습니다.
 
 ## 개발 여정
 
@@ -56,7 +77,7 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 
 ## MCP 서버
 
-플러그인을 설치하면 두 MCP 서버가 함께 등록됩니다.
+플러그인을 설치하면 두 MCP 서버가 함께 등록됩니다. Claude Code 밖에서는 플러그인이 없으므로 같은 두 서버를 직접 등록합니다 — Codex 절차는 위 [Codex에서 쓰기](#codex에서-쓰기)를 참고하세요.
 
 | 서버 | 인증 | 주요 도구 |
 |---|---|---|
