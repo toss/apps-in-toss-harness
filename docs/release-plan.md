@@ -54,11 +54,15 @@ cli·web-framework·devtools 동일 버전 — `3.0.2`가 2026-08-04 첫 발행)
       `packages/devtools/docs/pages-deploy-verification.md`는 packages/devtools
       제거(C4, 2026-08-05)와 함께 트리에서 없어졌다 — git history(커밋 `b5515ae`
       이전) 참조. **override에는 launcher의 base URL만 넣는다** — 회전하는
-      TOTP `at=`가 실린 attach deep-link 전체를 붙여넣지 않는다.
-- [ ] 위가 통과한 뒤에만 `LAUNCHER_URL` 상수 **2곳을 동시에** 교체 —
-      `packages/devtools/src/shared/launcher-url.ts`,
-      `packages/debugger/src/mcp/deeplink.ts`. 두 패키지가 값-복제 관계라 하나만 바꾸면
-      devtools MCP와 debugger MCP가 서로 다른 launcher를 가리키는 분열이 생긴다.
+      TOTP `at=`가 실린 attach deep-link 전체를 붙여넣지 않는다. 이 항목은 아직
+      미완료다 — 다만 아래 `LAUNCHER_URL` 교체는 이 항목을 하드 선행조건으로 두지
+      않고 2026-08-05에 이미 먼저 실행됐다(CLAUDE.md "public flip 전 점검" 4번
+      항목).
+- [x] `LAUNCHER_URL` 상수 교체 — **완료(2026-08-05)**. 애초 계획은 devtools·debugger
+      2곳 동시 교체였으나, packages/devtools 제거(C4, 2026-08-05)로 정본이
+      `packages/debugger/src/mcp/deeplink.ts` 1곳만 남아 그 1곳이
+      `https://toss.github.io/apps-in-toss-harness/launcher/`를 가리키도록
+      전환됐다. `AIT_LAUNCHER_URL` env override는 그대로 유지.
 - [ ] 이어서 테스트 리터럴 · i18n 문자열(+`build:dashboard-html` 재생성) ·
       `validate-plugin.mjs`의 `A6_ALLOWLIST_RES` 정규식 · 남은 문서 일괄 교체.
       **allowlist 정규식을 빠뜨리면 새 URL이 오히려 "커뮤니티 잔재"로 오탐돼 CI가 실패한다.**
@@ -120,14 +124,14 @@ URL로 직접 설치**하는 방식이다. 이 방식은 git clone 설치가 막
 
 ### 순서
 
-- [ ] `.github/workflows/release.yml` 종착 스텝을 `npm publish`에서
-      `gh release create`(에셋 첨부)로 교체 — OIDC·provenance·`dist_tag`
-      화이트리스트/`latest` 거부 로직 제거. `workflow_dispatch` 전용·dry-run
+- [x] `.github/workflows/release.yml` 종착 스텝을 `npm publish`에서
+      `gh release create`(에셋 첨부)로 교체 — **완료**. OIDC·provenance·`dist_tag`
+      화이트리스트/`latest` 거부 로직은 제거됐다. `workflow_dispatch` 전용·dry-run
       기본값·main 브랜치 강제·gate(lint/build/typecheck/test)는 유지
       (`.github/workflows/release.yml`, #16). 안전장치는
       [`docs/release.md`](./release.md) §4 참고 — dry-run은 fail-closed이고
       실제 배포는 `main`에서만 허용된다.
-- [ ] `pnpm pack` 산출물 검증 — `dist` 포함, `bin`·`exports`가 실존 파일을
+- [x] `pnpm pack` 산출물 검증 — **완료**. `dist` 포함, `bin`·`exports`가 실존 파일을
       가리킴, README 포함, 시크릿·내부 경로 미포함. **발행 manifest phantom
       의존은 해소됨(#18)** — `pnpm pack`이 `workspace:`를 `devDependencies`
       에서도 실제 버전으로 치환해 `debug-console`·`debugger` manifest에
@@ -136,17 +140,27 @@ URL로 직접 설치**하는 방식이다. 이 방식은 git clone 설치가 막
       강등해(옵션 4, 2026-08-01) 그 devDependency 항목 자체를 없앴다 — 자세한
       결정 경위·구조는 [`docs/release.md`](./release.md) "internal-protocol
       phantom devDependency" 절 참고. `scripts/check-pack-manifests.mjs`
-      (baseline 비어 있음)가 CI에서 회귀를 잡는다 — npm 레지스트리의 사전
-      검증이 없는 URL 설치 모델에서는 이 게이트가 더 load-bearing하다.
-- [ ] prerelease 태그로 1개 패키지(`debug-console` 권장) → **실제 설치
-      실증**(`curl -sI` 200 + `npx`/`pnpm add`) → 나머지 1개(`debugger`)
-- [ ] 검증 후 정식 release로 전환
-- [ ] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip
-      (#10), 정규화기의 `scope-install`·`scope-external-target` 차단 해제.
+      (baseline 비어 있음)가 CI에 배선돼(`check:pack-manifests`) 회귀를
+      잡는다 — npm 레지스트리의 사전 검증이 없는 URL 설치 모델에서는 이
+      게이트가 더 load-bearing하다.
+- [x] prerelease 태그로 1개 패키지(`debug-console` 권장) → **실제 설치
+      실증**(`curl -sI` 200 + `npx`/`pnpm add`) → 나머지 1개(`debugger`) —
+      **완료**. 최종적으로는 prerelease를 거치지 않고 정식 release 2건이
+      직접 발행됐다(아래 항목 참고) — 순서는 계획과 달랐으나 설치 실증 자체는
+      완료.
+- [x] 검증 후 정식 release로 전환 — **완료(2026-08-06)**. `debugger-v0.2.0`
+      (2026-08-06T13:01:45Z)·`debug-console-v0.1.4`(2026-08-06T13:03:12Z)
+      2건이 정식(non-prerelease) release로 발행됨(REST 조회 확인).
+- [x] skill·템플릿의 설치·실행·import 문자열을 `@apps-in-toss/*`로 flip
+      (#10), 정규화기의 `scope-install`·`scope-external-target` 차단 해제 —
+      **완료**(PR #85 Release URL flip, PR #88 devtools 스코프 flip). skill·
+      템플릿 전수 grep 결과 살아있는 `@ait-co/*` 설치 문자열 0건.
       **URL은 설치 스펙에만 쓰고, import specifier는 정식 스코프 이름을
       그대로 쓴다**(`docs/release.md` §7a) — 이 비대칭을 놓치면 import까지
       URL로 잘못 바꾸게 된다.
-- [ ] 패키지 README의 "미배포" 문구 제거
+- [x] 패키지 README의 "미배포" 문구 제거 — **완료**. `packages/debugger/README.md`·
+      `packages/debug-console/README.md`가 "npm에는 발행하지 않는다 — GitHub
+      Releases 에셋을 버전 고정 URL로 설치한다"로 갱신됨.
 
 **로컬에서 릴리즈를 자르지 않는다.** `pnpm pack` 자체는 안전하나, 그 전
 `pnpm install`이 non-frozen으로 돌면 사내망 프록시 경유 해시가 lockfile에
