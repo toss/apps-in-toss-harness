@@ -79,9 +79,17 @@
  *      자체가 RED다 — URL 하나의 버전이 맞아도 엉뚱한 곳에서 받으면
  *      공급망 문제가 재발한다.
  *
- * devtools 축(`@ait-co/devtools`)은 이 검사에서 전량 제외한다 — devtools는
- * 사내 monorepo(AIT-6577)로의 재정의가 별도 축(#74)으로 대기 중이며, 이
- * npm-less 전환의 범위 밖이다(설계 §3 "손대지 않는 것" 참고).
+ * devtools 패키지 자체는 이 검사에서 전량 제외한다(ARMED_SCOPE_PACKAGES에
+ * 없음, EXCLUDED_SCOPE_PACKAGE로 파일 수집 단계에서도 skip) — devtools는
+ * npm-less 전환(harness 소유 `debugger`·`debug-console` 2패키지 한정, 설계 §3
+ * "손대지 않는 것" 참고)의 범위 밖이다. devtools는 오히려 반대 방향이다:
+ * 발행 주체(wf 소스 monorepo(사내), AIT-6577)가 `@apps-in-toss/devtools`로
+ * 공개 npm(registry.npmjs.org)에 이미 발행했다(`3.0.2`, 2026-08-04). 이 파일이
+ * 잡는 것은 GitHub Release URL 배포(D1a/§7a) 드리프트이므로, 공개 npm으로
+ * 정상 발행되는 devtools의 install-command 구 스코프(`@ait-co/devtools`)
+ * 정리는 이 스크립트가 아니라 `normalize-upstream.mjs`의 패키지 단위 게이트
+ * (`NPM_PUBLISHED_SCOPED_PACKAGES`, `docs/upstream-sync.md` 참고)가 담당한다
+ * (harness#74).
  *
  * 네트워크를 쓰지 않는다 — 로컬 파일 읽기 + 정규식 + 문자열 비교만 한다.
  * `curl -sI`로 URL이 실제로 200을 내는지 확인하는 것은 이 스크립트의

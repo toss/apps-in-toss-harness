@@ -51,10 +51,11 @@ MCP가 아니다. devtools는 재정의된 배포 모델(wf 소스 monorepo(사�
 공개 npm 게시 → CLI 자동 설치, §5 문항 6)에서도 프로젝트 **devDependency**이고,
 과도기인 지금은 harness skill이 직접 배선한다(`/ait:new`에서
 `--no-devtools`로 제외 가능 — CLI 자동 설치 실증(D1b) 후 설치는 CLI가 대행하므로
-이 플래그는 배선 skip으로 의미가 바뀔 예정). **스코프 flip은 별도 축**: skill이
-지금 배선하는 것은 여전히 커뮤니티 계보 `@ait-co/devtools`이고, 공개 npm에 새로
-발행된 `@apps-in-toss/devtools@3.0.2`(AIT-6577, 독자 계보)로 skill의 설치 대상을
-바꾸는 작업은 이 문서가 다루는 배포 모델 재정의와 별개로 진행 중이다.
+이 플래그는 배선 skip으로 의미가 바뀔 예정). **스코프 flip은 별도 축**(이 문서가
+다루는 배포 모델 재정의와는 별개): skill이 배선하는 대상을 커뮤니티 계보
+`@ait-co/devtools`에서 공개 npm에 발행된 `@apps-in-toss/devtools@3.0.2`(AIT-6577,
+독자 계보)로 바꾸는 작업은 harness#74·`normalize-upstream.mjs`의
+`NPM_PUBLISHED_SCOPED_PACKAGES` 게이트로 완료됐다.
 
 **2026-07-30 두 endpoint의 실재가 확인되어 manifest에 기본 포함됐다** (서버 키는
 공식 문서 표기와 동일):

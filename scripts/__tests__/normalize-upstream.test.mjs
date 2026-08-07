@@ -105,29 +105,62 @@ describe('scope rename — LEGACY literal (permanent preserve)', () => {
   });
 });
 
-describe('scope rename — install/registry paths (blockedUntilPublished)', () => {
+describe('scope rename — install/registry paths, devtools only (default on since devtools npm publish, 2026-08-04)', () => {
+  const cases = [
+    ['npx -p install command', `npx -p @ait-co/devtools devtools\n`],
+    ['pnpm add install command', `pnpm add -D @ait-co/devtools\n`],
+    ['npm install command', `npm install @ait-co/devtools\n`],
+    ['npm registry homepage URL', `"homepage": "https://www.npmjs.com/package/@ait-co/devtools"\n`],
+    ['install-detection grep string', `grep '"@ait-co/devtools"' package.json\n`],
+  ];
+
+  for (const [label, src] of cases) {
+    test(`${label} — default rename (devtools is in NPM_PUBLISHED_SCOPED_PACKAGES)`, () => {
+      const { content, counts } = norm(src, 'README.md');
+      assert.notEqual(content, src);
+      assert.ok(content.includes('@apps-in-toss/devtools'));
+      assert.ok(counts['scope:install-forced'] >= 1);
+    });
+
+    test(`${label} — NORMALIZE_SCOPE_INSTALL=0 blocks rename (global kill switch)`, () => {
+      const { content, counts } = norm(src, 'README.md', { NORMALIZE_SCOPE_INSTALL: '0' });
+      assert.equal(content, src, 'must be left untouched when explicitly disabled');
+      assert.ok(counts['scope:install-blocked'] >= 1);
+    });
+  }
+});
+
+describe('scope rename — install/registry paths, debugger/debug-console (permanently unpublished — npm-less is the design, not "not yet")', () => {
   const cases = [
     ['npx -p install command', `npx -p @ait-co/debugger debugger\n`],
     ['pnpm add install command', `pnpm add @ait-co/debug-console\n`],
     ['npm install command', `npm install @ait-co/debug-console\n`],
     ['npm registry homepage URL', `"homepage": "https://www.npmjs.com/package/@ait-co/debug-console"\n`],
-    ['install-detection grep string', `grep '"@ait-co/devtools"' package.json\n`],
+    ['install-detection grep string', `grep '"@ait-co/debugger"' package.json\n`],
   ];
 
   for (const [label, src] of cases) {
-    test(`${label} — default skip`, () => {
+    test(`${label} — default blocked (debugger/debug-console are not in NPM_PUBLISHED_SCOPED_PACKAGES)`, () => {
       const { content, counts } = norm(src, 'README.md');
-      assert.equal(content, src, 'must be left untouched by default');
+      assert.equal(content, src, 'must be left untouched — these packages are never published to npmjs by design');
       assert.ok(counts['scope:install-blocked'] >= 1);
     });
 
-    test(`${label} — NORMALIZE_SCOPE_INSTALL=1 forces rename`, () => {
+    test(`${label} — NORMALIZE_SCOPE_INSTALL=1 does NOT force-rename (not a per-package escape hatch)`, () => {
       const { content, counts } = norm(src, 'README.md', { NORMALIZE_SCOPE_INSTALL: '1' });
-      assert.notEqual(content, src);
-      assert.ok(SCOPED_PACKAGES.some((pkg) => content.includes(`@apps-in-toss/${pkg}`)));
-      assert.ok(counts['scope:install-forced'] >= 1);
+      assert.equal(content, src, 'the global flag only gates published packages; it must not manufacture a 404 install command');
+      assert.ok(counts['scope:install-blocked'] >= 1);
     });
   }
+});
+
+describe('scope rename — install context with mixed published/unpublished packages on one line', () => {
+  test('a line mentioning both devtools (published) and debugger (unpublished) stays fully blocked — no partial rename', () => {
+    const src = `# see also @ait-co/devtools and pnpm add -D @ait-co/devtools @ait-co/debugger\n`;
+    const { content, counts } = norm(src, 'README.md');
+    assert.equal(content, src, 'must not split one line into mixed scopes');
+    assert.ok(counts['scope:install-blocked'] >= 1);
+  });
 });
 
 describe('scope rename — prose/comments in code files (renamed, #21)', () => {
@@ -381,11 +414,20 @@ describe('package.json "homepage" field pinned to harness repo (#21)', () => {
     assert.equal(counts['package-homepage-harness'], undefined);
   });
 
-  test('a homepage field elsewhere in the file (not package.json basename) is not touched', () => {
+  test('a homepage field elsewhere in the file (not package.json basename) does not trigger package-homepage-harness, but the npm registry URL inside it is still scope-renamed for a published package (scope-install is a separate, always-line-scanned rule)', () => {
+    const src = '{\n  "homepage": "https://www.npmjs.com/package/@ait-co/devtools"\n}\n';
+    const { content, counts } = norm(src, 'packages/devtools/some-other-file.json');
+    assert.equal(content, '{\n  "homepage": "https://www.npmjs.com/package/@apps-in-toss/devtools"\n}\n');
+    assert.equal(counts['package-homepage-harness'], undefined);
+    assert.ok(counts['scope:install-forced'] >= 1);
+  });
+
+  test('the same registry-URL homepage field for debugger (permanently unpublished) is left untouched — no false rename', () => {
     const src = '{\n  "homepage": "https://www.npmjs.com/package/@ait-co/debugger"\n}\n';
     const { content, counts } = norm(src, 'packages/debugger/some-other-file.json');
     assert.equal(content, src);
     assert.equal(counts['package-homepage-harness'], undefined);
+    assert.ok(counts['scope:install-blocked'] >= 1);
   });
 });
 
@@ -474,23 +516,23 @@ describe('scope rename — external-target content (scaffold templates + inject 
     assert.equal(isExternalTargetContent('packages/devtools/src/unplugin/index.ts'), false);
   });
 
-  test('template package.json devDependency stays @ait-co/* by default — real regression: would 404 on scaffold pnpm install', () => {
+  test('template package.json devDependency is renamed by default now that devtools is npm-published (post-publish default)', () => {
     const src = '{\n  "devDependencies": {\n    "@ait-co/devtools": "^0.1.103"\n  }\n}\n';
     const { content, counts } = norm(src, 'packages/agent-plugin/shared/templates/react-vite/package.json');
-    assert.equal(content, src);
-    assert.equal(counts['scope:install-blocked'], 1);
+    assert.equal(content, '{\n  "devDependencies": {\n    "@apps-in-toss/devtools": "^0.1.103"\n  }\n}\n');
+    assert.equal(counts['scope:install-forced'], 1);
     assert.equal(counts['scope:functional-pkgjson'], undefined);
   });
 
-  test('template vite.config.ts import specifier stays @ait-co/* by default — real regression', () => {
+  test('template vite.config.ts import specifier is renamed by default now that devtools is npm-published', () => {
     const src = "import aitDevtools from '@ait-co/devtools/unplugin';\n";
     const { content, counts } = norm(src, 'packages/agent-plugin/shared/templates/react-vite/vite.config.ts');
-    assert.equal(content, src);
-    assert.equal(counts['scope:install-blocked'], 1);
+    assert.equal(content, "import aitDevtools from '@apps-in-toss/devtools/unplugin';\n");
+    assert.equal(counts['scope:install-forced'], 1);
     assert.equal(counts['scope:functional-import'], undefined);
   });
 
-  test('inject/references code sample (import-from form) stays @ait-co/* by default, consistent with the install command in the same doc — real regression', () => {
+  test('inject/references code sample (import-from form) stays consistent with the install command in the same doc — both rename together by default', () => {
     const src = [
       'pnpm add -D @ait-co/devtools            # pnpm',
       '',
@@ -498,16 +540,22 @@ describe('scope rename — external-target content (scaffold templates + inject 
       '',
     ].join('\n');
     const { content } = norm(src, 'packages/agent-plugin/shared/skills/inject/references/devtools.md');
-    assert.equal(content, src, 'install command and import sample must not disagree on scope');
+    assert.ok(!content.includes('@ait-co/devtools'), 'install command and import sample must not disagree on scope');
+    assert.equal(
+      content,
+      ['pnpm add -D @apps-in-toss/devtools            # pnpm', '', "import aitDevtools from '@apps-in-toss/devtools/unplugin';", ''].join(
+        '\n',
+      ),
+    );
   });
 
-  test('external-target files DO flip together once NORMALIZE_SCOPE_INSTALL=1 (post-publish escape hatch still works)', () => {
+  test('external-target files stay @ait-co/* when NORMALIZE_SCOPE_INSTALL=0 (escape hatch for a future unpublished package)', () => {
     const src = "import aitDevtools from '@ait-co/devtools/unplugin';\n";
     const { content, counts } = norm(src, 'packages/agent-plugin/shared/templates/react-vite/vite.config.ts', {
-      NORMALIZE_SCOPE_INSTALL: '1',
+      NORMALIZE_SCOPE_INSTALL: '0',
     });
-    assert.equal(content, "import aitDevtools from '@apps-in-toss/devtools/unplugin';\n");
-    assert.equal(counts['scope:install-forced'], 1);
+    assert.equal(content, src);
+    assert.equal(counts['scope:install-blocked'], 1);
   });
 
   test('same file OUTSIDE the external-target path list still renames functional imports normally (no over-broadening)', () => {
@@ -560,7 +608,10 @@ describe('CLI robustness — trailing slash on the root path must not defeat pat
       const outWithSlash = execFileSync('node', [scriptPath, rootWithSlash], { encoding: 'utf8' });
 
       assert.equal(outWithSlash, outNoSlash, 'a trailing slash on the root arg must not change the dry-run report');
-      assert.match(outNoSlash, /변경: 0/, 'external-target template package.json must not be flagged as changed');
+      // scope-install is on by default (devtools is npm-published) — the CLI runs
+      // without env overrides, so the external-target package.json IS flagged as
+      // changed here; the invariant under test is slash-insensitivity, not this count.
+      assert.match(outNoSlash, /변경: 1/, 'external-target template package.json is renamed by default now');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

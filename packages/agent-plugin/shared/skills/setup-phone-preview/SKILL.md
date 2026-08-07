@@ -18,7 +18,7 @@ argument-hint: ''
 `/ait:setup-phone-preview` 한 번으로 **실기기(폰) 미리보기** 환경을 준비한다.
 
 `@apps-in-toss/debugger`의 `--mode=phone`(harness#79, C4 devtools 제거 이후
-새 거처 — 과거 `@ait-co/devtools`의 `tunnel` unplugin 옵션이 하던 역할을
+새 거처 — 과거 `@apps-in-toss/devtools`의 `tunnel` unplugin 옵션이 하던 역할을
 이어받았다)은 dev 서버가 이미 떠 있는 포트로 Cloudflare quick tunnel을 열고,
 터미널에 `*.trycloudflare.com` URL + QR을 출력한다. 이 URL을 launcher PWA
 (`https://toss.github.io/apps-in-toss-harness/launcher/`, harness Pages 정본 —

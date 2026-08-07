@@ -20,7 +20,7 @@
 
 | 패키지 | 정체성 | 설치 위치 | agent-plugin의 소비 지점 |
 |---|---|---|---|
-| `@apps-in-toss/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | **`devDependencies`** — 패키지는 wf 소스 monorepo(사내)가 발행해 공개 npm에 올라와 있고(`3.0.2`, 2026-08-04), 종착 모델은 그걸 CLI가 자동 설치하는 것(D1b = CLI 자동 설치 실증 잔여). 과도기인 지금은 harness skill이 직접 배선하지만, 배선 대상은 아직 이 `@apps-in-toss/devtools`가 아니라 커뮤니티 계보 `@ait-co/devtools`다 — skill의 설치 대상을 `@apps-in-toss/devtools`로 바꾸는 스코프 flip은 별도 축으로 진행 중 | `inject`(devtools facet), `new-miniapp` 후처리 배선(+`--local` 템플릿) |
+| `@apps-in-toss/devtools` | mock SDK + DevTools 패널 + unplugin (브라우저 개발 필수품) | **`devDependencies`** — 패키지는 wf 소스 monorepo(사내)가 발행해 공개 npm에 올라와 있고(`3.0.2`, 2026-08-04), 종착 모델은 그걸 CLI가 자동 설치하는 것(D1b = CLI 자동 설치 실증 잔여). 과도기인 지금은 harness skill이 직접 배선한다 — 배선 대상은 `@apps-in-toss/devtools`로 스코프 flip 완료(harness#74, `normalize-upstream.mjs`의 `NPM_PUBLISHED_SCOPED_PACKAGES` 게이트) | `inject`(devtools facet), `new-miniapp` 후처리 배선(+`--local` 템플릿) |
 | `@apps-in-toss/debugger` | MCP 디버그 데몬 + 테스트 러너 (bin `debugger`·`debugger-test`) | `devDependencies` / `npx` 전용 | `setup-debugger` skill → 프로젝트 `.mcp.json` `mcpServers.ait-devtools`(`npx -y -p <Release tarball URL> debugger`), `debug` §5가 소비 |
 | `@apps-in-toss/debug-console` | on-device attach 런타임(eruda 인앱 콘솔 포함) | **`dependencies`** — 프로덕션 번들에 들어갈 수 있는 유일한 패키지 | `inject`(debug-console facet) |
 

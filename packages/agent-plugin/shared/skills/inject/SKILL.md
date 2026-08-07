@@ -66,7 +66,7 @@ tarball URL — npm 미발행), 진입점에 self-gating `import '@apps-in-toss/
 **devtools facet** 완료 후:
 
 ```
-@ait-co/devtools 설정 완료 · <config-file> 패치
+@apps-in-toss/devtools 설정 완료 · <config-file> 패치
 
 다음 단계:
   pnpm dev                  # 브라우저에서 앱 실행 (하단에 AIT DevTools 패널)

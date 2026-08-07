@@ -32,7 +32,7 @@ export function App() {
         </li>
         <li>
           <code>@apps-in-toss/web-framework</code>의 SDK API를 import해서 호출해보세요. 개발 중에는{' '}
-          <code>@ait-co/devtools</code>가 자동으로 mock으로 대체합니다.
+          <code>@apps-in-toss/devtools</code>가 자동으로 mock으로 대체합니다.
         </li>
         <li>
           배포 준비는 순서대로: <code>/ait:setup-bundle</code>(번들 설정) → <code>/ait:design</code>
