@@ -26,7 +26,25 @@ Right after installing, authorize `apps-in-toss-console` once via OAuth from `/m
 
 ### Using it from Codex
 
-Claude Code is the first-class target for now — the `/ait:*` slash commands and skills use the Claude Code plugin format, so they don't work in other agents yet, and this repo ships no Codex-specific manifest. That said, **both MCP servers are plain HTTP MCP, so you can register them in Codex as-is**. Docs lookup and console registration/upload work from Codex too; only the scaffold and debug automation is missing.
+The same plugin **installs in Codex as-is.** Codex reads this repo's plugin manifest directly, so no Codex-specific manifest is needed. Run these two commands in order.
+
+```
+codex plugin marketplace add toss/apps-in-toss-harness
+```
+
+```
+codex plugin add ait@apps-in-toss
+```
+
+Installing brings all 8 skills plus both MCP servers — the MCP servers are registered at plugin scope, so you never touch `~/.codex/config.toml`, and they show up in `codex mcp list` right away. The console MCP needs a one-time OAuth authorization.
+
+```
+codex mcp login apps-in-toss-console
+```
+
+**What differs from Claude Code**: the `/ait:<verb>` slash-command namespace does not carry over. Codex auto-migrates a plugin's commands into skills, but `new` and `plan` — the two whose bodies rely on `$ARGUMENTS` substitution — are dropped by that migration. The skills behind them (`new-miniapp`, `plan`) are still installed, so ask in plain language instead (e.g. "scaffold a new mini-app called my-app") and you get the same procedure.
+
+If you want **only the MCP servers** without the plugin, register them directly.
 
 ```
 codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
@@ -36,13 +54,9 @@ codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~g
 codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
 ```
 
-The console MCP needs a one-time OAuth authorization.
+On that path, don't drop `--oauth-client-id mcp-gateway` — the auth server doesn't support dynamic client registration (DCR), so a static client id is required. Check the result with `codex mcp list` (the docs MCP shows `Auth` as `Unsupported` since it needs none; the console MCP shows `Not logged in` until you authorize).
 
-```
-codex mcp login apps-in-toss-console
-```
-
-Don't drop `--oauth-client-id mcp-gateway` — the auth server doesn't support dynamic client registration (DCR), so a static client id is required. Check the result with `codex mcp list` (the docs MCP shows `Auth` as `Unsupported` since it needs none; the console MCP shows `Not logged in` until you authorize). These commands were verified against codex-cli `0.146.0`.
+The commands in this section were verified against codex-cli `0.146.0`.
 
 ## Development journey
 
@@ -77,7 +91,7 @@ Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands 
 
 ## MCP servers
 
-Installing the plugin registers two MCP servers. Outside Claude Code there's no plugin, so you register the same two servers yourself — see [Using it from Codex](#using-it-from-codex) above for the Codex steps.
+Installing the plugin registers two MCP servers — in Claude Code and in Codex alike. To register the servers directly without the plugin, see [Using it from Codex](#using-it-from-codex) above.
 
 | Server | Auth | Key tools |
 |---|---|---|
@@ -92,7 +106,7 @@ Three packages managed as a pnpm workspace (devtools has been replaced by an in-
 
 | Package | Directory | Role | Published |
 |---|---|---|---|
-| `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin for Claude Code — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
+| `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code and Codex) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.0`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.4`) |
 
