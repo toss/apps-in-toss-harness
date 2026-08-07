@@ -374,11 +374,19 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
 10. **marketplace 축(축4)** — 8번에 종속. #7 §5-1의 확정 내용대로 커뮤니티
     marketplace 병존/폐기와 사용자 안내를 집행한다.
 11. **D1b 해소 후속 — `docs/release.md` §7b(devtools 설치 절차 삭제
-    체크리스트)**. wf가 devtools를 transitive로 실배포하고 소비자
-    프로젝트에서 resolve 실증까지 끝난 직후에만 발화한다(Dave·platform PR +
-    wf 릴리즈가 게이트 — 이 런북의 순서와 독립적으로 그 전이나 후 어느
-    시점에나 올 수 있다). skill 재설계·`--local` 템플릿 폐기·eval fixture
-    교체·baseline epoch 판단·harness `packages/devtools` 제거까지 포함한다.
+    체크리스트)**. wf 소스 monorepo(사내)가 공개 npm에 발행한
+    `@apps-in-toss/devtools`를 **CLI가 자동 설치**해 소비자 프로젝트에
+    devDependency가 배선되고 dev 서버에서 mock·panel이 뜨는 것까지 실증된
+    직후에만 발화한다(Dave·사내 monorepo 릴리즈가 게이트 — 이 런북의 순서와
+    독립적으로 그 전이나 후 어느 시점에나 올 수 있다). **배포 모델은
+    2026-08-04에 재정의 확정됐고, 공개 npm 발행도 같은 날 완료됐다
+    (`@apps-in-toss/devtools@3.0.2`)** — 종전 "wf가 devtools를 transitive로
+    실배포하고 소비자 프로젝트에서 resolve 실증" 계획은 폐기되고 "공개 npm
+    발행 + CLI 자동 설치"(wf 패키지 무변경 — transitive 아님)로
+    바뀌었다(`docs/roadmap.md` §5 문항 6). **남은 것은 CLI 자동 설치 실증뿐**
+    이다. skill 재설계·`--local` 템플릿 폐기·eval fixture 교체·baseline epoch
+    판단·실증(D1b) 결과 기록을 포함한다. harness `packages/devtools` 제거는
+    D1b 실증을 기다리지 않고 이미 완료됐다(C4 조기 실행, 2026-08-05).
     **D1a(§7a — GitHub Release 에셋 200 확인 직후 scope-install flip)는
     npm 전제가 없어져 이 런북의 flip 순서와 무관하게 독립적으로 발화한다** —
     `docs/release.md` §1·§7a 참고.
