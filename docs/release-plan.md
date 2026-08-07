@@ -21,8 +21,9 @@
 cli·web-framework·devtools 동일 버전 — `3.0.2`가 2026-08-04 첫 발행). 소비자
 프로젝트에는 **CLI 자동 설치 devDependency**로 배선되고 **wf 패키지 자체는
 변경되지 않는다**(종전 "wf 3.x dependencies 통합" 계획은 폐기 — **배포 모델
-재정의 확정 2026-08-04, CLI 자동 설치 실증은 잔여(D1b)**, `docs/roadmap.md`
-§5 문항 6). **발행 주체가 harness가 아니라서** harness가 직접 배포할 대상이
+재정의 확정 2026-08-04, CLI 자동 설치 실증도 완료(2026-08-07, 미러 registry
+경유) — D1b 해소**, `docs/roadmap.md` §5 문항 6). **발행 주체가 harness가
+아니라서** harness가 직접 배포할 대상이
 아닐 뿐, 소비자는 계속 공개 npm에서 받는다. (b)
 `debugger`·`debug-console` 2종은 npm-less 전환 결정(2026-08-06, 오너
 지시)으로 npmjs.com 발행 자체를 그만두고 GitHub Releases 에셋으로 유통한다.
