@@ -108,6 +108,12 @@ cd ./<package_name> && pnpm install
 3. `package.json`에 `bundle:ait` 스크립트(`"ait build"`) 추가.
 4. `.gitignore`에 `.granite/`, `*.ait`가 없으면 추가.
 
+> **알려진 위험(harness#90 보고, 2026-08-07 — 이 문서가 직접 재현·확인한
+> 것은 아님)**: `brand.icon`을 빈 값으로 둔 채 빌드한 번들은 콘솔 컴파일은
+> 통과(`CREATED`)하지만 앱 실행 시점에 "잠시 문제가 생겼어요"로 실패했다는
+> 보고가 있다. 아이콘을 콘솔에 먼저 업로드해 그 URL로 `brand.icon`을 채운
+> 뒤 빌드하기를 권장한다.
+
 ## L-6. 다음 단계 안내 + dev 서버 기동
 
 ```
@@ -120,7 +126,12 @@ cd ./<package_name> && pnpm install
 배포 준비가 되면:
   /ait:design       # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — 등록 전제)
                      # → 호스팅한 아이콘 https:// URL을 (L-5로 만들) granite.config.ts의
-                     #   brand.icon에 채운다 (비어 있으면 ait build가 실패한다)
+                     #   brand.icon에 채운다 (비어 있으면 ait build가 실패한다.
+                     #   빈 값으로 둔 채 빌드하면 콘솔 컴파일(CREATED)까지는
+                     #   통과하되 앱 실행 시점에 "잠시 문제가 생겼어요"로
+                     #   실패했다는 보고가 있음 — harness#90, 이 문서가 직접
+                     #   재현·확인한 것은 아님. brand.icon을 채우고 빌드하는
+                     #   경로가 이 보고와 무관한 정상 경로다)
   (L-5로 번들 설정 추가) → ait build → console MCP(miniapp_create →
   bundle_upload → bundle_upload_complete)로 등록·업로드
   (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
