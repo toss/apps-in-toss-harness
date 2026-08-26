@@ -32,8 +32,9 @@
   "#8 시점에 확정"으로 명시된 항목**이라, flip 당일 판단 대상에 그대로 딸려
   온다 — 이 둘은 이 런북이 대신 정할 수 없다.
 - **공개 행위는 서로 다른 축이다** (`docs/release-plan.md`). 축1(Pages)은 구
-  repo에서 완료됐으나 Pages는 repo 설정이라 재생성으로 초기화됐을 수 있다 —
-  재확인 필요(`docs/release-plan.md` 각주). 축2(GitHub Release 유통)는 repo가
+  repo에서 완료됐으나 재생성으로 사이트가 소멸했고(2026-08-26 실측 404), 환경
+  2 제거로 배포 소스도 없어 재활성화 대상이 아니다 — 축 자체가 비활성이다.
+  축2(GitHub Release 유통)는 repo가
   private이어도 가능 — 단 private 동안 다운로드 URL은 미인증 404다. 축3(public
   전환)이 이 런북의 주제, 축4(marketplace)는 축3에 종속된다. 되돌림 가능성이
   축마다 다르므로 섞지 않는다.
@@ -468,13 +469,17 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
    로드 기준이었고, **marketplace 해석·public 경로 실증은 flip 대기 항목으로
    남아 있었다**(`docs/roadmap.md` §2 station 0). 이게 통과해야 station 0의 AC가
    충족된다.
-5. **Pages 무해 확인** — Pages는 flip 전에도 public이었으므로 상태 변화가
-   없어야 정상. launcher 경로(`/launcher/`)는 환경 2 제거로 더 이상 배포되지
-   않으므로 확인 대상이 아니다(§4).
+5. **Pages 확인 — 대상 소멸.** 재생성으로 Pages 사이트 자체가 없어졌고(실측
+   404, 2026-08-26) 환경 2 제거로 배포 소스도 없다 — 트리에 남은
+   `toss.github.io` 참조는 전부 역사 서술이라 확인할 것이 없다.
 6. **GitHub Release 에셋 확인** — 재생성 후 릴리즈 2건(`debugger-v0.2.0`·
    `debug-console-v0.1.4`)은 2026-08-26 CI(release.yml dispatch) 재발행분이다
    — private 동안 미인증 404였던 `releases/download/...` URL이 flip 후
    `curl -sI`로 200을 반환하는지 확인한다(sha256 기준값은 CI run Summary·API
    digest — `docs/release.md`). npm trusted publishing·provenance 확인 절차는
    npm-less 전환(2026-08-06)으로 대상이 없어져 삭제했다.
-7. **#8 종료 처리** — 위 전부 통과 후. 이슈 종료·코멘트는 **Dave가 한다.**
+7. **release env required reviewers 지정** — private + Team 플랜 조합에서는
+   API가 422(billing plan 미지원)로 거부한다(실측 2026-08-26). public 전환으로
+   environment protection rule이 사용 가능해지므로 flip 직후 지정한다 —
+   릴리즈 run이 돌고 있지 않은 시점에 할 것(대기 중 run이 승인 대기로 멈춘다).
+8. **#8 종료 처리** — 위 전부 통과 후. 이슈 종료·코멘트는 **Dave가 한다.**
