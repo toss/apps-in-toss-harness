@@ -15,7 +15,7 @@
 
 | 축 | 무엇이 공개되나 | 되돌릴 수 있나 | 상태 |
 |---|---|---|---|
-| 1. GitHub Pages | launcher PWA + fixture 데모 사이트 | 쉽다 — Pages 비활성화 | **완료** (`https://toss.github.io/apps-in-toss-harness/`) — launcher 표면 자체는 이후 환경 2 제거(harness#103, 2026-08-10)로 삭제됐다. **구 repo 기준 — 재생성(2026-08-26) 후 Pages 설정 유지 여부 재확인 필요** |
+| 1. GitHub Pages | launcher PWA + fixture 데모 사이트 | 쉽다 — Pages 비활성화 | **소멸** — 구 repo에서 완료됐던 배포(`https://toss.github.io/apps-in-toss-harness/`)가 재생성(2026-08-26)으로 제거됐고(실측 404), launcher 표면 자체도 환경 2 제거(harness#103, 2026-08-10)로 삭제돼 재배포 대상이 없다 — 축 비활성 |
 | 2. GitHub Releases 에셋 2종(`debugger`·`debug-console`) | 빌드 산출물(`pnpm pack` tarball) + README | 기술적으로는 삭제 가능하지만, 배포 직후 스킬·소스에 버전 고정 URL이 박히므로 **운영 규율상 사실상 불가**로 취급 — 잘못되면 새 버전으로 대응 | 파이프라인 준비 |
 | 3. repo public 전환 | 소스 전체 + 커밋 이력 | 되돌려도 이미 클론·인덱싱된 사본은 회수 못 한다 | **구 repo에서 완료됐으나 재생성으로 무효** — 새 repo는 private, 미실행 |
 | 4. plugin marketplace | 사용자 진입점(station 0) | — | 3에 종속 |
