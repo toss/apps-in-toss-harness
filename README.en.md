@@ -6,7 +6,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) The repo has completed its public switch-over. Packages are distributed via GitHub Releases — the first releases shipped on 2026-08-06 (`debugger-v0.2.0`, `debug-console-v0.1.4`) — there is no plan to publish to npmjs. `debugger` and `debug-console` under `packages/` follow this same distribution model.
+We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) This repository is currently private; switching it public is a separate, pending decision. Packages are distributed via GitHub Releases (`debugger-v0.2.0`, `debug-console-v0.1.4`) — there is no plan to publish to npmjs. While the repo is private, downloading the release assets requires repository access. `debugger` and `debug-console` under `packages/` follow this same distribution model.
 
 ## Quick start
 
@@ -154,11 +154,11 @@ Three packages managed as a pnpm workspace (devtools has been replaced by an in-
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.0`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.4`) |
 
-`shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (#18 option 4) — it lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
+`shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (by design) — it lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
 ## If you run into a problem
 
-If you run into a problem, check the [bug report guide](./docs/bug-report-guide.md) first, then [file an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). This repo is public, so don't paste secrets like Deploy Keys or TOTP values, or internal identifiers, into the issue body or logs.
+If you run into a problem, check the [bug report guide](./docs/bug-report-guide.md) first, then [file an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). Regardless of the repo's visibility, never paste secrets like Deploy Keys or TOTP values, or internal identifiers, into the issue body or logs.
 
 ## Contributing / development
 

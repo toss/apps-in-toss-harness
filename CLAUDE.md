@@ -1,8 +1,8 @@
 # CLAUDE.md — apps-in-toss-harness monorepo
 
-앱인토스 미니앱용 AI 에이전트 harness의 **토스 공식** monorepo. `apps-in-toss-community` 조직에서 하드카피 완료 — 이 repo가 agent-plugin·debugger·debug-console·internal-protocol 4개 패키지의 정본이며 커뮤니티 org와의 연관관계는 끊겼다(devtools는 wf 소스 monorepo(사내)의 자체 devtools로 대체되어 harness 사본은 제거됨 — C4, 2026-08-05 maintainer 지시). public 전환·npm 배포는 별개 축이며, 현재 상태는 정직하게: **repo는 2026-08-06에 public으로 전환됐다가 그 뒤 다시 private으로 되돌려졌다 — 현재 `visibility: private`이다(2026-08-21 실측). 되돌린 주체·사유는 기록이 없다.** harness 소유 패키지(`@apps-in-toss/debugger`·`@apps-in-toss/debug-console`)는 npm에는 발행하지 않고 GitHub Releases로 유통하는 것이 계획이고 첫 릴리즈 2건은 발행됐지만(2026-08-06, `debugger-v0.2.0`·`debug-console-v0.1.4`), **repo가 private인 지금 그 다운로드 URL은 인증 없이는 404이므로 유통 경로가 실제로는 닫혀 있다.** (서드파티 의존성·`@apps-in-toss/web-framework`·`@apps-in-toss/devtools`는 harness가 발행 주체가 아니며 계속 공개 npm에서 받는다 — `docs/release.md` "npm-less의 정확한 범위" 참고.)
+앱인토스 미니앱용 AI 에이전트 harness의 **토스 공식** monorepo. `apps-in-toss-community` 조직에서 하드카피 완료 — 이 repo가 agent-plugin·debugger·debug-console·internal-protocol 4개 패키지의 정본이며 커뮤니티 org와의 연관관계는 끊겼다(devtools는 wf 소스 monorepo(사내)의 자체 devtools로 대체되어 harness 사본은 제거됨 — C4, 2026-08-05 maintainer 지시). public 전환·npm 배포는 별개 축이며, 현재 상태는 정직하게: **이 repo는 2026-08-26에 삭제 후 동일 이름으로 재생성됐다**(public 전환 전 이력 정리 — maintainer 결정·실행). 이력은 단일 `Initial commit`뿐이고 그 tree는 재생성 직전 main과 바이트 동일하다. **재생성된 repo는 private으로 생성됐고 public 전환 이력이 없다 — public flip은 여전히 미래 결정이다.** harness 소유 패키지(`@apps-in-toss/debugger`·`@apps-in-toss/debug-console`)는 npm에는 발행하지 않고 GitHub Releases로 유통한다 — 릴리즈 2건(`debugger-v0.2.0`·`debug-console-v0.1.4`)은 재생성 후 `release.yml` workflow_dispatch(CI)로 같은 태그·같은 asset명으로 재발행됐고(2026-08-26, sha256은 재빌드분 — CI job Summary·API `assets[].digest`가 기준값), repo에 Immutable Releases가 활성화돼 이후 발행분은 발행 시점에 잠긴다. **repo가 private인 동안 다운로드 URL은 인증 없이는 404이므로 유통 경로는 아직 닫혀 있다**(실측). (서드파티 의존성·`@apps-in-toss/web-framework`·`@apps-in-toss/devtools`는 harness가 발행 주체가 아니며 계속 공개 npm에서 받는다 — `docs/release.md` "npm-less의 정확한 범위" 참고.)
 
-> **⚠️ 이 repo 문서 다수가 아직 "public 전환 완료"를 전제로 쓰여 있다** — 되돌림 이전에 쓰였고 그 시점엔 참이었다. 전수 조사 결과 20개 파일(완료형 단언 24건 + 지금 동작하지 않는 설치·유통 경로 ~16개소)이 영향받는다. 목록·파급·결정 대기 항목은 **#141**. **세션은 그 서술들을 근거로 "public이다 / Releases에서 받을 수 있다"고 판단하지 마라** — 상태 정본은 이 문단이고, 최종 확인은 `gh api repos/toss/apps-in-toss-harness --jq '{private,visibility}'`다.
+> **⚠️ 재생성 이전 참조는 죽었다 (전역 컨벤션).** 이 repo의 문서·주석에 남아 있는 이슈/PR 번호(`#N`·`harness#N`)와 커밋 SHA 인용은 **재생성 이전 구 repo의 것**으로, 현재 트래커·이력에서 조회할 수 없다 — 서술된 결정·사건 자체는 유효한 연대기다(원본은 maintainer 로컬 백업 mirror에 보존). 살아있는 참조는 마일스톤 1(MT)·2(PO, 재생성 시 동번호 재생성)와 **이슈 #1**(보안검토 추적 — 구 repo의 동번호 이슈와 무관)뿐이다. 특히 구 `#1`(타깃 아키텍처)·신 `#1`(보안검토)을 혼동하지 마라. visibility 상태 정본은 위 문단이고, 최종 확인은 `gh api repos/toss/apps-in-toss-harness --jq '{private,visibility}'`다.
 
 ## 첫걸음 (세션 시작 시)
 
@@ -19,7 +19,7 @@
 
 ## 이관 추적 (정본)
 
-추적은 **두 축의 milestone**이 나눠 갖는다 — 이관 축은 **`MT — 공식 이관`**(milestone 1), 퍼블릭 오픈 축(2026-08 도그푸딩 웨이브 포함)은 **`PO — 8월 퍼블릭 오픈`**(milestone 2, 2026-08-10 신설)이다. 이슈 번호 범위는 여기 고정하지 않는다 — 신규 이슈가 계속 추가되므로(실측 2026-08-19 기준 MT는 open 5·closed 19, PO는 open 13·closed 2) 최신 현황은 `gh api 'repos/toss/apps-in-toss-harness/issues?milestone=1&state=all'`·`gh api 'repos/toss/apps-in-toss-harness/issues?milestone=2&state=all'`로 조회한다. 서술형 설계·AC는 `docs/roadmap.md`, 진행 기록은 각 이슈 코멘트.
+추적은 **두 축의 milestone**이 나눠 갖는다 — 이관 축은 **`MT — 공식 이관`**(milestone 1), 퍼블릭 오픈 축(2026-08 도그푸딩 웨이브 포함)은 **`PO — 8월 퍼블릭 오픈`**(milestone 2)이다. **재생성(2026-08-26)으로 구 repo의 이슈들은 소멸했고 두 milestone은 동번호로 재생성됐다** — 현재 살아있는 이슈는 #1(보안검토 추적, PO)뿐이며, 구 이슈의 결정·경위가 필요하면 maintainer 로컬 백업(`inventory/issues.json`)을 본다. 최신 현황은 `gh api 'repos/toss/apps-in-toss-harness/issues?milestone=1&state=all'`·`gh api 'repos/toss/apps-in-toss-harness/issues?milestone=2&state=all'`로 조회한다. 서술형 설계·AC는 `docs/roadmap.md`, 진행 기록은 각 이슈 코멘트. 아래 두 단락의 `#N` 번호는 전부 구 repo 참조다(상단 전역 컨벤션) — 서술 내용만 취하라.
 
 - 완료된 축: **#1** 타깃 아키텍처 — remote 축(docs·console MCP manifest 기본 포함) + opt-in 축(debugger는 skill 배선, devtools는 과도기 동안 skill이 배선하는 프로젝트 devDependency — 배포 모델은 "wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시 → CLI가 자동 설치"로 재정의 확정(2026-08-04)이고, 공개 npm 발행(devtools `3.0.2`, 2026-08-04)에 이어 CLI 자동 설치 실증도 완료(2026-08-07, 미러 registry 경유) — **D1b 해소**, 아래 구조 절·`docs/roadmap.md` §5 문항 6 참고) 완료, aitcc 전제 skill 트리밍으로 8-skill 체제를 확정했고(#1에 기록), 이후 환경 2 제거(#103)로 `setup-phone-preview`가 빠졌다가 실기기 확인 정규 경로 skill(`test-on-device`, #98)이 신설되어 **8-skill 체제**가 됐다. **#2** devtools·debugger 4패키지 하드카피 이관 완료, 잔여는 스코프·URL 전환(#2에 기록). 콘솔 E2E 완주 실증 완료(아래 dog-food).
 - 남은 게이트(전부 Dave 결정 대기): **#6** create-ait-app upstream Slack 조율, **#7** 로드맵 확정, **#8** public flip. 이 셋은 세션이 임의로 밀고 나가지 않는다. MT의 open은 이 셋이 전부가 아니다 — **#43**(MCP GW 서버측 결함·keys tool 부재 — 운영팀 전달 추적)과 **#74**(devtools 배포 모델 전환 — D1b 해소 후 harness 쪽 후속만 잔여)도 열려 있다(실측 2026-08-19, MT open 5건).
@@ -60,7 +60,7 @@ SDK 표면을 추종하는 코드(mock·stub·re-export)에 정합성 가드만 
 
 ## 노출 산출물
 
-이 repo는 **토스 공식**이다 — 커뮤니티 시절의 "공식 표방 금지" disclaimer는 넣지 않는다. 동시에 과장도 금지: repo는 public 전환을 완료했고 harness 소유 패키지(`debugger`·`debug-console`)는 npm에는 발행하지 않는다(npm 미발행, npmjs 발행 계획 없음)는 것과, GitHub Releases로 첫 릴리즈 2건(`debugger-v0.2.0`·`debug-console-v0.1.4`, 2026-08-06)이 발행 완료됐다는 상태를 정직하게 쓴다.
+이 repo는 **토스 공식**이다 — 커뮤니티 시절의 "공식 표방 금지" disclaimer는 넣지 않는다. 동시에 과장도 금지: **repo는 현재 private이며 public 전환은 별도 결정 사항**이라는 것, harness 소유 패키지(`debugger`·`debug-console`)는 npm에는 발행하지 않는다(npm 미발행, npmjs 발행 계획 없음)는 것, GitHub Releases 2건(`debugger-v0.2.0`·`debug-console-v0.1.4`)은 재생성 후 CI로 재발행됐으나 **private인 동안 미인증 다운로드는 불가**하다는 상태를 정직하게 쓴다.
 
 - **i18n**: ko primary(`README.md`, 한국어 전용) + en sub(`README.en.md`, 영어 전용). 두 파일은 동등 정본 — 내용 변경 시 같은 PR에서 함께 갱신한다. 파일당 단일 언어, 한 파일 안 병기 금지.
 - **용어**: 콘솔의 워크스페이스-scope 자격증명은 노출 텍스트에서 **`Deploy Key`**로 부른다(CLI flag·secret 이름 같은 외부 인터페이스는 그대로 유지).
@@ -71,8 +71,8 @@ SDK 표면을 추종하는 코드(mock·stub·re-export)에 정합성 가드만 
 
 Deploy Key·TOTP 등 자격증명 값은 어떤 파일·로그·커밋에도 넣지 않는다 (GitHub secret·로컬 credential 전용).
 
-## public flip(#8) 전 점검
+## public flip 전 점검
 
-Dave 결정 후 착수. 최소 4항목: (1) 내부 식별자 공개 적정성 검토 — dog-food 워크스페이스·miniAppId 등이 public 산출물에 새지 않는지 전수 확인, (2) npm trusted publishing — **해당 없음**(npm-less 전환으로 패키지는 GitHub Releases 유통, npmjs 발행 자체가 없으므로 trusted publisher 배선 불요), (3) README 상태 note 갱신 — **완료**(public 전환 완료·GitHub Releases 유통 상태 반영), (4) launcher 기본값 전환 — **항목 소멸(2026-08-10)**: 환경 2(PWA Sandbox launcher)가 #103으로 전면 제거되면서 `sites/launcher/`·`LAUNCHER_URL`·`AIT_LAUNCHER_URL`·#11 실기기 스모크가 모두 없어졌다 — 더 이상 flip 점검 대상이 아니다(`docs/public-flip-runbook.md` §4).
+Dave 결정 후 착수. **이력 노출 점검은 재생성(2026-08-26)으로 대체 완료** — 현재 이력은 단일 `Initial commit`이고 그 트리는 사내 식별자 4클래스 전수 스캔 0건이 확인됐다(재생성 직전 실측). 남은 점검: (1) 내부 식별자 공개 적정성 — 새 커밋이 쌓일수록 재검증 필요(flip 직전 HEAD 트리 재스캔), (2) npm trusted publishing — **해당 없음**(npm-less 유통, npmjs 발행 없음), (3) README 상태 note — flip 시점에 private 서술을 public으로 갱신, (4) launcher 기본값 전환 — **항목 소멸(2026-08-10)**: 환경 2(PWA Sandbox launcher) 전면 제거로 flip 점검 대상 아님(`docs/public-flip-runbook.md` §4).
 
-이 4항목의 실사 결과·판단 자료와 flip 당일 실행 순서는 **`docs/public-flip-runbook.md`**가 정본이다(준비 자료 — 실행은 Dave 결정).
+판단 자료와 flip 당일 실행 순서는 **`docs/public-flip-runbook.md`**가 정본이다(준비 자료 — 실행은 Dave 결정). 그 문서의 이력 실사·이력 재작성 절(§1.3·§1.3a·§1.4·§6-3)은 구 repo 대상이며 재생성으로 소멸한 작업이다 — 문서 내 캐비앗을 따르라.

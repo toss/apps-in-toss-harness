@@ -8,7 +8,7 @@ body:
       value: |
         ### 제출 전 꼭 확인해 주세요
 
-        - **Deploy Key·TOTP 등 시크릿 값을 절대 붙여넣지 마세요.** 이 저장소는 public이라 이슈 내용이 누구나 볼 수 있습니다.
+        - **Deploy Key·TOTP 등 시크릿 값을 절대 붙여넣지 마세요.** 공개 여부와 무관하게, 이슈 내용에 시크릿·사내 식별자를 넣지 않는 것이 원칙입니다.
         - dog-food 워크스페이스 번호·miniAppId 등 사내 식별자, 로컬 사용자 홈 디렉터리 하위 절대경로(사용자명이 그대로 노출됩니다)도 지워 주세요.
         - 아래 "로그" 항목에 붙여넣기 전에도 같은 기준으로 한 번 더 확인해 주세요. 좋은 재현 절차 작성법과 로그를 얻는 방법은
           [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/docs/bug-report-guide.md)를 참고하세요.

@@ -1,11 +1,23 @@
 # GitHub Releases 배포 — Dave가 할 일
 
-**발행 기록(2026-08-06)**: 첫 릴리즈 2건이 GitHub Actions(`release.yml`)에서
-생성됐다 — `debugger-v0.2.0`(에셋 `apps-in-toss-debugger-0.2.0.tgz`),
-`debug-console-v0.1.4`(에셋 `apps-in-toss-debug-console-0.1.4.tgz`). 두 에셋
-다운로드 URL 모두 `curl -sI` **200** 확인 완료 — §1의 3번 조건과 D1a
-게이트(`docs/roadmap.md` §3)가 해소됐다. §7a 체크리스트는 같은 날
-PR #85에서 전항 완료됐다.
+> **2026-08-26 repo 재생성.** 이 문서의 `#N` 이슈·PR 번호와 커밋 SHA는
+> 재생성 이전 구 repo의 것으로 현재 트래커에서 조회 불가하다(서술 내용은
+> 유효하다). 살아있는 참조는 마일스톤 1(MT)·2(PO)와 이슈 #1(보안검토
+> 추적)뿐이다.
+
+**발행 기록(2026-08-06 → 2026-08-26 재발행)**: 첫 릴리즈 2건이 GitHub
+Actions(`release.yml`)에서 생성됐다 — `debugger-v0.2.0`(에셋
+`apps-in-toss-debugger-0.2.0.tgz`), `debug-console-v0.1.4`(에셋
+`apps-in-toss-debug-console-0.1.4.tgz`). 두 에셋 다운로드 URL 모두
+`curl -sI` **200** 확인 완료 — §1의 3번 조건과 D1a
+게이트(`docs/roadmap.md` §3)가 해소됐다. §7a 체크리스트는 같은 날 PR
+#85에서 전항 완료됐다. **이 구 repo 자산은 2026-08-26 repo 삭제 후
+재생성으로 소실됐다** — 같은 날 release.yml `workflow_dispatch`(CI)로
+**같은 태그(`debugger-v0.2.0`·`debug-console-v0.1.4`)·같은 asset명으로
+재발행 완료**했다(재빌드라 sha256은 구 자산과 다르며, CI job Summary와
+GitHub API `assets[].digest`가 새 기준값이다). 설치 URL은 동일하지만
+**repo가 private인 동안은 미인증 404**다(실측) — public 전환 후에야 §7a의
+URL 설치 실증이 다시 유효해진다.
 
 **2026-08-06, 오너 지시로 npm-less 전환 결정.** `@apps-in-toss/debugger`·
 `@apps-in-toss/debug-console` 2개 패키지는 npmjs.com에 발행하지 않고,
@@ -85,6 +97,11 @@ npm unpublish는 발행 후 24시간 이내 + 다른 패키지가 의존하지 �
 갱신하는 방식으로만** 대응한다 — 기존 `dist_tag: next`를 기본값으로 둔 것과
 같은 동기(첫 배포가 광범위하게 참조되는 상태를 피한다)를, prerelease
 플래그 + 버전 고정 URL로 재구현한 것이다.
+
+**Immutable Releases가 이 repo에 활성화됐다** — 비소급이라 활성화 시점
+이후 발행분부터 서버측에서 잠긴다(발행 후 자산 교체 자체가 막힌다).
+`release.yml`이 draft로 만들어 검증한 뒤 publish하는 순서를 쓰는 이유가
+여기 있다 — publish 이후에는 위 운영 규율이 이제 기계로도 강제된다.
 
 ## 4. 워크플로에 내장된 안전장치
 

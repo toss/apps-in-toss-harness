@@ -236,10 +236,30 @@ jobs:
 
             case "$REAL_PUBLISH" in
               true)
+                # draft로 만들어 에셋을 전부 첨부한 뒤 마지막에 publish한다.
+                # 이 repo는 Immutable Releases가 켜져 있어 발행(publish) 순간
+                # 릴리즈가 잠기고 그 뒤의 에셋 추가·교체가 거부된다 — 발행된
+                # 릴리즈에 에셋을 올리는 순서(gh release create의 기본 동작)는
+                # immutable 환경에서 half-released 상태를 만들 수 있다.
+                # draft 단계는 immutable의 영향을 받지 않으므로 이 순서면
+                # immutable 여부와 무관하게 항상 동작한다(GitHub 권장 패턴).
                 gh release create "$tag" "$tarball" \
                   --title "$tag" \
                   --generate-notes \
+                  --draft \
                   "${prerelease_flag[@]}"
+
+                # GET /releases/tags/{tag}는 draft를 반환하지 않으므로 목록에서
+                # id를 찾는다(push 권한이면 draft도 목록에 보인다). 목록은
+                # 최신순이라 [0]이 방금 만든 draft다.
+                release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                  --jq "[.[] | select(.tag_name == \"${tag}\" and .draft == true)][0].id")"
+                if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
+                  echo "::error::draft release for ${tag} not found after create — aborting before publish"
+                  exit 1
+                fi
+                gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+                  -F draft=false >/dev/null
                 echo "released: ${tag} (asset: ${asset_name})"
                 ;;
               false)

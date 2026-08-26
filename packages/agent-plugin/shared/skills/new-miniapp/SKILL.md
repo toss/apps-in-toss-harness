@@ -748,7 +748,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   실측이다(2026-08-10 기준 공개 latest). `@latest`가 그보다 새 버전을 받으면
   이 문서의 서술이 앞설 수 있으므로, 어긋나면 CLI의 에러·`--help`를 정본으로
   본다.
-- devtools (mock + panel + unplugin): https://github.com/toss/apps-in-toss-harness/tree/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools
+- devtools (mock + panel + unplugin) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
   getPage)로 조회한다.
 - `--local` 폴백 템플릿 정책: `shared/templates/README.md` (react-vite는 wf

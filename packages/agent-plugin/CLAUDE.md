@@ -2,7 +2,9 @@
 
 ## 프로젝트 성격 (중요)
 
-이 패키지는 `toss/apps-in-toss-harness` monorepo 소속 **토스 공식** 패키지다 — hardfork 완료(aitcc 트리밍, manifest 재작성, `/ait:<verb>` rename이 전부 이 repo에서 수행됨). 과거 `apps-in-toss-community/agent-plugin`의 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다. 동시에 과장도 금지 — 상태는 정직하게 쓴다. **현재 상태(2026-08-21 실측): repo는 2026-08-06에 public으로 전환됐다가 다시 private으로 되돌려져 `visibility: private`이다.** 패키지를 npm에 발행하지 않고 GitHub Releases로 유통한다는 계획은 유지되고 첫 릴리즈 2건도 발행됐지만(2026-08-06, `debugger-v0.2.0`·`debug-console-v0.1.4`), repo가 private인 동안 그 다운로드 URL은 인증 없이 404라 유통 경로가 닫혀 있다 — 이 패키지의 skill·문서에 박힌 Release URL이 전부 그 영향을 받는다(목록·결정 대기 항목은 harness#141). 자세한 원칙은 루트 `CLAUDE.md` "노출 산출물" 섹션.
+이 패키지는 `toss/apps-in-toss-harness` monorepo 소속 **토스 공식** 패키지다 — hardfork 완료(aitcc 트리밍, manifest 재작성, `/ait:<verb>` rename이 전부 이 repo에서 수행됨). 과거 `apps-in-toss-community/agent-plugin`의 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다. 동시에 과장도 금지 — 상태는 정직하게 쓴다. **현재 상태: repo는 2026-08-26에 삭제 후 동일 이름으로 재생성됐고(이력 = 단일 `Initial commit`), private으로 생성돼 public 전환 이력이 없다 — flip은 미래 결정이다.** 패키지는 npm에 발행하지 않고 GitHub Releases로 유통한다 — 릴리즈 2건(`debugger-v0.2.0`·`debug-console-v0.1.4`)은 재생성 후 CI로 재발행됐지만, repo가 private인 동안 다운로드 URL은 인증 없이 404라 유통 경로가 닫혀 있다 — 이 패키지의 skill·문서에 박힌 Release URL이 전부 그 영향을 받는다. 자세한 원칙은 루트 `CLAUDE.md` "노출 산출물" 섹션.
+
+> **재생성 이전 참조는 죽었다.** 이 문서(및 이 패키지의 skill·문서)에 남은 `#N`·`harness#N` 이슈 번호와 커밋 SHA(`b5515ae` 등) 인용은 구 repo의 것으로 현재 트래커·이력에서 조회 불가하다 — 서술된 결정·경위 자체는 유효한 연대기다(원본은 maintainer 로컬 백업 mirror). 루트 `CLAUDE.md` 상단 전역 컨벤션 참고. 특히 살아있는 이슈 #1(보안검토 추적)은 구 `#1`(타깃 아키텍처)과 무관하다.
 
 **톤 가이드**: 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, `unofficial`/`비공식` 같은 방어적 라벨은 쓰지 않는다. 한 파일 안에서 영/한 병기 금지(다중 언어는 ko/en 별도 파일로 분리).
 
