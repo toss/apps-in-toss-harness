@@ -1,5 +1,10 @@
 # 배포 계획
 
+> **2026-08-26 repo 재생성.** 이 문서의 `#N` 이슈·PR 번호와 커밋 SHA는
+> 재생성 이전 구 repo의 것으로 현재 트래커에서 조회 불가하다(서술 내용은
+> 유효하다). 살아있는 참조는 마일스톤 1(MT)·2(PO)와 이슈 #1(보안검토
+> 추적)뿐이다.
+
 이 repo의 "배포"는 하나가 아니라 **네 개의 서로 다른 공개 행위**다. 각각 승인 주체와 되돌림
 가능성이 달라서, 섞어서 다루면 되돌릴 수 없는 것을 되돌릴 수 있는 것처럼 취급하게 된다.
 
@@ -10,9 +15,9 @@
 
 | 축 | 무엇이 공개되나 | 되돌릴 수 있나 | 상태 |
 |---|---|---|---|
-| 1. GitHub Pages | launcher PWA + fixture 데모 사이트 | 쉽다 — Pages 비활성화 | **완료** (`https://toss.github.io/apps-in-toss-harness/`) — launcher 표면 자체는 이후 환경 2 제거(harness#103, 2026-08-10)로 삭제됐다 |
+| 1. GitHub Pages | launcher PWA + fixture 데모 사이트 | 쉽다 — Pages 비활성화 | **완료** (`https://toss.github.io/apps-in-toss-harness/`) — launcher 표면 자체는 이후 환경 2 제거(harness#103, 2026-08-10)로 삭제됐다. **구 repo 기준 — 재생성(2026-08-26) 후 Pages 설정 유지 여부 재확인 필요** |
 | 2. GitHub Releases 에셋 2종(`debugger`·`debug-console`) | 빌드 산출물(`pnpm pack` tarball) + README | 기술적으로는 삭제 가능하지만, 배포 직후 스킬·소스에 버전 고정 URL이 박히므로 **운영 규율상 사실상 불가**로 취급 — 잘못되면 새 버전으로 대응 | 파이프라인 준비 |
-| 3. repo public 전환 | 소스 전체 + 커밋 이력 | 되돌려도 이미 클론·인덱싱된 사본은 회수 못 한다 | **완료** (2026-08-06, `private:false` 확인) |
+| 3. repo public 전환 | 소스 전체 + 커밋 이력 | 되돌려도 이미 클론·인덱싱된 사본은 회수 못 한다 | **구 repo에서 완료됐으나 재생성으로 무효** — 새 repo는 private, 미실행 |
 | 4. plugin marketplace | 사용자 진입점(station 0) | — | 3에 종속 |
 
 **축 2가 npm 패키지 3종에서 GitHub Release 에셋 2종으로 바뀐 이유**: 두 가지가
@@ -117,8 +122,12 @@ URL로 직접 설치**하는 방식이다. 이 방식은 git clone 설치가 막
    (`internal-protocol`은 harness#18로 pnpm workspace 밖
    `shared/internal-protocol`로 강등되며 애초에 이 문제 축에서 빠졌다 —
    devDependencies에 그 항목 자체가 더는 없다.)
-3. **private repo 인증도 문제가 안 된다** — repo는 이미 public 전환
-   완료(2026-08-06)됐고, public repo의 Release 에셋은 인증 없이 다운로드된다.
+3. **private repo 인증 — 당시엔 문제가 안 됐으나 지금은 다시 벽이다.**
+   이 실측 시점(2026-08-06)에는 구 repo가 public 전환 완료 상태여서 Release
+   에셋이 인증 없이 다운로드됐다. 그 repo는 2026-08-26 삭제 후 재생성됐고
+   **새 repo는 private로 생성됐으며 전환 이력이 없다** — 지금은 인증 없는
+   다운로드가 다시 404다(실측). public 전환 전까지는 이 세 번째 벽이
+   되살아나 있는 상태다.
 
 **실측 확인(2026-08-06)**: 패킹한 debugger tarball을 workspace 밖 빈
 프로젝트에 `npm install <URL>`·`npx -y -p <URL> <bin>`·`pnpm add <URL>` 세
@@ -185,7 +194,9 @@ URL로 직접 설치**하는 방식이다. 이 방식은 git clone 설치가 막
 - [ ] **git history 시크릿 스캔** — 커뮤니티 이력을 승계하지 않은 신규 이력이라 위험은 낮지만
       건너뛰지 않는다
 - [ ] 노출 산출물 최종 점검 — README ko/en, 라이선스 고지, 톤
-- [x] public 전환 — **완료(2026-08-06)**, `private:false` 실측 확인
+- [ ] public 전환 — **구 repo에서 완료(2026-08-06, `private:false` 실측
+      확인)됐으나 그 repo가 2026-08-26 삭제 후 재생성되며 무효화됐다.** 새
+      repo는 private로 생성됐고 전환 이력이 없다 — **미실행**.
 - [ ] **marketplace 진입 실증** — `/plugin marketplace add` → `/plugin install` →
       `/ait:welcome`. station 0이 실제로 열리는지 확인해야 harness가 완결된다.
 
@@ -225,6 +236,8 @@ debug-console 5 / internal-protocol 1), `localOnly` 등록은 PR마다 계속 �
   전에는 이 규율이 `dist_tag: next` 기본값으로 구현돼 있었다 — npm publish의
   72시간 unpublish 제약이 그 근거였다).
 - Pages는 켜는 순간 사이트가 public이 된다(조직 플랜상 열람 제한 옵션이 없다).
-- public 전환은 되돌려도 이미 나간 사본을 회수하지 못한다 — **완료(2026-08-06)**.
+- public 전환은 되돌려도 이미 나간 사본을 회수하지 못한다 — **구 repo에서
+  완료(2026-08-06)됐으나 2026-08-26 재생성으로 무효화됐다. 새 repo는
+  private, 미실행**(위 Phase 3 참고).
 
 세 경우 모두 **검증을 마친 뒤에 실행하고, 실행 전에는 준비만 한다**는 순서를 지킨다.

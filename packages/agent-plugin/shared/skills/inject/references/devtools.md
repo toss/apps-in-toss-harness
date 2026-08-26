@@ -210,7 +210,7 @@ module.exports = {
   - 진입점 파일명이 위 패턴과 다르면 패널이 자동 주입되지 않을 수 있습니다. 그럴 때만 진입점에 수동으로 추가하세요:
       import '@apps-in-toss/devtools/panel';
   - devtools는 NODE_ENV=development 에서만 활성화됩니다 (production 빌드엔 미포함).
-  - 문서: https://github.com/toss/apps-in-toss-harness/tree/b5515aebfec762d3ed8868c3fb1b8145bf13f592/packages/devtools
+  - 문서: 구 repo 이력에만 존재하던 devtools 소스 트리(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 ```
 
 ## devtools facet 하지 말아야 할 것

@@ -1,19 +1,21 @@
 # public flip(#8) 당일 런북
 
-> **상태: flip 집행됐다가 되돌려졌다 — 현재 private (#141).**
-> 2026-08-06에 `visibility`가 public으로 전환됐고 그 사실을 실측 확인했다
-> (`private:false`, 2026-08-07·08-10 재확인). 그런데 **2026-08-10 ~ 08-21
-> 사이 어느 시점에 다시 private으로 되돌려졌다** — 2026-08-21 실측
-> `{"private":true,"visibility":"private"}`이고, 되돌린 주체·사유는 이 repo
-> 어디에도 기록이 없다. 전환 시점을 더 좁히지 못한 이유와 파급(20개 파일)은
-> **#141**.
+> **상태: 저장소가 2026-08-26에 백업 후 삭제·동일 이름으로 재생성됐다 —
+> 현재 private, 이력은 단일 `Initial commit` 하나뿐이다.** 구 repo의 연혁
+> (2026-08-06 flip 집행 → 이후 되돌림 — 구 #141이 추적하던 상태)은 재생성으로
+> 함께 소멸했다. **이 문서의 과거 시점 "완료" 표기는 전부 구 repo에서 있었던
+> 일이고, 새 repo의 현재 상태 근거로 쓰면 안 된다.** 새 repo는 public 전환
+> 이력이 없으며 flip은 다시 미실행 상태다. 이 문서 안의 이슈 번호(#N)·커밋
+> SHA 참조는 재생성 이전 것이라 전부 죽은 링크다(루트 CLAUDE.md의 전역 관례
+> 참고).
 >
-> **따라서 이 문서 본문의 "완료" 표기는 전부 "2026-08-06 시점에 완료됐던
-> 것"으로 읽어야 하고, 현재 상태의 근거로 쓰면 안 된다.** 아래는 실행 당시
-> 준비 자료로 보존하며, npm 배포(구 축2) 관련 절은 npm-less 전환 결정
-> (2026-08-06, 오너 지시 — `docs/release.md` 서두)에 따라 소거했다.
-> `docs/release-plan.md`가 재정의한 축 번호(GitHub Release 유통)를 기준으로
-> 남은 서술을 읽는다.
+> **§1.1·§1.2(working tree 감사)는 지금도 유효하다** — 재생성은 코드 tree를
+> 바이트 동일(tree `eeea2aa`)하게 보존했으므로 working tree 판정은 그대로
+> 승계된다. 반면 **§1.3·§1.3a·§1.4(히스토리·author-email 축)는 재생성으로
+> 평가 대상 자체가 소멸했다** — 각 절의 supersession note 참고. npm 배포
+> (구 축2) 관련 절은 npm-less 전환 결정(2026-08-06, 오너 지시 —
+> `docs/release.md` 서두)에 따라 소거했고, `docs/release-plan.md`가 재정의한
+> 축 번호(GitHub Release 유통)를 기준으로 남은 서술을 읽는다.
 
 이 문서는 repo를 public으로 전환하는 날 무엇을 어떤 순서로 하는지 적은 **준비
 자료**다. 실사(식별자 감사·노출면·히스토리) 결과를 한곳에
@@ -29,8 +31,10 @@
   **§5의 1번(station 0 marketplace 거취)·3번(커뮤니티 org의 이관 후 정체성)은
   "#8 시점에 확정"으로 명시된 항목**이라, flip 당일 판단 대상에 그대로 딸려
   온다 — 이 둘은 이 런북이 대신 정할 수 없다.
-- **공개 행위는 서로 다른 축이다** (`docs/release-plan.md`). 축1(Pages)은
-  이미 완료, 축2(GitHub Release 유통)는 repo가 private이어도 가능, 축3(public
+- **공개 행위는 서로 다른 축이다** (`docs/release-plan.md`). 축1(Pages)은 구
+  repo에서 완료됐으나 Pages는 repo 설정이라 재생성으로 초기화됐을 수 있다 —
+  재확인 필요(`docs/release-plan.md` 각주). 축2(GitHub Release 유통)는 repo가
+  private이어도 가능 — 단 private 동안 다운로드 URL은 미인증 404다. 축3(public
   전환)이 이 런북의 주제, 축4(marketplace)는 축3에 종속된다. 되돌림 가능성이
   축마다 다르므로 섞지 않는다.
 - **민감값 규율**: 이 문서에는 사내 식별자(워크스페이스 번호·miniAppId·
@@ -100,6 +104,12 @@
 
 ### 1.3 히스토리 노출 평가
 
+> **⛔ 소멸(2026-08-26 재생성으로 대체)** — 이 절이 평가한 히스토리(구 repo
+> 326커밋·dangling 커밋·커밋 메타데이터 전부)는 repo 삭제로 존재하지 않는다.
+> 새 repo 이력은 단일 `Initial commit`(author `apps-in-toss
+> <noreply@users.noreply.github.com>`)뿐이라 아래 잔존 항목이 전부 함께
+> 소멸했다. 기록으로만 보존한다.
+
 > **⚠️ 이 절의 원 조사(커밋 192개)는 2026-08-03 시점 스냅숏이고, 그 뒤 129개
 > 커밋이 스캔되지 않은 채 쌓였다.** 2026-08-25 재실사가 범위를 넓혀
 > 다시 돌렸다 — **커밋 326개**(도달 가능 323 + 아래 dangling 3)·**원격 브랜치
@@ -129,6 +139,17 @@
   과거 blob 자체는 스크럽 대상이 아니다(§1.4 author-email 결정과 별개 축).
 
 ### 1.3a 재실사 결과 (2026-08-25) — 이력 재작성 **실행 결정**
+
+> **⛔ 결정 자체가 다른 수단으로 집행됨(2026-08-26)** — 옵션 B(`filter-repo`
+> rewrite)는 실행되지 않았다. 대신 repo를 백업(`--mirror` + 메타데이터
+> inventory) 후 **삭제·동일 이름 재생성**해 이력을 단일 `Initial commit`으로
+> 만들었다. 제거 대상이던 G1·G1'·G2·G3은 새 객체 DB에 애초에 존재하지 않아
+> 구조적으로 해소됐고, **G4(dangling 커밋)도 함께 소멸해 GitHub Support 요청이
+> 불요해졌다**(단, "브랜치 삭제·rebase마다 dangling이 새로 생긴다"는 구조적
+> 사실은 새 repo에도 유효 — flip 전 점검 항목은 §6-3 참고). **G5는 tree가
+> 바이트 동일하게 승계돼 아래 "공개 무해" 판정이 그대로 유효하다.**
+> maintainer-internal `history-rewrite-runbook.md`의 filter-repo 절차는 집행
+> 없이 폐기됐다.
 
 공개 전환 보안검토(사내 검토자 지적: "런북 이후 커밋을 포함한 전체 branch/tag·
 Git history·실제 Release tarball을 재점검했는가")에 대응해 돌린 재실사 결과다.
@@ -188,6 +209,12 @@ object 제거 요청(G4), 협업자 재클론.
 전원의 재클론을 강제하므로, 자동화 세션이 임의로 실행하지 않는다.
 
 ### 1.4 author-email 결정 자료 (Dave)
+
+> **⛔ 결정 포인트 소멸(2026-08-26 재생성)** — 사내 도메인 계정이 145커밋에
+> 남던 문제 자체가 없어졌다. 새 repo의 유일한 커밋은 중립 author
+> (`apps-in-toss <noreply@users.noreply.github.com>`)이고, 문제였던 커밋
+> 메시지 1건(dog-food 식별자 노출)도 이력과 함께 소멸했다. 아래 옵션표는
+> 기록으로만 보존한다.
 
 선택지는 셋이고, 셋 다 "히스토리는 public이면 영구적"이라는 전제를 공유한다.
 
@@ -300,7 +327,7 @@ flip 당시 값: `description` 있음(영문 1줄), `homepage: null`, `topics: [
 
 | 항목 | 제안 | 성격 |
 |---|---|---|
-| `visibility` | private → public | **완료(2026-08-06)** — 실측 `private:false` 확인 |
+| `visibility` | private → public | **미실행(재생성 후 리셋)** — 구 repo에서 2026-08-06 집행됐으나 재생성으로 무효, 새 repo는 private으로 생성됨 |
 | `topics` | 비어 있음. 검색성 위해 채우기 권장 | Dave 확인(브랜딩 노출 판단 포함) — 잔여 |
 | `homepage` | 공식 문서 URL 연결 여지 있음 | 선택 사항 |
 | `description` | 현행 유지 가능 | 결정 불요 |
@@ -362,24 +389,21 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
    문체), 나머지 8건은 보존 기본값으로 판정 완료(추가 조치 불요). **히스토리
    rewrite를 택한다면 이 스크럽이 이미 선행돼 있다**(스크럽 후 한 번의
    rewrite로 끝난다).
-3. **이력 재작성 실행** — §1.3a에서 **옵션 B로 결정됐다**(사내 식별자 4클래스
-   G1·G1'·G2·G3 제거, author-email 처리는 §1.4 판단을 같은 rewrite에 얹는다).
-   커밋 해시가 전면 변경되므로 **열린 PR을 전부 정리·머지한 뒤**에 하고, 이후
-   모든 단계는 새 해시 기준이다. 실행 절차·검증은 maintainer-internal
-   `history-rewrite-runbook.md`가 정본 — 백업 미러 → ruleset(main·release 태그)
-   일시 비활성 → `filter-repo` → 재스캔 0건 확인 → force-push → **릴리즈 2건
-   에셋·sha256 보존 확인** → ruleset 재활성 순이다.
-   그리고 **G4(dangling 커밋)**: force-push 뒤에도 unreachable 객체가 SHA 직접
-   조회로 남으므로 GitHub Support에 제거를 요청한다. 이건 1회성이 아니라
-   브랜치 삭제·rebase마다 재발하는 표면이라 flip 상시 점검 항목이다.
-   **G5(현재 트리 잔존 식별자 4개소)**는 이 rewrite와 별개 축이라 §1.3a의
-   판단(유효 자산 여부·원 공개 여부)을 먼저 확정한 뒤 처리한다.
+3. **이력 재작성 실행 — 항목 소멸(2026-08-26 재생성으로 대체).** §1.3a의
+   옵션 B 결정은 filter-repo 대신 **repo 삭제·재생성**으로 집행됐다 — 이력이
+   단일 `Initial commit`이 되면서 G1·G1'·G2·G3·G4가 구조적으로 해소됐고
+   GitHub Support 요청도 불요해졌다(§1.3a supersession note). 이 자리에 남는
+   flip-전 점검은 하나다: **재생성 이후 새로 생긴 dangling 커밋이 없는지
+   확인** — dangling은 브랜치 삭제·rebase마다 재발하는 표면이라는 사실은 새
+   repo에도 유효하다. **G5(현재 트리 잔존 식별자 4개소)**는 tree 승계로
+   §1.3a의 "공개 무해" 판정이 그대로다 — 추가 조치 불요.
 4. **`mcp-gw-feedback.md` 거취 실행** — §5. flip 전에 트리에서 결정이 끝나
    있어야 한다(2번 옵션은 flip 후에 옮기면 이미 공개된 뒤다).
 5. **README ko/en 버전 A 적용 + metadata 준비** — §3.2, §3.5. **두 README는 같은
    커밋에서 함께 바꾼다**(동등 정본 규칙). 아직 `visibility`는 건드리지 않는다.
-   — **완료(2026-08-06)**: 실제 적용 문구는 §3.2 버전 A 초안이 아니라 npm-less
-   전환 반영본이다(§3.2 서두 caveat 참고). README 상태 절은 이미 현행이다.
+   구 repo에서 2026-08-06 한 번 집행됐으나(npm-less 전환 반영본 — §3.2 서두
+   caveat), 재생성·private 복귀로 README 상태 절은 다시 "private + flip 미결"
+   문구다. **flip 당일 이 항목은 다시 실행 대상이다.**
 6. **CI 전체 시퀀스 green 확인** — `lint → build → 가드 4종 → check:pack-manifests
    → typecheck → test`(`check:footprint-absent`·`qa:fidelity`는 devtools 단독
    소유 step이었다 — harness `packages/devtools` 제거·C4로 ci.yml에서도
@@ -388,9 +412,12 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
 7. **오픈소스 공개 승인 절차 완료 확인** — `docs/release-plan.md` Phase 3 첫
    체크박스. 조직 절차·승인 라인은 maintainer-internal 기록이 정본이라 여기
    적지 않는다. 8번(visibility flip)의 하드 게이트다. **Dave 확인.**
-8. **repo visibility private → public** — **완료(2026-08-06, Dave 실행)** —
-   실측 `private:false` 확인. 여기가 되돌릴 수 없는 경계였다(되돌려도 이미
-   클론·인덱싱된 사본은 회수 못 한다).
+8. **repo visibility private → public** — **미실행(재생성 후 리셋).** 구
+   repo에서 2026-08-06 집행됐으나 재생성으로 무효 — 새 repo는 private으로
+   생성됐고 public 전환 이력이 없다. 여기가 되돌릴 수 없는 경계라는 사실은
+   그대로다(전환 후 클론·인덱싱된 사본은 회수 못 한다). 구 repo의 "flip 후
+   되돌림" 연혁이 남긴 교훈: 되돌려도 노출은 회수되지 않으므로, 이번 flip은
+   이 런북 전 항목 통과 후에만 실행한다.
 9. **flip 직후 검증** — §7 전체.
 10. **marketplace 축(축4)** — 8번에 종속. #7 §5-1의 확정 내용대로 커뮤니티
     marketplace 병존/폐기와 사용자 안내를 집행한다.
@@ -444,9 +471,10 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
 5. **Pages 무해 확인** — Pages는 flip 전에도 public이었으므로 상태 변화가
    없어야 정상. launcher 경로(`/launcher/`)는 환경 2 제거로 더 이상 배포되지
    않으므로 확인 대상이 아니다(§4).
-6. **GitHub Release 에셋 확인 (해당 시점에만)** — `docs/release.md` §1의
-   절차로 `debugger`·`debug-console` Release를 이미 잘랐다면, 에셋 다운로드
-   URL이 `curl -sI`로 200을 반환하는지 재확인한다. npm trusted
-   publishing·provenance 확인 절차는 npm-less 전환(2026-08-06)으로
-   대상이 없어져 삭제했다.
+6. **GitHub Release 에셋 확인** — 재생성 후 릴리즈 2건(`debugger-v0.2.0`·
+   `debug-console-v0.1.4`)은 2026-08-26 CI(release.yml dispatch) 재발행분이다
+   — private 동안 미인증 404였던 `releases/download/...` URL이 flip 후
+   `curl -sI`로 200을 반환하는지 확인한다(sha256 기준값은 CI run Summary·API
+   digest — `docs/release.md`). npm trusted publishing·provenance 확인 절차는
+   npm-less 전환(2026-08-06)으로 대상이 없어져 삭제했다.
 7. **#8 종료 처리** — 위 전부 통과 후. 이슈 종료·코멘트는 **Dave가 한다.**
