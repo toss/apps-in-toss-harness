@@ -1,0 +1,6 @@
+# setup-fixture.sh 가 매 실행마다 생성하는 symlink — 커밋하지 않는다.
+.claude/skills
+
+# Claude Code 가 working_dir 에 만들 수 있는 런타임 파일.
+.claude/settings.local.json
+.claude/*.lock

@@ -1,0 +1,27 @@
+{
+  "name": "ait",
+  "version": "0.1.23",
+  "description": "Build Apps in Toss mini-apps from inside AI coding agents.",
+  "author": {
+    "name": "toss"
+  },
+  "homepage": "https://github.com/toss/apps-in-toss-harness",
+  "repository": "https://github.com/toss/apps-in-toss-harness",
+  "license": "BSD-3-Clause",
+  "keywords": ["apps-in-toss", "toss", "mini-app", "claude-code"],
+  "skills": "./shared/skills/",
+  "commands": "./shared/commands/",
+  "mcpServers": {
+    "apps-in-toss-docs": {
+      "type": "http",
+      "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    },
+    "apps-in-toss-console": {
+      "type": "http",
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
+      "oauth": {
+        "clientId": "mcp-gateway"
+      }
+    }
+  }
+}

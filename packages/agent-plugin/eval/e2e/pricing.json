@@ -1,0 +1,31 @@
+{
+  "asOf": "2026-06-24",
+  "_note": "per-MTok USD. cache-read = 0.1x input, cache-write(5m TTL) = 1.25x input (prompt-caching economics). USD는 파생값 — runs.jsonl 토큰을 이 표로 리포트 시점에 재계산한다(plan §1.1). 가격 변경 시 이 파일만 고치고 과거 토큰을 다시 돈다.",
+  "models": {
+    "claude-opus-4-8": {
+      "inputPerMtok": 5.0,
+      "outputPerMtok": 25.0,
+      "cacheReadPerMtok": 0.5,
+      "cacheWritePerMtok": 6.25
+    },
+    "claude-sonnet-4-6": {
+      "inputPerMtok": 3.0,
+      "outputPerMtok": 15.0,
+      "cacheReadPerMtok": 0.3,
+      "cacheWritePerMtok": 3.75
+    },
+    "claude-haiku-4-5": {
+      "inputPerMtok": 1.0,
+      "outputPerMtok": 5.0,
+      "cacheReadPerMtok": 0.1,
+      "cacheWritePerMtok": 1.25
+    },
+    "qwen": {
+      "_comment": "gateway(ANTHROPIC_BASE_URL 뒤 비-Anthropic). cache 컬럼=0 — first-party 밖에서 캐시 토큰 필드가 ≈0이라 캐시 기반 USD는 무의미(caveat ③). input/output은 OpenRouter Qwen3 Coder 대표값(2026-06-24, >128k 컨텍스트 티어 $0.22/$1.80). provider·컨텍스트 티어마다 다르니 실제 게이트웨이 단가로 보정하라. prefix 매칭이라 qwen3-coder 등 qwen* 모델 id를 커버한다.",
+      "inputPerMtok": 0.22,
+      "outputPerMtok": 1.8,
+      "cacheReadPerMtok": 0.0,
+      "cacheWritePerMtok": 0.0
+    }
+  }
+}

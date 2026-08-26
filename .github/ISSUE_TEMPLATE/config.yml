@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 앱인토스 공식 문서
+    url: https://developers-apps-in-toss.toss.im
+    about: API/SDK 사용법, 콘솔 가이드 등은 harness 이슈보다 공식 문서를 먼저 확인해 주세요.
+  - name: 버그리포트 가이드
+    url: https://github.com/toss/apps-in-toss-harness/blob/main/docs/bug-report-guide.md
+    about: 좋은 재현 절차를 작성하는 방법과 로그를 얻는 방법을 안내합니다.

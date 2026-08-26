@@ -1,0 +1,15 @@
+{
+  // Typecheck pass for the test suites only.
+  //
+  // Kept apart from `tsconfig.json` so the daemon source can compile without
+  // DOM globals (see the comment there). Several suites evaluate the page-side
+  // source strings this package generates inside jsdom, so they legitimately
+  // reach for `window` / `document`; that permission stops at this file.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,166 @@
+name: "🐛 버그 리포트"
+description: harness(ait 플러그인·debugger·debug-console) 사용 중 발견한 버그를 신고합니다.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 제출 전 꼭 확인해 주세요
+
+        - **Deploy Key·TOTP 등 시크릿 값을 절대 붙여넣지 마세요.** 이 저장소는 public이라 이슈 내용이 누구나 볼 수 있습니다.
+        - dog-food 워크스페이스 번호·miniAppId 등 사내 식별자, 로컬 사용자 홈 디렉터리 하위 절대경로(사용자명이 그대로 노출됩니다)도 지워 주세요.
+        - 아래 "로그" 항목에 붙여넣기 전에도 같은 기준으로 한 번 더 확인해 주세요. 좋은 재현 절차 작성법과 로그를 얻는 방법은
+          [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/docs/bug-report-guide.md)를 참고하세요.
+
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: 재현 절차
+      description: 문제를 재현할 수 있는 최소 단계를 순서대로 적어 주세요.
+      placeholder: |
+        1. `/plugin install ait@apps-in-toss` 실행
+        2. `/ait:new my-app` 실행
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작
+      description: 원래 어떻게 동작해야 한다고 생각하셨나요?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작
+      description: 실제로는 어떻게 동작했나요? 에러 메시지가 있다면 함께 적어 주세요.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: 에이전트 종류
+      description: harness 플러그인을 사용한 AI 코딩 에이전트를 선택해 주세요.
+      options:
+        - Claude Code
+        - Codex
+        - 기타(재현 절차에 명시)
+    validations:
+      required: true
+
+  - type: input
+    id: agent-version
+    attributes:
+      label: 에이전트 버전
+      description: 예 `claude --version` 결과
+      placeholder: "예: 1.2.3"
+    validations:
+      required: false
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: ait 플러그인 버전
+      description: Claude Code에서 `/plugin` 목록을 열면 `ait` 옆에 표시되는 버전을 적어 주세요.
+      placeholder: "예: 0.1.23"
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "예: macOS 15.1 / Ubuntu 24.04 / Windows 11 + WSL2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: create-ait-app / web-framework 버전
+      description: |
+        프로젝트 루트에서 `pnpm ls @apps-in-toss/web-framework` 결과를 붙여넣어 주세요.
+        `create-ait-app`으로 scaffold했다면 그 버전도 함께 적어 주세요(scaffold 실행 로그 또는 `package.json`의 devDependency 기록).
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: skill
+    attributes:
+      label: 관련 skill / 명령
+      description: 문제가 발생한 `/ait:*` 명령을 선택해 주세요.
+      options:
+        - /ait:welcome
+        - /ait:new
+        - /ait:plan
+        - /ait:design
+        - /ait:setup-debugger
+        - /ait:debug
+        - /ait:inject-debug-console
+        - /ait:inject-devtools
+        - 특정 명령과 무관 / 설치(marketplace add·install) 단계
+        - 잘 모르겠음
+    validations:
+      required: false
+
+  - type: dropdown
+    id: station
+    attributes:
+      label: 어느 station에서 발생했나요?
+      description: '`docs/roadmap.md`의 station map 기준입니다. 잘 모르겠으면 "잘 모르겠음"을 선택해 주세요.'
+      options:
+        - "0. install (marketplace add / plugin install)"
+        - "1. scaffold (/ait:new)"
+        - "2. dev (pnpm dev, devtools panel)"
+        - "3. debug (/ait:debug, /ait:setup-debugger)"
+        - "4. auth (appLogin mock)"
+        - "5. register+ship (콘솔 등록·번들 업로드)"
+        - "6. operate (콘솔 상태 조회)"
+        - "7. plan (/ait:plan)"
+        - "8. design (/ait:design)"
+        - "docs (문서 MCP 조회)"
+        - 잘 모르겠음
+    validations:
+      required: false
+
+  - type: dropdown
+    id: owner-guess
+    attributes:
+      label: 소관 추정
+      description: |
+        문제가 어느 쪽에 가까워 보이는지 짐작을 알려 주세요(정확하지 않아도 괜찮습니다) — triage에 도움이 됩니다.
+        - **harness**: `ait` 플러그인/skill/명령 자체(agent-plugin·debugger·debug-console)의 동작이 이상함
+        - **콘솔 MCP GW**: 앱 등록·번들 업로드·컴파일·상태 조회(`apps-in-toss-console` MCP 서버) 관련 오류
+        - **SDK(web-framework)**: 실기기/실 SDK에서의 API 동작 — harness 밖 `@apps-in-toss/web-framework` 자체 이슈일 가능성
+      options:
+        - harness (ait 플러그인 / skill / debugger / debug-console)
+        - 콘솔 MCP GW (앱 등록 / 업로드 / 컴파일 / 상태 조회)
+        - SDK (web-framework 런타임 동작)
+        - 잘 모르겠음
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 로그
+      description: |
+        관련 로그를 붙여넣어 주세요. **붙여넣기 전에 시크릿·사내 식별자가 섞여 있지 않은지 다시 한번 확인해 주세요.**
+        로그를 어떻게 얻는지는 [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/docs/bug-report-guide.md)를 참고하세요(devtools panel Console 탭 / 브라우저 DevTools / on-device attach 로그).
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 추가 정보
+      description: 스크린샷, 관련 이슈/PR 링크 등 그 외 참고할 내용이 있다면 적어 주세요.
+    validations:
+      required: false

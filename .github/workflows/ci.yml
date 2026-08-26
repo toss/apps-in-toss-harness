@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      # devtools·debugger의 `src/mcp/dashboard.generated.ts`는 빌드 산출물이면서
+      # 커밋된다. `pnpm build`가 매번 재생성하므로 손수정본을 커밋해도 런타임엔
+      # 영향이 없고, 그래서 아무도 안 보면 조용히 어긋난 채 남는다. 두 패키지가
+      # 이미 갖고 있던 `check:dashboard-html-fresh`를 여기서 실제로 돌린다.
+      # `--if-present`를 일부러 쓰지 않는다 — 두 패키지가 모두 스크립트를 잃으면
+      # pnpm이 ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT로 실패한다(게이트가 사문화되면
+      # 조용히 통과하는 대신 소리를 낸다).
+      - run: pnpm -r check:dashboard-html-fresh
+      # 발행 산출물 게이트. 이 3종은 debugger가 자체 소유한다(devtools 쪽 구현·가드는
+      # harness#40으로 이관·제거 완료). debugger에는 `prepublishOnly`가 애초에 없고,
+      # devtools의 `prepublishOnly`(build·footprint·typecheck·test 체인)도 release.yml이
+      # `pnpm pack` + `gh release create` 경로라 발화하지 않는다
+      # (docs/release.md §4) — CI가 실제 강제 계층이다.
+      - run: pnpm -r check:mcp-react-free
+      - run: pnpm -r check:test-runner-dist
+      - run: pnpm -r check:debug-surface-absent
+      # 발행 manifest phantom 의존 게이트(#18, PR #37). npm 버전은 불변이라
+      # 첫 배포 전이 유일한 차단 시점 — baseline에 없는 새 위반이 나오면 실패한다.
+      - run: pnpm check:pack-manifests
+      # npm-less 전환 드리프트 가드. 스킬/소스에 박힌 GitHub Release 다운로드
+      # URL의 버전이 package.json과 일치하는지, 호스트가 이 repo로 고정돼
+      # 있는지, Release URL 전환이 시작된 뒤 (구) 커뮤니티 org 스코프
+      # 참조가 설치·실행 명령 문맥에 남아있지 않은지를 검사한다. 첫 Release
+      # 2건(debugger-v0.2.0·debug-console-v0.1.4, 2026-08-06)이 발행되고
+      # 스코프 치환까지 끝난 지금은 무장 상태로 실질 검사한다.
+      - run: pnpm check:dist-urls
+      - run: pnpm typecheck
+      - run: pnpm test
+      # 의존성 취약점 게이트(공개 전환 보안검토 ①). 사내망에서는 프록시가
+      # npm audit bulk endpoint를 가로채 400을 돌려주므로 로컬 `pnpm audit`은
+      # 구조적으로 실패한다 — 그래서 이 검사는 공개망 러너인 CI가 유일한 실행
+      # 지점이다. 범위를 좁게 잡은 것은 의도다: `--prod`는 배포 산출물에 실제로
+      # 들어가는 의존성만 보고(dev 툴체인 advisory는 tarball에 영향이 없다),
+      # `--audit-level high`는 high·critical만 차단한다 — 무관한 PR이 low
+      # advisory로 붉어지면 게이트가 사문화되기 때문이다. Dependabot alerts·
+      # security updates는 별도 축으로 켜져 있다(탐지·자동 PR), 이 스텝은 그
+      # 탐지가 머지를 막는 강제 계층이다.
+      - run: pnpm audit --prod --audit-level high

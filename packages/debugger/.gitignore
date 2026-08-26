@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+.codegraph/
+
+# SECRET-HANDLING: relay state files carry TOTP secrets, wss:// relay URLs,
+# and tunnel hostnames. Never track them.
+.ait_relay

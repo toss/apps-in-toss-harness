@@ -1,0 +1,77 @@
+{
+  "_comment": "일방향 vendored import 파이프라인 상태 파일. 각 packages/<name>이 apps-in-toss-community 조직의 어느 repo/path에서, 어느 ref까지 반영됐는지 기록한다. mode 설명: 'hardfork'는 이 repo에서 이미 갈라져 나가 자동 덮어쓰기가 금지된 패키지 — 새 상류 커밋은 patch로만 사람이 선별 cherry-pick한다(현재 4개 패키지 전부 — devtools는 harness packages/devtools 자체가 C4로 제거되며 이 파일에서도 제거됨, 2026-08-05). 'snapshot'은 과거 모드로, 상류를 정본으로 통째로 덮어쓸 수 있었다(devtools/debugger/debug-console/internal-protocol이 harness#25 결정 2026-07-31로 전환되기 전까지 이 모드였다) — sync-upstream.mjs는 이 모드를 계속 지원하지만 지금 이 파일 안의 어느 패키지도 쓰지 않는다. lastImportedRef/lastImportedAt은 hardfork에서는 갱신되지 않는 고정값(패치 생성의 diff 기준점)이라 스크립트가 자동으로 건드리지 않는다 — 사람이 손으로 고치지 마라. 자세한 절차·모드 결정 근거는 docs/upstream-sync.md. `packages.<name>.localPath`(선택)는 로컬 반영 대상이 packages/<name> 기본값이 아닐 때만 명시한다 — harness#18(옵션 4)로 internal-protocol이 pnpm workspace 밖 shared/internal-protocol로 강등되며 처음 쓰였다; sync-upstream.mjs/upstream-drift-audit.mjs의 resolvePackageTargetDir()가 이 필드를 읽는다.",
+  "packages": {
+    "agent-plugin": {
+      "_comment": "hardfork 완료 (skill 7종 제거, /ait:<verb> rename, manifest 재작성 — 이 repo가 정본). 상류 재스냅샷 금지, 선별 cherry-pick만. lastImportedRef는 하드포크의 베이스가 된 커밋(harness commit d456387 'chore: monorepo 골격 + 1차 스냅샷').",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "agent-plugin",
+        "path": "."
+      },
+      "lastImportedRef": "fcfbec98d178b9f6abbda1f24f7172f6ebbd725a",
+      "lastImportedAt": "2026-07-28T14:01:27+09:00",
+      "mode": "hardfork"
+    },
+    "debugger": {
+      "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다. 전환 사유는 devtools 항목과 동일(단조 증가하는 localOnly, 등록 누락 시 조용한 되돌림 — 측정 기준 커밋 d7700bb, 잔존 21건). lastImportedRef는 이제 갱신되지 않는 고정 기준점(diff patch 생성 기준)이다. 상류 debugger repo의 packages/debugger 서브디렉토리만 추출 대상이었다는 사실 자체는 바뀌지 않는다. localOnly는 지우지 않고 유지 — 선별 cherry-pick 대조 기준. .gitignore·biome.json은 초기 벤더링(커밋 1432504) 때 community debugger repo의 **repo-root** 설정을 packages/<sub> 서브트리 '안으로' 손으로 복사해 넣은 것이라 상류 서브트리 추출에는 애초에 존재하지 않는다(#21) — hardfork 하에서도 '상류에 없는 파일'이라는 사실은 그대로라 cherry-pick 시 참고 가치가 있다. debugger repo 자체는 pnpm workspace라 3패키지(debugger/debug-console/internal-protocol)가 같은 repo·같은 ref를 공유한다.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "debugger",
+        "path": "packages/debugger"
+      },
+      "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
+      "lastImportedAt": "2026-07-30T23:40:40+09:00",
+      "mode": "hardfork",
+      "localOnly": [
+        "README.md",
+        "README.en.md",
+        ".gitignore",
+        "biome.json",
+        "src/mcp/deeplink.ts",
+        "src/mcp/attach-orchestrator.ts",
+        "src/mcp/__tests__/deeplink.test.ts",
+        "src/mcp/__tests__/debug-server.test.ts",
+        "docs/env3-test-execution-redesign.md"
+      ],
+      "_localOnly_comment": "README.md/README.en.md: harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유. .gitignore/biome.json: community debugger repo의 repo-root 전용 설정이라 packages/debugger 서브트리 추출에는 애초에 나타나지 않는다(#21) — localOnly 없이 재동기화하면 '상류에 없다'는 이유만으로 다음 snapshot sync가 통째로 삭제해 lint/git-ignore 설정을 잃는다. src/mcp/deeplink.ts·src/mcp/attach-orchestrator.ts·src/mcp/__tests__/{deeplink,debug-server}.test.ts(2026-07-31, #25 위험 클래스 2 — PR #22)는 devtools 항목의 클래스 2와 동일한 사유다: PR #22가 `AIT_LAUNCHER_URL` env override를 devtools·debugger 두 패키지에 (같은 내용으로) 나란히 넣었으므로(`git show --stat aa763c3`), 여기서도 보호하지 않으면 같은 방식으로 override 배선과 TOTP 미노출 회귀 테스트가 다음 snapshot sync에서 조용히 사라진다. devtools 쪽의 src/unplugin/tunnel.ts·src/__tests__/unplugin-tunnel.test.ts에 대응하는 debugger 쪽 파일은 없다(tunnel 배선은 devtools의 unplugin 계층에만 존재) — 그래서 이 클래스 2는 4개만 등록한다(harness#40이 devtools 쪽 사본 4개를 완전 삭제한 뒤에도 이 4개는 그대로 — 처음부터 debugger 전용이었다). docs/env3-test-execution-redesign.md(harness#40, 상류 df1f45e 선별 수용)는 devtools의 `meta/env3-test-execution-redesign.md`가 test-runner 이관과 함께 이 경로로 옮겨온 파일 — 상류 community debugger repo의 packages/debugger 서브트리에는 대응 파일이 없는 harness 전용 설계 문서라, localOnly 없이 재동기화하면 '상류에 없다'는 이유만으로 다음 sync가 지운다.",
+      "dropUpstreamPaths": []
+    },
+    "debug-console": {
+      "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다. 전환 사유는 devtools 항목과 동일(측정 기준 커밋 d7700bb, 잔존 5건). lastImportedRef는 이제 갱신되지 않는 고정 기준점(diff patch 생성 기준). 상류 debugger repo의 packages/debug-console 서브디렉토리를 추출 대상으로 삼았다는 사실은 바뀌지 않는다. localOnly는 지우지 않고 유지 — 선별 cherry-pick 대조 기준.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "debugger",
+        "path": "packages/debug-console"
+      },
+      "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
+      "lastImportedAt": "2026-07-30T23:40:40+09:00",
+      "mode": "hardfork",
+      "localOnly": [
+        "README.md",
+        "README.en.md",
+        ".gitignore",
+        "biome.json"
+      ],
+      "_localOnly_comment": "README.md/README.en.md: harness 커밋 89f3e33 — devtools 항목의 _localOnly_comment와 동일한 사유. .gitignore/biome.json: debugger 항목의 _localOnly_comment와 동일한 사유(repo-root 전용 설정을 서브트리에 손으로 복사).",
+      "dropUpstreamPaths": []
+    },
+    "internal-protocol": {
+      "_comment": "hardfork 모드로 전환(harness#25, 결정 2026-07-31) — 이전엔 snapshot이었다. 전환 사유는 devtools 항목과 동일(측정 기준 커밋 d7700bb, 잔존 1건). lastImportedRef는 이제 갱신되지 않는 고정 기준점(diff patch 생성 기준). 상류 debugger repo의 packages/internal-protocol 서브디렉토리를 추출 대상으로 삼았다는 사실은 바뀌지 않는다(상류의 위치는 그대로) — 로컬 반영 대상만 harness#18(옵션 4, 결정 2026-08-01)로 packages/internal-protocol에서 shared/internal-protocol로 강등됐다: private:true/version:0.0.0 workspace 패키지가 debugger·debug-console의 발행 manifest에 phantom devDependency로 박히는 문제를 pnpm workspace 밖으로 빼서 원천 해소했다(package.json 항목 자체가 없어짐). `localPath`가 그 새 로컬 위치를 가리킨다 — sync-upstream.mjs/upstream-drift-audit.mjs 둘 다 `resolvePackageTargetDir()`로 이 필드를 읽는다(없으면 packages/<name> 기본값). localOnly는 지우지 않고 유지 — 선별 cherry-pick 대조 기준.",
+      "upstream": {
+        "owner": "apps-in-toss-community",
+        "repo": "debugger",
+        "path": "packages/internal-protocol"
+      },
+      "localPath": "shared/internal-protocol",
+      "lastImportedRef": "b582d9a39149206949a3350c79080e4074dea9d1",
+      "lastImportedAt": "2026-07-30T23:40:40+09:00",
+      "mode": "hardfork",
+      "localOnly": [
+        ".gitignore",
+        "biome.json"
+      ],
+      "_localOnly_comment": "README 없음(이 패키지만 처음부터 미보유). .gitignore/biome.json: debugger 항목의 _localOnly_comment와 동일한 사유(repo-root 전용 설정을 서브트리에 손으로 복사) — #21.",
+      "dropUpstreamPaths": []
+    }
+  }
+}

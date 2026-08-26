@@ -1,0 +1,97 @@
+{
+  "name": "@apps-in-toss/debugger",
+  "version": "0.2.0",
+  "description": "MCP debugging daemon, on-device CDP relay, test runner, and dev bridge for Apps in Toss mini-apps — devDependency / npx tooling, never part of a production bundle",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "debugger": "./dist/mcp/cli.js",
+    "debugger-test": "./dist/test-runner/bin.js"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./mcp/server": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./mcp/cli": {
+      "types": "./dist/mcp/cli.d.ts",
+      "import": "./dist/mcp/cli.js"
+    },
+    "./test-runner": {
+      "types": "./dist/test-runner/config.d.ts",
+      "import": "./dist/test-runner/config.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:dashboard-html": "tsx --tsconfig scripts/tsconfig.json scripts/build-dashboard-html.ts",
+    "build": "pnpm build:dashboard-html && tsdown",
+    "check:mcp-react-free": "bash scripts/check-mcp-react-free.sh",
+    "check:test-runner-dist": "bash scripts/check-test-runner-dist.sh",
+    "check:debug-surface-absent": "bash scripts/check-debug-surface-absent.sh",
+    "check:dashboard-html-fresh": "pnpm build:dashboard-html && git diff --exit-code src/mcp/dashboard.generated.ts",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p scripts/tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@vitest/runner": "^4.1.9",
+    "chii": "^1.15.5",
+    "cloudflared": "^0.7.1",
+    "esbuild": "^0.28.1",
+    "qrcode": "^1.5.4",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@apps-in-toss/debug-console": "workspace:*",
+    "@biomejs/biome": "2.5.1",
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^25.6.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.0",
+    "jsdom": "^29.0.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsdown": "^0.22.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.4"
+  },
+  "keywords": [
+    "apps-in-toss",
+    "toss",
+    "mini-app",
+    "debugger",
+    "mcp",
+    "cdp",
+    "relay",
+    "test-runner",
+    "devtools"
+  ],
+  "packageManager": "pnpm@11.17.0",
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/toss/apps-in-toss-harness",
+    "directory": "packages/debugger"
+  },
+  "bugs": {
+    "url": "https://github.com/toss/apps-in-toss-harness/issues"
+  },
+  "homepage": "https://github.com/toss/apps-in-toss-harness"
+}

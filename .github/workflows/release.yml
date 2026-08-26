@@ -1,0 +1,269 @@
+name: Release
+
+# 수동 발행 전용. push/tag 트리거 없음 — 사고로 릴리즈가 생성되면 GitHub
+# Release·태그 자체는 삭제할 수 있지만 이미 tarball을 받아간 사용자를
+# 되돌릴 수는 없다.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Release which package(s)?'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - debugger
+          - debug-console
+      prerelease:
+        description: 'Mark the GitHub Release as prerelease (staging concept — promote later by editing the release, no separate command)'
+        required: true
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Dry run (pack only, no release created)'
+        required: true
+        type: boolean
+        default: true
+
+# 진행 중인 릴리즈 job은 취소하지 않는다 — 취소가 half-released 상태를
+# 만들 수 있다(예: 태그는 생겼는데 에셋 업로드가 중단된 릴리즈).
+concurrency:
+  group: gh-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # 실릴리즈만 `release` environment를 거친다 — dry-run은 environment 없이
+    # 그대로 돈다(워크플로 자체를 반복 테스트하는 용도라 승인을 요구하면
+    # 방해만 된다). 빈 문자열은 GitHub에서 "environment 미사용"으로 해석된다.
+    #
+    # 이 배선이 실제로 승인을 강제하려면 repo Settings → Environments →
+    # `release`에 **required reviewers가 지정돼 있어야 한다**. 리뷰어가 없으면
+    # environment는 통과 지점일 뿐 게이트가 아니다(보안검토 ③ G16) — 지정
+    # 자체는 조직 권한 판단이라 워크플로 파일이 대신 정할 수 없다.
+    environment: ${{ !inputs.dry_run && 'release' || '' }}
+    # gh release create에는 contents: write가 필요하다. 그 외 권한은
+    # 요구하지 않는다 — npm 발행을 하지 않으므로 id-token(OIDC)·registry
+    # 관련 권한은 전량 불필요.
+    permissions:
+      contents: write
+    steps:
+      # 아래 두 스텝(패키지 결정 + 입력 검증)은 checkout·pnpm install도 필요
+      # 없다 — 되돌릴 수 없는 액션이니 잘못된 입력은 CI 시간을 쓰기 전에
+      # 최대한 빨리 걸러낸다(fail fast). 게이트(lint/build/typecheck/test)는
+      # 몇 분씩 걸리므로, 그 전에 막을 수 있는 실수는 여기서 막는다.
+      - name: Resolve target packages
+        id: plan
+        env:
+          PACKAGE_INPUT: ${{ inputs.package }}
+        run: |
+          case "$PACKAGE_INPUT" in
+            all) echo "packages=debug-console debugger" >> "$GITHUB_OUTPUT" ;;
+            debug-console) echo "packages=debug-console" >> "$GITHUB_OUTPUT" ;;
+            debugger) echo "packages=debugger" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::unknown package input: ${PACKAGE_INPUT}"
+              exit 1
+              ;;
+          esac
+
+      # 되돌릴 수 없는 액션에 걸맞은 2개 가드:
+      #   1) dry-run은 fail-closed다 — 정확히 "false"일 때만 실릴리즈, 그 외
+      #      (예상 못한 값 포함)는 dry-run이거나 아예 job을 실패시킨다.
+      #      "조용히 실릴리즈"보다 "명시적으로 멈춤"이 안전하다.
+      #   2) 실릴리즈는 main 브랜치에서만 허용한다 — 리뷰 안 된 피처
+      #      브랜치의 코드가 그대로 릴리즈되는 걸 막는다. dry-run은 이
+      #      워크플로 자체를 테스트하는 방법이므로 아무 브랜치에서나
+      #      허용한다.
+      - name: Validate inputs
+        id: validate
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          case "$DRY_RUN" in
+            false) real_publish=true ;;
+            true) real_publish=false ;;
+            *)
+              echo "::error::dry_run must be exactly 'true' or 'false', got: '${DRY_RUN}' — refusing to proceed"
+              exit 1
+              ;;
+          esac
+          echo "real_publish=${real_publish}" >> "$GITHUB_OUTPUT"
+
+          if [ "$real_publish" = "true" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::real release is only allowed from refs/heads/main (current: ${GITHUB_REF}). Re-run with dry_run: true to test from a feature branch."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # 태그 규약: <pkg>-v<version> (예: debugger-v0.2.0). 버전은 항상 해당
+      # package.json에서 동적으로 읽는다 — 워크플로에 하드코딩하지 않는다.
+      # 실릴리즈일 때만 중복 태그를 검사한다: 같은 태그의 릴리즈가 이미
+      # 있으면 gate(lint/build/typecheck/test, 몇 분 소요)를 돌리기 전에
+      # 여기서 즉시 실패시킨다(fail fast). dry-run은 이 워크플로 자체를
+      # 반복 테스트하는 용도라 기존 릴리즈 존재 여부와 무관하게 통과시킨다.
+      - name: Resolve versions and guard against duplicate releases
+        id: versions
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+          REAL_PUBLISH: ${{ steps.validate.outputs.real_publish }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pkg in $TARGET_PACKAGES; do
+            version="$(node -p "require('./packages/${pkg}/package.json').version")"
+            tag="${pkg}-v${version}"
+            echo "${pkg}: version=${version} tag=${tag}"
+            if [ "$REAL_PUBLISH" = "true" ]; then
+              if gh release view "$tag" >/dev/null 2>&1; then
+                echo "::error::release ${tag} already exists — refusing to overwrite. Bump the version in packages/${pkg}/package.json first."
+                exit 1
+              fi
+            fi
+          done
+
+      - run: pnpm install --frozen-lockfile
+
+      # 게이트는 CI(.github/workflows/ci.yml)와 정확히 같은 커맨드·순서를 쓴다:
+      # `pnpm -r <cmd>`가 아니라 루트 package.json의 스크립트(`pnpm lint`·`pnpm
+      # test` 등)를 그대로 호출한다 — 루트 스크립트는 워크스페이스 재귀 실행 위에
+      # scripts/__tests__/ 같은 루트 전용 테스트를 얹을 수 있어서(`pnpm test` =
+      # `pnpm -r test && pnpm test:scripts`), `pnpm -r test`만 직접 부르면 이런
+      # 루트 레벨 게이트가 조용히 빠질 수 있다. build가 test보다 먼저인 것도
+      # 의도다 — packages/devtools 제거(C4) 후에도 순서를 유지해야 하는 잔여
+      # 사유 둘: (a) packages/debugger/src/mcp/__tests__/bin-shebang.test.ts가
+      # it.skipIf(!existsSync(dist))라 dist가 없으면 조용히 skip되어 커버리지
+      # 상실, (b) debugger가 소유한 dist 기반 check 3종
+      # (check:mcp-react-free·check:test-runner-dist·check:debug-surface-absent)이
+      # dist를 읽음.
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # @apps-in-toss/agent-plugin과 @apps-in-toss/internal-protocol은 private: true라
+      # workflow_dispatch의 package 선택지에 애초에 없다(구조적 배제). 그래도
+      # 실수로 이 경계가 흐트러지는 것을 막기 위해 여기서도 명시적으로 한 번 더
+      # 확인한다 — private:true 패키지가 GitHub Release 에셋으로 노출되는 일은
+      # 없어야 한다.
+      - name: Guard against private packages
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+        run: |
+          for pkg in $TARGET_PACKAGES; do
+            is_private="$(node -p "require('./packages/${pkg}/package.json').private === true")"
+            if [ "$is_private" = "true" ]; then
+              echo "::error::packages/${pkg} is private:true — refusing to release"
+              exit 1
+            fi
+          done
+
+      # pnpm pack 산출 tarball을 그대로 GitHub Release 에셋으로 올린다. workspace:*
+      # devDependency를 실제 버전으로 치환하는 건 pnpm pack의 역할이고, tarball은
+      # 이미 자립적(internal-protocol은 dist에 인라인 흡수, 런타임 dependencies에
+      # workspace: 프로토콜 없음)임이 실측으로 확인됐다 — 별도 변환 없이 그대로
+      # 배포 가능하다.
+      #
+      # inputs.*는 여기서 셸에 직접 보간하지 않는다 — env로 넘겨 "$VAR"로
+      # 참조한다. `${{ inputs.prerelease }}`를 run: 블록에 텍스트로 그대로 박으면
+      # GitHub가 bash 파싱 전에 치환하므로, 예상 못한 값이 들어오면 명령
+      # 인젝션 표면이 될 수 있다(이 job의 트리거 권한은 repo write라 외부
+      # 공격면은 아니지만, 되돌릴 수 없는 액션이라 방어적으로 막는다).
+      #
+      # real_publish 판정은 validate 스텝이 이미 fail-closed로 내렸지만, 여기
+      # 실행 지점에서도 다시 명시적으로 분기한다 — "빈 값·예상 못한 값이면
+      # 기본 동작이 dry-run(혹은 실릴리즈)"가 아니라 "기본 동작이 멈춤"이
+      # 되도록.
+      - name: Pack and release
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+          REAL_PUBLISH: ${{ steps.validate.outputs.real_publish }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease_flag=()
+          case "$PRERELEASE" in
+            true) prerelease_flag=(--prerelease) ;;
+            false) prerelease_flag=() ;;
+            *)
+              echo "::error::prerelease must be exactly 'true' or 'false', got: '${PRERELEASE}' — refusing to proceed"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p "$GITHUB_WORKSPACE/release-tarballs"
+
+          # 업로드하는(또는 dry-run에서 업로드했을) 에셋의 sha256을 job Summary에
+          # 남긴다. 소비자는 이 tarball을 URL로 직접 받는데(npm registry 경유가
+          # 아니라 lockfile integrity 검증이 걸리지 않는다), 그러면 에셋이 사후에
+          # 교체돼도 받는 쪽이 탐지할 방법이 없다. 여기 기록된 해시가 "이 릴리즈가
+          # 발행 시점에 무엇이었는지"의 감사 기준값이다(보안검토 ③ G21).
+          # GitHub API의 `assets[].digest`와 대조하면 사후 교체를 검출할 수 있다.
+          {
+            echo "### Release asset digests"
+            echo ""
+            echo "| asset | sha256 |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for pkg in $TARGET_PACKAGES; do
+            echo "::group::${pkg}"
+            version="$(node -p "require('./packages/${pkg}/package.json').version")"
+            tag="${pkg}-v${version}"
+
+            (
+              cd "packages/${pkg}"
+              pnpm pack --pack-destination "$GITHUB_WORKSPACE/release-tarballs"
+            )
+            tarball="$(ls "$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-*.tgz)"
+            asset_name="$(basename "$tarball")"
+
+            sha256="$(sha256sum "$tarball" | cut -d' ' -f1)"
+            echo "sha256(${asset_name}) = ${sha256}"
+            echo "| \`${asset_name}\` | \`${sha256}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+            case "$REAL_PUBLISH" in
+              true)
+                gh release create "$tag" "$tarball" \
+                  --title "$tag" \
+                  --generate-notes \
+                  "${prerelease_flag[@]}"
+                echo "released: ${tag} (asset: ${asset_name})"
+                ;;
+              false)
+                echo "[dry-run] would create release ${tag} (asset: ${asset_name}, prerelease=${PRERELEASE}) — no release created"
+                ;;
+              *)
+                echo "::error::REAL_PUBLISH is '${REAL_PUBLISH}' (expected 'true' or 'false') — refusing to release"
+                exit 1
+                ;;
+            esac
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        if: always()
+        env:
+          TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "### GitHub Release"
+            echo ""
+            echo "- packages: ${TARGET_PACKAGES}"
+            echo "- prerelease: ${PRERELEASE}"
+            echo "- dry-run: ${DRY_RUN}"
+          } >> "$GITHUB_STEP_SUMMARY"

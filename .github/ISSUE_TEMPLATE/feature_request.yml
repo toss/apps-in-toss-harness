@@ -1,0 +1,64 @@
+name: "✨ 기능 제안"
+description: harness(ait 플러그인·debugger·debug-console)에 추가되었으면 하는 기능이나 개선을 제안합니다.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 제출 전 꼭 확인해 주세요
+
+        - **Deploy Key·TOTP 등 시크릿 값을 절대 붙여넣지 마세요.** 이 저장소는 public이라 이슈 내용이 누구나 볼 수 있습니다.
+        - dog-food 워크스페이스 번호·miniAppId 등 사내 식별자, 로컬 사용자 홈 디렉터리 하위 절대경로(사용자명이 그대로 노출됩니다)도 지워 주세요.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 문제/불편을 해결하고 싶나요?
+      description: 현재 겪고 있는 상황이나 한계를 구체적으로 적어 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안하는 해결 방법
+      description: 어떤 기능/변경이 있으면 좋을지 적어 주세요. 구체적인 명령·skill·API 형태로 적어 주시면 더 좋습니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 대안으로 고려해 본 방법
+      description: 현재 우회하고 있는 방법이 있다면 적어 주세요.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: station
+    attributes:
+      label: 관련 station (해당하는 경우)
+      description: '`docs/roadmap.md`의 station map 기준입니다. 특정 station과 무관하면 비워 두어도 됩니다.'
+      options:
+        - "0. install (marketplace add / plugin install)"
+        - "1. scaffold (/ait:new)"
+        - "2. dev (pnpm dev, devtools panel)"
+        - "3. debug (/ait:debug, /ait:setup-debugger)"
+        - "4. auth (appLogin mock)"
+        - "5. register+ship (콘솔 등록·번들 업로드)"
+        - "6. operate (콘솔 상태 조회)"
+        - "7. plan (/ait:plan)"
+        - "8. design (/ait:design)"
+        - "docs (문서 MCP 조회)"
+        - 특정 station과 무관
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 추가 정보
+      description: 참고 링크, 스크린샷, 관련 이슈/PR 등이 있다면 적어 주세요.
+    validations:
+      required: false
