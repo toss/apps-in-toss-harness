@@ -16,6 +16,14 @@
 > (구 축2) 관련 절은 npm-less 전환 결정(2026-08-06, 오너 지시 —
 > `docs/release.md` 서두)에 따라 소거했고, `docs/release-plan.md`가 재정의한
 > 축 번호(GitHub Release 유통)를 기준으로 남은 서술을 읽는다.
+>
+> **2026-08-27 결정 추가 (Dave).** flip 직전에 **2차 재생성**(1차와 동일한
+> 백업→삭제→재생성 절차의 재실행)과 **`docs/` 비공개**(공개 트리에서
+> 제외)를 확정했다 — 절차는 신설 **§2**. §1.3·§1.3a·§1.4·§6-3의 "구 repo
+> 대상 소멸" 판정 자체는 안 바뀌지만, 그 절들이 쓴 **집행 수단·판정
+> 방법론**은 2차 재생성에 재사용된다(각 절에 캡션 추가). `docs/` 비공개가
+> 집행되면 **이 문서 자신도 공개 트리에서 빠진다**(§2.2) — 그 전까지는 이
+> 문서가 계속 정본이다.
 
 이 문서는 repo를 public으로 전환하는 날 무엇을 어떤 순서로 하는지 적은 **준비
 자료**다. 실사(식별자 감사·노출면·히스토리) 결과를 한곳에
@@ -111,6 +119,11 @@
 > <noreply@users.noreply.github.com>`)뿐이라 아래 잔존 항목이 전부 함께
 > 소멸했다. 기록으로만 보존한다.
 
+> **↻ 2차 재생성에 재사용(2026-08-27 확정, §2.1).** 대상 데이터(구체 커밋 수·
+> blob 수)는 재생성마다 새로 나지만, 이 절이 쓴 **스캔 방법론**(식별자
+> 클래스별 전수 pickaxe, 원격 브랜치·태그 전수 대조, blob 유입·제거 이력
+> 추적)은 flip 직전 2차 재생성 직후 그대로 다시 돈다(§2.3).
+
 > **⚠️ 이 절의 원 조사(커밋 192개)는 2026-08-03 시점 스냅숏이고, 그 뒤 129개
 > 커밋이 스캔되지 않은 채 쌓였다.** 2026-08-25 재실사가 범위를 넓혀
 > 다시 돌렸다 — **커밋 326개**(도달 가능 323 + 아래 dangling 3)·**원격 브랜치
@@ -151,6 +164,14 @@
 > 바이트 동일하게 승계돼 아래 "공개 무해" 판정이 그대로 유효하다.**
 > maintainer-internal `history-rewrite-runbook.md`의 filter-repo 절차는 집행
 > 없이 폐기됐다.
+
+> **↻ 2차 재생성에 재사용(2026-08-27 확정, §2.1).** flip 직전에 **같은 집행
+> 수단(삭제·재생성)을 한 번 더** 쓰기로 확정했다 — filter-repo로 갈아타지
+> 않는다. G1~G4 소거 원리("새 객체 DB엔 옛 객체가 애초에 없다")와 G5
+> 판정 방법론(커뮤니티 공개 HEAD 교차확인)을 2차 재생성 직후 그대로
+> 재적용한다(§2.3 체크리스트). "브랜치 삭제·rebase마다 dangling이 새로
+> 생긴다"는 구조적 사실은 유효하므로, 1차 재생성 이후 flip 순서 진행
+> 중 쌓인 잔존이 2차 재생성으로 다시 한 번 소거된다.
 
 공개 전환 보안검토(사내 검토자 지적: "런북 이후 커밋을 포함한 전체 branch/tag·
 Git history·실제 Release tarball을 재점검했는가")에 대응해 돌린 재실사 결과다.
@@ -217,6 +238,11 @@ object 제거 요청(G4), 협업자 재클론.
 > 메시지 1건(dog-food 식별자 노출)도 이력과 함께 소멸했다. 아래 옵션표는
 > 기록으로만 보존한다.
 
+> **↻ 2차 재생성에도 이 결정 포인트는 열리지 않는다(2026-08-27 확정,
+> §2.1).** 2차 재생성도 1차와 동일하게 새 Initial commit을 중립 author
+> (`apps-in-toss <noreply@users.noreply.github.com>`)로 만든다 — author-email
+> 선택지 A/B/C를 다시 논할 이유가 없다.
+
 선택지는 셋이고, 셋 다 "히스토리는 public이면 영구적"이라는 전제를 공유한다.
 
 | 옵션 | 얻는 것 | 잃는 것·비용 |
@@ -236,11 +262,85 @@ object 제거 요청(G4), 협업자 재클론.
 
 ---
 
-> **§2(구 "npm trusted publishing")는 npm-less 전환 결정(2026-08-06)으로
-> 삭제됐다.** harness는 자체 패키지를 npmjs.com에 발행하지 않으므로 trusted
-> publisher 등록·provenance·dist-tag 승격 절차 자체가 대상이 없어졌다.
-> GitHub Release 유통 절차는 `docs/release.md`가 정본이다. 구버전 절 내용은
-> git 이력에서 확인할 수 있다.
+## 2. 2차 재생성 & `docs/` 비공개 결정 (flip 직전, 2026-08-27 확정)
+
+> 이 절 번호는 한때 "npm trusted publishing"이었으나 npm-less 전환 결정
+> (2026-08-06)으로 대상이 없어져 비어 있었다 — harness는 자체 패키지를
+> npmjs.com에 발행하지 않으므로 trusted publisher 등록·provenance·dist-tag
+> 승격 절차 자체가 대상이 없다(GitHub Release 유통 절차는
+> `docs/release.md`가 정본, 구버전 절 내용은 git 이력에서 확인 가능). 이번에
+> Dave가 확정한 두 결정(2026-08-27)을 이 빈 번호에 채운다.
+
+### 2.1 flip 직전 2차 재생성 (결정 확정)
+
+- **결정**: 2026-08-26 재생성과 같은 절차(백업 → 삭제 → 동일 이름 재생성,
+  단일 `Initial commit`)를 **public flip 직전에 다시 한 번** 실행한다.
+- **목적**: flip 시점까지 쌓인 커밋 이력 정리(이력은 재생성 시점 트리로
+  스쿼시). 1차 재생성 이후에도 커밋은 계속 쌓이고, §1.3a가 이미 지적한
+  "브랜치 삭제·rebase마다 dangling이 새로 생긴다"는 구조적 사실은 새
+  repo에도 그대로 유효하다 — 그 누적분을 filter-repo로 걷어내지 않고, 이미
+  실증된 수단(삭제·재생성)을 한 번 더 쓴다.
+- **집행 수단은 1차와 동일** — filter-repo(§1.3a 옵션 B의 원래 집행
+  수단)로 갈아타지 않는다. 백업(`--mirror` + 메타데이터 inventory) → 삭제 →
+  동일 이름 재생성 → 새 Initial commit 하나, 그대로 재사용.
+- 이 결정으로 **§1.3·§1.3a·§1.4·§6-3의 "구 repo 대상 소멸" 판정은 바뀌지
+  않지만**, 그 절들이 쓴 스캔·판정 **방법론**은 2차 재생성에도 재사용
+  가능하다고 판단해 각 절에 "2차 재생성에 재사용" 캡션을 추가했다(위 §1.3·
+  §1.3a·§1.4 참고). §6-3(flip 당일 실행 순서 3번)은 "항목 소멸"에서 "2차
+  재생성 실행" 자체로 갱신했다 — 아래 §6 개정판 참고.
+- **되돌릴 수 없는 사전 정지 작업이다**: 1차 재생성 후속으로 재적용한
+  저장소 설정(release 자산·ruleset·environment·collaborators·Dependabot
+  alert)이 2차 재생성으로 전부 다시 리셋된다 — 재적용 절차는 §2.3.
+
+### 2.2 `docs/` 비공개 결정 (2차 재생성 시점 집행)
+
+- **결정**: 공개 트리에 `docs/`를 싣지 않는다.
+- **실행 방식과 시점**: **지금 `.gitignore`하지 않는다.** repo가 private인
+  동안은 `docs/`를 트리에 두어도 노출 리스크가 없고, 지금 untrack 처리하면
+  write 협업자 13명이 `docs/` 변경에 대해 갖던 버전 관리(히스토리·blame·PR
+  diff)만 잃는다. 대신 **2차 재생성 시점에** 새 Initial commit 트리를 만들
+  때 `docs/`를 그 트리에서 제외하고, 그때 `.gitignore`에 `docs/`를
+  추가한다 — 실행 시점은 §2.1과 같다(§6-3 개정판에서 한 항목으로 함께
+  집행).
+- **docs 사본의 행선지**: maintainer 로컬 백업으로 이관한다 —
+  `inventory/issues.json` 선례와 같은 방식(재생성 직전에 스냅숏을 떠서
+  보존, 재생성 후 공개 트리에는 없음).
+- **재생성 작업 항목에 포함되는 후속 정리**: 루트 `CLAUDE.md`·`README.md`·
+  `README.en.md` 등이 갖고 있는 `docs/` 참조 포인터(`docs/roadmap.md`·
+  `docs/release.md`·`docs/release-plan.md`·이 문서 자신 등)를 정리한다 —
+  가리키는 파일이 공개 트리에서 없어지므로, 포인터를 "maintainer-internal
+  문서" 표기로 바꾸거나 삭제한다. 이 정리는 2차 재생성 작업의 일부이며,
+  이번 PR(이 런북 갱신)의 범위가 아니다.
+- **이 문서 자신도 대상이다.** `docs/public-flip-runbook.md`는 `docs/`
+  하위이므로, 2차 재생성이 집행되면 이 문서도 공개 트리에서 빠지고
+  maintainer 로컬 백업으로 이관된다 — "준비 자료"로서 이 문서의 수명이
+  끝나는 지점이 곧 2차 재생성 시점이다. 그 전까지는 이 문서가 계속 정본이다.
+- **§1.2(b)·§1.3a G5(커뮤니티 시절 dog-food 좌표 보존 판정)와는 별개
+  축이다** — G5는 "이미 공개된 값이라 지워도 의미가 없다"는 무해 판정이고,
+  `docs/` 비공개는 "애초에 사내 운영 서술이라 공개할 필요가 없다"는
+  판단이다. 사유는 다르지만 결론(비공개 유지)은 같은 방향이다.
+- `docs/upstream/mcp-gw-feedback.md`의 개별 거취(§5)는 이 결정으로 사실상
+  단순해진다 — §5의 supersession note 참고.
+
+### 2.3 2차 재생성 후속 재적용 체크리스트
+
+1차 재생성(2026-08-26) 때 리셋됐다가 재적용해야 했던 항목들(이슈 #1 본문·
+코멘트 실측 기준)을 그대로 체크리스트화한다 — 2차 재생성 때도 동일한
+리셋이 예상된다.
+
+| 항목 | 재적용 방법 | 비고 |
+|---|---|---|
+| GitHub Releases 3건(`debugger-v0.2.0`·`debugger-v0.2.1`·`debug-console-v0.1.4`) | `release.yml` workflow_dispatch(CI)로 같은 태그·같은 asset명으로 재발행 | sha256은 재빌드분이 새 기준값(CI run Summary·API `assets[].digest`로 확인) — 태그·asset명이 같아 문서·skill에 박힌 설치 URL은 유효 유지. Immutable Releases 재활성화 + 재발행분 재잠금(`immutable:true` 재확인) |
+| main ruleset · release 태그 ruleset(`debugger-v*`·`debug-console-v*`) | repo ruleset 재생성 | active 확인. maintainer 로컬 백업에 JSON 보존(org ruleset 미러본과 같은 방식 — §2.3 아래 collaborators 행 참고) |
+| `release` environment | 재생성(main 브랜치 한정 branch policy) | required reviewers는 이 시점엔 아직 지정하지 않는다 — private + Team 플랜은 API 422(billing plan 미지원, 실측 2026-08-26)로 거부된다. required reviewers 지정·self-review 제한은 flip 직후 항목(§7-7)으로 미룬다 |
+| collaborators | write 6명 포함 총 13명 재부여 | 최소권한 관례 — 구 repo 시절 13명 전원 admin이었던 관행으로 되돌리지 않는다. admin 승격이 필요한 인원은 개별 판단 |
+| Dependabot alert | 재활성화 | auto-fix는 의도적 off(3단 transitive라 자동 수정 PR을 계산 못 함 — 기존 판정 유지) |
+| 재생성 직후 트리 최종 스캔 | §1.1의 9개 식별자 클래스 전수 스캔을 재실행 | **보안검토(2026-08-12 신청, 2026-08-27 조건부 승인)의 잔여 조건 1** — "Public 전환 전 전체 branch/tag/이력·production release artifact 최종 스캔"을 이 시점에 이행한다. 2026-08-27 사전 스캔이 기준선이고, 재생성 직후는 그 기준선 대비 **delta만 확인**한다(재생성이 tree를 바이트 동일 승계하는 한 delta는 0건이 정상). `docs/` 제외(§2.2)로 스캔 대상 파일 수가 줄어드는 것은 의도된 축소다 |
+
+flip 직후에만 실행 가능한 잔여 조건(required reviewers·self-review 제한)은
+이 표에 넣지 않고 **§7-7에 통합**했다 — 아래 §7 개정판 참고.
+
+---
 
 ## 3. README / LICENSE / metadata 전환
 
@@ -356,6 +456,15 @@ flip 당시 값: `description` 있음(영문 1줄), `homepage: null`, `topics: [
 
 ## 5. `docs/upstream/mcp-gw-feedback.md` 거취
 
+> **↻ §2.2(`docs/` 비공개 결정, 2026-08-27 확정)로 사실상 단순해짐.**
+> `docs/` 전체가 2차 재생성 시점에 공개 트리에서 빠지므로, 이 문서
+> 개별로 "공개 트리에 남길지" 판단할 필요가 없어졌다 — 결과적으로 아래
+> 옵션 1("`docs/upstream/`에 그대로 둠")은 성립하지 않고, 옵션 2("docs 밖
+> 이동")와 같은 결과가 자동으로 적용된다. 다만 "GW 팀에 전달했는지"라는
+> 내용 자체의 추적 가치는 남아 있으므로, 아래 표는 그 추적 판단 기준으로
+> 그대로 유효하게 둔다 — 전달 여부 확인은 여전히 필요하고, 확인 결과는
+> 문서를 maintainer 로컬 백업으로 옮길 때(§2.2) 상단 상태 note에 반영한다.
+
 이 문서는 사내 MCP Gateway의 미해소 결함 목록이고, 상단에 "초안 — 전달 채널 미정,
 Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 note가 살아 있다.
 전달 여부는 이 repo 밖 정보라 코드로 확인할 수 없다 — **수동 확인 필요**.
@@ -390,14 +499,21 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
    문체), 나머지 8건은 보존 기본값으로 판정 완료(추가 조치 불요). **히스토리
    rewrite를 택한다면 이 스크럽이 이미 선행돼 있다**(스크럽 후 한 번의
    rewrite로 끝난다).
-3. **이력 재작성 실행 — 항목 소멸(2026-08-26 재생성으로 대체).** §1.3a의
-   옵션 B 결정은 filter-repo 대신 **repo 삭제·재생성**으로 집행됐다 — 이력이
-   단일 `Initial commit`이 되면서 G1·G1'·G2·G3·G4가 구조적으로 해소됐고
-   GitHub Support 요청도 불요해졌다(§1.3a supersession note). 이 자리에 남는
-   flip-전 점검은 하나다: **재생성 이후 새로 생긴 dangling 커밋이 없는지
-   확인** — dangling은 브랜치 삭제·rebase마다 재발하는 표면이라는 사실은 새
-   repo에도 유효하다. **G5(현재 트리 잔존 식별자 4개소)**는 tree 승계로
-   §1.3a의 "공개 무해" 판정이 그대로다 — 추가 조치 불요.
+3. **2차 재생성 실행 (flip 직전, 2026-08-27 확정) — §2.1.** §1.3a의 옵션 B
+   (이력 재작성) 결정은 1차로 **repo 삭제·재생성**(2026-08-26)으로
+   집행됐고, flip 직전에 **같은 절차를 한 번 더** 실행하기로 확정했다 —
+   filter-repo로 갈아타지 않는다. 목적은 1차 재생성 이후 flip 순서 진행
+   중 쌓인 커밋 이력을 다시 한 번 단일 `Initial commit`으로 정리하는
+   것이다 — "브랜치 삭제·rebase마다 dangling이 새로 생긴다"는 구조적 사실
+   (§1.3a)로 재발했을 수 있는 G1~G4류 노출이 이 실행으로 함께 소거된다.
+   같은 자리에서 **§2.2의 `docs/` 비공개 결정**(새 Initial commit 트리에서
+   `docs/` 제외 + `.gitignore`에 `docs/` 추가 + 루트 `CLAUDE.md`·README의
+   `docs/` 포인터 정리)도 함께 집행한다. 실행 직후 **§2.3 체크리스트**
+   (릴리즈 재발행·ruleset·environment·collaborators·Dependabot·최종 스캔)를
+   전부 재적용해야 다음 항목(4번)으로 넘어갈 수 있다. **G5(현재 트리 잔존
+   식별자 4개소)**는 tree가 다시 바이트 동일 승계되는 한 §1.3a의 "공개
+   무해" 판정이 유지된다 — 2차 재생성 직후 §2.3 마지막 행으로 재확인만
+   한다.
 4. **`mcp-gw-feedback.md` 거취 실행** — §5. flip 전에 트리에서 결정이 끝나
    있어야 한다(2번 옵션은 flip 후에 옮기면 이미 공개된 뒤다).
 5. **README ko/en 버전 A 적용 + metadata 준비** — §3.2, §3.5. **두 README는 같은
@@ -482,8 +598,16 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
    확인한다(sha256 기준값은 CI run Summary·API digest — `docs/release.md`).
    npm trusted publishing·provenance 확인 절차는
    npm-less 전환(2026-08-06)으로 대상이 없어져 삭제했다.
-7. **release env required reviewers 지정** — private + Team 플랜 조합에서는
-   API가 422(billing plan 미지원)로 거부한다(실측 2026-08-26). public 전환으로
-   environment protection rule이 사용 가능해지므로 flip 직후 지정한다 —
-   릴리즈 run이 돌고 있지 않은 시점에 할 것(대기 중 run이 승인 대기로 멈춘다).
+7. **release env required reviewers 지정 (보안검토 잔여 조건 2 이행)** —
+   private + Team 플랜 조합에서는 API가 422(billing plan 미지원)로
+   거부한다(실측 2026-08-26). public 전환으로 environment protection rule이
+   사용 가능해지므로 flip 직후 지정한다 — 릴리즈 run이 돌고 있지 않은
+   시점에 할 것(대기 중 run이 승인 대기로 멈춘다). §2.1의 2차 재생성으로
+   이 environment는 다시 사라지므로, 2차 재생성 직후에는 §2.3대로
+   **재생성만** 해두고(main 한정 branch policy), required reviewers 지정은
+   이 항목(flip 직후)에서 확정한다. 지정 내용은 **보안검토(2026-08-12 신청,
+   2026-08-27 조건부 승인)의 잔여 조건 2**를 그대로 반영한다 — required
+   reviewer를 **발행 작업을 실제로 수행하는 사람과 다른 사람**으로
+   지정하고, **self-review를 제한**한다(발행자 본인이 자기 발행 run을
+   승인하지 못하게 environment 설정을 켠다).
 8. **#8 종료 처리** — 위 전부 통과 후. 이슈 종료·코멘트는 **Dave가 한다.**
