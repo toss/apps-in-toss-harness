@@ -13,7 +13,7 @@
 - 로컬 사용자 홈 디렉터리 하위 절대경로(사용자명이 그대로 노출된다)
 - 사내 도메인·서비스명
 
-로그를 붙여넣을 때는 위 항목이 섞여 있는지 한 번 더 훑어본다. 특히 `pnpm dev`
+로그를 붙여넣을 때는 위 항목이 섞여 있는지 한 번 더 훑어본다. 특히 `npm run dev`
 콘솔 출력이나 attach 로그에는 로컬 경로가 자연스럽게 섞여 들어간다.
 
 ## 좋은 재현 절차 만드는 법
@@ -36,11 +36,11 @@ harness는 두 겹의 실행 환경을 다룬다(`/ait:debug` skill 기준 — �
 fidelity 사다리의 원 번호를 그대로 쓰며, 제거된 환경 2는 건너뛴다). 어느
 환경에서 문제가 났는지에 따라 로그를 얻는 방법이 다르다.
 
-### 환경 1 — 로컬 브라우저 (desktop, `pnpm dev`)
+### 환경 1 — 로컬 브라우저 (desktop, `npm run dev`)
 
 가장 흔한 환경이다. 세 가지 관찰 지점이 있다.
 
-- **devtools floating panel**: `pnpm dev`로 연 화면 하단의 **AIT** 버튼을 누르면
+- **devtools floating panel**: `npm run dev`로 연 화면 하단의 **AIT** 버튼을 누르면
   패널이 열린다. 패널에는 mock 상태(권한·위치·IAP·이벤트 등)를 보여주는 탭들이
   있다 — 패널이 안 보이면 `@apps-in-toss/devtools`가 devDependencies에 없는
   것이다(`/ait:inject-devtools`로 배선).

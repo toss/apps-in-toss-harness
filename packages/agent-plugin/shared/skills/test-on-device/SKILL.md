@@ -22,7 +22,7 @@ argument-hint: ''
 
 | 원하는 것 | 경로 |
 |---|---|
-| 브라우저에서 mock으로 개발 | `pnpm dev` + `/ait:debug` 환경 1 (토스 앱 불필요) |
+| 브라우저에서 mock으로 개발 | `npm run dev` + `/ait:debug` 환경 1 (토스 앱 불필요) |
 | **실기기에서 동작 확인** | **이 skill** — 번들을 콘솔에 올려 토스 앱에서 연다 |
 | 실기기에서 CDP로 관측·디버깅 | `/ait:setup-debugger` 배선 후 `/ait:debug` 환경 3(QR attach) |
 
@@ -99,7 +99,7 @@ package.json과 번들 설정 파일(apps-in-toss.config.ts 또는 granite.confi
 **`apps-in-toss.config.ts`(정본 scaffold)인 경우:**
 
 ```bash
-pnpm build   # tsc -b && vite build && ait build → .ait 번들 생성
+npm run build   # tsc -b && vite build && ait build → .ait 번들 생성
 ```
 
 이 형상은 `build` 스크립트 자체에 `ait build`가 포함돼 있어 한 번에 끝난다.
@@ -107,11 +107,11 @@ pnpm build   # tsc -b && vite build && ait build → .ait 번들 생성
 **`granite.config.ts`(구세대 `--local` 폴백)인 경우:**
 
 ```bash
-pnpm build && pnpm bundle:ait   # vite build → ait build → .ait 번들 생성
+npm run build && npm run bundle:ait   # vite build → ait build → .ait 번들 생성
 ```
 
 이 템플릿의 `build` 스크립트는 `tsc -b && vite build`뿐이고 `ait build`를
-포함하지 않는다(`shared/templates/react-vite/package.json` 확인) — `pnpm build`
+포함하지 않는다(`shared/templates/react-vite/package.json` 확인) — `npm run build`
 단독으로는 `.ait`가 생기지 않는다. `new-miniapp` skill L-5가 번들 설정과 함께
 추가하는 `bundle:ait` 스크립트(`"ait build"`)를 이어서 실행해야 한다.
 `bundle:ait` 스크립트가 없으면 L-5 절차가 아직 안 된 것이므로 먼저 그것부터
@@ -124,13 +124,13 @@ pnpm build && pnpm bundle:ait   # vite build → ait build → .ait 번들 생�
   실행해주세요.`로 종료한다 — 항상 `vite build` 이후에 돌린다.
 - **2.x 폴백** — `ait build`가 `web.commands.build`를 **스스로 실행**하므로 단독
   실행이 성립한다. 오히려 기존 `dist/`를 먼저 지우고 다시 빌드하므로, 위
-  `pnpm build && pnpm bundle:ait`에서 앞의 `pnpm build`는 버려지는 중복 작업이다
+  `npm run build && npm run bundle:ait`에서 앞의 `npm run build`는 버려지는 중복 작업이다
   (해가 되지는 않는다).
 
 빌드 산출물의 `deploymentId`는 4에서 그대로 쓴다.
 
 실기기에서 CDP attach까지 하려는 경우라면 이 skill이 아니라
-`/ait:inject-debug-console` + `RELEASE_CHANNEL=dogfood pnpm build` candidate 경로가
+`/ait:inject-debug-console` + `RELEASE_CHANNEL=dogfood npm run build` candidate 경로가
 필요하다 — 그건 `/ait:debug` 환경 3의 절차다. 이 skill은 동작 확인용 일반
 번들만 다룬다.
 
@@ -245,7 +245,7 @@ pnpm build && pnpm bundle:ait   # vite build → ait build → .ait 번들 생�
   먼저 잡는다(5).
 - ❌ `bundle_build_status`로 컴파일 폴링. `-32000`으로 일관 실패한다 —
   `miniapp_get_status`를 쓴다(5).
-- ❌ 브라우저에서 재현되는 문제를 실기기 업로드로 확인. 그건 `pnpm dev` +
+- ❌ 브라우저에서 재현되는 문제를 실기기 업로드로 확인. 그건 `npm run dev` +
   `/ait:debug` 환경 1이 훨씬 빠르다.
 - ❌ 시크릿·인증 코드·업로드 presigned URL의 서명 파라미터를 stdout·로그·메시지에
   출력.

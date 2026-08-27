@@ -53,14 +53,15 @@ done
 `--no-install`이 아니면:
 
 ```bash
-cd ./<package_name> && pnpm install
+npm --prefix ./<package_name> install
 ```
 
 - `unmet peer react-native` 경고는 무시해도 된다 — 웹 미니앱은 RN을 쓰지
   않고 devtools가 dev 시점에 SDK를 mock으로 대체한다. 사용자에게도 한 줄로 알린다.
-- `pnpm`이 없으면 다른 매니저로 fallback하지 않는다 — "이 템플릿은 pnpm 11을
-  가정합니다(`packageManager` 필드). 다른 매니저를 쓰려면 `--no-install`로
-  만든 뒤 본인 환경에 맞게 변경하세요"로 안내하고 종료.
+- npm은 Node에 동봉되므로 부재를 걱정할 필요가 없다 — 다른 매니저로 자동
+  fallback하지 않는다는 원칙은 유지한다. 사용자가 명시적으로 pnpm/yarn을
+  요구하면 "이 템플릿은 npm을 기본으로 가정합니다. 다른 매니저를 쓰려면
+  `--no-install`로 만든 뒤 본인 환경에 맞게 설치하세요"로 안내하고 종료.
 
 > **구세대(wf 2.x) 오프라인 폴백**: 이 폴백은 `@apps-in-toss/web-framework`
 > 2.x + `granite.config.ts` 형상이다. 정본 경로(create-ait-app — 명시 핀 없이
@@ -78,7 +79,7 @@ cd ./<package_name> && pnpm install
 1. devDependency 추가:
 
    ```bash
-   pnpm --dir ./<package_name> add -D @apps-in-toss/cli@^2.5.2
+   npm --prefix ./<package_name> install -D @apps-in-toss/cli@^2.5.2
    ```
 
 2. `./<package_name>/granite.config.ts` 생성:
@@ -122,7 +123,7 @@ cd ./<package_name> && pnpm install
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   cd <package_name>
-  pnpm dev          # 브라우저에서 devtools panel과 함께 실행
+  npm run dev       # 브라우저에서 devtools panel과 함께 실행
                      # 말로: "브라우저에서 개발 서버 띄워줘"
 
 배포 준비가 되면:
@@ -143,10 +144,10 @@ cd ./<package_name> && pnpm install
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
-`--no-install`이었으면 안내에 `pnpm install`을 한 줄 추가하고, dev 서버
+`--no-install`이었으면 안내에 `npm install`을 한 줄 추가하고, dev 서버
 자동 기동은 **하지 않는다**(사용자가 workspace 통합·lockfile 수동 관리를
 의도한 신호). install을 했다면 SKILL.md Step 8의 "dev 서버 자동 기동"과
-동일하게 `pnpm --dir <project_abs_path> dev`를 `run_in_background: true`로
+동일하게 `npm --prefix <project_abs_path> run dev`를 `run_in_background: true`로
 기동하고 Local URL을 파싱해 알린다.
 
 ## 유지보수 노트

@@ -243,7 +243,7 @@ SDK 도메인 (필요)
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   /ait:new <app-name>     # 이 계획대로 빈 프로젝트 생성 (scaffold — 번들 설정 포함)
                           # 말로: "이 계획대로 미니앱 프로젝트 만들어줘. 이름은 <app-name> 으로."
-                          # 이후: pnpm dev → /ait:design (등록 이미지 자산) →
+                          # 이후: npm run dev → /ait:design (등록 이미지 자산) →
                           #       ait build → console MCP로 등록·업로드
 ```
 

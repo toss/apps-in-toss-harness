@@ -36,7 +36,7 @@ Apps in Toss 플러그인이 설치됐습니다.
                         #    말로: "미니앱 만들 건데 필요한 SDK 도메인이랑 권한부터 정리해줘"
   /ait:new <app-name>   # 1. 빈 프로젝트 생성 (scaffold)
                         #    말로: "앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로."
-  pnpm dev              # 2. 브라우저에서 개발 (devtools mock + panel —
+  npm run dev           # 2. 브라우저에서 개발 (devtools mock + panel —
                         #    AIT 버튼 → Viewport 탭에서 모바일 폭으로 확인)
                         #    말로: "브라우저에서 개발 서버 띄워줘"
   /ait:debug            # 3. 라이브 상태 디버깅 (회귀 진단)

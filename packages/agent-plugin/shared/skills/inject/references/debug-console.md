@@ -23,8 +23,8 @@ attach + eruda) 2개 패키지로 나뉘었다.
 
 ## 의존
 
-- **pnpm / npm / yarn / bun** 중 하나. 감지 순서: `pnpm-lock.yaml` → `package-lock.json` →
-  `yarn.lock` → `bun.lockb`. 아무것도 없으면 `pnpm`으로 가정.
+- **npm / pnpm / yarn / bun** 중 하나. 감지 순서: `package-lock.json` → `pnpm-lock.yaml` →
+  `yarn.lock` → `bun.lockb`. 아무것도 없으면(lockfile 무신호) `npm`으로 가정.
 - **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동하도록 안내하고 중단.
 - 인터넷 연결 필요 (`@apps-in-toss/debug-console` GitHub Release tarball 설치, 아래 §3).
 
@@ -64,8 +64,8 @@ Step 2에서 이미 있으면 skip. **반드시 `dependencies`다 — `devDepend
 `package.json`의 `dependencies` 키는 `@apps-in-toss/debug-console`, 값은 이 URL이 된다:
 
 ```bash
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"   # npm (기본)
 pnpm add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"      # pnpm
-npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"   # npm
 yarn add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"       # yarn
 bun add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"        # bun
 ```
@@ -145,8 +145,8 @@ debug relay deep-link로 열렸을 때만) 활성화되고, 일반 프로덕션 
   - eruda 기반 in-app 콘솔은 attach 후 화면에서 직접 열 수 있습니다.
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  RELEASE_CHANNEL=dogfood pnpm build  # candidate 빌드에 attach 표면 포함
-                                      #   (2.x 폴백은 pnpm bundle:ait)
+  RELEASE_CHANNEL=dogfood npm run build  # candidate 빌드에 attach 표면 포함
+                                      #   (2.x 폴백은 npm run bundle:ait)
   /ait:debug                          # 환경 3 QR attach로 on-device 디버깅
                                       #   말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
 

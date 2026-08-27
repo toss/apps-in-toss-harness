@@ -116,7 +116,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 
    ```bash
    # run_in_background: true 로 실행
-   pnpm dev
+   npm run dev
    ```
 
 4. **URL 출력**: Vite가 stdout에 `Local: http://localhost:<port>/`를 출력한다. 에이전트는 이 줄을 파싱해 포트를 확인하고 사용자에게 URL을 명시적으로 알린다:
@@ -198,13 +198,13 @@ candidate scheme URL이 없으면 5-B에서 빌드 → console MCP
 
 candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보 빌드→등록→업로드를 진행한다:
 
-1. `RELEASE_CHANNEL=dogfood pnpm build`로 candidate 번들을 만든다.
+1. `RELEASE_CHANNEL=dogfood npm run build`로 candidate 번들을 만든다.
    **`ait build`를 단독으로 부르지 않는다** — 3.x(`apps-in-toss.config.ts`)의
    `ait build`는 이미 만들어진 `dist/`를 포장만 하므로 웹 빌드 없이 부르면
    `웹 빌드 디렉토리(dist)가 존재하지 않습니다`로 종료하고, 환경 변수도 웹
    빌드에 닿지 못한다. 3.x의 `build` 스크립트가 `vite build && ait build`라
    한 줄로 둘 다 처리한다. 2.x 폴백(`granite.config.ts`)이면
-   `RELEASE_CHANNEL=dogfood pnpm bundle:ait`을 쓴다 — 그쪽 `ait build`는
+   `RELEASE_CHANNEL=dogfood npm run bundle:ait`을 쓴다 — 그쪽 `ait build`는
    `web.commands.build`를 스스로 실행한다. (CLI `2.10.8`·`3.0.5` 소스 확인)
 2. 아직 콘솔에 등록되지 않은 앱이면 console MCP `miniapp_create`로 등록한다
    (이미 등록돼 있으면 건너뛴다).

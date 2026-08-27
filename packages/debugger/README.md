@@ -11,7 +11,7 @@
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"
 ```
 
 설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@apps-in-toss/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx <URL>`은 동작하지 않는다:
@@ -99,14 +99,9 @@ export default definePhoneTestConfig({
 
 ### cloudflared 바이너리가 준비되지 않을 때
 
-`pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"`만 하면 `pnpm install` 로그에 `cloudflared`의 "Ignored build scripts" 경고가 남는 경우가 있다 — pnpm은 기본적으로 의존성의 postinstall 스크립트를 차단하고(`ignore-scripts` 정책), `cloudflared`는 postinstall에서 `~38 MB` 바이너리를 받기 때문이다.
+`debugger`(relay/tunnel 대상)를 처음 기동하는 순간 `ensureCloudflaredBin`이 바이너리 부재를 감지해 `cloudflared.install()`을 lazy로 호출하므로, 첫 실행에서 자동으로 `~38 MB` 바이너리가 다운로드된다 — npm은 postinstall을 기본 실행하므로 대부분 별도 조치가 필요 없다.
 
-대부분은 별도 조치가 필요 없다 — `debugger`(relay/tunnel 대상)를 처음 기동하는 순간 `ensureCloudflaredBin`이 바이너리 부재를 감지해 `cloudflared.install()`을 lazy로 호출하므로, 첫 실행에서 자동으로 다운로드된다. 이 다운로드를 `pnpm install` 시점으로 앞당기고 싶다면(예: CI 캐시 warm-up, 첫 기동 지연 방지) 둘 중 하나를 선택한다:
-
-- **대화형으로 허용**: `pnpm approve-builds`를 실행해 `cloudflared`를 선택.
-- **설정으로 명시**: pnpm 워크스페이스라면 `pnpm-workspace.yaml`의 [`allowBuilds`](https://pnpm.io/settings#allowbuilds)에 `cloudflared: true` 추가. 단일 프로젝트(워크스페이스 아님)라면 `package.json`의 `pnpm.onlyBuiltDependencies`에 `"cloudflared"` 추가.
-
-npm/yarn 사용자는 postinstall이 기본으로 실행되므로 이 문제와 무관하다.
+**pnpm으로 설치한 프로젝트에서만 해당하는 note**: pnpm은 기본적으로 의존성의 postinstall 스크립트를 차단해(`ignore-scripts` 정책) `cloudflared`의 "Ignored build scripts" 경고가 `pnpm install` 로그에 남을 수 있다. 이 다운로드를 install 시점으로 앞당기고 싶다면(예: CI 캐시 warm-up, 첫 기동 지연 방지) `pnpm approve-builds`로 `cloudflared`를 대화형 승인하거나, `pnpm-workspace.yaml`의 [`allowBuilds`](https://pnpm.io/settings#allowbuilds)(워크스페이스) 또는 `package.json`의 `pnpm.onlyBuiltDependencies`(단일 프로젝트)에 `cloudflared: true`/`"cloudflared"`를 명시한다.
 
 바이너리 다운로드 자체가 실패하면(오프라인, 사내 방화벽 등) 위 lazy install도 같은 이유로 실패하고 에러 메시지가 이 절을 가리킨다 — 네트워크 연결을 확인하거나, `cloudflared`를 직접 설치해 `cloudflared tunnel --url http://localhost:<port>`를 수동 실행해본다.
 
