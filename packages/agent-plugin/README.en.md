@@ -8,7 +8,7 @@ Plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside codin
 
 Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a single integrated experience. Slash commands available today:
 
-- `/ait:welcome` — confirm installation + point to the first station (`/ait:new`)
+- `/ait:welcome` — confirm installation + check environment/integration state (git, Node/npm/npx, MCP exposure, etc.) + suggest/hand off the next step
 - `/ait:new` — scaffold a new mini-app
 - `/ait:plan` — ideate, draft a lightweight PRD, and plan SDK domains/permissions/terms before scaffolding
 - `/ait:design` — turn Figma designs into registration image assets

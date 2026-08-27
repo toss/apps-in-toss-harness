@@ -116,7 +116,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 
 | 명령 | 하는 일 | station |
 |---|---|---|
-| `/ait:welcome` | 설치 직후 harness 진입 지도를 출력하고 `/ait:new`를 첫 단계로 안내 | 0 → 1 hand-off |
+| `/ait:welcome` | 설치 직후 harness 진입 지도를 출력하고, 환경·연동 상태(git·Node/npm/npx, MCP 노출 등)를 점검해 다음 단계를 권유·hand-off | 0 → 1 hand-off |
 | `/ait:plan [requirements]` | 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리 (기획만, `/ait:new`로 hand-off) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]` | `create-ait-app`을 비대화형으로 구동해 미니앱을 scaffold하고 devtools(mock SDK + panel)를 후처리 배선 (greenfield 전용) | 1. scaffold |
 | `/ait:inject-devtools` | 기존 프로젝트 빌드 설정에 devtools unplugin을 추가 (brownfield) | 2. dev |

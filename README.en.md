@@ -116,7 +116,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 
 | Command | What it does | Station |
 |---|---|---|
-| `/ait:welcome` | Prints the harness entry map right after install and points to `/ait:new` as the first step | 0 → 1 hand-off |
+| `/ait:welcome` | Prints the harness entry map right after install, checks environment/integration state (git, Node/npm/npx, MCP exposure, etc.), and suggests/hands off the next step | 0 → 1 hand-off |
 | `/ait:plan [requirements]` | Takes a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms (planning only — hands off to `/ait:new`) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]` | Drives `create-ait-app` non-interactively to scaffold a mini-app, then wires up devtools (mock SDK + panel) as a post-step (greenfield only) | 1. scaffold |
 | `/ait:inject-devtools` | Adds the devtools unplugin to an existing project's build config (brownfield) | 2. dev |
