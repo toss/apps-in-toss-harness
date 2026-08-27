@@ -149,12 +149,12 @@ Three packages managed as a pnpm workspace.
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code and Codex) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.1`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.2`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.4`) |
 
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
-`debugger` and `debug-console` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.2.1`, `debug-console-v0.1.4`), and downloads don't require authentication.
+`debugger` and `debug-console` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.2.2`, `debug-console-v0.1.4`), and downloads don't require authentication.
 
 ## If you run into a problem
 

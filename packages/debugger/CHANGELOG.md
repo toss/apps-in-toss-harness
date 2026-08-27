@@ -1,5 +1,77 @@
 # @apps-in-toss/debugger
 
+## 0.2.2
+
+### Patch Changes
+
+- fix(mcp): dog-food 재배포 안내를 `pnpm build` 형태로 정정 (harness#138)
+
+  `window.__sdkCall` 부재 에러 힌트와 `call_sdk`·`start_attach` tool description이
+  `RELEASE_CHANNEL=dogfood ait build`를 안내했는데, 이 형태는 3.x
+  (`apps-in-toss.config.ts`)에서 동작하지 않는다 — `@apps-in-toss/cli@3.0.5`의
+  `ait build`는 이미 만들어진 `dist/`를 포장만 하므로 웹 빌드 없이 부르면
+  `웹 빌드 디렉토리(dist)가 존재하지 않습니다`로 종료하고, 어느 CLI도
+  `RELEASE_CHANNEL`을 직접 읽지 않으므로 환경 변수가 웹 빌드에 닿을 경로도 없다.
+
+  `RELEASE_CHANNEL=dogfood pnpm build`(3.x `build` 스크립트가
+  `vite build && ait build`)로 바꾸고, 2.x 폴백(`pnpm bundle:ait`)을 함께 표기했다.
+  사용자가 디버깅 도중 마주치는 문구라 그대로 복사해 실행해도 되는 형태여야 한다.
+
+- Tier 거부 hint가 **읽지 않는 환경 변수**를 안내하던 것을 정정한다.
+
+  `MCP_ENV`는 환경 파생 경로에서 제거된 뒤로 소스 어디에서도 읽지 않는다(값이
+  수용되고 무시된다). 그런데 세 표면이 계속 "`MCP_ENV=relay` 설정 후 서버를
+  재시작하세요"라고 안내하고 있었다 — `errors.ts`의 Tier 거부 hint, `server.ts`의
+  `start_attach` tool description, dev-mode Tier B 거부 reason. 지시를 정확히
+  따라도 환경이 바뀌지 않아 같은 거부를 다시 받으므로, 특히 tool description을
+  읽고 행동하는 에이전트에게는 빠져나올 수 없는 복구 루프가 됐다.
+
+  - Tier 거부 hint가 실제로 동작하는 런타임 전환 도구를 가리킨다 —
+    `start_attach({mode:'relay-staging', …})` / `start_debug({mode:'local-browser'})`.
+    둘 다 warm swap이라 서버 재시작이 필요 없다는 점을 함께 밝힌다.
+  - `tierRejectionError()`에 hint override 인자를 추가했다. dev-mode 서버는 debug
+    데몬과 별개 프로세스라 런타임 swap 대상이 아니고 `--mode=debug` 재시작이 실제로
+    필요하므로, 그 호출자만 자기 안내를 넘긴다.
+  - `debugger --help`의 back-compat 문구가 "`MCP_ENV` … still honored"라고 거짓을
+    말하던 것을 정정했다(같은 파일 헤더 주석은 "accepted and ignored"라고 이미
+    정확히 적고 있어 자기모순 상태였다).
+  - 회귀 가드 추가: `MCP_ENV=<값>` 형태의 "설정하라" 안내가 소스에 다시 들어오면
+    테스트가 깨진다. 변수를 무효라고 서술하는 것은 계속 허용한다.
+
+- 죽은 `MCP_ENV`를 **런타임 표면에서 이름으로 부르지 않는다.**
+
+  직전 정정(`mcp-env-dead-hint`)은 잘못된 안내("설정 후 재시작하세요")를
+  "설정해도 효과 없습니다"로 바꿨다. 그 문장은 사실이지만, `start_attach` tool
+  description과 dev-mode Tier B 거부 hint는 **에이전트가 매번 읽는 표면**이라
+  그 자체가 비용이다 — 그 변수를 모르던 에이전트에게 존재를 알려 주고, 정작
+  할 수 있는 일은 없는 이름 하나를 컨텍스트에 남긴다.
+
+  그래서 두 표면은 **할 일만** 말하도록 바꾼다: "환경 변수를 설정할 필요는
+  없습니다" / "No environment variable is involved" — 양성 경로(`start_debug` ·
+  `start_attach` 호출, 재시작 불요)는 그대로 두고 죽은 이름만 뺐다.
+
+  변수가 죽었다는 사실의 정본은 사람이 찾아가는 표면에 남는다: `debugger --help`
+  back-compat 문단, `errors.ts`의 JSDoc, debug skill의
+  `references/mode-switching.md`. 부활 방지 가드(`mcp-env-dead.test.ts`) 2종도
+  그대로다.
+
+- 문서: 설치 안내 기본 패키지 매니저를 npm으로 전환
+
+  README의 설치 예시(`pnpm add -D <URL>`)를 `npm install -D <URL>`로 바꾸고,
+  `cloudflared` postinstall 관련 트러블슈팅 절을 pnpm 사용 프로젝트에만
+  해당하는 note로 축소했다 — npm은 postinstall을 기본 실행하므로 기본
+  흐름에서는 해당하지 않는다.
+
+- fix: MCP tool description·에러 힌트·주석의 재배포/실행 명령을 npm 기본으로 전환
+
+  PR #20으로 소비자 대면 표면의 기본 패키지 매니저가 npm/npx로 바뀌었지만,
+  컴파일되는 소스 안 힌트 문자열(`errors.ts`·`tools.ts`의 tool description·에러
+  메시지, `server.ts`의 `.mcp.json` 예시, `tunnel.ts`·`relay-secret-store.ts`·
+  `local-launcher.ts`의 주석)에는 `pnpm dev`·`pnpm build`·`pnpm bundle:ait`가
+  그대로 남아 있었다. 이를 `npm run dev`·`npm run build`·`npm run bundle:ait`로
+  바꿨다 — `npm run`은 pnpm으로 설치한 프로젝트에서도 그대로 동작하므로
+  복사-실행 가능성은 유지된다.
+
 ## 0.2.1
 
 ### Patch Changes

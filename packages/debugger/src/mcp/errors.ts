@@ -130,7 +130,7 @@ export function pageCrashError(toolName?: string): McpErrorResult {
  *   - relay(`--target` 없는 intoss, env 3): dog-food 빌드가 아니다 → dog-food
  *     채널로 재배포 후 QR 재스캔.
  *   - local(`--target=local`, env 1 로컬 브라우저): 재배포가 아니라 dev 서버를
- *     `pnpm dev`로 띄웠는지 + unplugin alias가 `@apps-in-toss/web-framework`를
+ *     `npm run dev`로 띄웠는지 + unplugin alias가 `@apps-in-toss/web-framework`를
  *     devtools mock으로 resolve하는지 확인. dev 빌드면 `import.meta.env.DEV`
  *     경로로 `window.__sdkCall`이 자동 설치된다.
  *
@@ -141,7 +141,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
   if (isLocal) {
     return mcpError(
       `${prefix}window.__sdkCall이 주입되지 않았습니다 (로컬 dev 브리지 부재). ` +
-        'sdk-example을 `pnpm dev`로 띄웠는지, 그리고 unplugin alias가 ' +
+        'sdk-example을 `npm run dev`로 띄웠는지, 그리고 unplugin alias가 ' +
         '`@apps-in-toss/web-framework`를 devtools mock으로 resolve하는지 확인하세요. ' +
         'dev 빌드(`import.meta.env.DEV`)면 `window.__sdkCall`이 자동 설치됩니다.',
     );
@@ -149,7 +149,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
   return mcpError(
     `${prefix}window.__sdkCall이 주입되지 않았습니다 (dog-food 빌드가 아닙니다). ` +
       'dog-food 채널(intoss-private)로 재배포 후 QR을 다시 스캔하세요: ' +
-      '`RELEASE_CHANNEL=dogfood pnpm build`(2.x 폴백은 `pnpm bundle:ait`) 후 ' +
+      '`RELEASE_CHANNEL=dogfood npm run build`(2.x 폴백은 `npm run bundle:ait`) 후 ' +
       'console MCP(`bundle_upload`/`bundle_upload_complete`)로 업로드. ' +
       '`ait build`만 단독으로 부르면 3.x에서는 `dist/`가 없어 실패하고 환경 변수도 웹 빌드에 닿지 않습니다.',
   );

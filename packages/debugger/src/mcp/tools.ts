@@ -299,11 +299,11 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'If a Runtime.exceptionThrown event was observed within [callStart-50ms, callEnd+200ms], ' +
       'the result also includes `recentException` for crash triage. ' +
       'Returns a clear error if window.__sdkCall is not available — on relay (env 3/4) ' +
-      'that means a non-dog-food bundle (redeploy via `RELEASE_CHANNEL=dogfood pnpm build` — ' +
-      '`pnpm bundle:ait` on the 2.x fallback — then ' +
+      'that means a non-dog-food bundle (redeploy via `RELEASE_CHANNEL=dogfood npm run build` — ' +
+      '`npm run bundle:ait` on the 2.x fallback — then ' +
       "the console MCP's `bundle_upload`/`bundle_upload_complete`); " +
       'on local (--target=local, env 1) it means the dev bridge is not installed ' +
-      '(start the dev server with `pnpm dev`).\n\n' +
+      '(start the dev server with `npm run dev`).\n\n' +
       'SECURITY: method name, args, and result value are not redacted — never include secrets.\n\n' +
       'Positive-allowlist kill-switch (#665): blocked when the attached page is on ' +
       'a non-debug host (apps.tossmini.com / env 4). relay-live and the LIVE guard removed.\n\n' +
@@ -386,13 +386,13 @@ export const DEBUG_TOOL_DEFINITIONS = [
       '  relay-staging — env 3: a real-device Toss WebView dog-food build with the REAL SDK over the ' +
       'intoss-private relay. The first environment where call_sdk exercises the genuine native ' +
       'bridge. Side-effect tools run unguarded (dog-food, not released to real users). ' +
-      'Prerequisite: a dog-food candidate bundle built with `RELEASE_CHANNEL=dogfood pnpm build` ' +
-      '(`pnpm bundle:ait` on the 2.x fallback — calling `ait build` alone fails on 3.x because it ' +
+      'Prerequisite: a dog-food candidate bundle built with `RELEASE_CHANNEL=dogfood npm run build` ' +
+      '(`npm run bundle:ait` on the 2.x fallback — calling `ait build` alone fails on 3.x because it ' +
       'only packages an already-built `dist/`), ' +
       'then uploaded with `ait deploy` (add `--scheme-only` to print the resulting ' +
       'intoss-private://…?_deploymentId=… deep-link); open that deep-link/QR on the device to ' +
       'cold-load the bundle with the relay injected. Note that env 3 is NOT a dev-server ' +
-      'tunnel — it is a deployed bundle reached via the intoss-private scheme, so `pnpm dev` ' +
+      'tunnel — it is a deployed bundle reached via the intoss-private scheme, so `npm run dev` ' +
       'plays no part here.\n\n' +
       'For the relay mode (relay-staging), also pass projectRoot — the ' +
       'absolute mini-app project root — so the daemon can read the relay auth secret from ' +
