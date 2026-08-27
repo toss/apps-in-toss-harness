@@ -64,7 +64,7 @@
 
 설치 형상(`/plugin install`)에서 **플러그인 이름이 네임스페이스**가 된다. 그래서 사용자가 실제로 치는 형태는 `/ait:<verb>`이고, 공백 형태 `/ait <verb>`는 어떤 형상에서도 존재한 적이 없다(`Unknown command: /ait`). 문서·skill seam은 전부 콜론 형태로 인쇄한다 — 검증기 A8이 공백 형태를 하드 실패로 잡는다.
 
-**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`·`plan`은 변환에서 아예 빠진다 — 루트 `README.md` "Codex에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(`eval/routing/cases.tsv`)을 우선 재사용한다 — 노출 예시 5종(루트 README ko/en + `welcome` 출력)이 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
+**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`·`plan`은 변환에서 아예 빠진다 — 루트 `README.md` "Codex에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시 5종(루트 README ko/en + `welcome` 출력)이 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
 
 같은 목록에 두 종류가 함께 오른다:
 
@@ -172,10 +172,10 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 ## eval (성능 측정) — 두 슈트로 분업
 
-`eval/`은 플러그인이 **에이전트 안에서 실제로 동작하는가**를 두 각도로 검증한다. 둘은 형제이고 서로 안 건드린다.
+로컬 `eval/`(repo 미포함 — maintainer-local)은 플러그인이 **에이전트 안에서 실제로 동작하는가**를 두 각도로 검증한다. 둘은 형제이고 서로 안 건드린다.
 
-- **슈트 A — `eval/promptfoo/` + `eval/routing/`** (라우팅 정합성): 맞는 발화에서 맞는 skill이 뜨고(positive) off-topic에선 안 뜨는가(negative control)를 **single-turn**으로 결정적 판정(호출된 skill만 보고 산문은 채점 안 함). 러너가 둘인 건 **얹는 형상이 달라서**다 — `promptfoo/`는 skill을 project skill(`.claude/skills/`)로 얹고(`pnpm eval:promptfoo`, API 키 필요), `routing/`은 `claude -p --plugin-dir`로 **실제 설치 형상**(skill이 `ait:` 네임스페이스 + command stub 4개가 같은 목록에 함께 오름)을 재며 API 키가 필요 없다. 이 차이는 측정값을 바꿀 수 있다(#275: 당시 두 케이스가 project 형상 5/5, 설치 형상 0/5·2/5 — 그 케이스가 걸었던 `docs`·`auth-setup` skill은 이후 제거돼 구체 수치는 더 유효하지 않다). **케이스 정본은 `promptfooconfig.yaml`(9 skill), 회귀 판정은 `bash eval/routing/run.sh 3`(14케이스).**
-- **슈트 B — `eval/e2e/`** (완주·비용·분산): "작은 아이디어 → 작동하는 미니앱"(`/ait:new`→번들 빌드)을 **멀티턴**으로 자율 완주시켜 **완주율·성공당 토큰·run-to-run 분산**을 모델·공급자별로 측정. **공급자 축 포함** — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(`--base-url`로 Anthropic-호환 게이트웨이 라우팅) 둘 다. Claude Agent SDK 직접 드라이버(신규 의존성 0 — promptfoo가 이미 끌어오는 동일 패키지). `pnpm eval:e2e --task <id> --model <id> --n <int> [--base-url <url> --auth-token-env <NAME>]`. 상세는 `eval/e2e/README.md`.
+- **슈트 A — `eval/promptfoo/` + `eval/routing/`** (라우팅 정합성, 둘 다 repo 미포함 — maintainer-local): 맞는 발화에서 맞는 skill이 뜨고(positive) off-topic에선 안 뜨는가(negative control)를 **single-turn**으로 결정적 판정(호출된 skill만 보고 산문은 채점 안 함). 러너가 둘인 건 **얹는 형상이 달라서**다 — `promptfoo/`는 skill을 project skill(`.claude/skills/`)로 얹고(로컬 `bash eval/promptfoo/setup-fixture.sh && npx promptfoo@latest eval -c eval/promptfoo/promptfooconfig.yaml` 직접 실행 — package.json의 `eval:promptfoo` 스크립트는 eval/ 비공개화와 함께 제거됨, API 키 필요), `routing/`은 `claude -p --plugin-dir`로 **실제 설치 형상**(skill이 `ait:` 네임스페이스 + command stub 4개가 같은 목록에 함께 오름)을 재며 API 키가 필요 없다. 이 차이는 측정값을 바꿀 수 있다(#275: 당시 두 케이스가 project 형상 5/5, 설치 형상 0/5·2/5 — 그 케이스가 걸었던 `docs`·`auth-setup` skill은 이후 제거돼 구체 수치는 더 유효하지 않다). **케이스 정본은 로컬 `promptfooconfig.yaml`(9 skill), 회귀 판정은 로컬 `bash eval/routing/run.sh 3`(14케이스).**
+- **슈트 B — `eval/e2e/`** (완주·비용·분산, repo 미포함 — maintainer-local): "작은 아이디어 → 작동하는 미니앱"(`/ait:new`→번들 빌드)을 **멀티턴**으로 자율 완주시켜 **완주율·성공당 토큰·run-to-run 분산**을 모델·공급자별로 측정. **공급자 축 포함** — Anthropic tier(opus/sonnet/haiku)와 Qwen 등 비-Anthropic(`--base-url`로 Anthropic-호환 게이트웨이 라우팅) 둘 다. Claude Agent SDK 직접 드라이버(신규 의존성 0 — promptfoo가 이미 끌어오는 동일 패키지). 로컬 `tsx eval/e2e/run.ts --task <id> --model <id> --n <int> [--base-url <url> --auth-token-env <NAME>]` 직접 실행(package.json의 `eval:e2e` 스크립트는 eval/ 비공개화와 함께 제거됨). 상세는 로컬 `eval/e2e/README.md`.
 
   가변성 두 결을 분리: (1) 같은 모델 반복 흔들림(run-to-run, 토큰 CV — 한 공급자 안에서) vs (2) 모델·공급자 간 차이(셀 비교). (1)을 깨끗이 재려고 한 run 안에서 공급자를 안 섞는다. 게이트웨이 경로는 미문서·실험적 — 슬래시 디스패치·tool-use·캐시 토큰 계약이 모델 구현에 의존(캐시 토큰 ≈0 → 캐시 기반 USD 무의미, 토큰 KPI는 유효). 게이트웨이 토큰은 `--auth-token-env`로 *이름*만 받아 값은 출력 안 함.
 

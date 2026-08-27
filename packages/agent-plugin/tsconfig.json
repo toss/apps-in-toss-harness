@@ -13,5 +13,5 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": ["shared/__tests__/**/*.ts", "eval/e2e/**/*.ts"]
+  "include": ["shared/__tests__/**/*.ts"]
 }

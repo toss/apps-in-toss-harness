@@ -110,7 +110,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다 — �
 | | "인앱 광고를 넣고 싶어" (`ads`) | `/ait:plan` → 개발 |
 | | "즐겨찾기를 로컬에 저장하고 싶어" (`storage`) | `/ait:plan` → 개발 |
 
-1~4의 발화는 라우팅 게이트가 실제로 재는 케이스(`packages/agent-plugin/eval/routing/cases.tsv`)와 같은 문장입니다 — "이렇게 말하면 그 skill이 뜬다"가 측정된 문장이라는 뜻입니다.
+1~4의 발화는 라우팅 게이트가 실제로 재는 케이스(로컬 `packages/agent-plugin/eval/routing/cases.tsv` — repo 미포함, maintainer-local)와 같은 문장입니다 — "이렇게 말하면 그 skill이 뜬다"가 측정된 문장이라는 뜻입니다.
 
 5(기능별)의 괄호 안은 `plan` skill이 들고 있는 SDK 도메인 카탈로그의 도메인 이름입니다(전체 18개). 어떤 도메인이 어떤 런타임 권한·콘솔 약관을 끌고 오는지는 `/ait:plan`이 매핑해 주고, 정확한 API·권한 상수는 docs MCP(`searchDocumentation`/`getPage`)로 확인합니다 — 카탈로그에 없는 기능 이름은 지어내지 마세요. 이 다섯 줄은 라우팅 게이트가 재는 케이스가 아니라 카탈로그에서 뽑은 예시입니다(기능 발화는 단독으로 특정 skill을 확정하지 않고, 기획 중이면 `plan`으로 이어집니다).
 

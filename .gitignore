@@ -15,6 +15,9 @@ docs/
 # maintainer-local 세션 skill — repo 미포함(2026-08-27 내부 운영 표면 정리)
 .claude/skills/
 
+# maintainer-local 측정 인프라 — repo 미포함(2026-08-27 repo 다이어트)
+packages/agent-plugin/eval/
+
 # SECRET-HANDLING (devtools/debugger relay): relay state files carry TOTP
 # secrets, wss:// relay URLs, and tunnel hostnames. Never track them.
 .ait_relay
