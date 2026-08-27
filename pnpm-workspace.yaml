@@ -4,14 +4,34 @@ packages:
 # 일부 사내망 npm 미러가 아직 캐시하지 못한 최신 transitive 버전 회피 — 커뮤니티 lockfile이 검증한 버전으로 고정.
 overrides:
   baseline-browser-mapping: 2.10.19
-  # devtools 단독 repo에서는 postcss가 단일 버전(8.5.15)으로만 해석됐으나, debug-console/debugger가
-  # 끌어오는 다른 web-framework 버전 체인과 합쳐지며 postcss가 8.5.23으로 다중 해석됨. 단일 버전으로 고정.
-  postcss: 8.5.15
+  # devtools 단독 repo에서는 postcss가 단일 버전으로만 해석됐으나, debug-console/debugger가 끌어오는
+  # 다른 web-framework 버전 체인과 합쳐지며 postcss가 다중 해석됨. 단일 버전으로 고정.
+  # Dependabot #22(GHSA-fxqj-rqcc-2cmp, <=8.5.22)·#16(GHSA-r28c-9q8g-f849, <=8.5.17) 대응으로
+  # 8.5.15 -> 8.5.26(2026-08-27 시점 최신 8.x) 상향. vite@7.3.6/8.1.5 둘 다 devDependency 체인
+  # 전용(postcss는 어떤 workspace 패키지의 직접 dep도 아님)이라 발행물에는 실리지 않는다.
+  postcss: 8.5.26
+  # postcss가 요구하는 nanoid(^3.3.16/^3.3.17)의 3.x 라인 최신판. Dependabot #32(GHSA-2v37-7h3g-55p8,
+  # customAlphabet/customRandom 무한루프, <3.3.18) 대응 — postcss와 동일하게 dev 전용 체인.
+  nanoid: 3.3.18
   # devtools는 tsdown "^0.21.7"을 쓰는데, 단독 repo lockfile은 0.21.7(→ rolldown 1.0.0-rc.12)로 고정돼
   # 있었다. 모노레포에서 새로 resolve하면 0.21.10(→ rolldown 1.0.0-rc.17)으로 뜨는데, 이 조합에서
   # tsdown의 dts 번들링(vite/postcss 타입 재-export)이 Warning이 아니라 fatal Error로 승격돼 빌드가
   # 깨진다. debugger/debug-console은 별도 range("^0.22.0")라 이 override에 영향받지 않는다.
   "tsdown@^0.21.7": 0.21.7
+  # Dependabot #26·#25 (GHSA-5p4m-2wfm-xmqj, !!omap 리졸브 O(n²) DoS) 대응. js-yaml은 어떤 workspace
+  # 패키지의 직접 dep도 아니고 @changesets/cli devDependency 체인(read-yaml-file→3.x 라인,
+  # @changesets/parse→4.x 라인)으로만 들어온다 — 전부 dev 전용, 발행물 미포함. 두 메이저 라인이
+  # 동시에 해석되므로 소비자 range별로 각각 최신 패치 버전에 고정.
+  "js-yaml@^3.6.1": 3.15.1
+  "js-yaml@^4.1.1": 4.3.1
+  # Dependabot #29·#28·#27·#24 (hono 4.12.32, 각각 medium/low/medium/medium) 대응. hono는 어떤
+  # workspace 패키지의 직접 dep도 아니고 @modelcontextprotocol/sdk(^4.11.4 range)를 통해서만
+  # 들어온다 — debugger의 "dependencies"(devDependencies 아님) 체인이라 debugger 자체 실행 시에는
+  # 실제로 로드되지만, 다운스트림 npm 소비자는 @modelcontextprotocol/sdk가 install 시점에 자체
+  # 재해석하는 hono 버전을 받으므로 이 override는 이 레포 자체 실행 안전에는 유효하되 배포물
+  # 다운스트림에는 전파되지 않는다(qs/uuid와 같은 성격 — 이슈 #1 기록). 4개 GHSA 전부
+  # first_patched_version이 4.12.34로 동일해 그 버전에 고정.
+  hono: 4.12.34
 
 # 각 패키지의 단독 repo 시절 pnpm-workspace.yaml(allowBuilds 설정)을 병합한 것.
 allowBuilds:
