@@ -40,7 +40,7 @@
 
 **"구현 안 함" vs "배선함" 경계**: plugin manifest(`.claude-plugin/plugin.json`)는 **remote MCP 2종을 기본 포함**한다 — `apps-in-toss-docs`(GitBook MCP, `searchDocumentation`/`getPage`)와 `apps-in-toss-console`(콘솔 MCP GW, `miniapp_create`/`bundle_upload`/`bundle_upload_complete`/`miniapp_get_status` — OAuth `clientId: mcp-gateway`, `/mcp`에서 1회 인가). 둘 다 http 타입 remote 서버라 로컬 프로세스·npx 데몬이 아니고, plugin은 여전히 이 서버들을 **자체 구현하지 않는다** — 그저 manifest에서 가리킬 뿐이다.
 
-반면 `ait-devtools` MCP server(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)는 manifest가 아니라 **프로젝트 scope `.mcp.json`에 opt-in으로 배선**된다 — `setup-debugger` skill(`/ait:setup-debugger`)이 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger` 항목을 merge한다(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). manifest 상시 등록이 아니라 opt-in인 이유는 harness#1 타깃 아키텍처 결정이다: 디버깅은 프로젝트 전제 작업이고, 로컬 npx 데몬을 모든 세션에 상시 태우면 idle 비용·공급망 표면이 생긴다(원격 http MCP인 docs·console과 달리 로컬 프로세스라 이 비용이 실재한다). 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 로컬 MCP 케이스다 — 로컬 `docs/design/mcp-strategy.md`(repo 미포함 — maintainer-local) §4("소비(consume) 관점")가 정의하는 소비 모델대로, agent-plugin은 이 MCP를 직접 제공하지 않고 붙어 있으면 활용하고 없으면 graceful degrade한다(같은 절의 devtools MCP 유무에 따른 `/ait debug` 자동 분석/수동 가이드 예시와 동일 패턴). 서버는 attach 전 bootstrap 도구만 노출하므로 로드 시 context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). 설계 정본: 로컬 `docs/design/three-environments-fidelity.md`(repo 미포함 — maintainer-local) §7.4 + harness#1.
+반면 `ait-devtools` MCP server(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)는 manifest가 아니라 **프로젝트 scope `.mcp.json`에 opt-in으로 배선**된다 — `setup-debugger` skill(`/ait:setup-debugger`)이 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.2/apps-in-toss-debugger-0.2.2.tgz debugger` 항목을 merge한다(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). manifest 상시 등록이 아니라 opt-in인 이유는 harness#1 타깃 아키텍처 결정이다: 디버깅은 프로젝트 전제 작업이고, 로컬 npx 데몬을 모든 세션에 상시 태우면 idle 비용·공급망 표면이 생긴다(원격 http MCP인 docs·console과 달리 로컬 프로세스라 이 비용이 실재한다). 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 로컬 MCP 케이스다 — 로컬 `docs/design/mcp-strategy.md`(repo 미포함 — maintainer-local) §4("소비(consume) 관점")가 정의하는 소비 모델대로, agent-plugin은 이 MCP를 직접 제공하지 않고 붙어 있으면 활용하고 없으면 graceful degrade한다(같은 절의 devtools MCP 유무에 따른 `/ait debug` 자동 분석/수동 가이드 예시와 동일 패턴). 서버는 attach 전 bootstrap 도구만 노출하므로 로드 시 context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). 설계 정본: 로컬 `docs/design/three-environments-fidelity.md`(repo 미포함 — maintainer-local) §7.4 + harness#1.
 
 ## 제공물
 
@@ -158,7 +158,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.2/apps-in-toss-debugger-0.2.2.tgz", "debugger"]
     }
   }
 }
