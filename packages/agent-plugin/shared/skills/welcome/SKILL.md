@@ -62,10 +62,17 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 
 **c. MCP 연동** (Claude Code-specific — adapter-note 참조):
 
-- 에이전트 자신에게 노출된 도구 목록을 훑어 `mcp__apps-in-toss-docs__*`
-  (`searchDocumentation`/`getPage` 등)와 `mcp__apps-in-toss-console__*`
-  (`miniapp_create`/`bundle_upload` 등) 접두 도구가 보이는지 확인한다 —
-  실제 도구를 호출하지 않는다, 목록 존재 여부만 본다.
+- 에이전트 자신에게 노출된 도구 목록을 훑어 서버 키 `apps-in-toss-docs`·
+  `apps-in-toss-console`가 포함된 도구가 보이는지 확인한다 — 직접 등록 형태
+  (`mcp__apps-in-toss-docs__searchDocumentation` 등)와 이 플러그인의 정규
+  설치 경로(`/plugin install`)에서 실제로 뜨는 플러그인 경유 형태
+  (`mcp__plugin_<pluginName>_apps-in-toss-docs__searchDocumentation`,
+  `mcp__plugin_<pluginName>_apps-in-toss-console__miniapp_create` 등 — 이
+  플러그인의 manifest 등록 이름은 `ait`) **둘 다** 서버 키 부분 문자열로
+  잡는다(plugin 세그먼트는 마켓플레이스 설치명에 따라 달라질 수 있어 고정하지
+  않는다 — `eval/e2e/driver.ts`의 `isConsoleMcpTool` 판정과 동일 관례). 앞쪽
+  형태만 보면 설치 형상에서 상시 "미노출"로 오판한다 — 실제 도구를 호출하지
+  않는다, 목록 존재 여부만 본다.
 - 콘솔 MCP 도구가 안 보이면(설치 직후 기본 상태 — 미인가) `/mcp`에서 1회
   인가를 권유한다. 문서 MCP는 무인증이라 보통 바로 보인다.
 - cwd에 `package.json`이 있으면 프로젝트 `.mcp.json`을 `Read`해
