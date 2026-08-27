@@ -1,4 +1,4 @@
-# @ait-co/debug-console
+# @apps-in-toss/debug-console
 
 ## 0.1.4
 
