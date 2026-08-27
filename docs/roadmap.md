@@ -39,9 +39,11 @@ scope-out(#5, 클라이언트 mock만 harness가 다룸), scaffold 축은
 테스트 정규 경로 skill 신설, 환경 2(PWA launcher) 전면 제거,
 design 축 가드·품질 강화, 자율 디버깅 루프, 이슈 템플릿 등). 이 축의 추적은 그날 신설된
 milestone `PO — 8월 퍼블릭 오픈`(milestone 2)이 담당한다 — 실측 2026-08-19
-기준 open 13 · closed 2였다(**재생성 이전 구 repo 수치** — 상단 각주 참고,
-마일스톤 번호 자체는 재생성으로 유지됐지만 이슈 카운트는 최신 조회로
-재확인해야 한다). **개별 항목은 여기 열거하지 않고** milestone 조회로
+기준 open 13 · closed 2였다(**재생성 이전 구 repo 수치** — 상단 각주 참고).
+재생성(2026-08-26)으로 그 이슈들은 트래커에서 소멸했고, **재실측 2026-08-27
+기준 milestone 2는 open 1(#1 보안검토 추적) · closed 0**이다 — 웨이브 개별
+항목의 원문은 maintainer 로컬 백업(`inventory/issues.json`)에만 남아 있다.
+**개별 항목은 여기 열거하지 않고** milestone 조회로
 확인한다(`gh api 'repos/toss/apps-in-toss-harness/issues?milestone=2&state=all'`).
 이 웨이브가 이 문서에 남긴 흔적은 §2 station 1(핀 폐지·`@latest` 전환),
 §5 문항 2(재검토 요청 접수), §5 문항 6의 launcher·tunnel 경계(환경 2 제거)다.
@@ -50,7 +52,7 @@ milestone `PO — 8월 퍼블릭 오픈`(milestone 2)이 담당한다 — 실측
 
 | # | Station | 진입 | 담당 | 커뮤니티 map 대비 변화 |
 |---|---|---|---|---|
-| 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — **public 전환 집행 완료**라 전제는 충족됐다. 같은 루트 manifest를 Codex도 읽는다(`codex plugin marketplace add` → `codex plugin add`, 2026-08-07 실측). 커뮤니티 marketplace와의 병존/폐기는 여전히 open question(§5 문항 1) |
+| 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — 단 **public 전환은 미실행 상태로 리셋**됐다(구 repo에서 2026-08-06 집행 후 되돌림, 2026-08-26 재생성으로 이력 소멸 — §3 조건 1). repo가 private인 동안 외부 사용자의 설치 전제는 다시 #8 대기다. 같은 루트 manifest를 Codex도 읽는다(`codex plugin marketplace add` → `codex plugin add`, 2026-08-07 실측). 커뮤니티 marketplace와의 병존/폐기는 여전히 open question(§5 문항 1) |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
 | 2 | dev | `pnpm dev` | devtools (wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시; harness 사본은 제거됨) | **배포 모델 재정의 확정(2026-08-04) + 공개 npm 발행 완료(`3.0.2`, 2026-08-04) + CLI 자동 설치 실증 완료(2026-08-07) — D1b 해소** — devtools는 wf 소스 monorepo(사내)가 소유·발행하며(AIT-6577) 패키지는 **공개 npm(registry.npmjs.org)에 게시**된다(changesets fixed-group: cli·web-framework·devtools 동일 버전). 소비자 프로젝트에는 **CLI가 자동 설치하는 devDependency**로 배선된다 — `create-ait-app@0.2.3`으로 `ait init`을 실행하면 `package.json`·`vite.config.ts`·`apps-in-toss.config.ts`까지 자동 배선되고 dev 서버에서 devtools 패널이 뜨는 것까지 실증됐다(미러 registry 경유 — 공개 registry의 wf `latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼(이후 latest `3.1.1`, 2026-08-27 확인) 직결 경로도 같은 버전으로 해석될 것으로 보이나 직접 재현은 미확인, 상세는 §5 문항 6). **wf 패키지 자체는 변경되지 않는다 — transitive가 아니다**(종전 "wf 3.x dependencies 통합 + subpath re-export" 계획은 폐기, §5 문항 6). 소비자 import specifier는 `@apps-in-toss/devtools` 그대로다. `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미가 바뀔 예정이나, skill 본문 갱신 자체는 아직 maintainer 결정 대기다(`docs/release.md` §7b). **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** — D1b 실증을 기다리지 않고 maintainer 지시로 앞당겨 실행됨(이슈 #74 참고); 위 skill 재배선·`--no-devtools` 의미 변경은 아직 미완료로 남아 있다 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
@@ -255,7 +257,8 @@ resolve 실증"이었으나, 실제 머지본(AIT-6577)이 wf 패키지를 건�
    **재검토 요청 접수(2026-08-10, harness#102)**: 2026-08-10 퍼블릭 오픈
    웨이브에서 "station 4 scope-out 확정과 현장 서버 수요가 충돌한다"며 이 문항을
    다시 여는 이슈가 열렸다(라벨 `question`·`roadmap`·`station:4-auth`, 실측
-   2026-08-19 기준 open). 즉 7/31 결정은 그대로 유효한 **기록**이되, 이 문항은
+   2026-08-19 기준 open — 구 repo 이슈라 재생성으로 트래커에서 소멸했고,
+   재검토 논의를 재개하려면 신규 이슈가 필요하다). 즉 7/31 결정은 그대로 유효한 **기록**이되, 이 문항은
    "해소됨"으로 닫힌 상태가 아니라 **재검토가 접수돼 결정 대기 중**이다. 이
    문서는 재검토 결과를 예단하지 않는다 — 결론은 harness#102에서 maintainer가
    내리고, 그때 이 문항과 §1·§2의 station 4 행을 함께 갱신한다.
