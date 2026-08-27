@@ -117,10 +117,10 @@ describe('sdkAbsentError — 상태 4: SDK 부재', () => {
 
   // issue #360 — local 세션(`--target=local`, env 1)은 dog-food 재배포가 아니라
   // dev 서버/unplugin alias 확인이 다음 행동이다.
-  it('isLocal=true: "pnpm dev" + unplugin alias 안내 포함', () => {
+  it('isLocal=true: "npm run dev" + unplugin alias 안내 포함', () => {
     const text = getText(sdkAbsentError('call_sdk', true));
     expect(text).toContain('window.__sdkCall');
-    expect(text).toContain('pnpm dev');
+    expect(text).toContain('npm run dev');
     expect(text).toContain('unplugin');
   });
 
@@ -133,7 +133,7 @@ describe('sdkAbsentError — 상태 4: SDK 부재', () => {
   it('isLocal 생략(기본 false): relay/dog-food 안내 유지 (하위 호환)', () => {
     const text = getText(sdkAbsentError('call_sdk'));
     expect(text).toContain('dog-food');
-    expect(text).not.toContain('pnpm dev');
+    expect(text).not.toContain('npm run dev');
   });
 });
 
@@ -235,7 +235,7 @@ describe('classifyToolError — 에러 패턴 자동 분류', () => {
   it('sdk-absent + isLocal=true → local dev 안내로 재구성', () => {
     const err = new Error('sdk-absent: window.__sdkCall이 주입되지 않았습니다.');
     const result = classifyToolError(err, 'call_sdk', true);
-    expect(getText(result)).toContain('pnpm dev');
+    expect(getText(result)).toContain('npm run dev');
     expect(getText(result)).toContain('unplugin');
     expect(getText(result)).not.toContain('dog-food');
   });
@@ -244,7 +244,7 @@ describe('classifyToolError — 에러 패턴 자동 분류', () => {
     const err = new Error('sdk-absent: window.__sdkCall이 주입되지 않았습니다.');
     const result = classifyToolError(err, 'call_sdk');
     expect(getText(result)).toContain('dog-food');
-    expect(getText(result)).not.toContain('pnpm dev');
+    expect(getText(result)).not.toContain('npm run dev');
   });
 
   it('replaced-by-new-attach → pageCrashError 메시지', () => {

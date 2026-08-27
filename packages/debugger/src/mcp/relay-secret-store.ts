@@ -110,7 +110,7 @@ export interface RelaySecretReadOnlyDeps {
  * still lands somewhere deterministic).
  *
  * The write (unplugin) and read (daemon) sides use the SAME anchor so a secret
- * minted by `pnpm dev` is found by the daemon: real mini-apps keep
+ * minted by `npm run dev` is found by the daemon: real mini-apps keep
  * `vite.config.ts` and `package.json` in the same directory, so
  * `server.config.root === package.json-dir`. In a monorepo subdir the anchor is
  * the package's own directory — the one the daemon can also reach via the

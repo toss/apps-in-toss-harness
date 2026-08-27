@@ -109,10 +109,12 @@ export interface QuickTunnel {
 
 /**
  * Ensures the cloudflared binary is installed (downloads + caches on first
- * run). pnpm's `ignore-scripts` default blocks the package's own postinstall,
- * so this lazy download is what makes a fresh `pnpm add @apps-in-toss/debugger`
- * work out of the box — no `allowBuilds` config required. This only fails when
- * the download itself fails (offline / firewall), in which case we augment the
+ * run). npm runs postinstall by default, so this path is a no-op for the
+ * default npm/npx consumer flow. It still matters for pnpm consumers: pnpm's
+ * `ignore-scripts` default blocks the package's own postinstall, so this lazy
+ * download is what makes a fresh `pnpm add @apps-in-toss/debugger` work out of
+ * the box — no `allowBuilds` config required. This only fails when the
+ * download itself fails (offline / firewall), in which case we augment the
  * error with a pointer to the pre-cache options instead of surfacing the raw
  * network error alone.
  */
@@ -125,7 +127,7 @@ async function ensureCloudflaredBin(): Promise<void> {
       throw new Error(
         `[@apps-in-toss/debugger] cloudflared binary download failed: ${
           err instanceof Error ? err.message : String(err)
-        }. See README "Troubleshooting → cloudflared binary" for pnpm allowBuilds / pre-cache options.`,
+        }. See README "Troubleshooting → cloudflared binary not installed" for pnpm allowBuilds / pre-cache options.`,
         { cause: err },
       );
     }

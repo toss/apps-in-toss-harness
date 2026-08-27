@@ -20,7 +20,7 @@
  *   --no-default-browser-check
  *   <devUrl>
  *
- * `pnpm dev` is started by the user; the MCP only launches the browser pointing
+ * `npm run dev` is started by the user; the MCP only launches the browser pointing
  * at it.
  *
  * Node-only.

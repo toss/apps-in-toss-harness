@@ -47,8 +47,8 @@
  *   {
  *     "mcpServers": {
  *       "ait-devtools": {
- *         "command": "pnpm",
- *         "args": ["exec", "debugger", "--mode=dev"],
+ *         "command": "npx",
+ *         "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz", "debugger", "--mode=dev"],
  *         "env": { "AIT_DEVTOOLS_URL": "http://localhost:5173" }
  *       }
  *     }
