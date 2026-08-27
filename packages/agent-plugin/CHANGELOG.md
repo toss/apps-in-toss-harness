@@ -1,5 +1,228 @@
 # @ait-co/agent-plugin
 
+## 0.1.24
+
+### Patch Changes
+
+- fix: `ait build` 전제조건·`brand.icon` 실패 모드 서술을 CLI 소스에 맞게 정정 (#138)
+
+  skill 문서가 CLI 동작을 두 군데서 잘못 서술하고 있었다. `@apps-in-toss/cli`
+  `2.10.8`(2.x)·`3.0.5`(3.x) 소스를 직접 읽어 확인했다.
+
+  **1. `ait build` 단독 실행** — "두 형상 모두 실패한다"는 서술은 3.x에만 맞다.
+
+  - 3.x `buildArtifact()`는 이미 만들어진 `webBundleDir`(기본 `dist/`)를 포장만
+    한다. 없으면 `웹 빌드 디렉토리(dist)가 존재하지 않습니다`로 `exit(1)`.
+  - 2.x `WebBuildStrategy.ensurePrepared()`는 `<outdir>/web/index.html`이 없으면
+    `<outdir>`를 지우고 `web.commands.build`를 **스스로 실행**한다. 즉 단독 실행이
+    성립하고, 앞서 돌린 `vite build` 산출물은 오히려 버려진다.
+
+  **2. `RELEASE_CHANNEL=dogfood ait build`** — 3.x에서는 형태 자체가 위험하다.
+  어느 CLI도 `RELEASE_CHANNEL`을 읽지 않으므로 이 값은 웹 빌드가 소비한다. 그런데
+  3.x `ait build`는 웹 빌드를 돌리지 않으므로 환경 변수가 번들에 닿을 경로가 없다.
+  `RELEASE_CHANNEL=dogfood pnpm build`(3.x `build` = `vite build && ait build`),
+  2.x 폴백은 `pnpm bundle:ait`로 바꿨다. `docs/design/three-environments-fidelity.md`가
+  이미 쓰던 형태와 일치한다.
+
+  **3. `brand.icon` 누락이 `ait build`를 실패시킨다** — 사실이 아니다. 3.x 스키마엔
+  필드 자체가 없고(마이그레이션이 `brand`에서 `primaryColor` 외를 지운다), 2.x는
+  스캐폴드 기본값이 `icon: ''`이라 빈 값으로 빌드가 통과한다. 같은 repo의
+  `local-template.md`가 이미 올바른(런타임 실패, harness#90 미재현) 서술을 갖고
+  있었는데 같은 파일 안 다른 줄이 반대로 적혀 있었다.
+
+  수정: `debug`·`test-on-device`·`inject`(+`references/debug-console.md`)·
+  `new-miniapp/references/local-template.md`.
+
+- 카피 재작성 조력 skill 신설 + design skill 사전 제작 조력 reference + Tossface
+  이모지 서체 번들 배선 3건을 함께 반영한다.
+
+  **1. `ux-writing` skill (신설, 8→9 skill).** `design` skill의 quality bar
+  G6(카피) 판정이 "조정 필요"로 남긴 문구를 실제 재작성으로 이어받는 조력
+  skill이다. 판정 기준은 새로 정의하지 않고 `design`의
+  `references/quality-bar.md`를 그대로 참조하며, 화면 문구 전수 수집 → 축별
+  점검 → before/after 제안 → 사용자 확인 후 적용 → `design` G6 재판정 hand-off
+  순서를 따른다. 확인 없이 문자열을 일괄 치환하지 않는다. command stub은
+  만들지 않는다 — skill 디렉터리 이름과 겹치는 stub은 harness#134가 잡는
+  문제라, `/ait:ux-writing`은 skill 자체로 슬래시 목록에 오른다.
+
+  **2. `design` skill — 사전 제작 조력 reference 신설.** 화면이 아직 없는
+  처음부터-설계 단계를 위해 `references/screen-craft.md`를 추가했다 — quality
+  bar(G0~G8)를 사후 채점이 아니라 사전 체크리스트로 뒤집어 제작 순서로 정리한
+  문서다. 이미 화면 코드가 있는 기존 프로젝트는 이 절을 건너뛴다. G6(카피)
+  축 설명에는 재작성이 `/ait:ux-writing`으로 이어진다는 포인터를 달았다.
+
+  **3. Tossface 번들 배선 (`inject` skill 3번째 facet, 3→4 command stub).**
+  `/ait:inject-tossface`가 신설되며 `inject` skill에 devtools·debug-console에
+  이은 3번째 facet이 생겼다. 이모지를 토스페이스 글리프로 렌더하는 두 가지
+  모드 — CDN 링크(번들 증가 0, 네트워크·CDN 도달성 의존 — 토스 앱 webview
+  안에서의 도달성은 미실측) 또는 subset 번들 포함(결정적, 담는 subset당 약
+  520KB~1.9MB 증가) — 의 대가를 먼저 계산해 사용자에게 보여주고 고르게 한다.
+  공식 배포(`toss/tossface`)의 `dist/tossface.css`는 `unicode-range`로 나뉜
+  12개 subset(`TossFaceFontMac-00`~`-11`)의 모음이라는 사실이 번들 모드의
+  용량 절감 열쇠다 — 앱이 실제로 쓰는 이모지가 속한 subset만 골라 담으면
+  원본을 수정하지 않고도 전량(12개, 약 13.2MB)보다 적게 담을 수 있다.
+  재-subsetting·포맷 변환은 라이선스의 '수정본' 정의(포맷 변경 포함)와 허가
+  조건(수정본 제한·이름 사용 제한)에 걸려 하지 않는다. 번들 모드는 라이선스가 요구하는 저작권
+  고지 + 라이선스 전문 동봉을 절차에 명시했다. `design` skill의 서체 대안
+  절(이모지 서체는 본문 서체 금지의 예외)도 12-subset·용량·번들 시 라이선스
+  요건과 `/ait:inject-tossface` 포인터로 보강했고, `new-miniapp` scaffold
+  완료 안내에도 같은 포인터를 한 줄 추가했다(scaffold가 폰트를 기본
+  주입하지는 않는다 — 용량 대가가 앱마다 달라서다).
+
+  라우팅 게이트(`eval/promptfoo/promptfooconfig.yaml`, `eval/routing/cases.tsv`)에
+  `ux-writing`·`inject`(tossface facet) positive 케이스를 각각 추가했다
+  (13→14 라우팅 케이스). `EXPECTED_CMD_TO_SKILL`·`MERGED_SECONDARY_FACET_CMDS`에
+  `inject-tossface.md` 항목을 추가했다.
+
+- feat(new-miniapp): create-ait-app 버전 정책을 `@latest`로 전환 + Step 2/4 재설계
+
+  maintainer 결정(2026-08-10)으로 `create-ait-app`·`@apps-in-toss/*`는 명시 핀 없이
+  항상 최신을 쓴다. 핀(`@0.2.1`)이 지탱하던 "산출물 형상이 결정적"이라는 전제는
+  매 run 도는 형상 가드로 대체했다.
+
+  - **Step 2 재설계** — scaffold/install 2명령 분리를 폐기하고 단일 명령으로
+    되돌렸다. `--skip-install`이 0.2.3에서 제거돼(지정 시 `알 수 없는 옵션이에요`로
+    즉사, 산출물 0 — 실측 2026-08-10) 분리 설계 자체가 성립하지 않는다. CLI가
+    scaffold → 내부 install → `ait init`(devtools·번들 설정 배선)까지 수행한다.
+  - **§2-1 재정의** — 트리거를 "CLI 내부 install 실패 잔여 상태"로 바꿨다.
+    `ait init` 단계의 실패는 CLI가 삼키고 exit 0으로 끝내므로(0.2.3 dist 실측),
+    scaffold 직후 **항상** `pnpm --dir ./<name> install`로 설치 상태를 수렴시키고
+    필요하면 `ait init`을 재실행한다. allowBuilds 절차 자체는 유지.
+  - **형상 가드 교체** — 0.2.3은 `package.json`의 `createAitApp` 메타데이터를 더
+    이상 쓰지 않는다(`add-sample`이 발견하면 오히려 제거하고, 프로젝트 판정을
+    `@apps-in-toss/web-framework` 의존성 또는 `apps-in-toss.config.ts` 존재로 한다).
+    그 필드를 보던 가드는 0.2.3 산출물에서 통과할 수 없으므로, 판정을
+    `apps-in-toss.config.ts` + wf 의존성 + `ait build`를 포함한 `build` 스크립트로
+    바꿨다. wf major 확인·`ait` bin 확인은 그대로 유지.
+  - **Step 4 축소** — devtools 배선은 CLI가 하므로 skill은 devDependency와 번들러
+    설정의 unplugin을 **확인**하고, 안 돼 있을 때만 기존 수동 배선을 폴백으로
+    실행한다. `--no-devtools`는 "설치 제외"가 아니라 **배선 해제**(devDependency
+    제거 + 설정에서 plugin 제거)로 재정의했다 — CLI에 배선을 끄는 플래그가 없다.
+  - **`--tds` 우회 소실을 정직하게 반영** — scaffold 단계 install이 실패하면 CLI가
+    생성 디렉터리를 롤백하고, 이를 피하던 `--skip-install`이 없어져 in-place 복구가
+    불가능하다. 재시도·`--local` 폴백만 남는다.
+
+  eval 슈트 B: `driver.test.ts` fixture의 scaffold 명령을 새 정본 형태로 갱신했다.
+  버전 정책 변경은 `fixedInputs` 변경이라 `baseline.json`은 건드리지 않는다(새
+  epoch, 재측정은 별도 PR — 재측정 시 해석된 create-ait-app 버전을 함께 기록한다).
+
+- feat(new-miniapp): create-ait-app 핀을 `0.1.3` → `0.2.1`로 이관 (#68)
+
+  공개 registry 기준 `create-ait-app` latest가 0.2.1(0.1.3 대비 대규모 재작성 —
+  `granite.config.ts`→`apps-in-toss.config.ts`, base가 순정 create-vite로 전환,
+  `granite` bin 폐지·`ait` bin만 제공)로 확인되어 핀을 올렸다. 후처리 0(형상 가드)은
+  유지하되 판정을 반전(`apps-in-toss.config.ts` + `package.json`의 `createAitApp`
+  메타데이터 존재 확인)했고, 0.1.x 전제였던 후처리 3종을 정리했다:
+
+  - 후처리 A(`granite` bin 검증 → web-framework 2.x 강등) **삭제** — 0.2.x 산출물엔
+    애초에 `granite` bin이 없어 그대로 두면 정본 3.x 산출물을 오탐으로 강등하는
+    활성 버그였다. `node_modules/.bin/ait` 존재 확인 한 줄로 대체.
+  - 후처리 C-1(`brand.icon` 안내 주석) **삭제** — 0.2.x 설정 스키마에 해당 필드 없음.
+  - 후처리 C-2(`.gitignore` 생성) **축소** — 0.2.x는 `.gitignore`가 이미 존재하므로
+    `*.ait` 한 줄만 없을 때 append(파일 자체가 없으면 만들지 않고 스킵 — 실측으로
+    드러난 `test -f` 가드 누락 버그를 이번에 함께 고쳤다).
+  - 후처리 D(미치환 `{{TOKEN}}` placeholder 복구) **삭제** — base가 순정 create-vite로
+    바뀌어 구조적으로 해소(채점의 회귀 안전망 검사는 유지).
+  - 후처리 B(devtools 배선)는 유지하되 `unmet peer @apps-in-toss/web-framework`
+    경고와 wf 3.x 네임스페이스 API mock 미지원 경고를 추가.
+  - `--template`/`--tds` 동시 지정 금지(0.2.x 신규 제약)를 반영해 조합 규칙을 반전.
+    `--tds` 단독 경로는 구형 vite/esbuild 의존성 때문에 일반 호출로는 3/3 재현
+    실패하고 CLI가 생성 디렉터리를 롤백한다는 걸 실측으로 확인해, `--skip-install`
+    기반 대안 절차를 skill에 추가했다.
+  - eval 슈트 B: `score.ts`의 `bundleConfig` 판정을 `apps-in-toss.config.ts`(정본)/
+    `granite.config.ts`(`--local` 폴백) any-of로 경로 불가지화하고, deploy 우회 하드닝으로
+    패키지 매니저 스코프 플래그(`--dir`/`--prefix`/`--filter`/`-C`/`-F`/`--recursive`/
+    `-r`/`-w`)가 낀 `pnpm deploy` 계열까지 금지 목록에 추가(기존 패턴은 이 형태를
+    놓치고 있었다 — new-miniapp skill이 전 구간에서 가르치는 `pnpm --dir` 관용구가
+    정확히 그 구멍이었다). 핀 변경은 `fixedInputs` 변경에 해당하므로 `baseline.json`은
+    이 변경에서 건드리지 않는다(다음 측정은 epoch 3, 별도 재측정 PR).
+
+- `design` skill에 서체·이모지·타이포그래피 규칙 3건을 추가한다.
+
+  **1. 토스 전용 본문 서체 금지 (금지 목록 5번째 항목 + G0-5).** `Toss Product
+Sans` 계열은 공개 배포되는 서체가 아니므로 `font-family` 지정·웹폰트 로드·번들
+  어느 경로로도 쓰지 않는다. 종전 금지 목록은 로고·컬러·레이아웃·상호 4축만
+  다뤄 서체 축이 비어 있었다. 대안으로 시스템 폰트 스택을 기본으로 제시한다.
+
+  **2. 이모지 서체 `Tossface`는 허용이자 권장.** 서체 금지와 헷갈리지 않도록
+  금지 항목에 예외를 명시했다. `toss/tossface`는 공개 배포되고 자체 라이선스가
+  붙어 있어(판매·부정 이용·무단 수정본이 아닌 한 자유 사용) 미니앱이 쓸 수
+  있다 — 자체 아이콘 세트가 없는 초기 미니앱의 정당한 경량 아이콘 수단이다.
+  본문·데이터 문자열에 섞인 이모지까지 전부 같은 서체로 렌더해야 한다는 점,
+  번들·재배포 경로는 저작권 안내 동봉 조건이 붙어 링크와 다르다는 점을 함께
+  적었다.
+
+  **3. 타이포그래피 상·하한.** 스케일을 강제하지 않고 경계만 규정한다 — 절대
+  하한 11px, 본문 15px 이상(17px 권장), 13px대는 메타데이터 전용, 최대값 명시
+  필수(근거 없으면 히어로 32px 안팎), `font-weight` 400~700. 앱인토스 공식
+  규격이 아니라 harness가 채택한 하한선임을 본문에 명시했다. 판정 항목은
+  G3-5·G3-6(스케일 선언·weight 범위)과 G4-6(전수 가독성 하한)으로 나눠 걸었다.
+  이 축은 브랜드·IP 축이 아니라 품질 축이라 브랜드 가드 절 안이 아니라 별도
+  `## 타이포그래피 상·하한` 절로 두었다 — 위반해도 멈추지 않고 조정 필요로
+  남긴다는 점이 G0과 다르다.
+
+  검증기 A2의 브랜드 가드 필수 내용 목록에 서체 축을 추가했다. 넓은
+  `서체|폰트` 대신 금지 쪽에만 나타나는 표현을 걸어, 같은 절의 "시스템 폰트
+  스택" 대안 문장이 대신 매치돼 ❌ 항목 삭제를 놓치는 구멍을 막았다.
+
+  이 구멍은 회귀 테스트로 못 박았다 — 나머지 4축이 다 있고 대안 문장도 남아
+  있는데 서체 금지 항목만 빠진 픽스처를 넣어 발화를 확인한다. 검사 정규식을
+  넓은 `서체|폰트`로 되돌리면 이 테스트가 실제로 실패하는 것까지 확인했다
+  (가드가 조용히 무력화되는 경로를 테스트가 덮는다는 뜻).
+
+- `design` skill의 quality bar에 신설 축 2개를 추가하고 카피 축(G6)을 확장한다.
+
+  **1. G7 — 렌더 무결성·시각 안티패턴 (신설).** 생성된 화면이 실제 렌더에서
+  깨지거나 검토 없이 만들어진 티를 내는 시각 결함 축이다. 겹침·화면 밖 잘림,
+  등록 자산 외 화면 안 이미지의 종횡비 왜곡, 텍스트 글리프(`>`)로 때운 방향
+  아이콘, 한쪽 면만 색을 댄 accent 보더, 상시 요소에 관성적으로 깐 드롭 섀도,
+  한국어 텍스트의 `word-break: keep-all` 누락 6항목을 판정한다. 심미성
+  점수화가 아니라 결함 유무 판정이라 기존 "이 기준이 하지 않는 것"의 심미성
+  점수화 금지와 충돌하지 않는다.
+
+  **2. G8 — 다크패턴·광고 (신설, 완료 차단).** 사용자를 속이거나 가두는
+  상호작용 패턴 축이다. 전면 광고·팝업으로 첫 화면을 가로막는지, 뒤로가기·
+  닫기가 함정인지, 가짜 버튼·위장 광고가 있는지, 고정 배너가 CTA·내비게이션을
+  가리는지, 광고 게재 방식이 공식 검수 안내와 맞는지 5항목을 본다. "품질이
+  낮다"가 아니라 "사용자에게 해롭다"에 해당하므로 G1·G2와 같은 완료 차단
+  급으로 두었다 — 완료 판정 규칙에도 G8을 추가했다. 광고가 없는 앱은 광고
+  항목을 해당 없음으로 판정한다.
+
+  **3. G6(카피)에 4항목 추가.** 손실·불안 프레이밍 금지, 사용자 감정을 대신
+  단정하는 문구 금지, 한 문장 조건·수치 3개 이상 나열 금지, 같은 주장의
+  화면 내 반복 금지를 더했다.
+
+  SKILL.md의 G0~G6 표기 4곳을 G0~G8로 갱신하고, 축을 요약 나열하는 산문·
+  자기 점검 출력 템플릿·완료 판정 규칙을 새 축에 맞춰 함께 고쳤다.
+
+- new-miniapp skill에 scaffold 직후 실패를 막는 가드 4종 추가 (harness#90).
+
+  공개 npm의 `@apps-in-toss/web-framework` `latest` dist-tag가 3.0.2 발행 후에도 2.10.8을 가리키고 있어, create-ait-app 0.2.1이 기록하는 `"latest"` specifier가 2.x를 설치한다 — 그런데 산출물 형상은 3.x(`apps-in-toss.config.ts`)라 `ait build`가 `Cannot find granite config`로 즉사한다. 기존 형상 가드는 `ait` bin 존재만 봐서 이 어긋남을 통과시켰다.
+
+  - 후처리 0에 **wf major 확인**을 1차 게이트로 추가 — major가 3이 아니면 중단하고 `"^3.0.2"` 핀 후 재설치·재확인까지 안내한다.
+  - `--skip-install` + 명시적 `pnpm install`을 `--tds` 전용 우회에서 **전 경로 정본**으로 승격 — `--template` 경로도 `ERR_PNPM_IGNORED_BUILDS`로 CLI가 디렉토리를 통째 삭제하는 것이 실측됐다. 이 변경으로 낡아진 서술(의존 섹션의 "CLI가 install 1회 실행", `--local` 불릿의 "정본 호출에서는 `--skip-install`을 쓰지 않는다", 2-1절의 "`--template` 경로는 이 우회가 필요 없다")도 함께 정정.
+  - Step 1 slugify에 **콘솔 appName 규칙 검증** 추가 — 영문 소문자·숫자·하이픈, 63자 이하, `toss` 포함 금지. 지금까지는 콘솔 등록 단계에 가서야 거부됐다.
+  - 2.x 폴백 경로의 `brand.icon` 빈 값 경고 추가.
+
+  근본 원인(dist-tag 정정, create-ait-app의 `"latest"` 리터럴)은 harness 밖이라 upstream 조율 축(harness#6)으로 남는다 — 이 변경은 방어 가드다.
+
+- `debug` skill의 `mode-switching.md`에서 `MCP_ENV`를 "deprecated back-compat"로
+  설명하던 것을 "읽지 않는다 — 설정해도 무효"로 정정한다. deprecated는 아직
+  동작한다는 뜻으로 읽히지만 실제로는 값이 무시되므로, 그 서술을 따라 재시작한
+  세션은 환경이 그대로인 채 같은 Tier 거부를 다시 받는다. 같은 파일에서 candidate
+  scheme URL 획득 단계를 `ait build` → 빌드로 고쳤다(5-B 정정과 정합).
+- new-miniapp skill 서두에 실행 계약 명시 — 로드된 지시문은 현재 턴에서 직접 실행하는 것이며 백그라운드 작업이 아님을 못박는다. 슈트 B 첫 epoch 실측에서 haiku가 Skill 호출을 백그라운드 프로세스로 오독하고 "완료 대기" 선언 후 턴을 종료하는 이탈(5회 중 2회)이 확인된 것에 대한 대응.
+- skill 본문이 세션에 실제로 주입되는지 재는 opt-in BEHAVIOR 가드 A9 추가 (harness#136).
+
+  harness#134 는 3주 동안 skill 6/8 개의 SKILL.md 본문이 세션에 한 번도 로드되지 않았던 사고였다 — 같은 이름의 command stub 이 skill 을 가려서 `Skill(ait:<verb>)` 를 호출해도 불활성 문자열만 주입됐다. 그 동안 라우팅 eval·e2e eval·정적 검증기가 전부 green 이었다 — 셋 다 "skill 이 호출됐는가"만 쟀지 "호출된 skill 의 본문이 실제로 세션에 들어왔는가"는 아무도 재지 않았기 때문이다. 정적 검사(`A1/cmd-name-shadows-skill`)는 harness#134 가 겪은 원인(이름 충돌)만 잡지만, A9 는 원인과 무관하게 증상(본문 미주입)을 직접 잰다.
+
+  - `scripts/skill-load-probe.mjs` — skill 하나당 `claude -p` 세션 하나(Skill dedup 키가 세션 scope 라 한 세션에 여러 skill 을 태우면 결과가 오염된다)를 띄워 실제 주입된 텍스트를 디스크 SKILL.md(frontmatter 제거 + `$ARGUMENTS` 치환 + trim)와 **완전 일치**로 비교한다. 근사 판정(자릿수·도입부 비교)이 아니라 완전 일치를 쓰는 이유: shadow 된 본문은 항상 command stub 의 불활성 문자열(수십 자)이고 정상 본문은 항상 정확히 같은 글자수라, 완전 일치가 오탐·미탐 여지 없이 쓸 수 있는 오라클이기 때문이다(실측: plan skill, 주입 10124자 == 디스크 10124자).
+  - `scripts/validate-plugin.mjs`에 check **A9** 로 등록 — `VALIDATE_SKILL_LOAD=1` opt-in(`A6`/`VALIDATE_LINKS=1` 패턴을 그대로 따름), 기본 실행에서는 skip 되고 CLI 세션을 하나도 안 띄운다. 병렬 실행은 `SKILL_LOAD_JOBS`(기본 8, `eval/routing`의 `ROUTING_JOBS` 관례를 따름).
+  - outcome 4종을 코드로 분리한다 — `A9/skill-load-shadowed`(본문 불일치 또는 본문 이벤트 자체가 없음), `A9/probe-no-route`(Skill 도구가 안 불림 — shadow 단정 아닌 probe 실패), `A9/probe-cli-error`(CLI 실패·타임아웃 — 관측 자체를 못 한 것), `A9/ok`. 불일치 메시지에는 skill 이름·주입/기대 글자수·첫 불일치 offset과 양쪽 문맥을 싣는다.
+  - `.github/workflows/ci.yml`은 건드리지 않는다 — skill 8개 × CLI 세션 1개는 PR `check` job 예산에 안 맞고, `claude` CLI 는 구독 세션 인증이 전제라 CI 러너에는 인증 수단이 없다(#136 명시).
+
+  검증(실 repo, 8 skill 전수): `VALIDATE_SKILL_LOAD=1 node scripts/validate-plugin.mjs` 0 error(전부 `A9/ok`, 완전 일치). `shared/commands/<verb>.md`로 skill 하나를 일부러 가려 재현하면 `A9/skill-load-shadowed`가 정확히 그 skill 에 대해서만 발화하고(동시에 정적 `A1/cmd-name-shadows-skill`도 발화 — 별개 근거로 같이 잡는 게 정상), 가림 파일을 지우면 다시 0 error로 돌아온다.
+
 ## 0.1.21
 
 ### Patch Changes
