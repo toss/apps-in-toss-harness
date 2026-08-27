@@ -6,7 +6,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) This repository is currently private; switching it public is a separate, pending decision. Packages are distributed via GitHub Releases (`debugger-v0.2.0`, `debug-console-v0.1.4`) — there is no plan to publish to npmjs. While the repo is private, downloading the release assets requires repository access. `debugger` and `debug-console` under `packages/` follow this same distribution model.
+We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) This repository is currently private; switching it public is a separate, pending decision. Packages are distributed via GitHub Releases (`debugger-v0.2.1`, `debug-console-v0.1.4`) — there is no plan to publish to npmjs. While the repo is private, downloading the release assets requires repository access. `debugger` and `debug-console` under `packages/` follow this same distribution model.
 
 ## Quick start
 
@@ -151,7 +151,7 @@ Three packages managed as a pnpm workspace (devtools has been replaced by an in-
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code and Codex) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.0`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.1`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.4`) |
 
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (by design) — it lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.

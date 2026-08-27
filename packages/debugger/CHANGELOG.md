@@ -1,6 +1,10 @@
 # @ait-co/debugger
 
-## 0.2.0
+## 0.2.1
+
+### Patch Changes
+
+- chii의 프로세스 전역 TLS 검증 해제 부작용을 방어한다. `chii/server/lib/proxy.js`가 모듈 로드 시점에 `NODE_TLS_REJECT_UNAUTHORIZED='0'`을 무조건 설정해(chii 1.15.5 실측, 공개 배포본 바이트 동일 확인) relay를 띄우는 `debugger`·`debugger-test` 프로세스 전체의 아웃바운드 TLS 인증서 검증이 꺼졌다. 새 `src/mcp/tls-guard.ts`가 chii 기동 전 값을 스냅샷하고 부작용을 결정적으로 선발화시킨 뒤 원복한다(이전 미설정이면 삭제) — 두 실행 경로가 공유하는 단일 부트 지점(`startChiiRelay`)에 배선되어 MCP 데몬과 test-runner CLI를 모두 커버하고, 실제 chii 실물로 부작용 발화·원복을 검증하는 회귀 테스트가 함께 잠근다. 게이트 의미론(터널 wss·TOTP)은 변경 없음.
 
 ### Minor Changes
 

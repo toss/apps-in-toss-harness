@@ -6,7 +6,7 @@ AI 코딩 에이전트(Claude Code 등) 안에서, 빈 디렉토리부터 앱인
 
 ## 상태
 
-`apps-in-toss-community` 조직에 흩어져 있던 도구들을 하드카피해 이 monorepo가 agent-plugin·debugger·debug-console·internal-protocol 4개 패키지 전부의 정본이 됐습니다 — 커뮤니티 org와의 연관관계는 끊겼습니다(devtools는 wf 소스 monorepo(사내)의 자체 devtools로 대체되어 harness 사본은 제거됨). 이 저장소는 현재 private이며, public 전환은 별도 결정 사항입니다. 패키지는 GitHub Releases로 유통됩니다(`debugger-v0.2.0`·`debug-console-v0.1.4`) — npmjs 발행 계획은 없습니다. private인 동안 릴리즈 다운로드에는 저장소 접근 권한이 필요합니다. `packages/` 아래 `debugger`·`debug-console`도 이 유통 방식을 따릅니다.
+`apps-in-toss-community` 조직에 흩어져 있던 도구들을 하드카피해 이 monorepo가 agent-plugin·debugger·debug-console·internal-protocol 4개 패키지 전부의 정본이 됐습니다 — 커뮤니티 org와의 연관관계는 끊겼습니다(devtools는 wf 소스 monorepo(사내)의 자체 devtools로 대체되어 harness 사본은 제거됨). 이 저장소는 현재 private이며, public 전환은 별도 결정 사항입니다. 패키지는 GitHub Releases로 유통됩니다(`debugger-v0.2.1`·`debug-console-v0.1.4`) — npmjs 발행 계획은 없습니다. private인 동안 릴리즈 다운로드에는 저장소 접근 권한이 필요합니다. `packages/` 아래 `debugger`·`debug-console`도 이 유통 방식을 따릅니다.
 
 ## 빠른 시작
 
@@ -151,7 +151,7 @@ pnpm 워크스페이스로 관리되는 3개 패키지입니다(devtools는 wf �
 | 패키지 | 디렉터리 | 역할 | 배포 |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.2.0`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.2.1`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | on-device attach + eruda 콘솔 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debug-console-v0.1.4`) |
 
 `shared/internal-protocol`은 `debugger`·`debug-console`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계) — `packages/`가 아닌 `shared/`에 살며, 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.

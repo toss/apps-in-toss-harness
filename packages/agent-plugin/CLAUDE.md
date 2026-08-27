@@ -2,7 +2,7 @@
 
 ## 프로젝트 성격 (중요)
 
-이 패키지는 `toss/apps-in-toss-harness` monorepo 소속 **토스 공식** 패키지다 — hardfork 완료(aitcc 트리밍, manifest 재작성, `/ait:<verb>` rename이 전부 이 repo에서 수행됨). 과거 `apps-in-toss-community/agent-plugin`의 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다. 동시에 과장도 금지 — 상태는 정직하게 쓴다. **현재 상태: repo는 2026-08-26에 삭제 후 동일 이름으로 재생성됐고(이력 = 단일 `Initial commit`), private으로 생성돼 public 전환 이력이 없다 — flip은 미래 결정이다.** 패키지는 npm에 발행하지 않고 GitHub Releases로 유통한다 — 릴리즈 2건(`debugger-v0.2.0`·`debug-console-v0.1.4`)은 재생성 후 CI로 재발행됐지만, repo가 private인 동안 다운로드 URL은 인증 없이 404라 유통 경로가 닫혀 있다 — 이 패키지의 skill·문서에 박힌 Release URL이 전부 그 영향을 받는다. 자세한 원칙은 루트 `CLAUDE.md` "노출 산출물" 섹션.
+이 패키지는 `toss/apps-in-toss-harness` monorepo 소속 **토스 공식** 패키지다 — hardfork 완료(aitcc 트리밍, manifest 재작성, `/ait:<verb>` rename이 전부 이 repo에서 수행됨). 과거 `apps-in-toss-community/agent-plugin`의 커뮤니티 disclaimer("커뮤니티 오픈소스 프로젝트입니다." 등)는 넣지 않는다. 동시에 과장도 금지 — 상태는 정직하게 쓴다. **현재 상태: repo는 2026-08-26에 삭제 후 동일 이름으로 재생성됐고(이력 = 단일 `Initial commit`), private으로 생성돼 public 전환 이력이 없다 — flip은 미래 결정이다.** 패키지는 npm에 발행하지 않고 GitHub Releases로 유통한다 — 릴리즈 2건(`debugger-v0.2.0`·`debug-console-v0.1.4`)은 재생성 후 CI로 재발행됐지만, repo가 private인 동안 다운로드 URL은 인증 없이 404라 유통 경로가 닫혀 있다 — 이 패키지의 skill·문서에 박힌 Release URL이 전부 그 영향을 받는다. 그 뒤 `debugger`는 v0.2.1(chii 프로세스 전역 TLS 검증 해제 부작용 방어 패치, 2026-08-27)로 갱신 발행됐다 — `debug-console`은 v0.1.4 유지, 기존 발행분은 Immutable Releases로 잠김 유지. 자세한 원칙은 루트 `CLAUDE.md` "노출 산출물" 섹션.
 
 > **재생성 이전 참조는 죽었다.** 이 문서(및 이 패키지의 skill·문서)에 남은 `#N`·`harness#N` 이슈 번호와 커밋 SHA(`b5515ae` 등) 인용은 구 repo의 것으로 현재 트래커·이력에서 조회 불가하다 — 서술된 결정·경위 자체는 유효한 연대기다(원본은 maintainer 로컬 백업 mirror). 루트 `CLAUDE.md` 상단 전역 컨벤션 참고. 특히 살아있는 이슈 #1(보안검토 추적)은 구 `#1`(타깃 아키텍처)과 무관하다.
 
@@ -40,7 +40,7 @@
 
 **"구현 안 함" vs "배선함" 경계**: plugin manifest(`.claude-plugin/plugin.json`)는 **remote MCP 2종을 기본 포함**한다 — `apps-in-toss-docs`(GitBook MCP, `searchDocumentation`/`getPage`)와 `apps-in-toss-console`(콘솔 MCP GW, `miniapp_create`/`bundle_upload`/`bundle_upload_complete`/`miniapp_get_status` — OAuth `clientId: mcp-gateway`, `/mcp`에서 1회 인가). 둘 다 http 타입 remote 서버라 로컬 프로세스·npx 데몬이 아니고, plugin은 여전히 이 서버들을 **자체 구현하지 않는다** — 그저 manifest에서 가리킬 뿐이다.
 
-반면 `ait-devtools` MCP server(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)는 manifest가 아니라 **프로젝트 scope `.mcp.json`에 opt-in으로 배선**된다 — `setup-debugger` skill(`/ait:setup-debugger`)이 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger` 항목을 merge한다(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). manifest 상시 등록이 아니라 opt-in인 이유는 harness#1 타깃 아키텍처 결정이다: 디버깅은 프로젝트 전제 작업이고, 로컬 npx 데몬을 모든 세션에 상시 태우면 idle 비용·공급망 표면이 생긴다(원격 http MCP인 docs·console과 달리 로컬 프로세스라 이 비용이 실재한다). 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 로컬 MCP 케이스다 — `docs/design/mcp-strategy.md` §4("소비(consume) 관점")가 정의하는 소비 모델대로, agent-plugin은 이 MCP를 직접 제공하지 않고 붙어 있으면 활용하고 없으면 graceful degrade한다(같은 절의 devtools MCP 유무에 따른 `/ait debug` 자동 분석/수동 가이드 예시와 동일 패턴). 서버는 attach 전 bootstrap 도구만 노출하므로 로드 시 context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). 설계 정본: `docs/design/three-environments-fidelity.md` §7.4 + harness#1.
+반면 `ait-devtools` MCP server(server key — 개명 금지, eval e2e `disallowedTools` 게이트가 이 문자열에 결합돼 있다)는 manifest가 아니라 **프로젝트 scope `.mcp.json`에 opt-in으로 배선**된다 — `setup-debugger` skill(`/ait:setup-debugger`)이 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger` 항목을 merge한다(`debugger` repo가 제공하는 `debugger` bin. Phase 3 분리 전에는 devtools repo의 `devtools-mcp` bin이었다). manifest 상시 등록이 아니라 opt-in인 이유는 harness#1 타깃 아키텍처 결정이다: 디버깅은 프로젝트 전제 작업이고, 로컬 npx 데몬을 모든 세션에 상시 태우면 idle 비용·공급망 표면이 생긴다(원격 http MCP인 docs·console과 달리 로컬 프로세스라 이 비용이 실재한다). 이건 station 2·3의 live CDP attach가 "기본 tool로 못 하는 일"이라는 위 기준을 정확히 만족하는 유일한 로컬 MCP 케이스다 — `docs/design/mcp-strategy.md` §4("소비(consume) 관점")가 정의하는 소비 모델대로, agent-plugin은 이 MCP를 직접 제공하지 않고 붙어 있으면 활용하고 없으면 graceful degrade한다(같은 절의 devtools MCP 유무에 따른 `/ait debug` 자동 분석/수동 가이드 예시와 동일 패턴). 서버는 attach 전 bootstrap 도구만 노출하므로 로드 시 context도 작다(2단계 tools/list — `devtools` #208). 다른 머신 clone에서도 깨지지 않게 **머신 절대경로 launcher를 박지 않는다**(`npx -p`로 published bin 지목 — devtools friction-2 #209 전제). 설계 정본: `docs/design/three-environments-fidelity.md` §7.4 + harness#1.
 
 ## 제공물
 
@@ -158,7 +158,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz", "debugger"]
     }
   }
 }

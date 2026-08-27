@@ -11,14 +11,14 @@
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"
+pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"
 ```
 
 설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@apps-in-toss/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx <URL>`은 동작하지 않는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger-test --help
 ```
 
 ## 사용
@@ -32,7 +32,7 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz", "debugger"]
     }
   }
 }
@@ -41,7 +41,7 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
 기본 동작은 `--mode=debug --target=relay`(실기기 attach)다. 로컬 브라우저만 붙일 때는 `--target=local`을 쓰고, 대상 dev 서버 주소는 로컬 루프백만 사용한다:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger --target=local
 ```
 
 ### Test runner (`debugger-test`)
@@ -49,7 +49,7 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-to
 실기기 토스 앱 WebView에서 테스트 파일을 실행한다. `--scheme-url`은 `ait deploy --scheme-only`(별개 CLI, 아래 참조)가 출력하는 `intoss-private://` URL을 그대로 받는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 `test-runner` 설정 헬퍼는 서브패스로 import한다:
@@ -99,7 +99,7 @@ export default definePhoneTestConfig({
 
 ### cloudflared 바이너리가 준비되지 않을 때
 
-`pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"`만 하면 `pnpm install` 로그에 `cloudflared`의 "Ignored build scripts" 경고가 남는 경우가 있다 — pnpm은 기본적으로 의존성의 postinstall 스크립트를 차단하고(`ignore-scripts` 정책), `cloudflared`는 postinstall에서 `~38 MB` 바이너리를 받기 때문이다.
+`pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"`만 하면 `pnpm install` 로그에 `cloudflared`의 "Ignored build scripts" 경고가 남는 경우가 있다 — pnpm은 기본적으로 의존성의 postinstall 스크립트를 차단하고(`ignore-scripts` 정책), `cloudflared`는 postinstall에서 `~38 MB` 바이너리를 받기 때문이다.
 
 대부분은 별도 조치가 필요 없다 — `debugger`(relay/tunnel 대상)를 처음 기동하는 순간 `ensureCloudflaredBin`이 바이너리 부재를 감지해 `cloudflared.install()`을 lazy로 호출하므로, 첫 실행에서 자동으로 다운로드된다. 이 다운로드를 `pnpm install` 시점으로 앞당기고 싶다면(예: CI 캐시 warm-up, 첫 기동 지연 방지) 둘 중 하나를 선택한다:
 

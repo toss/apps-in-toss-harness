@@ -11,14 +11,14 @@ Remote-debugging infrastructure for Apps in Toss mini-apps — the MCP debugging
 Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"
+pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"
 ```
 
 To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx <URL>` will not work:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger-test --help
 ```
 
 ## Usage
@@ -32,7 +32,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz", "debugger"]
     }
   }
 }
@@ -41,7 +41,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
 The default is `--mode=debug --target=relay` (real-device attach). For attaching a local browser only, use `--target=local`, and point the target dev server at a loopback address only:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger --target=local
 ```
 
 ### Test runner (`debugger-test`)
@@ -49,7 +49,7 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-to
 Runs test files against a real device's Toss app WebView. `--scheme-url` takes the `intoss-private://` URL printed by `ait deploy --scheme-only` (a different CLI — see below) as-is:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 Import the `test-runner` config helper via its subpath:
@@ -99,7 +99,7 @@ This ecosystem has two similarly-named but different CLIs — do not conflate th
 
 ### cloudflared binary not installed
 
-A plain `pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz"` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
+A plain `pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
 
 Most of the time this needs no action: the first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading it on that first run. If you'd rather pull that download forward to `pnpm install` time (e.g. to warm a CI cache, or to avoid the delay on first start), pick one:
 
