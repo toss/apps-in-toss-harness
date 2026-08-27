@@ -6,7 +6,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Quick start
 
-You'll need Node 24+, pnpm 11.17.0 (pinned via the root `package.json`'s `packageManager`), git (adding the plugin marketplace fetches this repository via git clone), and an Apps in Toss console account.
+You'll need Node 24+ (npm ships with it), git (adding the plugin marketplace fetches this repository via git clone), and an Apps in Toss console account.
 
 From Claude Code, copy and paste the block below one line at a time, top to bottom. It takes you from entering the harness all the way to the entry map.
 
@@ -77,7 +77,7 @@ The commands in this section were verified against codex-cli `0.146.0`; the non-
 1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, then authorize `apps-in-toss-console` from `/mcp`.
 2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
 3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. devtools gets wired in as a post-processing step.
-4. **dev** — Run `pnpm dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.
+4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.
    - At a desktop browser's default width, the mini-app layout looks different from the real thing. Check it at mobile width from the AIT panel's Viewport tab (or your browser's responsive mode).
    - The real Toss app's WebView runs on WebKit (Safari's engine) on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari too before shipping, or verify it on a real device with step 5's `/ait:test-on-device`.
 5. **on-device check** — Run `/ait:test-on-device` to upload the bundle to the console and check it **in the real Toss app**. This is the standard path for "I want to run it on my phone": build the bundle, upload it, confirm the compile, then open the entry link the tools returned. It is not a React Native-only path: every project that produces an `.ait` bundle follows the same procedure. (`ait build` requires `brand.icon`, so run step 7's `/ait:design` first if you don't have the assets yet.)

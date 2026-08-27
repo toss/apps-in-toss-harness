@@ -13,8 +13,8 @@
 ## 시작하기
 
 ```bash
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 브라우저에서 열리면 우하단의 devtools panel로 mock SDK 상태를 확인할 수 있습니다.
@@ -22,8 +22,8 @@ pnpm dev
 ## 빌드
 
 ```bash
-pnpm build      # tsc -b && vite build
-pnpm preview    # 로컬에서 빌드 결과 확인
+npm run build      # tsc -b && vite build
+npm run preview    # 로컬에서 빌드 결과 확인
 ```
 
 ## 배포

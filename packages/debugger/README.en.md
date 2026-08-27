@@ -11,7 +11,7 @@ Remote-debugging infrastructure for Apps in Toss mini-apps — the MCP debugging
 Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"
 ```
 
 To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx <URL>` will not work:
@@ -99,14 +99,9 @@ This ecosystem has two similarly-named but different CLIs — do not conflate th
 
 ### cloudflared binary not installed
 
-A plain `pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz"` can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log — pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), and `cloudflared` downloads a `~38 MB` binary in its postinstall.
+The first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading the `~38 MB` binary on that first run — npm runs postinstall by default, so most of the time this needs no action.
 
-Most of the time this needs no action: the first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading it on that first run. If you'd rather pull that download forward to `pnpm install` time (e.g. to warm a CI cache, or to avoid the delay on first start), pick one:
-
-- **Interactive**: run `pnpm approve-builds` and select `cloudflared`.
-- **Declarative**: in a pnpm workspace, add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml`. In a single project (not a workspace), add `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` instead.
-
-npm/yarn users are unaffected — those package managers run postinstall by default.
+**Note for pnpm-installed projects only**: pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), which can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log. If you'd rather pull that download forward to install time (e.g. to warm a CI cache, or to avoid the delay on first start), run `pnpm approve-builds` and select `cloudflared`, or add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml` (workspace) / `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` (single project).
 
 If the binary download itself fails (offline, corporate firewall), the lazy install above fails the same way and the error message points back to this section — check your network connection, or install `cloudflared` yourself and run `cloudflared tunnel --url http://localhost:<port>` manually.
 

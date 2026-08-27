@@ -43,7 +43,7 @@ body:
       options:
         - "0. install (marketplace add / plugin install)"
         - "1. scaffold (/ait:new)"
-        - "2. dev (pnpm dev, devtools panel)"
+        - "2. dev (npm run dev, devtools panel)"
         - "3. debug (/ait:debug, /ait:setup-debugger)"
         - "4. auth (appLogin mock)"
         - "5. register+ship (콘솔 등록·번들 업로드)"

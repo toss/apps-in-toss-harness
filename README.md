@@ -6,7 +6,7 @@ AI 코딩 에이전트(Claude Code 등) 안에서 빈 디렉토리부터 앱인�
 
 ## 빠른 시작
 
-준비물은 Node 24 이상, pnpm 11.17.0(루트 `package.json`의 `packageManager`로 고정), git(플러그인 마켓플레이스 추가가 이 저장소를 git clone으로 받아옵니다), 앱인토스 콘솔 계정입니다.
+준비물은 Node 24 이상(npm이 동봉됩니다), git(플러그인 마켓플레이스 추가가 이 저장소를 git clone으로 받아옵니다), 앱인토스 콘솔 계정입니다.
 
 Claude Code에서 아래 블록을 위에서부터 한 줄씩 복사해 붙여넣으면 harness 진입부터 진입 지도 확인까지 끝납니다.
 
@@ -77,7 +77,7 @@ codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-to
 1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고 `/mcp`에서 `apps-in-toss-console`을 인가합니다.
 2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
 3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools가 후처리로 배선됩니다.
-4. **dev** — `pnpm dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
+4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
    - 데스크탑 브라우저 기본 폭에서는 미니앱 레이아웃이 실제와 다르게 보입니다. AIT 패널의 Viewport 탭(또는 브라우저 반응형 모드)에서 모바일 폭으로 확인하세요.
    - 실기기 토스 앱 WebView는 iOS에서 WebKit(Safari) 엔진을 씁니다. Chromium 기반 로컬 브라우저와 렌더링이 다를 수 있으니 출시 전 Safari로도 열어보거나 5의 `/ait:test-on-device`로 실기기에서 확인하세요.
 5. **실기기 확인** — `/ait:test-on-device`로 번들을 콘솔에 올려 **실제 토스 앱에서** 확인합니다. "폰에서 돌려보고 싶다"의 정규 경로가 이것입니다 — 번들 빌드 → 콘솔 업로드 → 컴파일 확인 → 도구가 돌려준 링크로 열기. React Native 전용 경로가 아니라 `.ait` 번들을 만드는 모든 프로젝트가 같은 절차를 씁니다. (`ait build`가 `brand.icon`을 요구하므로 자산이 없으면 7의 `/ait:design`을 먼저 돌립니다.)

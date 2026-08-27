@@ -10,8 +10,8 @@
 
 ## 의존
 
-- **pnpm / npm / yarn / bun** 중 하나. 감지 순서: `pnpm-lock.yaml` → `package-lock.json` →
-  `yarn.lock` → `bun.lockb`. 아무것도 없으면 `pnpm`으로 가정.
+- **npm / pnpm / yarn / bun** 중 하나. 감지 순서: `package-lock.json` → `pnpm-lock.yaml` →
+  `yarn.lock` → `bun.lockb`. 아무것도 없으면(lockfile 무신호) `npm`으로 가정.
 - **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동하도록 안내하고 중단.
 - 인터넷 연결 필요 (`@apps-in-toss/devtools` npm 설치).
 
@@ -57,16 +57,16 @@ config 파일(예: vite.config.ts)이 프로젝트 루트에 있어야 합니다
 ## 3. 패키지 매니저 감지
 
 ```bash
-ls pnpm-lock.yaml package-lock.json yarn.lock bun.lockb 2>/dev/null
+ls package-lock.json pnpm-lock.yaml yarn.lock bun.lockb 2>/dev/null
 ```
 
 | lockfile | 매니저 |
 |---|---|
-| `pnpm-lock.yaml` | pnpm |
 | `package-lock.json` | npm |
+| `pnpm-lock.yaml` | pnpm |
 | `yarn.lock` | yarn |
 | `bun.lockb` | bun |
-| (없음) | pnpm (기본값) |
+| (없음, 무신호) | npm (기본값) |
 
 ## 4. 이미 설치됐는지 확인 (idempotency)
 
@@ -82,8 +82,8 @@ grep '"@apps-in-toss/devtools"' package.json
 Step 4에서 이미 있으면 skip.
 
 ```bash
+npm install --save-dev @apps-in-toss/devtools # npm (기본)
 pnpm add -D @apps-in-toss/devtools            # pnpm
-npm install --save-dev @apps-in-toss/devtools # npm
 yarn add -D @apps-in-toss/devtools            # yarn
 bun add -d @apps-in-toss/devtools             # bun
 ```
@@ -197,7 +197,7 @@ module.exports = {
   - <config-file>에 unplugin 설정 추가 (또는 이미 있어서 skip)
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  pnpm dev                  # (또는 npm run dev / yarn dev / bun dev)
+  npm run dev                # (또는 pnpm dev / yarn dev / bun dev)
                             #   말로: "브라우저에서 개발 서버 띄워줘"
   /ait:debug                # 브라우저 패널·window.__ait 상태로 디버깅
                             #   말로: "브라우저에서 앱 상태가 이상한데 디버깅해줘"

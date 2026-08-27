@@ -84,7 +84,7 @@ body:
     attributes:
       label: create-ait-app / web-framework 버전
       description: |
-        프로젝트 루트에서 `pnpm ls @apps-in-toss/web-framework` 결과를 붙여넣어 주세요.
+        프로젝트 루트에서 `npm ls @apps-in-toss/web-framework` 결과를 붙여넣어 주세요.
         `create-ait-app`으로 scaffold했다면 그 버전도 함께 적어 주세요(scaffold 실행 로그 또는 `package.json`의 devDependency 기록).
       render: shell
     validations:
@@ -117,7 +117,7 @@ body:
       options:
         - "0. install (marketplace add / plugin install)"
         - "1. scaffold (/ait:new)"
-        - "2. dev (pnpm dev, devtools panel)"
+        - "2. dev (npm run dev, devtools panel)"
         - "3. debug (/ait:debug, /ait:setup-debugger)"
         - "4. auth (appLogin mock)"
         - "5. register+ship (콘솔 등록·번들 업로드)"

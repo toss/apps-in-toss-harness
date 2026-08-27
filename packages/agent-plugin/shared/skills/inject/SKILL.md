@@ -103,7 +103,7 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
 @apps-in-toss/devtools 설정 완료 · <config-file> 패치
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  pnpm dev                  # 브라우저에서 앱 실행 (하단에 AIT DevTools 패널)
+  npm run dev               # 브라우저에서 앱 실행 (하단에 AIT DevTools 패널)
                             #   말로: "브라우저에서 개발 서버 띄워줘"
   /ait:debug                # 브라우저 패널·window.__ait 상태로 디버깅
                             #   말로: "브라우저에서 앱 상태가 이상한데 디버깅해줘"
@@ -115,8 +115,8 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
 @apps-in-toss/debug-console 설정 완료 · <진입점>에 /auto import 삽입
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  RELEASE_CHANNEL=dogfood pnpm build  # candidate 빌드에 attach 표면 포함
-                                      #   (2.x 폴백은 pnpm bundle:ait)
+  RELEASE_CHANNEL=dogfood npm run build  # candidate 빌드에 attach 표면 포함
+                                      #   (2.x 폴백은 npm run bundle:ait)
   /ait:debug                          # 환경 3 QR attach로 on-device 디버깅
                                       #   말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
 ```
@@ -127,7 +127,7 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
 Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개 번들, +<증가량>>
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  pnpm dev                  # 브라우저에서 이모지 렌더 확인
+  npm run dev               # 브라우저에서 이모지 렌더 확인
                             #   말로: "브라우저에서 개발 서버 띄워줘"
   /ait:design                # 화면 렌더 무결성(G7 등) 판정으로 이어서 확인
                             #   말로: "화면 디자인 품질 점검해줘"
@@ -143,7 +143,7 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
   `bundle_upload_complete`)의 역할.
 - ❌ 번들 설정(`apps-in-toss.config.ts`) 최초 생성 — 정본 경로(create-ait-app)는
   `/ait:new`에 기본 포함, `--local` 폴백만 `new-miniapp`의 L-5 절차로 추가.
-- ❌ (devtools) panel 마운트 E2E 검증 — 사용자가 직접 `pnpm dev`로 확인.
+- ❌ (devtools) panel 마운트 E2E 검증 — 사용자가 직접 `npm run dev`로 확인.
 - ❌ (devtools) Rollup/esbuild 라이브러리 빌드에 mock 주입 — 앱(미니앱) 전용.
 - ❌ **실행 중인 앱을 진단하는 것** — 이 skill은 패키지를 *설치*할 뿐이다. "폰에서 이상하게 동작한다", "라이브 상태를 보고 싶다"는 `/ait:debug`(`debug` skill). debug-console facet은 그 진단을 *가능하게 하는 준비물*이지 진단 자체가 아니다.
 - ❌ (debug-console) MCP 데몬 등록 — `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선(`/ait:debug` §5 참조).
@@ -157,7 +157,7 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
 
 - **create-ait-app 프로젝트에 IAP/IAA 예제 추가**: 이 skill의 두 facet과는
   무관한 별도 CLI 서브커맨드지만, 같은 brownfield 자리라 여기 남긴다 —
-  `pnpm dlx create-ait-app@latest add-sample [directory] --inline --sample iap,iaa`
+  `npx -y create-ait-app@latest add-sample [directory] --inline --sample iap,iaa`
   (`directory` 생략 시 기본값은 cwd `.`). 대상이 Apps in Toss 프로젝트로
   인식될 때만 동작하고(`inspectSampleProject()` — `@apps-in-toss/web-framework`
   의존성 또는 `apps-in-toss.config.ts` 존재로 판정, 아니면 즉시 거부),
