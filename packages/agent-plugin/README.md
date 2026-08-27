@@ -8,7 +8,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 
 `@apps-in-toss/devtools`, docs MCP, 콘솔 MCP를 엮어 하나의 통합된 경험을 제공합니다. 현재 제공하는 slash command:
 
-- `/ait:welcome` — 설치 확인 + 첫 station(`/ait:new`) 안내
+- `/ait:welcome` — 설치 확인 + 환경·연동 점검(git·Node/npm/npx, MCP 노출 등) + 다음 단계 권유·hand-off
 - `/ait:new` — 새 미니앱 스캐폴딩
 - `/ait:plan` — 아이데이션 · 경량 PRD · SDK 도메인/권한/약관 기획 (스캐폴드 전)
 - `/ait:design` — Figma 디자인 → 등록용 이미지 에셋
