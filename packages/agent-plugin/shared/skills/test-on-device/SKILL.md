@@ -153,8 +153,8 @@ pnpm build && pnpm bundle:ait   # vite build → ait build → .ait 번들 생�
 **`bundle_build_status`는 쓰지 않는다** — 파라미터와 무관하게 `-32000`으로 일관
 실패하는 것이 실측됐다(harness#43 결함 4). 폴링이 필요하면 `miniapp_get_status`를
 간격을 두고 다시 호출한다. 방금 올린 번들을 다른 이력과 구분해 특정해야 하면
-`bundle_list`로 번들 목록을 조회한다(`docs/upstream/mcp-gw-feedback.md`에 근거가
-있는 이름).
+`bundle_list`로 번들 목록을 조회한다(로컬 `docs/upstream/mcp-gw-feedback.md`(repo 미포함
+— maintainer-local)에 근거가 있는 이름).
 
 - `CREATED` — 컴파일 성공. 6으로 간다.
 - `BUILD_FAILED` — 1의 appName 일치부터 다시 본다. 같은 번들을 반복 업로드해서
@@ -170,7 +170,7 @@ pnpm build && pnpm bundle:ait   # vite build → ait build → .ait 번들 생�
 들어 있으면 그 문자열을 **가공 없이** 사용자에게 전달하고, 폰에서 열도록 안내한다.
 **현 시점에 이 응답이 실제로 그 링크를 담는지는 미확정이다** — 번들 업로드
 응답에 진입 링크 파라미터를 포함해 달라는 요구가 아직 해소되지 않은 상류 요청으로
-남아 있다(`docs/upstream/mcp-gw-feedback.md` §4 6번).
+남아 있다(로컬 `docs/upstream/mcp-gw-feedback.md`(repo 미포함 — maintainer-local) §4 6번).
 
 **링크를 손으로 조립하지 않는다** — 문서 예제의 링크 형태에 `deploymentId` 같은
 값을 끼워 넣어 만든 링크는 열리지 않는다(2026-08-07 도그푸딩에서 실제로 그렇게

@@ -102,7 +102,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 
 배선이 끝나고 세션에서 서버 연결이 확인되면 바로 디버깅으로 넘어간다. seam은
 슬래시 명령과 자연어 동치를 **함께** 인쇄한다(통일 규칙 —
-`docs/design/skill-conventions.md` §9) — 슬래시 네임스페이스가 그대로 오지 않는
+로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9) — 슬래시 네임스페이스가 그대로 오지 않는
 에이전트에서는 자연어 쪽이 정규 경로다:
 
 ```

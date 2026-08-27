@@ -39,7 +39,7 @@ body:
     id: station
     attributes:
       label: 관련 station (해당하는 경우)
-      description: '`docs/roadmap.md`의 station map 기준입니다. 특정 station과 무관하면 비워 두어도 됩니다.'
+      description: '특정 station과 무관하면 비워 두어도 됩니다.'
       options:
         - "0. install (marketplace add / plugin install)"
         - "1. scaffold (/ait:new)"

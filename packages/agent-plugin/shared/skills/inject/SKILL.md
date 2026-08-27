@@ -95,7 +95,7 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
 ## 다음 단계 (facet별 seam)
 
 세 facet 모두 seam을 **슬래시 + 자연어 2표면**으로 인쇄한다(통일 규칙 —
-`docs/design/skill-conventions.md` §9).
+로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9).
 
 **devtools facet** 완료 후:
 

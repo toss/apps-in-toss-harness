@@ -11,7 +11,7 @@ body:
         - **Deploy Key·TOTP 등 시크릿 값을 절대 붙여넣지 마세요.** 공개 여부와 무관하게, 이슈 내용에 시크릿·사내 식별자를 넣지 않는 것이 원칙입니다.
         - dog-food 워크스페이스 번호·miniAppId 등 사내 식별자, 로컬 사용자 홈 디렉터리 하위 절대경로(사용자명이 그대로 노출됩니다)도 지워 주세요.
         - 아래 "로그" 항목에 붙여넣기 전에도 같은 기준으로 한 번 더 확인해 주세요. 좋은 재현 절차 작성법과 로그를 얻는 방법은
-          [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/docs/bug-report-guide.md)를 참고하세요.
+          [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/.github/bug-report-guide.md)를 참고하세요.
 
   - type: textarea
     id: repro-steps
@@ -113,7 +113,7 @@ body:
     id: station
     attributes:
       label: 어느 station에서 발생했나요?
-      description: '`docs/roadmap.md`의 station map 기준입니다. 잘 모르겠으면 "잘 모르겠음"을 선택해 주세요.'
+      description: '어느 단계에서 발생했는지 잘 모르겠으면 "잘 모르겠음"을 선택해 주세요.'
       options:
         - "0. install (marketplace add / plugin install)"
         - "1. scaffold (/ait:new)"
@@ -152,7 +152,7 @@ body:
       label: 로그
       description: |
         관련 로그를 붙여넣어 주세요. **붙여넣기 전에 시크릿·사내 식별자가 섞여 있지 않은지 다시 한번 확인해 주세요.**
-        로그를 어떻게 얻는지는 [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/docs/bug-report-guide.md)를 참고하세요(devtools panel Console 탭 / 브라우저 DevTools / on-device attach 로그).
+        로그를 어떻게 얻는지는 [버그리포트 가이드](https://github.com/toss/apps-in-toss-harness/blob/main/.github/bug-report-guide.md)를 참고하세요(devtools panel Console 탭 / 브라우저 DevTools / on-device attach 로그).
       render: shell
     validations:
       required: false

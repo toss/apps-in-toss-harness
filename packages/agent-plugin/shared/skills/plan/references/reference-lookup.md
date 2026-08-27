@@ -10,7 +10,7 @@
 |---|---|---|
 | docs MCP(`apps-in-toss-docs`) | **있음** — 가이드·샘플·검수 기준 조회 | `tools/list` 실측: `searchDocumentation`·`getPage`·`askQuestion`·`sendFeedback` 4종 |
 | docs MCP의 "미니앱 목록" tool | **없음** | 위 4종이 전부. 카탈로그 성격 tool 없음 |
-| 콘솔 MCP(`apps-in-toss-console`)의 공개 앱 조회 | **없음** | GW tool 인벤토리 97종/13그룹(workspace·miniapp·bundle·review·push·iap·iaa·promotion·dashboard·event·notice·toss_login·image_upload_url) 전수가 **자기 워크스페이스 scope**다 — harness 저장소 `docs/upstream/mcp-gw-feedback.md` |
+| 콘솔 MCP(`apps-in-toss-console`)의 공개 앱 조회 | **없음** | GW tool 인벤토리 97종/13그룹(workspace·miniapp·bundle·review·push·iap·iaa·promotion·dashboard·event·notice·toss_login·image_upload_url) 전수가 **자기 워크스페이스 scope**다 — 로컬 `docs/upstream/mcp-gw-feedback.md`(repo 미포함 — maintainer-local) |
 | 웹 미니앱 포털(공개 사례 브라우징) | **harness 산출물 아님** | 제품 결정 항목 — 이 skill에서 만들지 않는다 |
 
 따라서 참고 사례 조회는 **docs MCP 단독**으로 한다. plan은 콘솔 MCP를 호출하지

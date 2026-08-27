@@ -9,6 +9,12 @@ coverage/
 .claude/*.lock
 .claude.lock
 
+# maintainer-local 운영 문서 — repo 미포함(2026-08-27 내부 운영 표면 정리)
+docs/
+
+# maintainer-local 세션 skill — repo 미포함(2026-08-27 내부 운영 표면 정리)
+.claude/skills/
+
 # SECRET-HANDLING (devtools/debugger relay): relay state files carry TOTP
 # secrets, wss:// relay URLs, and tunnel hostnames. Never track them.
 .ait_relay

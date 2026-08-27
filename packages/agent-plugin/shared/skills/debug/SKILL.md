@@ -18,7 +18,7 @@ adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_backgro
 ## 목적
 
 `/ait:debug`는 미니앱을 **두 겹의 환경**에서 디버깅하는 경로를 안내한다. 한 명령이
-관찰 결과에 따라 환경을 분기한다 (환경 모델·fidelity 사다리: https://github.com/toss/apps-in-toss-harness/blob/main/docs/design/three-environments-fidelity.md):
+관찰 결과에 따라 환경을 분기한다 (환경 모델·fidelity 사다리: 로컬 `docs/design/three-environments-fidelity.md` — maintainer-internal 문서, repo 미포함):
 
 | 환경 | 실행 면 | 이 skill의 경로 |
 |---|---|---|
@@ -377,7 +377,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 
 - 상세가 필요하면 Read <이 skill의 base directory>/references/panel-tabs.md (환경 1 패널 탭별 관찰 지점), references/mode-switching.md (`start_debug`/`start_attach` mode 내부 동작·fallback), references/attach-tools.md (attach 후 13종 도구 + `run_tests` 상세 + SECRET-HANDLING), references/debug-loop.md (§6 자율 루프 — 환경별 관측 입력·degrade·탈출 조건·사이클 로그 형식).
 - 짝 skill: `inject-devtools` (panel 설정), `inject-debug-console` (환경 3 candidate 빌드에 attach 표면 설치 — `@apps-in-toss/debug-console` `dependencies`), `setup-debugger` (`ait-devtools` MCP를 프로젝트 `.mcp.json`에 배선 — §5의 전제).
-- 환경 모델 × fidelity 설계 정본: https://github.com/toss/apps-in-toss-harness/blob/main/docs/design/three-environments-fidelity.md (§1 환경 모델, §5 동적 도구 등록, §7 CDP 단일 transport).
+- 환경 모델 × fidelity 설계 정본: 로컬 `docs/design/three-environments-fidelity.md`(maintainer-internal 문서, repo 미포함) — §1 환경 모델, §5 동적 도구 등록, §7 CDP 단일 transport.
 - 환경 3 진입 시나리오 + QR relay 흐름 문서(devtools `docs/scenarios/env-3.md`) — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - dogfood relay 루프 (candidate 빌드 → QR 스캔 → attach → 관측 사이클) 문서(devtools `docs/dogfood-relay-loop.md`) — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - devtools (mock + panel + unplugin, 브라우저 dev 전용) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)

@@ -36,7 +36,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 - **`@apps-in-toss/devtools` 배선은 CLI가 한다** — create-ait-app이 scaffold
   직후 `ait init`을 호출하고, 그 실행이 devtools를 devDependency로 넣고
   번들러 설정에 unplugin을 주입한다(실측 2026-08-07, `create-ait-app@0.2.3` —
-  `docs/release.md` §7b 6번). 순정 create-vite 템플릿에는 SDK mock이 없어
+  로컬 `docs/release.md`(repo 미포함 — maintainer-local) §7b 6번). 순정 create-vite 템플릿에는 SDK mock이 없어
   브라우저에서 SDK 호출이 실패하는데(샘플 코드가 "샌드박스앱/토스앱에서
   실행해주세요" alert를 띄우는 구조), 이 배선 덕에 토스 앱 없이 브라우저에서
   바로 개발할 수 있다(`pnpm dev` 즉시 실행). 이 skill은 그 배선이 실제로
@@ -300,7 +300,7 @@ install을 두 번 한다 — 자기 `pnpm install` 한 번, 그리고 `ait init
 `⚠️ ait init 실행에 실패했어요: …` 경고만 찍고 그대로 `✅ 프로젝트가
 생성됐어요.`로 exit 0을 낸다(0.2.3 dist 실측 — `runAitInit`의 try/catch).
 실제로 그 내부 install이 `cloudflared`의 `ERR_PNPM_IGNORED_BUILDS`로 중단된
-사례가 있다(실측 2026-08-07, `docs/release.md` §7b 6번). 그래서 이 skill은
+사례가 있다(실측 2026-08-07, 로컬 `docs/release.md`(repo 미포함 — maintainer-local) §7b 6번). 그래서 이 skill은
 scaffold 직후 **항상** 아래 수렴 절차를 돈다 — CLI의 경고 출력 유무와 무관하게
 실행한다(출력 파싱에 의존하지 않는다).
 

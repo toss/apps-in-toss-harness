@@ -66,4 +66,4 @@ git config core.hooksPath .githooks
 
 ## 현황
 
-전체 로드맵은 [`docs/roadmap.md`](../../docs/roadmap.md) 참조.
+전체 로드맵은 로컬 `docs/roadmap.md`(repo 미포함 — maintainer-local) 참조.
