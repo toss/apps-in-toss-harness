@@ -2012,13 +2012,12 @@ function checkA3(root) {
     }
   }
 
-  // 2. promptfoo eval 동기화
+  // 2. promptfoo eval 동기화 — eval/ 은 maintainer-local 측정 인프라라 repo 미포함(.gitignore).
+  // 존재할 때만 동기화 검사를 발화한다 — 부재는 공개 clone의 정상 상태이므로 조용히 skip.
   const promptfooConfig = path.join(root, 'eval', 'promptfoo', 'promptfooconfig.yaml');
   const relPromptfoo = path.relative(root, promptfooConfig);
 
-  if (!fs.existsSync(promptfooConfig)) {
-    violations.push(mkv(relPromptfoo, 1, 'A3/promptfoo-missing', 'promptfooconfig.yaml 없음'));
-  } else {
+  if (fs.existsSync(promptfooConfig)) {
     const yamlSrc = readFile(promptfooConfig);
 
     // providers.*.skills 블록에서 skill 목록 파싱

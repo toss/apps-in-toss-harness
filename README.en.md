@@ -110,7 +110,7 @@ A `/ait:<verb>` slash command and a plain-language request **reach the same skil
 | | "I want to show in-app ads" (`ads`) | `/ait:plan` → development |
 | | "I want to store favorites locally" (`storage`) | `/ait:plan` → development |
 
-Rows 1–4 are English renderings of the exact utterances the routing gate measures (`packages/agent-plugin/eval/routing/cases.tsv`, written in Korean) — that is, "say this and that skill triggers" has been measured for those cases.
+Rows 1–4 are English renderings of the exact utterances the routing gate measures (local `packages/agent-plugin/eval/routing/cases.tsv`, written in Korean — not included in the repo, maintainer-local) — that is, "say this and that skill triggers" has been measured for those cases.
 
 The names in parentheses in row 5 are domains from the SDK domain catalog the `plan` skill carries (18 in total). Which runtime permissions and console terms each domain drags in is what `/ait:plan` maps out, and the exact APIs and permission constants are confirmed through the docs MCP (`searchDocumentation` / `getPage`) — do not invent feature names that are not in the catalog. These five rows are examples drawn from the catalog, not routing-gate cases (a feature request on its own does not pin one skill; while you are still planning it leads to `plan`).
 

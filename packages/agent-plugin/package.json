@@ -16,8 +16,6 @@
     "test:skill-load": "VALIDATE_SKILL_LOAD=1 node scripts/validate-plugin.mjs",
     "sync:plugin-version": "node scripts/sync-plugin-version.mjs",
     "release:version": "changeset version && pnpm sync:plugin-version",
-    "eval:promptfoo": "bash eval/promptfoo/setup-fixture.sh && npx promptfoo@latest eval -c eval/promptfoo/promptfooconfig.yaml",
-    "eval:e2e": "tsx eval/e2e/run.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -50,8 +48,7 @@
   "homepage": "https://github.com/toss/apps-in-toss-harness",
   "vitest": {
     "include": [
-      "shared/**/*.test.ts",
-      "eval/**/*.test.ts"
+      "shared/**/*.test.ts"
     ],
     "environment": "node"
   }

@@ -54,9 +54,9 @@ import path from 'node:path';
 export const SKILL_LOAD_DEFAULT_MODEL = 'claude-sonnet-4-5';
 export const SKILL_LOAD_DEFAULT_JOBS = 8;
 
-// 라우팅 게이트(eval/routing/run.sh) 실측으로 1회 실행이 1~3분 걸린다고 적혀
-// 있다 — 여유를 더해 3분에서 강제 종료한다. 걸리면 shadow 판정이 아니라
-// cli-error 로 분리 보고한다(요구사항 4번째 항목).
+// 라우팅 게이트(로컬 eval/routing/run.sh — repo 미포함, maintainer-local) 실측으로
+// 1회 실행이 1~3분 걸린다고 적혀 있다 — 여유를 더해 3분에서 강제 종료한다.
+// 걸리면 shadow 판정이 아니라 cli-error 로 분리 보고한다(요구사항 4번째 항목).
 const SESSION_TIMEOUT_MS = 180_000;
 
 const DISALLOWED_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite';
@@ -353,7 +353,8 @@ async function probeOneSkill(pluginDir, skillName, { model, tmpRoot }) {
 }
 
 // ---------------------------------------------------------------------------
-// 동시 실행 pool (eval/routing/run.sh 의 ROUTING_JOBS 관례를 따름)
+// 동시 실행 pool (로컬 eval/routing/run.sh — repo 미포함, maintainer-local — 의
+// ROUTING_JOBS 관례를 따름)
 // ---------------------------------------------------------------------------
 
 /**

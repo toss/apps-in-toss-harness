@@ -45,9 +45,9 @@
 
 SDK 표면을 추종하는 코드(mock·stub·re-export)에 정합성 가드만 두지 마라. `__typecheck`(AssertCompat)류는 "우리가 export하는 것이 상류 타입과 호환되는가"만 검사하고, "상류가 export하는 것을 우리가 빠짐없이 갖는가"(완전성)는 아무도 검사하지 않았다 — wf 2.x→3.x 표면 재편(flat 함수→네임스페이스) 동안 이 축 부재로 devtools mock에 export 결손 20건(네임스페이스 facade 14종 등)이 조용히 누적된 실측 사례가 있다(이슈 #74 코멘트, 2026-08-04). 표면 추종 가드를 새로 설계할 때는 **정합성+완전성 양방향을 CI에서 강제**하라 — 참조 구현은 사내 devtools의 check-sdk-exports(TS 컴파일러 API로 상류 .d.ts 멤버 수준 전수 대조). harness fidelity-qa(런타임 동작 축)와는 상호보완이다. 같은 이유로, harness `packages/devtools` 사본의 이 결손은 메울 필요가 없어졌다 — 그 사본은 이후 제거됐다(C4, 2026-08-05).
 
-## eval 게이트 (`packages/agent-plugin/eval/e2e`)
+## eval 게이트 (로컬 `packages/agent-plugin/eval/e2e` — repo 미포함, maintainer-local)
 
-측정 하네스는 **build-only**다 — 콘솔에 실 앱이 생성되는 누출을 막는다. `canUseTool`이 (a) `aitcc` 등 콘솔·인증 변이 Bash 패턴과 (b) `mcp__apps-in-toss-console__` prefix tool 호출을 결정적으로 차단하고, `disallowedTools`가 정적으로도 막는다. **`disallowedTools`의 서버 키 `ait-devtools`는 개명하지 마라**(개명하면 정적 차단이 조용히 무력화된다). 정책·메커니즘 정본은 `packages/agent-plugin/eval/e2e/README.md`. 완주 측정을 반복 실행하는 운영 런북(셀 구성·epoch 규율·해석·진단)은 로컬 `.claude/skills/eval-suite-b/SKILL.md`(repo 미포함 — maintainer-local 세션 skill).
+측정 하네스는 **build-only**다 — 콘솔에 실 앱이 생성되는 누출을 막는다. `canUseTool`이 (a) `aitcc` 등 콘솔·인증 변이 Bash 패턴과 (b) `mcp__apps-in-toss-console__` prefix tool 호출을 결정적으로 차단하고, `disallowedTools`가 정적으로도 막는다. **`disallowedTools`의 서버 키 `ait-devtools`는 개명하지 마라**(개명하면 정적 차단이 조용히 무력화된다). 정책·메커니즘 정본은 로컬 `packages/agent-plugin/eval/e2e/README.md`(repo 미포함 — maintainer-local). 완주 측정을 반복 실행하는 운영 런북(셀 구성·epoch 규율·해석·진단)은 로컬 `.claude/skills/eval-suite-b/SKILL.md`(repo 미포함 — maintainer-local 세션 skill).
 
 ## dog-food (콘솔 E2E 재활용 타겟)
 
