@@ -28,6 +28,8 @@
  *   page.crashed    — target crash detected
  *   tool.call       — MCP tool invocation (tool name only — no args/results)
  *   tool.error      — MCP tool error (tool name + safe error category)
+ *   tls.restored    — chii's load-time NODE_TLS_REJECT_UNAUTHORIZED side effect
+ *                     was detected and undone (see tls-guard.ts)
  */
 
 /** Structured log levels. */
@@ -46,7 +48,11 @@ export type LogEvent =
   // run_tests progress (#646) — operator-visible in the daemon log, never in
   // the agent response. Carries only counts (secret-free, redact-safe numbers).
   | 'run_tests.start'
-  | 'run_tests.done';
+  | 'run_tests.done'
+  // chii's `server/lib/proxy.js` sets NODE_TLS_REJECT_UNAUTHORIZED='0' as a
+  // load-time side effect (issue #1 comment 5434190154) — tls-guard.ts undoes
+  // it and reports the restore here. Secret-free (msg only).
+  | 'tls.restored';
 
 /**
  * Allowed field keys that may pass through to a log line.

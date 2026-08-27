@@ -74,6 +74,7 @@ import {
   RELAY_AUTH_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-auth-close';
 import { type WebSocket, WebSocketServer } from 'ws';
+import { restoreTlsRejectUnauthorized, snapshotTlsRejectUnauthorized } from './tls-guard.js';
 
 const require = createRequire(import.meta.url);
 
@@ -511,12 +512,23 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   // internal path changes in a future chii release (tryLoadChiiWssClass returns
   // null), chii.start() runs unpatched and the keepalive loop is silently
   // skipped — relay correctness is unaffected.
+  // TLS guard (issue #1 comment 5434190154): chii's `server/lib/proxy.js`
+  // sets `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` as a load-time side
+  // effect, which silently disables outbound TLS cert verification for the
+  // ENTIRE process (tunnel health probe included), not just chii's own
+  // `/proxy` route. The snapshot MUST be taken before any chii module below
+  // is required — see tls-guard.ts for why. This is the single choke point
+  // both the `debugger` MCP daemon (bootRelayFamily) and the `debugger-test`
+  // CLI/Vitest pool (createRelayConnectionFactory) boot chii through, so
+  // bracketing it here covers both.
+  const tlsSnapshot = snapshotTlsRejectUnauthorized();
   const chiiWssClass = keepaliveIntervalMs > 0 ? tryLoadChiiWssClass() : null;
   const capturedChiiWss = await startChiiWithCapture(
     loadChiiServer(),
     { server: httpServer, domain: `${host}:${requestedPort}`, port: requestedPort },
     chiiWssClass,
   );
+  restoreTlsRejectUnauthorized(tlsSnapshot);
 
   // WS upgrade gate (issue #478, accept-then-close): take over the upgrade
   // chain AFTER chii.start() has registered chii's own upgrade listener.
