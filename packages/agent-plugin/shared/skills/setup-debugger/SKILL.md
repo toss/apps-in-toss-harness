@@ -70,7 +70,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.2/apps-in-toss-debugger-0.2.2.tgz", "debugger"]
     }
   }
 }
@@ -81,7 +81,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
   로컬 `eval/e2e/driver.test.ts`(repo 미포함 — maintainer-local)가 검사한다(위
   json 블록의 키를 실제로 읽어 `STATIC_DISALLOWED_TOOLS`와 대조) — 개명하면 그
   로컬 검사가 실패한다.
-- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.1/apps-in-toss-debugger-0.2.1.tgz debugger`
+- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.2/apps-in-toss-debugger-0.2.2.tgz debugger`
   형태를 유지한다 — `-p` 없이 bare로 쓰면
   패키지가 bin을 2개(`debugger`·`debugger-test`) 게시해 npm이 실행파일을 추론하지
   못한다. 머신 절대경로 launcher는 박지 않는다(다른 머신 clone에서 깨진다).
