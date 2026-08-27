@@ -1,0 +1,165 @@
+name: Changeset Version (agent-plugin)
+
+# packages/agent-plugin/.changeset/ 에 미소비 changeset 이 쌓이기만 하고
+# 아무도 `changeset version` 을 안 돌리면 package.json 버전과 CHANGELOG.md
+# 가 계속 밀린다(0.1.21 → 0.1.23 구간 실측 드리프트 — validate-plugin.mjs
+# A10 가 그 결과를 잡는 가드라면, 이 워크플로는 애초에 밀리지 않게 하는
+# 예방 축이다). 매주 월요일 자동으로 미소비 changeset 을 모아 버전을 올리고
+# PR 을 연다 — 머지는 사람/세션 판단이라 자동 머지는 넣지 않는다.
+on:
+  schedule:
+    # 매주 월요일 01:00 UTC = 10:00 KST
+    - cron: '0 1 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: changeset-version-agent-plugin
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ci.yml 의 셋업 step 을 그대로 모방 — 버전·캐시 관례를 어긋내지 않는다.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # 미소비 changeset 이 0건이면 아무것도 하지 않고 성공 종료한다.
+      # config.json 은 changeset 이 아니고 README.md 는 changesets 가 관리하는
+      # 안내 문서라 제외한다.
+      - name: Check for unconsumed changesets
+        id: check
+        run: |
+          count=$(find packages/agent-plugin/.changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then
+            echo "nothing to version — packages/agent-plugin/.changeset/ 에 미소비 changeset 없음"
+          else
+            echo "미소비 changeset ${count}건 발견 — 버전을 올린다"
+          fi
+
+      # @changesets/cli 는 @manypkg/find-root 경유로 cwd 와 무관하게 항상
+      # **실제 pnpm workspace root**(pnpm-workspace.yaml 이 있는 이 저장소
+      # 루트)의 .changeset 만 읽고 쓴다. packages/agent-plugin 안에서
+      # `changeset version` 을 돌려도 packages/agent-plugin/.changeset 은
+      # 조용히 무시된다 — 미소비 changeset 이 하나도 소비되지 않는 채로
+      # exit 0 하는 **silent no-op** 이라 이 워크플로가 매주 "성공"하면서
+      # 실제로는 아무 일도 안 하는 상태가 될 수 있다. 이 monorepo의 구조적
+      # 제약이고, 2026-08-02 커밋 7c2f1c8(devtools/debugger/debug-console)·
+      # PR #11(agent-plugin 0.1.24)에서 동일하게 겪고 우회한 선례가 있다:
+      # agent-plugin 의 config.json + pending .md 를 저장소 루트 .changeset
+      # 에 임시로 복사해두고 그 자리에서 version 을 태운 뒤 정리한다. 이
+      # 시퀀스는 로컬 dry-run(더미 changeset 1건으로 version 실제 bump +
+      # CHANGELOG 섹션 생성 + plugin.json 동기화까지 확인 후 git 상태 복원)
+      # 으로 검증했다.
+      - name: Run changeset version (workspace-root .changeset quirk workaround)
+        if: steps.check.outputs.count != '0'
+        id: version
+        run: |
+          set -euo pipefail
+
+          before="$(node -p "require('./packages/agent-plugin/package.json').version")"
+
+          # 1) config.json + pending .md 를 저장소 루트 .changeset 에 임시 복사.
+          #    저장소 루트에는 원래 .changeset 디렉터리가 없다 — 그대로 새로
+          #    만들고 아래에서 통째로 지운다(agent-plugin 자체의
+          #    .changeset/config.json·README.md 는 건드리지 않는다).
+          mkdir -p .changeset
+          cp packages/agent-plugin/.changeset/config.json .changeset/config.json
+          find packages/agent-plugin/.changeset -maxdepth 1 -name '*.md' ! -name 'README.md' \
+            -exec cp {} .changeset/ \;
+
+          # 2) changeset version 실행. `release:version` 스크립트(`changeset
+          #    version && pnpm sync:plugin-version`)를 그대로 써서 버전 상승
+          #    + CHANGELOG.md 갱신 + plugin.json 동기화를 한 번에 끝낸다 —
+          #    바이너리는 packages/agent-plugin 의 devDependency 에서
+          #    resolve 되지만, 위 quirk 때문에 실제로 읽고 쓰는 .changeset
+          #    은 방금 채워 넣은 저장소 루트 사본이다.
+          (cd packages/agent-plugin && pnpm run release:version)
+
+          after="$(node -p "require('./packages/agent-plugin/package.json').version")"
+
+          # 3) 저장소 루트 임시 .changeset 을 지운다 — 검증에 실패해도(exit 1)
+          #    임시 디렉터리를 저장소에 남기지 않도록 결과 확인 전에 먼저 지운다.
+          rm -rf .changeset
+
+          # 4) 산출 확인: 버전이 실제로 올랐는지, CHANGELOG.md 에 새 섹션이
+          #    생겼는지 — 이 확인이 없으면 quirk 우회가 조용히 깨져도(예:
+          #    changeset 바이너리 경로가 바뀌어 이 스텝이 다시 no-op 이 되는
+          #    경우) 아무 신호 없이 넘어간다.
+          if [ "$before" = "$after" ]; then
+            echo "::error::changeset version 이후에도 package.json 버전이 '${before}' 그대로 — 소비가 안 됐다. workspace-root .changeset quirk 우회가 깨졌을 수 있으니 이 스텝 구현을 점검하라"
+            exit 1
+          fi
+          if ! grep -qF "## ${after}" packages/agent-plugin/CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 에 '## ${after}' 섹션이 생성되지 않음 — 중단"
+            exit 1
+          fi
+          echo "changeset version: ${before} → ${after}"
+
+          # 5) changeset version 이 소비(삭제)한 건 위 1)에서 저장소 루트에
+          #    복사해둔 사본뿐이다 — packages/agent-plugin/.changeset 의
+          #    원본 pending .md 는 그대로 남아 있으므로 여기서 직접 지운다
+          #    (config.json·README.md 는 유지).
+          find packages/agent-plugin/.changeset -maxdepth 1 -name '*.md' ! -name 'README.md' -delete
+
+          echo "version=${after}" >> "$GITHUB_OUTPUT"
+
+      - name: Create branch and commit
+        if: steps.check.outputs.count != '0'
+        id: commit
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          branch="bot/changeset-version-${{ github.run_id }}"
+          git checkout -b "$branch"
+          git add -A -- packages/agent-plugin
+          if git diff --cached --quiet; then
+            echo "::error::changeset version 이후 변경된 파일이 없음 — 예상치 못한 상태, 중단"
+            exit 1
+          fi
+          git commit -m "chore(agent-plugin): changeset version → v${VERSION}"
+          git push origin "$branch"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+      # lockfile 은 이 job 어디서도 건드리지 않는다 — `pnpm install
+      # --frozen-lockfile` 만 쓰고, 위 커밋도 packages/agent-plugin 경로만
+      # add 한다.
+      - name: Open PR
+        if: steps.check.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.commit.outputs.branch }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          body=$(cat <<EOF
+          changeset 주기 소비 워크플로가 자동으로 연 PR입니다 — \`packages/agent-plugin/.changeset/\`의 미소비 changeset을 \`pnpm changeset version\`으로 소비해 v${VERSION}으로 올렸습니다(CHANGELOG.md 갱신 + plugin.json 버전 동기화 포함).
+
+          머지 전에 확인할 것:
+          - CHANGELOG.md에 새 버전 섹션이 올바르게 들어갔는지
+          - \`.claude-plugin/plugin.json\` 버전이 package.json과 일치하는지 (validate-plugin.mjs A5/A10가 CI에서 재확인함)
+
+          GITHUB_TOKEN으로 생성된 PR은 CI를 자동 발화하지 않습니다 — close 후 reopen으로 재발화시킨 다음 머지하세요(이 repo의 알려진 관례).
+
+          자동 머지는 하지 않습니다 — 머지는 사람/세션 판단입니다.
+          EOF
+          )
+          gh api -X POST "repos/${{ github.repository }}/pulls" \
+            -f title="chore(agent-plugin): changeset version → v${VERSION}" \
+            -f head="${BRANCH}" \
+            -f base="main" \
+            -f body="$body"

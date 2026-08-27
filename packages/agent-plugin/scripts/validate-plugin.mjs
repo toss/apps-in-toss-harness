@@ -2,7 +2,7 @@
  * validate-plugin.mjs
  *
  * 구조 검증기 — shared/{skills,commands,templates} + eval/ 의 정합성을 확인.
- * 8개 그룹으로 나뉜다 (A4 — CLI 토큰 크로스체크는 대상이 없어져 제거됨, harness
+ * 9개 그룹으로 나뉜다 (A4 — CLI 토큰 크로스체크는 대상이 없어져 제거됨, harness
  * 절단 이후 이 repo에는 console-cli/aitcc 크로스체크 대상이 존재하지 않는다):
  *   A1 — frontmatter + 1:1 매핑 + 라우팅 스냅샷 (hard-fail)
  *   A2 — 본문 구조 + seam 검사 (슬래시·자연어 2표면 포함, hard-fail)
@@ -23,17 +23,24 @@
  *        skill 의 본문이 세션에 실제로 들어왔는가"라는 결과 자체를 잰다.
  *        CLI 세션 8회가 필요해 느리고 인증된 구독 세션이 전제라 CI 에는 못
  *        올린다 — §A9 상세 주석 참조)
+ *   A10 — CHANGELOG.md 버전 섹션 존재 (hard-fail — 0.1.22/0.1.23 드리프트:
+ *        버전만 올라가고 CHANGELOG 미기록으로 재발 방지. changesets 워크플로상
+ *        "changeset 누적 중 + 버전 미변경"은 정상 상태라 예외를 두는 대신,
+ *        불변식을 "현재 package.json 버전 섹션이 CHANGELOG.md 에 있는가"
+ *        하나로 단순화한다 — 버전을 올리는 경로가 무엇이든(수동/`changeset
+ *        version`/스크립트) CHANGELOG 동반 기록을 강제한다)
  *
- * A1–A3·A5·A7·A8 은 runChecks() 가 동기로 돈다(기본 `pnpm test` 경로, 네트워크
- * 비의존). A6·A9 는 CLI 진입점에서만 opt-in 으로 돌고, 각각의 환경변수가
- * 아니면 skip — A6 는 네트워크가 필요 없어졌지만(§A6 참조) 기존 CLI 계약과의
- * 호환을 위해, A9 는 CLI 세션 비용이 커서 opt-in 게이트를 유지한다.
+ * A1–A3·A5·A7·A8·A10 은 runChecks() 가 동기로 돈다(기본 `pnpm test` 경로,
+ * 네트워크 비의존). A6·A9 는 CLI 진입점에서만 opt-in 으로 돌고, 각각의
+ * 환경변수가 아니면 skip — A6 는 네트워크가 필요 없어졌지만(§A6 참조) 기존
+ * CLI 계약과의 호환을 위해, A9 는 CLI 세션 비용이 커서 opt-in 게이트를
+ * 유지한다.
  *
- * CLI:           node scripts/validate-plugin.mjs        (A1–A3·A5·A7·A8; A6·A9 skip)
+ * CLI:           node scripts/validate-plugin.mjs        (A1–A3·A5·A7·A8·A10; A6·A9 skip)
  *                VALIDATE_LINKS=1 node scripts/validate-plugin.mjs      (+ A6 링크 부재 sweep)
  *                VALIDATE_SKILL_LOAD=1 node scripts/validate-plugin.mjs (+ A9 skill 본문 주입 실측)
  * API: import { runChecks } from './scripts/validate-plugin.mjs'
- *      const { violations } = runChecks(repoRoot)        (A1–A3·A5·A7·A8, 동기)
+ *      const { violations } = runChecks(repoRoot)        (A1–A3·A5·A7·A8·A10, 동기)
  */
 
 import fs from 'node:fs';
@@ -2097,6 +2104,66 @@ function checkA5(root) {
 }
 
 // ---------------------------------------------------------------------------
+// A10 — CHANGELOG.md 버전 섹션 존재 (hard-fail)
+// ---------------------------------------------------------------------------
+//
+// 0.1.22/0.1.23 드리프트(package.json 버전만 두 차례 올라가고 CHANGELOG.md 는
+// 0.1.21 에 멈춰 있던 것) 재발 방지. changesets 워크플로에서는 changeset 이
+// `.changeset/` 에 누적되기만 하고 아직 버전을 올리지 않은 상태가 정상이므로,
+// "미소비 changeset 개수" 로 예외를 만들지 않는다 — 그러면 정확히 이번
+// 드리프트처럼 "버전은 올랐는데 CHANGELOG 는 안 올랐다" 를 놓칠 수 있는 예외
+// 창이 생긴다. 대신 불변식을 하나로 단순화한다: **현재 package.json 버전의
+// `## <version>` 섹션이 CHANGELOG.md 에 있어야 한다.** 버전을 올리는 경로가
+// 무엇이든(수동 편집·`changeset version`·다른 스크립트) 이 섹션 동반을
+// 강제한다.
+
+/** @param {string} root @returns {Violation[]} */
+function checkA10(root) {
+  const pkgPath = path.join(root, 'package.json');
+
+  /** @type {{ version?: string }} */
+  let pkg;
+  try {
+    pkg = JSON.parse(readFile(pkgPath));
+  } catch {
+    // package.json 파싱 실패는 A5 가 이미 별도로 보고한다 — 중복 보고 방지.
+    return [];
+  }
+  if (!pkg.version) return [];
+
+  const changelogPath = path.join(root, 'CHANGELOG.md');
+  const relChangelog = path.relative(root, changelogPath);
+
+  if (!fs.existsSync(changelogPath)) {
+    return [
+      mkv(
+        relChangelog,
+        1,
+        'A10/changelog-version-missing',
+        `CHANGELOG.md 파일이 없음 — package.json 버전 '${pkg.version}' 을 기록할 곳이 없다 (fix: CHANGELOG.md 를 만들고 '## ${pkg.version}' 섹션을 추가)`,
+      ),
+    ];
+  }
+
+  const changelog = readFile(changelogPath);
+  const escapedVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const versionHeadingRe = new RegExp(`^##\\s+${escapedVersion}\\s*$`, 'm');
+
+  if (!versionHeadingRe.test(changelog)) {
+    return [
+      mkv(
+        relChangelog,
+        1,
+        'A10/changelog-version-missing',
+        `CHANGELOG.md 에 현재 package.json 버전 '${pkg.version}' 의 '## ${pkg.version}' 섹션이 없음 (fix: 버전을 올릴 때 CHANGELOG.md 에 '## ${pkg.version}' 섹션을 함께 기록 — changeset 워크플로면 'pnpm changeset version'/'pnpm release:version')`,
+      ),
+    ];
+  }
+
+  return [];
+}
+
+// ---------------------------------------------------------------------------
 // A7 — mcpServers npx args resolvability (hard-fail)
 // ---------------------------------------------------------------------------
 //
@@ -2521,6 +2588,7 @@ export function runChecks(repoRoot) {
     ...checkA5(root),
     ...checkA7(root),
     ...checkA8(root),
+    ...checkA10(root),
   ];
 
   const hasErrors = allViolations.some((viol) => viol.level === 'error');
@@ -2554,6 +2622,7 @@ function printViolations(violations) {
     A7: 'A7 — mcpServers npx args 해석 가능성',
     A8: 'A8 — seam /ait:verb 형태·해석 가능성',
     A9: 'A9 — skill 본문 실제 주입 여부 (opt-in, BEHAVIOR)',
+    A10: 'A10 — CHANGELOG.md 버전 섹션 존재',
   };
 
   for (const [prefix, items] of groups) {
