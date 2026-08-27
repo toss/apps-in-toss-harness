@@ -6,7 +6,7 @@ AI 코딩 에이전트(Claude Code 등) 안에서, 빈 디렉토리부터 앱인
 
 ## 상태
 
-`apps-in-toss-community` 조직에 흩어져 있던 도구들을 하드카피해 이 monorepo가 agent-plugin·debugger·debug-console·internal-protocol 4개 패키지 전부의 정본이 됐습니다 — 커뮤니티 org와의 연관관계는 끊겼습니다(devtools는 wf 소스 monorepo(사내)의 자체 devtools로 대체되어 harness 사본은 제거됨). 이 저장소는 현재 private이며, public 전환은 별도 결정 사항입니다. 패키지는 GitHub Releases로 유통됩니다(`debugger-v0.2.1`·`debug-console-v0.1.4`) — npmjs 발행 계획은 없습니다. private인 동안 릴리즈 다운로드에는 저장소 접근 권한이 필요합니다. `packages/` 아래 `debugger`·`debug-console`도 이 유통 방식을 따릅니다.
+`apps-in-toss-community` 조직에 흩어져 있던 도구들을 하드카피해 이 monorepo가 agent-plugin·debugger·debug-console·internal-protocol 4개 패키지 전부의 정본이 됐습니다 — 커뮤니티 org와의 연관관계는 끊겼습니다(devtools는 wf 소스 monorepo(사내)의 자체 devtools로 대체되어 harness 사본은 제거됨). 이 저장소는 public이고, 패키지는 GitHub Releases로 유통됩니다(`debugger-v0.2.1`·`debug-console-v0.1.4`) — npmjs 발행 계획은 없습니다. 릴리즈 다운로드는 인증 없이 받을 수 있습니다. `packages/` 아래 `debugger`·`debug-console`도 이 유통 방식을 따릅니다.
 
 ## 빠른 시작
 

@@ -12,8 +12,10 @@
 > 됐다). 미확정은 두 가지뿐이다: **§5 open question**(6건 중 4·5·6은 해소/확정,
 > 2는 2026-07-31 scope-out 확정 이후 재검토 요청(harness#102, 2026-08-10)이
 > 접수돼 결정 대기로 돌아왔다 — §5 참고, 남은 1·3 두 건은 구 repo의 #8 집행
-> (2026-08-06)으로 한때 게이트가 열렸으나 flip 되돌림·2026-08-26 재생성으로
-> 다시 **게이트 대기**다 — §5 경고 문단 참고)과
+> (2026-08-06)으로 한때 게이트가 열렸다가 flip 되돌림·2026-08-26 재생성으로
+> 한 차례 **게이트 대기**로 돌아갔으나, 재생성 시점부터 새 repo가 이미
+> public이었음이 재실측(2026-08-27)으로 확인되고 maintainer가 유지를
+> 결정해 **게이트가 다시 열렸다** — §5 경고 문단 참고)과
 > **§3 1.0 조건4의 "배포" 정의 재확정**(검수·릴리즈를 포함하는지). 진척 추적은
 > 두 milestone이 나눠 갖는다 — 이관 축은
 > [`MT — 공식 이관`](https://github.com/toss/apps-in-toss-harness/milestone/1),
@@ -52,7 +54,7 @@ milestone `PO — 8월 퍼블릭 오픈`(milestone 2)이 담당한다 — 실측
 
 | # | Station | 진입 | 담당 | 커뮤니티 map 대비 변화 |
 |---|---|---|---|---|
-| 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — 단 **public 전환은 미실행 상태로 리셋**됐다(구 repo에서 2026-08-06 집행 후 되돌림, 2026-08-26 재생성으로 이력 소멸 — §3 조건 1). repo가 private인 동안 외부 사용자의 설치 전제는 다시 #8 대기다. 같은 루트 manifest를 Codex도 읽는다(`codex plugin marketplace add` → `codex plugin add`, 2026-08-07 실측). 커뮤니티 marketplace와의 병존/폐기는 여전히 open question(§5 문항 1) |
+| 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — **public 전환은 2026-08-26 재생성 시점부터 이미 완료 상태였다**(구 repo에서 2026-08-06 집행 후 되돌림, 재생성으로 그 이력은 소멸했지만 재생성 자체가 새 repo를 public으로 만들었다 — 재실측 2026-08-27, maintainer 유지 결정 — §3 조건 1). 외부 사용자의 설치 전제는 충족됐다. 같은 루트 manifest를 Codex도 읽는다(`codex plugin marketplace add` → `codex plugin add`, 2026-08-07 실측). 커뮤니티 marketplace와의 병존/폐기는 여전히 open question(§5 문항 1) |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
 | 2 | dev | `pnpm dev` | devtools (wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시; harness 사본은 제거됨) | **배포 모델 재정의 확정(2026-08-04) + 공개 npm 발행 완료(`3.0.2`, 2026-08-04) + CLI 자동 설치 실증 완료(2026-08-07) — D1b 해소** — devtools는 wf 소스 monorepo(사내)가 소유·발행하며(AIT-6577) 패키지는 **공개 npm(registry.npmjs.org)에 게시**된다(changesets fixed-group: cli·web-framework·devtools 동일 버전). 소비자 프로젝트에는 **CLI가 자동 설치하는 devDependency**로 배선된다 — `create-ait-app@0.2.3`으로 `ait init`을 실행하면 `package.json`·`vite.config.ts`·`apps-in-toss.config.ts`까지 자동 배선되고 dev 서버에서 devtools 패널이 뜨는 것까지 실증됐다(미러 registry 경유 — 공개 registry의 wf `latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼(이후 latest `3.1.1`, 2026-08-27 확인) 직결 경로도 같은 버전으로 해석될 것으로 보이나 직접 재현은 미확인, 상세는 §5 문항 6). **wf 패키지 자체는 변경되지 않는다 — transitive가 아니다**(종전 "wf 3.x dependencies 통합 + subpath re-export" 계획은 폐기, §5 문항 6). 소비자 import specifier는 `@apps-in-toss/devtools` 그대로다. `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미가 바뀔 예정이나, skill 본문 갱신 자체는 아직 maintainer 결정 대기다(`docs/release.md` §7b). **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** — D1b 실증을 기다리지 않고 maintainer 지시로 앞당겨 실행됨(이슈 #74 참고); 위 skill 재배선·`--no-devtools` 의미 변경은 아직 미완료로 남아 있다 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
@@ -127,18 +129,20 @@ MCP가 아니다. devtools는 재정의된 배포 모델(wf 소스 monorepo(사�
 커뮤니티 로드맵의 "9 station 전부 GREEN" 기준을 공식 표면 기준으로 재작성한다.
 **1.0 = 아래 5개 조건의 동시 충족:**
 
-1. **public 전환 — 미실행.** 구 repo에서는 2026-08-06 집행됐다가 이후
-   되돌려진 이력이 있었으나(되돌린 주체·사유는 기록이 없다), 그 repo는
-   2026-08-26 삭제 후 동일 이름으로 재생성됐다(상단 각주 참고) — **새
-   repo는 private로 생성됐고 public 전환 이력이 없다.** 현재
-   `visibility: private`이고, **이 조건은 충족 상태가 아니다.** 구 repo에서
-   내렸던 "게이트가 열렸다"는 판단(아래 §5 문항 1·3)은 재생성으로
-   무효화됐고, #8은 여전히 미래 결정이다. **npm 배포 축은 이
+1. **public 전환 — 완료 (재실측 2026-08-27).** 구 repo에서는 2026-08-06
+   집행됐다가 이후 되돌려진 이력이 있었으나(되돌린 주체·사유는 기록이
+   없다), 그 repo는 2026-08-26 삭제 후 동일 이름으로 재생성됐다(상단 각주
+   참고) — **재생성 시점(2026-08-26)부터 새 repo는 이미 public이었다.**
+   재실측(2026-08-27, REST `{"private":false,"visibility":"public"}`)으로
+   확인됐고, maintainer가 public 유지를 결정했다(2026-08-27) — **이 조건은
+   이제 충족됐다.** 구 repo에서 내렸던 "게이트가 열렸다"는 판단(아래 §5
+   문항 1·3)은 재생성으로 한 차례 무효화됐으나, 이번 재실측으로 게이트는
+   다시 열렸다(§5 경고 문단 참고). **npm 배포 축은 이
    조건에서 분리됐다** — 2026-08-06 오너 지시로 npm-less 전환이 결정되어,
    harness는 자체 패키지(`debugger`·`debug-console`)를 npmjs.com에 발행하지
-   않고 GitHub Releases로 유통한다(`docs/release.md`). 조건 1은 이제 repo
-   public 전환만으로 충족되고, 배포 채널의 진행 상태는 아래 조건 2·D1a가
-   추적한다.
+   않고 GitHub Releases로 유통한다(`docs/release.md`). 조건 1은 repo
+   public 전환으로 충족됐고, GitHub Release 배포 채널의 진행 상태는 아래
+   조건 2·D1a가 추적한다.
 2. **공식 표면만으로 완주 가능** — station 0~8의 정규 경로에 커뮤니티 잔재
    의존이 없다: `@ait-co/*` 패키지, 커뮤니티 도메인 링크, oidc-bridge 경로가
    정규 흐름에서 제거됨. (과도기 허용 항목이 전부 소거된 상태.) **npm-less
@@ -170,13 +174,15 @@ npm 발행 없이 지금 해소 가능한 형태로 재정의됨, `docs/release.
 **같은 날 release.yml `workflow_dispatch`(CI)로 같은 태그·같은 asset명으로
 재발행 완료**했다(재빌드라 sha256은 구 자산과 다르며, CI job Summary와
 GitHub API `assets[].digest`가 새 기준값이다). 설치 URL(`releases/download/...`)
-형태는 동일하지만 **repo가 private인 동안은 미인증 404**다(실측). **URL
-설치 실증은 구 repo에서 같은 날(2026-08-06) 완료됐던 기록**이다(Wave 2) —
-빈 프로젝트에서 `pnpm add -D`·`npx -p`·`.mcp.json` args 배열 3종 설치
-경로가 Release 다운로드 URL로 정상 동작함을 확인했고, 이 스코프 치환을
-반영해 이 두 패키지의 설치·npx 안내 스코프를 기계 치환하는 표면 플립까지
-같은 PR에서 마쳤다 — 재생성 이후 이 실증 자체는 재실행되지 않았다(repo가
-private인 지금은 재현 불가).
+형태는 동일하고, **재실측(2026-08-27)으로 미인증 다운로드가 가능함을
+확인했다** — 새 repo가 재생성 시점부터 이미 public이었고 maintainer가
+유지를 결정했기 때문이다. **URL 설치 실증은 구 repo에서 같은 날(2026-08-06)
+완료됐던 기록**이다(Wave 2) — 빈 프로젝트에서 `pnpm add -D`·`npx -p`·
+`.mcp.json` args 배열 3종 설치 경로가 Release 다운로드 URL로 정상 동작함을
+확인했고, 이 스코프 치환을 반영해 이 두 패키지의 설치·npx 안내 스코프를
+기계 치환하는 표면 플립까지 같은 PR에서 마쳤다 — **재생성 이후 이 실증도
+재실행됐다**(2026-08-27, `debugger` v0.2.1로 `pnpm add -D <release tarball
+URL>` 직설치 검증 완료).
 **D1b — 재정의(2026-08-04), CLI 자동 설치 실증 완료(2026-08-07) — D1b 해소**:
 devtools는 wf 소스 monorepo(사내)가 소유·발행하며 패키지는 **공개 npm에
 게시**된다 — `@apps-in-toss/devtools@3.0.2`가 2026-08-04에 첫 발행됐다
@@ -220,12 +226,15 @@ resolve 실증"이었으나, 실제 머지본(AIT-6577)이 wf 패키지를 건�
 아래 문단의 "남은 open은 1·3 두 건"은 그 접수 이전 시점의 서술이고, 2026-08-10
 이후의 실제 미결은 1·3에 **재검토 중인 2**를 더한 형태다(아래 문항 2).
 
-**⚠️ 아래 문단은 2026-08-10 시점 서술이고 전제가 무너졌다(구 #141이 추적하던
-상태 — 이후 2026-08-26 재생성으로 리셋).** 구 repo는 2026-08-06 public 전환이
-집행됐다가 **이후 다시 private으로 되돌려졌고**, 새 repo는 private으로 생성돼
-전환 이력이 없다 — "게이트가 열렸다"는 판정은 현재 성립하지 않는다. Release
-에셋 2건은 CI로 재발행돼(2026-08-26) 존재하지만 repo가 private이라 인증 없는
-다운로드는 404다. 원 서술을 이력으로 남긴다:
+**⚠️ 아래 문단은 2026-08-10 시점 서술이고 한때 전제가 무너졌었다(구 #141이
+추적하던 상태 — 2026-08-26 재생성으로 리셋).** 구 repo는 2026-08-06 public
+전환이 집행됐다가 **이후 다시 private으로 되돌려졌고**, 재생성 직후에는 새
+repo도 private으로 생성돼 전환 이력이 없다고 판단됐었다. **재실측
+(2026-08-27, REST)으로 그 판단이 틀렸음이 드러났다** — 새 repo는 재생성
+시점(2026-08-26)부터 이미 public이었고, maintainer가 유지를 결정했다
+(2026-08-27). 즉 "게이트가 열렸다"는 판정은 다시 성립한다. Release 에셋
+2건은 CI로 재발행됐고(2026-08-26), 재실측 결과 인증 없는 다운로드도 가능하다
+(`debugger`는 이후 v0.2.1로 갱신 발행). 원 서술을 이력으로 남긴다:
 
 > **남은 open은 1·3 두 건이며, 이 둘의 게이트도 열렸다** — repo public 전환이
 > 집행됐고(당시 `visibility: public`) 첫 GitHub Release 2건도 발행됐다
