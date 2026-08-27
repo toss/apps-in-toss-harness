@@ -249,8 +249,8 @@ SDK 도메인 (필요)
 
 "확인이 필요한 항목"이 없으면 그 섹션은 생략한다. seam의 핵심은 **다음 station이
 `/ait:new`**라는 것 — 계획이 곧바로 scaffold로 이어진다. seam은 슬래시 명령과
-자연어 동치를 **함께** 인쇄한다(통일 규칙 — `docs/design/skill-conventions.md`
-§9) — 슬래시 네임스페이스가 그대로 오지 않는 에이전트에서는 자연어 쪽이 정규
+자연어 동치를 **함께** 인쇄한다(통일 규칙 — 로컬 `docs/design/skill-conventions.md`
+(repo 미포함 — maintainer-local) §9) — 슬래시 네임스페이스가 그대로 오지 않는 에이전트에서는 자연어 쪽이 정규
 경로다.
 
 ## Out of scope (이 skill이 하지 않는 것)

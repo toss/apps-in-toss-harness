@@ -158,7 +158,7 @@ Three packages managed as a pnpm workspace (devtools has been replaced by an in-
 
 ## If you run into a problem
 
-If you run into a problem, check the [bug report guide](./docs/bug-report-guide.md) first, then [file an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). Regardless of the repo's visibility, never paste secrets like Deploy Keys or TOTP values, or internal identifiers, into the issue body or logs.
+If you run into a problem, check the [bug report guide](./.github/bug-report-guide.md) first, then [file an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). Regardless of the repo's visibility, never paste secrets like Deploy Keys or TOTP values, or internal identifiers, into the issue body or logs.
 
 ## Contributing / development
 

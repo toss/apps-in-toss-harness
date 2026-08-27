@@ -70,4 +70,4 @@ This is a developer convenience for fast feedback before push. CI runs the same 
 
 ## Status
 
-See [`docs/roadmap.md`](../../docs/roadmap.md) for the full roadmap.
+See local `docs/roadmap.md` (maintainer-local, not part of this repo) for the full roadmap.

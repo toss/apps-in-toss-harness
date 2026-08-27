@@ -158,7 +158,7 @@ pnpm 워크스페이스로 관리되는 3개 패키지입니다(devtools는 wf �
 
 ## 문제가 생기면
 
-문제를 발견하면 [버그리포트 가이드](./docs/bug-report-guide.md)를 먼저 참고한 뒤 [이슈를 등록](https://github.com/toss/apps-in-toss-harness/issues/new/choose)해 주세요. 저장소 공개 여부와 무관하게 Deploy Key·TOTP 등 시크릿이나 사내 식별자는 이슈 본문·로그에 붙여넣지 마세요.
+문제를 발견하면 [버그리포트 가이드](./.github/bug-report-guide.md)를 먼저 참고한 뒤 [이슈를 등록](https://github.com/toss/apps-in-toss-harness/issues/new/choose)해 주세요. 저장소 공개 여부와 무관하게 Deploy Key·TOTP 등 시크릿이나 사내 식별자는 이슈 본문·로그에 붙여넣지 마세요.
 
 ## 기여·개발
 

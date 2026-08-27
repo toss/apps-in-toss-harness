@@ -93,7 +93,7 @@ Apps in Toss 플러그인이 설치됐습니다.
 
 ## 참고
 
-- harness 전체 흐름·station map 정본: `docs/roadmap.md` (repo 루트)
+- harness 전체 흐름·station map 정본: 로컬 `docs/roadmap.md`(repo 미포함 — maintainer-local)
 - 각 station의 진척·blocker: milestone `MT — 공식 이관`
   (github.com/toss/apps-in-toss-harness/milestone/1)과 `PO — 8월 퍼블릭 오픈`
   (github.com/toss/apps-in-toss-harness/milestone/2)
