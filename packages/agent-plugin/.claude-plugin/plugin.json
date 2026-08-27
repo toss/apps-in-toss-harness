@@ -1,6 +1,6 @@
 {
   "name": "ait",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Build Apps in Toss mini-apps from inside AI coding agents.",
   "author": {
     "name": "toss"

@@ -1,5 +1,55 @@
 # @ait-co/agent-plugin
 
+## 0.1.25
+
+### Patch Changes
+
+- 내부 운영 문서(`docs/`)·eval 런북(`.claude/skills/eval-suite-b`)을 repo 추적에서
+  빼면서, skill·README·CLAUDE.md에 남아 있던 그 경로 참조를 "로컬 `docs/...`
+  (repo 미포함 — maintainer-local)" 표기로 정리했다. 서술 내용 자체는 바뀌지
+  않았다 — 문서가 더 이상 이 repo에 없다는 것만 명확히 했다.
+
+  `docs/bug-report-guide.md`(소비자용 버그 리포트 가이드)는 공개 유지가 맞아
+  `.github/bug-report-guide.md`로 옮기고, 이슈 템플릿의 링크도 새 경로로
+  갱신했다.
+
+- 소비자 대면 표면의 기본 패키지 매니저를 pnpm에서 npm/npx로 전환했다
+  (maintainer 결정) — `new-miniapp`·`inject`·`debug`·`test-on-device`·`welcome`·
+  `plan` skill과 `--local` 폴백 템플릿(`shared/templates/react-vite/`)의 설치·
+  실행·빌드 안내가 전부 `npm install`/`npm run <script>`/`npx -y <pkg>` 형태로
+  바뀌었다. 에이전트가 실행하는 npx는 항상 `-y`로 비대화형 호출한다.
+
+  - `new-miniapp`: scaffold 정본 호출이 `npx -y create-ait-app@latest … --pm npm`이
+    됐다. pnpm 부트스트랩(corepack enable → npm i -g pnpm) 단계와
+    `pnpm-workspace.yaml` allowBuilds 게이트 단계는 삭제했다 — npm은
+    postinstall을 기본 실행하므로 그 실패 모드 자체가 없다.
+  - `inject`의 devtools/debug-console facet은 lockfile 감지 로직을 유지하되
+    npm을 첫 번째(기본)로 재배열하고, 신호가 없을 때의 기본을 npm으로 명시했다.
+  - `shared/templates/react-vite/package.json`의 `packageManager: "pnpm@11.17.0"`
+    필드를 제거했다 — scaffold 산출물에 복사돼 corepack이 pnpm을 강제하는
+    원인이었다. 같은 이유로 `shared/templates/react-vite/pnpm-workspace.yaml`
+    (구 allowBuilds 게이트, `--local` 경로에서 scaffold 산출물로 그대로
+    복사되던 파일)도 삭제했다.
+  - monorepo 내부 개발 축(루트/패키지 scripts, `.githooks`, CI, README
+    Contributing 절, CLAUDE.md의 monorepo 개발 지침)은 pnpm을 그대로 유지한다.
+
+- 측정 인프라(`eval/`)를 repo 추적에서 빼고 `.gitignore`에 등록했다 —
+  maintainer-local 산출물이라 공개 clone에는 없는 게 정상이다. 그에 맞춰:
+
+  - `scripts/validate-plugin.mjs`의 A3(템플릿 + eval 동기화) 검사 중
+    `promptfooconfig.yaml` 동기화 블록을 파일이 있을 때만 발화하도록 완화했다
+    (부재 시 조용히 skip — hard-fail이던 `A3/promptfoo-missing`은 더 이상
+    발생하지 않는다). 파일이 있으면 기존 skill 목록 동기화 검사는 그대로
+    발화한다.
+  - `package.json`의 `eval:promptfoo`·`eval:e2e` 스크립트와 vitest
+    `eval/**/*.test.ts` include, `tsconfig.json`의 `eval/e2e/**/*.ts` include를
+    제거했다.
+  - `scripts/skill-load-probe.mjs`·`shared/skills/setup-debugger/SKILL.md`·
+    루트 `CLAUDE.md`·이 패키지 `CLAUDE.md`·루트 `README.md`/`README.en.md`에
+    남아 있던 `eval/` 경로 참조를 "로컬 `eval/...`(repo 미포함 —
+    maintainer-local)" 표기로 정리했다(내부 운영 문서 비공개화 때와 같은
+    관행). 서술 내용 자체는 바뀌지 않았다.
+
 ## 0.1.24
 
 ### Patch Changes
