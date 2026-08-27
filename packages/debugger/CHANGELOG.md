@@ -1,4 +1,4 @@
-# @ait-co/debugger
+# @apps-in-toss/debugger
 
 ## 0.2.1
 
