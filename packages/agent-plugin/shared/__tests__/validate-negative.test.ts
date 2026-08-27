@@ -43,6 +43,7 @@ function rulesFired(violations: Violation[]): string[] {
 //   eval/promptfoo/promptfooconfig.yaml  — skills 블록에 skill name 포함
 //   .claude-plugin/plugin.json           — version 일치
 //   package.json                         — version 일치
+//   CHANGELOG.md                         — package.json 버전의 '## <version>' 섹션 존재
 //
 // 주의: fixture 의 skill name 은 EXPECTED_CMD_TO_SKILL 에 없으므로 A1/routing-mismatch
 // 가 발생한다 — 이는 "스냅샷이 픽스처 skill 을 모른다"는 정상 결과이고,
@@ -144,6 +145,20 @@ tests: []
 }
 
 /**
+ * valid CHANGELOG.md — fixture package.json 버전('0.1.0')의 '## 0.1.0' 섹션을 포함.
+ */
+function validChangelogMd(): string {
+  return `# @apps-in-toss/agent-plugin
+
+## 0.1.0
+
+### Patch Changes
+
+- fixture: 픽스처용 CHANGELOG 항목.
+`;
+}
+
+/**
  * fixture root 에 최소 valid 파일들을 기록한다.
  */
 function buildValidFixture(dir: string): void {
@@ -169,6 +184,9 @@ function buildValidFixture(dir: string): void {
     path.join(dir, 'package.json'),
     JSON.stringify({ name: '@apps-in-toss/agent-plugin', version: '0.1.0' }),
   );
+
+  // CHANGELOG.md — package.json 버전('0.1.0')의 섹션 존재
+  writeFile(path.join(dir, 'CHANGELOG.md'), validChangelogMd());
 }
 
 // ---------------------------------------------------------------------------
@@ -762,6 +780,51 @@ argument-hint: ''
     // 기본 fixture 의 seam 은 `/ait:new` (콜론 형태) → silent.
     const { violations } = await runChecks(tmpDir);
     expect(rulesFired(violations)).not.toContain('A8/seam-verb-space-form');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A10 — CHANGELOG.md 버전 섹션 존재
+// ---------------------------------------------------------------------------
+//
+// 0.1.22/0.1.23 드리프트(package.json 버전만 올라가고 CHANGELOG.md 는 그
+// 전 버전에 멈춰 있던 것) 재발 방지 회귀 테스트.
+
+describe('A10 negative tests', () => {
+  it('A10/changelog-version-missing — CHANGELOG.md 에 현재 버전 섹션이 없으면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    // 버전 섹션 없는 CHANGELOG (다른 버전 섹션만 존재 — 드리프트 시뮬레이션).
+    writeFile(
+      path.join(tmpDir, 'CHANGELOG.md'),
+      `# @apps-in-toss/agent-plugin
+
+## 0.0.9
+
+### Patch Changes
+
+- fixture: 이전 버전 섹션만 남아있다.
+`,
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A10/changelog-version-missing');
+
+    // 복원하면(negative → positive 왕복 실증) 다시 조용해진다.
+    writeFile(path.join(tmpDir, 'CHANGELOG.md'), validChangelogMd());
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A10/changelog-version-missing');
+  });
+
+  it('A10/changelog-version-missing — CHANGELOG.md 파일 자체가 없으면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    fs.rmSync(path.join(tmpDir, 'CHANGELOG.md'));
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A10/changelog-version-missing');
+  });
+
+  it('A10/changelog-version-missing — 현재 버전 섹션이 있으면 발화하지 않는다 (positive control)', async () => {
+    buildValidFixture(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).not.toContain('A10/changelog-version-missing');
   });
 });
 
