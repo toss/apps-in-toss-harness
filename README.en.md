@@ -8,7 +8,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 You'll need Node 24+ (npm ships with it), git (adding the plugin marketplace fetches this repository via git clone), and an Apps in Toss console account.
 
-From Claude Code, copy and paste the block below one line at a time, top to bottom. It takes you from entering the harness all the way to the entry map.
+Paste the block below into Claude Code's chat input box (in the desktop app, that's the Code tab session — not a terminal), one line at a time, top to bottom. It takes you from entering the harness all the way to the entry map.
 
 ```
 # 1) Register the harness plugin marketplace
@@ -25,6 +25,16 @@ From Claude Code, copy and paste the block below one line at a time, top to bott
 ```
 
 For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OAuth authorization. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app.
+
+**Don't search for `ait` in the desktop app's plugin browser.** Search results only surface plugins from the official marketplace, so `ait` won't show up there. Installation goes through pasting the commands above into the chat input, not through search.
+
+If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
+
+```
+Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`, confirm they succeeded, and tell me to open a new session and run /ait:welcome.
+```
+
+Installed plugins only load starting from a new session, so the sentence above already tells the agent to have you open one and run `/ait:welcome`.
 
 ### Using it from Codex
 
