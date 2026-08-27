@@ -427,7 +427,8 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
     `@apps-in-toss/devtools`를 **CLI가 자동 설치**해 소비자 프로젝트에
     devDependency가 배선되고 dev 서버에서 mock·panel이 뜨는 것까지 **실증
     완료(2026-08-07, 미러 registry 경유 — 공개 registry의 wf `latest`도 그
-    사이 `3.0.2`로 바뀐 것이 확인돼 직결 경로도 같은 버전으로 해석될 것으로
+    사이 `3.0.2`로 바뀐 것이 확인돼(이후 latest `3.1.1`, 2026-08-27 확인)
+    직결 경로도 같은 버전으로 해석될 것으로
     보이나 직접 재현은 미확인)** — 발화 조건은 이 런북의 flip 순서와
     독립적으로 이미 갖춰졌다(§7b 체크리스트 항목 실행 자체는 여전히
     maintainer 결정). **배포 모델은 2026-08-04에 재정의 확정됐고, 공개 npm
@@ -473,10 +474,13 @@ Dave 지정 대기" + "**public flip(#8) 전 재검토 필요**"라는 상태 no
    404, 2026-08-26) 환경 2 제거로 배포 소스도 없다 — 트리에 남은
    `toss.github.io` 참조는 전부 역사 서술이라 확인할 것이 없다.
 6. **GitHub Release 에셋 확인** — 재생성 후 릴리즈 2건(`debugger-v0.2.0`·
-   `debug-console-v0.1.4`)은 2026-08-26 CI(release.yml dispatch) 재발행분이다
-   — private 동안 미인증 404였던 `releases/download/...` URL이 flip 후
-   `curl -sI`로 200을 반환하는지 확인한다(sha256 기준값은 CI run Summary·API
-   digest — `docs/release.md`). npm trusted publishing·provenance 확인 절차는
+   `debug-console-v0.1.4`)은 2026-08-26 CI(release.yml dispatch) 재발행분이다.
+   그 뒤 `debugger`는 2026-08-27 v0.2.1로 갱신 발행됐다(`debug-console`은
+   v0.1.4 유지) — flip 당일 확인 대상은 **현재 최신 태그 기준**이므로
+   `debugger-v0.2.1`·`debug-console-v0.1.4`의 `releases/download/...` URL이
+   private 동안 미인증 404였다가 flip 후 `curl -sI`로 200을 반환하는지
+   확인한다(sha256 기준값은 CI run Summary·API digest — `docs/release.md`).
+   npm trusted publishing·provenance 확인 절차는
    npm-less 전환(2026-08-06)으로 대상이 없어져 삭제했다.
 7. **release env required reviewers 지정** — private + Team 플랜 조합에서는
    API가 422(billing plan 미지원)로 거부한다(실측 2026-08-26). public 전환으로

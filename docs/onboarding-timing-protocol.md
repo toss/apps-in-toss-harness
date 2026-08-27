@@ -37,7 +37,7 @@ README "빠른 시작" 절은 준비물 4가지(Node 24 이상, pnpm 11.17.0, gi
 # 1) harness 플러그인 마켓플레이스 등록
 /plugin marketplace add toss/apps-in-toss-harness
 
-# 2) ait 플러그인 설치 (skill 8종 + MCP 서버 2개 자동 등록)
+# 2) ait 플러그인 설치 (skill 9종 + MCP 서버 2개 자동 등록)
 /plugin install ait@apps-in-toss
 
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회) — 문서 MCP(apps-in-toss-docs)는 인증 없이 자동 연결됨

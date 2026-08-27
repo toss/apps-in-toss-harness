@@ -19,6 +19,24 @@ GitHub API `assets[].digest`가 새 기준값이다). 설치 URL은 동일하지
 **repo가 private인 동안은 미인증 404**다(실측) — public 전환 후에야 §7a의
 URL 설치 실증이 다시 유효해진다.
 
+**2026-08-27, `debugger` v0.2.1 갱신 발행.** chii가 프로세스 전역으로
+TLS 인증서 검증을 해제하는 부작용(`chii/server/lib/proxy.js`가 모듈 로드
+시점에 `NODE_TLS_REJECT_UNAUTHORIZED='0'`을 무조건 설정 — chii 1.15.5
+실측)을 방어하는 패치를 담아 `release.yml` `workflow_dispatch`(CI, run
+[33045629704](https://github.com/toss/apps-in-toss-harness/actions/runs/33045629704))로
+`debugger-v0.2.1`(에셋 `apps-in-toss-debugger-0.2.1.tgz`, sha256
+`963b155e0f204a9e86310145a8d5254d4c33d325ed74c7477525fe2451ea72eb` — GitHub
+API `assets[].digest` 기준값)을 새로 발행했다. `debug-console`은 이 발행에
+포함되지 않고 v0.1.4를 그대로 유지한다. Immutable Releases가 활성화된
+뒤의 발행분이라(위 §3) 이 에셋도 발행 시점부터 서버측에서 잠긴다.
+
+**2026-08-27, `debug-console`의 devDependency `@apps-in-toss/web-framework`
+상향(`^2.10.7` → `3.0.2` → `3.1.1`).** 공개 registry latest가 `3.1.1`인
+것을 npmmirror·jsdelivr로 교차 확인한 뒤 반영했다 — 이 상향으로
+lockfile에서 fastify 계열(critical/high 취약 체인)이 완전히 사라졌다(0건
+유지). devDependency 상향이라 `debug-console`의 런타임 의존성 그래프·발행
+대상 tarball 내용물에는 영향이 없다.
+
 **2026-08-06, 오너 지시로 npm-less 전환 결정.** `@apps-in-toss/debugger`·
 `@apps-in-toss/debug-console` 2개 패키지는 npmjs.com에 발행하지 않고,
 `.github/workflows/release.yml`의 `pnpm pack` tarball을 **GitHub Releases
@@ -285,7 +303,8 @@ harness#10 참조(스킬·템플릿의 설치 문자열 `@ait-co/*` → `@apps-i
 npm에 올라온** `@apps-in-toss/devtools`를 **CLI가 자동 설치**해 소비자
 프로젝트에 devDependency가 배선되고 dev 서버에서 mock·panel이 뜨는 것까지
 실증됐다(`create-ait-app@0.2.3`, 미러 registry 경유 — 공개 registry의 wf
-`latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼 직결 경로도 같은 버전으로
+`latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼(이후 latest `3.1.1`,
+2026-08-27 확인) 직결 경로도 같은 버전으로
 해석될 것으로 보이나 직접 재현은 미확인, 근거는 이슈 #74 2026-08-07
 코멘트). 배포 모델은 2026-08-04 재정의 확정, 공개 npm 발행도
 같은 날 완료됐다(`3.0.2`) — `docs/roadmap.md` §5 문항 6·이슈 #74. **D1b는
@@ -362,7 +381,9 @@ npm에 올라온** `@apps-in-toss/devtools`를 **CLI가 자동 설치**해 소�
      기록).
    - **미확인**: 미러가 아닌 공개 registry 직결 경로에서의 재현. 다만 wf의
      공개 `dist-tags.latest`가 그 사이 `3.0.2`로 바뀐 것이 확인돼 직결
-     경로도 같은 버전으로 해석될 것으로 보인다.
+     경로도 같은 버전으로 해석될 것으로 보인다(그 뒤 `latest`는 `3.1.1`로
+     더 상향됐다 — npmmirror, 2026-08-27 확인. D1b가 판정하는 건 "wf가
+     3.x인가"이지 특정 patch 고정이 아니다).
    - **근거 정본**: 이슈 #74의 2026-08-07 코멘트(첫 판정은 `0.2.1`로 측정해
      "미충족"이었고, 같은 날 `0.2.3`으로 재측정해 뒤집혔다 — 정정 코멘트 포함).
 7. **create-ait-app 버전 정책 + Step 4 정리 — 결정 완료(2026-08-10).**

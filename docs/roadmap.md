@@ -52,7 +52,7 @@ milestone `PO — 8월 퍼블릭 오픈`(milestone 2)이 담당한다 — 실측
 |---|---|---|---|---|
 | 0 | install | `/plugin marketplace add` → `/plugin install` | agent-plugin manifest | 설치 소스가 이 repo(공식)로 — **public 전환 집행 완료**라 전제는 충족됐다. 같은 루트 manifest를 Codex도 읽는다(`codex plugin marketplace add` → `codex plugin add`, 2026-08-07 실측). 커뮤니티 marketplace와의 병존/폐기는 여전히 open question(§5 문항 1) |
 | 1 | scaffold | `/ait:new` | agent-plugin + [`create-ait-app`](https://github.com/toss/create-ait-app) | **완료(#6)** — 자체 템플릿 복사에서 create-ait-app 비대화형 wrapper(+devtools 후처리 배선)로 재작성. 번들 설정이 scaffold에 기본 포함돼 setup-bundle이 조건부 보조로 격하 |
-| 2 | dev | `pnpm dev` | devtools (wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시; harness 사본은 제거됨) | **배포 모델 재정의 확정(2026-08-04) + 공개 npm 발행 완료(`3.0.2`, 2026-08-04) + CLI 자동 설치 실증 완료(2026-08-07) — D1b 해소** — devtools는 wf 소스 monorepo(사내)가 소유·발행하며(AIT-6577) 패키지는 **공개 npm(registry.npmjs.org)에 게시**된다(changesets fixed-group: cli·web-framework·devtools 동일 버전). 소비자 프로젝트에는 **CLI가 자동 설치하는 devDependency**로 배선된다 — `create-ait-app@0.2.3`으로 `ait init`을 실행하면 `package.json`·`vite.config.ts`·`apps-in-toss.config.ts`까지 자동 배선되고 dev 서버에서 devtools 패널이 뜨는 것까지 실증됐다(미러 registry 경유 — 공개 registry의 wf `latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼 직결 경로도 같은 버전으로 해석될 것으로 보이나 직접 재현은 미확인, 상세는 §5 문항 6). **wf 패키지 자체는 변경되지 않는다 — transitive가 아니다**(종전 "wf 3.x dependencies 통합 + subpath re-export" 계획은 폐기, §5 문항 6). 소비자 import specifier는 `@apps-in-toss/devtools` 그대로다. `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미가 바뀔 예정이나, skill 본문 갱신 자체는 아직 maintainer 결정 대기다(`docs/release.md` §7b). **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** — D1b 실증을 기다리지 않고 maintainer 지시로 앞당겨 실행됨(이슈 #74 참고); 위 skill 재배선·`--no-devtools` 의미 변경은 아직 미완료로 남아 있다 |
+| 2 | dev | `pnpm dev` | devtools (wf 소스 monorepo(사내)가 소유·발행 → 공개 npm 게시; harness 사본은 제거됨) | **배포 모델 재정의 확정(2026-08-04) + 공개 npm 발행 완료(`3.0.2`, 2026-08-04) + CLI 자동 설치 실증 완료(2026-08-07) — D1b 해소** — devtools는 wf 소스 monorepo(사내)가 소유·발행하며(AIT-6577) 패키지는 **공개 npm(registry.npmjs.org)에 게시**된다(changesets fixed-group: cli·web-framework·devtools 동일 버전). 소비자 프로젝트에는 **CLI가 자동 설치하는 devDependency**로 배선된다 — `create-ait-app@0.2.3`으로 `ait init`을 실행하면 `package.json`·`vite.config.ts`·`apps-in-toss.config.ts`까지 자동 배선되고 dev 서버에서 devtools 패널이 뜨는 것까지 실증됐다(미러 registry 경유 — 공개 registry의 wf `latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼(이후 latest `3.1.1`, 2026-08-27 확인) 직결 경로도 같은 버전으로 해석될 것으로 보이나 직접 재현은 미확인, 상세는 §5 문항 6). **wf 패키지 자체는 변경되지 않는다 — transitive가 아니다**(종전 "wf 3.x dependencies 통합 + subpath re-export" 계획은 폐기, §5 문항 6). 소비자 import specifier는 `@apps-in-toss/devtools` 그대로다. `--no-devtools`는 설치 제외에서 **배선 skip**으로 의미가 바뀔 예정이나, skill 본문 갱신 자체는 아직 maintainer 결정 대기다(`docs/release.md` §7b). **harness `packages/devtools` 제거 완료(C4 조기 실행, 2026-08-05)** — D1b 실증을 기다리지 않고 maintainer 지시로 앞당겨 실행됨(이슈 #74 참고); 위 skill 재배선·`--no-devtools` 의미 변경은 아직 미완료로 남아 있다 |
 | 3 | debug | `/ait:debug` (+ `/ait:setup-debugger`) | debugger (이관 완료(#2), 잔여는 스코프·URL 전환) | **opt-in 축 완료(#1)** — manifest 상시 기동에서 skill이 프로젝트 `.mcp.json`에 배선하는 opt-in으로 |
 | 4 | auth | `appLogin()` mock (클라이언트만) | agent-plugin (클라이언트 mock) — 서버 연동은 harness 범위 밖 | oidc-bridge/-cloud 제거. **결정(Dave, 2026-07-31, harness#5)**: 서버 구현(공식 백엔드 토큰 검증 연동)은 harness에서 scope-out — "작동하는 미니앱을 만드는 쪽에 집중, 서버 knowledge/skill은 나중에 점진 추가". station 4는 `appLogin()` mock으로 클라이언트 개발까지만 다루고, `auth-setup` skill은 신설하지 않는다 |
 | 5 | register+ship | `ait build`(번들러) → console MCP `miniapp_create`·`bundle_upload`·`bundle_upload_complete` | console MCP Gateway (#3) | 콘솔 자동화가 커뮤니티 CLI(aitcc)에서 클렌징된 서버 API의 MCP GW 네이티브 노출로 전환 완료 — aitcc 전제 skill(register/deploy-key/deploy)은 트리밍으로 제거됐다(harness#1) |
@@ -182,7 +182,8 @@ devtools는 wf 소스 monorepo(사내)가 소유·발행하며 패키지는 **�
 설치 실증도 끝났다**: `create-ait-app@0.2.3`으로 `ait init`을 실행하면 CLI가
 소비자 프로젝트에 devDependency를 배선하고 dev 서버에서 devtools 패널이
 동작하는 것까지 확인됐다(실증은 미러 registry 경유로 수행 — 공개 registry의
-wf `latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼 직결 경로도 같은 버전으로
+wf `latest`도 그 사이 `3.0.2`로 바뀐 것이 확인돼(이후 latest `3.1.1`,
+2026-08-27 확인) 직결 경로도 같은 버전으로
 해석될 것으로 보이나 직접 재현은 미확인, 근거는 이슈 #74 2026-08-07
 코멘트). 해소에 따라 harness가 안내하던 devtools **설치 절차
 자체가 삭제 대상**이 됐다(치환이 아니다 — CLI가 설치를 대행하므로) — 실행은
@@ -325,7 +326,10 @@ resolve 실증"이었으나, 실제 머지본(AIT-6577)이 wf 패키지를 건�
    `dist-tags.latest`가 그 사이 `3.0.2`로 바뀐 것이 교차 확인됐으므로
    (2026-08-07, npmmirror·unpkg·jsdelivr), 공개 registry 직결 경로도 같은
    버전으로 해석될 것으로 보이나 이 머신에서 직접 재현·확인하지는 못했다
-   (근거는 이슈 #74 2026-08-07 코멘트). **모델·발행·CLI 자동 설치 실증
+   (근거는 이슈 #74 2026-08-07 코멘트). wf `latest`는 이후 `3.1.1`로 더
+   올라간 것을 2026-08-27 같은 미러로 재확인했다 — 이 절이 판정하는 건
+   "wf가 3.x인가"이지 특정 patch 버전 고정이 아니므로 D1b 해소 판정에는
+   영향이 없다. **모델·발행·CLI 자동 설치 실증
    모두 확정 — D1b는 해소다.**
 
    실증 중 부수 마찰 하나를 관측했다: `ait init`이 devtools 배선 후 실행하는
