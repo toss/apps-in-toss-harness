@@ -15,9 +15,12 @@ Actions(`release.yml`)에서 생성됐다 — `debugger-v0.2.0`(에셋
 재생성으로 소실됐다** — 같은 날 release.yml `workflow_dispatch`(CI)로
 **같은 태그(`debugger-v0.2.0`·`debug-console-v0.1.4`)·같은 asset명으로
 재발행 완료**했다(재빌드라 sha256은 구 자산과 다르며, CI job Summary와
-GitHub API `assets[].digest`가 새 기준값이다). 설치 URL은 동일하지만
-**repo가 private인 동안은 미인증 404**다(실측) — public 전환 후에야 §7a의
-URL 설치 실증이 다시 유효해진다.
+GitHub API `assets[].digest`가 새 기준값이다). 설치 URL은 동일하고,
+**재실측(2026-08-27)으로 미인증 다운로드가 가능함을 확인했다** — 새 repo가
+재생성 시점(2026-08-26)부터 이미 public이었고 maintainer가 유지를
+결정했기 때문이다. §7a의 URL 설치 실증도 다시 유효하다 — release tarball
+URL 직설치(`pnpm add -D <URL>`)를 `debugger` v0.2.1로 재검증했다
+(2026-08-27).
 
 **2026-08-27, `debugger` v0.2.1 갱신 발행.** chii가 프로세스 전역으로
 TLS 인증서 검증을 해제하는 부작용(`chii/server/lib/proxy.js`가 모듈 로드

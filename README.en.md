@@ -6,7 +6,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 ## Status
 
-We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) This repository is currently private; switching it public is a separate, pending decision. Packages are distributed via GitHub Releases (`debugger-v0.2.1`, `debug-console-v0.1.4`) — there is no plan to publish to npmjs. While the repo is private, downloading the release assets requires repository access. `debugger` and `debug-console` under `packages/` follow this same distribution model.
+We hard-copied the tools that used to be scattered across the `apps-in-toss-community` organization, and this monorepo is now canonical for all four packages — agent-plugin, debugger, debug-console, and internal-protocol. There's no ongoing relationship with the community org. (devtools has been replaced by an in-house devtools living in the wf source monorepo, so the harness copy was removed.) This repository is public. Packages are distributed via GitHub Releases (`debugger-v0.2.1`, `debug-console-v0.1.4`) — there is no plan to publish to npmjs. Release downloads don't require authentication. `debugger` and `debug-console` under `packages/` follow this same distribution model.
 
 ## Quick start
 

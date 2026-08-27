@@ -154,9 +154,9 @@ path 를 손으로 한 번 훑는다. 자동 eval 이 못 잡는 것 — skill �
 - `debug`(§5-B)처럼 skill 이 내부에서 직접 콘솔 MCP 를 호출하는 경우, **관측 결과에 따라
   분기하는** seam 인가(예: 4046 lock·약관 미체결 → 에러를 그대로 전달하고 중단).
 - 출력 톤: 차분한 한 블록 마무리. 과한 이모지·방어적 disclaimer·헤더 직후 `>` blockquote 금지.
-- 산출물 상태를 정확히 서술하는가 — repo는 private이며 public 전환은 별도 결정 대기,
+- 산출물 상태를 정확히 서술하는가 — repo는 public이고,
   harness 소유 패키지(`debugger`·`debug-console`)는 npm에는 발행하지 않고 GitHub Releases로
-  유통(발행 완료 — 단 private 동안 다운로드 URL은 미인증 404). "과장 금지"는
+  유통(발행 완료, 미인증 다운로드 가능). "과장 금지"는
   여전히 유효하나 반대 방향(완료된 것을 미완료로 적는 것) 오류도 마찬가지로 피할 것.
 
 ---
