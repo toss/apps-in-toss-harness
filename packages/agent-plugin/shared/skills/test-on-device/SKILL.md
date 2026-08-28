@@ -209,7 +209,7 @@ npm run build && npm run bundle:ait   # vite build → ait build → .ait 번들
 폰에서만 재현되는 문제를 코드 레벨로 파고들려면
 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   /ait:setup-debugger   # 디버그 MCP 배선 (1회)
-                        #   말로: "온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘"
+                        #   말로: "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘"
   /ait:debug            # 실기기 CDP attach로 관측
                         #   말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
 

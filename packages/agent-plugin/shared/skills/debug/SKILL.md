@@ -308,7 +308,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   /ait:debug            # 실기기에서도 같은지 확인 - 환경 3 attach (5-B -> 5-C)
                         #   말로: "이거 실기기에서도 같은지 확인해줘"
   /ait:setup-debugger   # 환경 3 attach 서버가 아직 없으면 이걸 먼저
-                        #   말로: "온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘"
+                        #   말로: "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘"
 ```
 
 ## Out of scope (이 skill이 하지 않는 것)
