@@ -162,6 +162,12 @@ argument-hint: '[screen or files]'
 (다크패턴) 기준에 맞는지 통과/조정 필요로 채점한다. 재작성은 이 skill이
 한다 — 그 판정을 실제 대안 문구로 바꾼다. 둘은 양방향으로 넘긴다:
 
+`design`은 화면 코드를 직접 만들고 고치는 skill이라 레이아웃·토큰·상태·
+아이콘은 전부 그쪽 몫이다. 이 skill이 손대는 것은 화면에 박힌 **문구
+문자열**뿐이고, 같은 파일을 열더라도 문자열 밖은 건드리지 않는다. 재작성이
+끝나면 `design`으로 돌려보내는 이유는 문구가 바뀌면 줄 수·길이가 달라져
+G6뿐 아니라 G7(줄바꿈·겹침·잘림)까지 다시 봐야 하기 때문이다.
+
 - `design`이 G6에서 "조정 필요"를 발견하면 이 skill로 넘어와 구체적인
   before/after를 만든다.
 - 이 skill이 카피 반영을 끝내면 `design`으로 다시 넘겨 G6를 재판정한다.
@@ -181,8 +187,8 @@ argument-hint: '[screen or files]'
 
 ## 참고
 
-- 짝 skill: `design` — 판정(quality bar G6·G8)을 담당하고, 등록 자산·
-  UX 제약 매핑도 함께 한다.
+- 짝 skill: `design` — 화면 코드 생성·수정과 판정(quality bar G6·G8)을
+  담당하고, 등록 이미지 자산 산출도 함께 한다.
 - 판정 기준 전문은 `design` skill의 `references/quality-bar.md`(G0~G8
   항목표)를 참조한다 — 이 skill이 그 표를 다시 옮겨 적지 않는다.
 - 문서 확인이 필요한 카피(검수 기준·법률 표기 등)는 docs MCP로 조회한다.

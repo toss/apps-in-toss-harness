@@ -1076,6 +1076,41 @@ const TIER1_REQUIRED_ITEMS = [
   '1-10',
 ];
 
+// A2/quality-bar-blocking-groups-mismatch (N1) — design 의
+// references/quality-bar.md 는 항목별 `등급`(차단/권장) 모델이다. "차단 등급
+// 항목에 조정 필요가 남으면 완료가 아니고 design 이 직접 고친다"가 이 skill 의
+// 생성형 계약이므로, **어느 그룹이 차단 항목을 갖는가**가 세 곳에 중복 기재된다:
+//   ① 이 상수  ② 완료 판정 규칙 2 의 부기 줄  ③ 표 `등급` 열의 실측 집합
+// 셋이 어긋나면 "차단인 줄 알았는데 권장"(또는 그 반대) 이라는 조용한 드리프트가
+// 난다 — 등급을 하나 바꿔 놓고 규칙 줄을 안 고치면 아무도 안 잡는다.
+//
+// **heading 접미사는 대조하지 않는다.** 등급이 그룹이 아니라 항목에 붙는
+// 모델이라 '## G1 — 컨테이너 적합성 (완료 차단)' 같은 그룹 단위 라벨 자체가
+// 성립하지 않고, 실제로 현행 접미사도 불균일했다('(차단)' vs '(완료 차단)').
+const QUALITY_BAR_BLOCKING_GROUPS = ['G0', 'G1', 'G2', 'G3', 'G4', 'G7', 'G8'];
+
+// ② 를 찾는 앵커. 문면은 '차단 항목을 가진 그룹: G0·G1·…' 이고, 그 줄에서
+// 'G<숫자>' 를 전부 뽑아 선언 집합으로 쓴다.
+const QUALITY_BAR_BLOCKING_RULE_RE = /차단\s*항목을\s*가진\s*그룹/;
+
+// ③ 을 읽는 표 행 판정. 첫 셀이 'G<그룹>-<번호>' 인 행만 항목 행으로 보고,
+// 그 행의 어떤 셀이 **정확히** '차단' 일 때만 센다 — 산문·근거 열의 '완료
+// 차단'·'차단 등급' 같은 표현이 오탐을 만들지 않게 셀 전체 일치로 본다.
+const QUALITY_BAR_ITEM_ID_RE = /^(G\d+)-\d+$/;
+
+/** 두 문자열 집합이 같은지. N1 3자 대조 전용(작은 집합이라 정렬 비교로 충분). */
+function sameGroupSet(a, b) {
+  const x = [...a].sort();
+  const y = [...b].sort();
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+/** 진단 메시지용 그룹 집합 표기. */
+function fmtGroupSet(s) {
+  const arr = [...s].sort();
+  return arr.length === 0 ? '(없음)' : arr.join('·');
+}
+
 // A2/design-icon-asset-invalid (N3) — design skill 이 프로젝트에 심는
 // 아이콘 6종의 정본 경로(shared/skills/design/assets/project/icons/).
 // 1층(1-9)이 "이동·진입 꺾쇠는 텍스트 글리프가 아니라 SVG, 색은
@@ -1850,12 +1885,86 @@ function checkA2(root) {
       }
     }
 
-    // N2/N3 — design skill 전용 렌더 자산 가드. render-rules.md 의 1층 10항목
-    // 완전성(N2)과 assets/project/icons/ 6종의 유효성(N3)을 검사한다. 둘 다
+    // N1/N2/N3 — design skill 전용 판정·렌더 자산 가드. quality-bar.md 차단
+    // 그룹 3자 정합성(N1), render-rules.md 의 1층 10항목 완전성(N2),
+    // assets/project/icons/ 6종의 유효성(N3)을 검사한다. 셋 다
     // BRAND_GUARD_REQUIRED_SKILLS 와 대상이 같지만(현재 design 하나), 검사
     // 내용이 브랜드 가드와 직교하므로 별도 블록으로 둔다.
     if (skillName === 'design') {
       const skillDir = path.dirname(skillFile);
+
+      // N1 — quality-bar.md 차단 그룹 3자 대조(상수 ↔ 규칙 2 부기 줄 ↔ 등급 열)
+      {
+        const qbPath = path.join(skillDir, 'references', 'quality-bar.md');
+        const relQb = path.relative(root, qbPath);
+        const constantSet = new Set(QUALITY_BAR_BLOCKING_GROUPS);
+        if (!fs.existsSync(qbPath)) {
+          violations.push(
+            mkv(
+              relQb,
+              1,
+              'A2/quality-bar-blocking-groups-mismatch',
+              `references/quality-bar.md 파일이 없음 — 차단 등급 항목의 정본이 사라지면 "차단이 남으면 완료가 아니다" 규칙이 대상을 잃는다 (fix: 등급 열을 가진 quality-bar.md 를 복원하라. 차단 그룹은 ${QUALITY_BAR_BLOCKING_GROUPS.join('·')})`,
+            ),
+          );
+        } else {
+          // G0 스캔과 같은 헬퍼를 재사용한다 — 코드펜스 안에 "폐지된 절"을
+          // 남겨 두는 위장(harness#137 3회차 우회 S6 와 같은 수법)으로 부기
+          // 줄·등급 표를 대신하지 못하게 한다.
+          const qbLines = blankFencedLines(stripHtmlComments(readFile(qbPath)).split('\n'));
+
+          // ② 완료 판정 규칙 2 의 부기 줄
+          const ruleIdx = qbLines.findIndex((l) => QUALITY_BAR_BLOCKING_RULE_RE.test(l));
+          if (ruleIdx === -1) {
+            violations.push(
+              mkv(
+                relQb,
+                1,
+                'A2/quality-bar-blocking-groups-mismatch',
+                `완료 판정 규칙에 '차단 항목을 가진 그룹: …' 부기 줄이 없음 — 어느 그룹이 차단 항목을 갖는지가 문서에서 사라지면 규칙 2 를 적용할 대상을 알 수 없다 (fix: 규칙 2 안에 '차단 항목을 가진 그룹: ${QUALITY_BAR_BLOCKING_GROUPS.join('·')}.' 줄을 복원하라. 코드펜스·HTML 주석 안의 문장은 인쇄용 예시로 보고 세지 않는다)`,
+              ),
+            );
+          } else {
+            const declaredSet = new Set(qbLines[ruleIdx].match(/\bG\d+\b/g) ?? []);
+            if (!sameGroupSet(declaredSet, constantSet)) {
+              violations.push(
+                mkv(
+                  relQb,
+                  ruleIdx + 1,
+                  'A2/quality-bar-blocking-groups-mismatch',
+                  `완료 판정 규칙 2 의 부기 줄이 나열한 차단 그룹이 검사기 상수와 다름 — 문서 '${fmtGroupSet(declaredSet)}' vs QUALITY_BAR_BLOCKING_GROUPS '${fmtGroupSet(constantSet)}' (fix: 등급 열을 바꿨으면 부기 줄과 이 상수를 함께 갱신하라)`,
+                ),
+              );
+            }
+          }
+
+          // ③ 표 `등급` 열 실측 — 첫 셀이 'G<n>-<m>' 인 행 중 어떤 셀이
+          // 정확히 '차단' 인 행을 가진 그룹만 모은다.
+          const measuredSet = new Set();
+          for (const line of qbLines) {
+            const t = line.trim();
+            if (!t.startsWith('|')) continue;
+            const cells = t
+              .replace(/^\|/, '')
+              .replace(/\|$/, '')
+              .split('|')
+              .map((c) => c.trim());
+            const idm = cells[0].match(QUALITY_BAR_ITEM_ID_RE);
+            if (idm === null) continue;
+            if (cells.slice(1).some((c) => c === '차단')) measuredSet.add(idm[1]);
+          }
+          if (!sameGroupSet(measuredSet, constantSet)) {
+            violations.push(
+              mkv(
+                relQb,
+                1,
+                'A2/quality-bar-blocking-groups-mismatch',
+                `표 '등급' 열에서 실측한 차단 그룹이 검사기 상수와 다름 — 실측 '${fmtGroupSet(measuredSet)}' vs QUALITY_BAR_BLOCKING_GROUPS '${fmtGroupSet(constantSet)}' (실측은 첫 셀이 'G<그룹>-<번호>' 인 표 행 중 어떤 셀이 정확히 '차단' 인 행만 센다. fix: 등급을 바꿨으면 이 상수와 규칙 2 부기 줄을 함께 갱신하라)`,
+              ),
+            );
+          }
+        }
+      }
 
       // N2 — render-rules.md 1층(1-1~1-10) 완전성
       {

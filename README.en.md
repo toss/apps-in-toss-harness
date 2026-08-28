@@ -92,7 +92,7 @@ The commands in this section were verified against codex-cli `0.146.0`; the non-
    - The real Toss app's WebView runs on WebKit (Safari's engine) on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari too before shipping, or verify it on a real device with step 5's `/ait:test-on-device`.
 5. **on-device check** — Run `/ait:test-on-device` to upload the bundle to the console and check it **in the real Toss app**. This is the standard path for "I want to run it on my phone": build the bundle, upload it, confirm the compile, then open the entry link the tools returned. It is not a React Native-only path: every project that produces an `.ait` bundle follows the same procedure. (`ait build` requires `brand.icon`, so run step 7's `/ait:design` first if you don't have the assets yet.)
 6. **debug (optional)** — When a problem only reproduces on the phone, run `/ait:setup-debugger` to wire up the debug MCP, then `/ait:debug` to inspect local and on-device state.
-7. **design (optional)** — Run `/ait:design [figma-url]` to produce a logo, thumbnail, and screenshots that meet registration specs. Also needed to fill in the `brand.icon` field required by `ait build`.
+7. **design** — Run `/ait:design [screen or request]` to create and fix screens: from scratch when the project has none, or by diagnosing existing ones and editing the code to clear hard-rule violations (body text size floor, 44px touch targets, bottom CTA safe area). The same command maps a Figma design and produces the registration assets — logo, thumbnail, screenshots. Also needed to fill in the `brand.icon` field required by `ait build`.
 8. **ship** — The bundle build and upload already happened in step 5 (on-device check). When you're ready to release, submit it for review from the console (`review_*` / `bundle_submit_review`, an irreversible transition, so the harness skill never calls it automatically), then move on to release and promotion once it passes.
 9. **operate** — Check post-deploy status with the console MCP's `miniapp_get_status` and `bundle_list`.
 
@@ -110,6 +110,7 @@ A `/ait:<verb>` slash command and a plain-language request **reach the same skil
 | 2. Planning (PRD) | "I'm building a location-based coupon mini-app — first sort out the SDK domains, permissions, and terms I'll need" | `/ait:plan` |
 | 3. Build and ship | "Create a new Apps in Toss mini-app called my-shop" | `/ait:new` |
 | | "Scaffold an Apps in Toss mini-app project from scratch in an empty directory" | `/ait:new` |
+| | "This screen looks ugly. Make it look good." | `/ait:design` |
 | 4. Testing | "I want to run the mini-app I built in the real Toss app — upload the bundle so I can check it on my phone" | `/ait:test-on-device` |
 | | "The mini-app behaves oddly on my phone and I want to debug its live state" | `/ait:debug` |
 | 5. By feature | "I want to identify users with Toss login" (`auth`) | `/ait:plan` → development |
@@ -135,7 +136,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:setup-debugger` | Wires the debug MCP server (`debugger`) into the project's `.mcp.json` as an opt-in | 3. debug |
 | `/ait:debug` | Debugs by branching across two environments — local browser and on-device candidate — based on what it observes | 3. debug |
 | `/ait:test-on-device` | Builds the bundle, uploads it via console MCP, confirms the compile, and hands over the entry link the tools returned so you can check it in the real Toss app (never submits for review, releases, or promotes) | 5. register+ship |
-| `/ait:design [figma-url]` | Checks a Figma design against mini-app UX constraints (safe-area, swipe-back, PageHeader) and produces the image assets needed for registration (does not register or upload) | 8. design |
+| `/ait:design [screen or request]` | Creates or fixes screens — from scratch, diagnosing and auto-fixing existing ones, mapping a Figma design, and producing the registration image assets. Hard-rule violations are fixed in the code, not just reported (does not register or upload) | 8. design |
 | `/ait:ux-writing [screen or files]` | Checks screen copy against UX writing principles and proposes before/after rewrites — the rewrite counterpart to design's G6 (copy) grading (never applies without user confirmation) | 8. design counterpart |
 | `ait build` (terminal command) | Generates a `.ait` native bundle from `granite.config.ts`. Fails if `brand.icon` is empty | 5. register+ship |
 
