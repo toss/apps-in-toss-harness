@@ -105,7 +105,7 @@ A `/ait:<verb>` slash command and a plain-language request **reach the same skil
 | What you want | Say this | Command it reaches |
 |---|---|---|
 | 1. Setup | "Add the Apps in Toss devtools panel to my existing Vite project" | `/ait:inject-devtools` |
-| | "Register the ait-devtools MCP server for on-device debugging in this project's .mcp.json" | `/ait:setup-debugger` |
+| | "Set up the debugger connection ahead of time so I can debug on my phone later" | `/ait:setup-debugger` |
 | | "I want emoji to render as the Tossface font — wire it in as a CDN link" | `/ait:inject-tossface` |
 | 2. Planning (PRD) | "I'm building a location-based coupon mini-app — first sort out the SDK domains, permissions, and terms I'll need" | `/ait:plan` |
 | 3. Build and ship | "Create a new Apps in Toss mini-app called my-shop" | `/ait:new` |

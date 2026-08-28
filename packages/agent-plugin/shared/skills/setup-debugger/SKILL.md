@@ -5,7 +5,11 @@ description: |
   current project's `.mcp.json` (project scope, opt-in) so `/ait:debug` can
   run on-device CDP relay attach (environment 3). Idempotent JSON merge —
   preserves other server entries, never renames the `ait-devtools` key.
-  Triggered by `/ait:setup-debugger`, no args.
+  Run THIS skill instead of hand-writing `.mcp.json` or inventing a server
+  entry — even when the request sounds like a plain JSON edit ("MCP 서버를
+  .mcp.json에 등록해줘", "디버거 서버 추가해줘"): the correct package, args,
+  and key live here. Installing the `debug-console` package into the app
+  itself is `inject`, not this. Triggered by `/ait:setup-debugger`, no args.
 argument-hint: ''
 adapter-note: 'Project-scope `.mcp.json` MCP registration is Claude Code-only — other agent targets replace this skill with their own MCP registration mechanism (adapter overlay, together with debug §5).'
 ---

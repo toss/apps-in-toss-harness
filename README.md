@@ -105,7 +105,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 | 하고 싶은 일 | 이렇게 말하면 됩니다 | 이어지는 명령 |
 |---|---|---|
 | 1. 세팅 | "이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어" | `/ait:inject-devtools` |
-| | "온디바이스 디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘" | `/ait:setup-debugger` |
+| | "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘" | `/ait:setup-debugger` |
 | | "이모지를 토스페이스 서체로 렌더하고 싶어. CDN 링크로 붙여줘." | `/ait:inject-tossface` |
 | 2. 기획(PRD) | "위치 기반 쿠폰 미니앱을 만들 건데, 필요한 SDK 도메인이랑 권한이랑 약관을 먼저 정리해줘" | `/ait:plan` |
 | 3. 개발·배포 | "앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로." | `/ait:new` |
