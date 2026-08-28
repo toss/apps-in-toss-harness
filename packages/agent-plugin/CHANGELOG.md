@@ -1,5 +1,119 @@
 # @ait-co/agent-plugin
 
+## 0.1.26
+
+### Patch Changes
+
+- 동작 변경: `design` skill이 판정만 하던 skill에서 **화면을 직접 만들고 고치는**
+  skill이 됐다. `/ait:design`은 이제 화면이 없는 프로젝트에서 처음부터 화면 파일을
+  쓰고, 기존 화면은 진단 목록으로 넘기지 않고 1층 하드 규칙 위반을 코드로 해소한다
+  (기존 파일 편집은 `전체 적용`/`골라서`/`취소` 3택 승인, 새 파일 생성은 승인 불요).
+  SKILL.md 본문을 모드 4종(새로 만든다·고친다·본다·등록 자산) + 실행 순서 0~7단계로
+  재작성했고, 프로젝트 디자인 가이드 주입 단계(1-B)와 차단 항목 수정 루프(4단계, 같은
+  항목 최대 2회)를 넣었다.
+
+  `references/quality-bar.md`는 항목별 `등급`(차단·권장) 열을 갖는 4열 표로 재편했다 —
+  1층 하드 규칙을 판정 항목으로 승격·신설해 G0-6·G1-6·G3-7·G3-8·G4-7·G7-7~G7-10·
+  G8-6~G8-8을 더했고(G 번호 재부여·삭제 0건), 완료 판정 규칙을 "차단 등급이 남으면
+  완료가 아니다"를 축으로 6개로 다시 썼다. 판정에서 멈춘다는 서술은 반대로 뒤집혔다.
+  `references/screen-craft.md`는 `render-rules.md`·`build-mode.md`로 흡수되어 제거됐다.
+
+  validator에 `A2/quality-bar-blocking-groups-mismatch` 가드를 추가했다 — 차단 항목을
+  가진 그룹 집합을 검사기 상수·완료 판정 규칙 2의 부기 줄·표 등급 열 실측 셋으로
+  3자 대조해, 등급을 한쪽만 고치는 조용한 드리프트를 막는다.
+
+  `ux-writing`과의 경계는 "판정 vs 재작성"에서 "카피 문자열은 ux-writing, 그 외 화면
+  코드는 design"으로 옮겨 갔다(G6 항목 번호·인용은 무변). README ko/en, `welcome`
+  station map, 패키지 CLAUDE.md의 design 서술도 함께 갱신했다.
+
+- design skill 재건 1단계 — 렌더 규칙·주입 자산 기반 구축. `references/render-rules.md`(3층
+  구조: 1층 하드 규칙 1-1~1-10·2층 권장·3층 자유 + 기본 토큰 포인터)와
+  `references/build-mode.md`(요청 무게 분류·리스크 점검·화면 명세),
+  `references/project-guide.md`(프로젝트 디자인 가이드 주입 절차)를 신설하고, 프로젝트로
+  복사되는 자산 세트 `assets/project/`(tokens.css·base.css·design-guide.md·
+  memory-digest.md·아이콘 6종 SVG/TSX — 전부 자체 제작, stroke currentColor)를 동봉했다.
+  validator에 가드 2종을 추가: `A2/render-rules-tier1-incomplete`(1층 10항 완전성),
+  `A2/design-icon-asset-invalid`(아이콘 currentColor·SVG↔TSX 파리티). 이 단계는 자산과
+  가드만 싣는다 — design skill 본문·품질 기준 재편은 후속 변경에서 이어진다.
+- `new-miniapp` skill의 5-B(디자인 가이드 주입)를 SKILL.md에 박혀 있던 61줄 bash
+  블록에서 동봉 스크립트(`design/scripts/inject-project-guide.sh`) 1회 호출로
+  바꿨다. 실측에서 모델이 그 블록을 2~5회의 Bash 호출로 쪼개 실행해 스캐폴드
+  세션 토큰의 15%가량을 여기서만 썼는데, 스크립트 호출은 결정적으로 1턴이다.
+
+  주입 항목(토큰·기본 CSS·아이콘·`docs/design-guide.md`·`AGENTS.md`/`CLAUDE.md`
+  캐리어)과 멱등 가드, fail-soft 동작(개별 실패가 나머지를 죽이지 않고 항상 완주),
+  `5-B:` 요약 형식, `--tds`/`--no-tossface` 플래그 효과는 그대로다 — 옮긴 것은
+  실행 위치뿐이다. SKILL.md 5-B 절도 함께 줄였다(800줄 → 732줄): 인라인 블록
+  자리에 스크립트 호출 지시문과 플래그 매핑만 남기고, fail-soft 계약·완주 우선·
+  마커 규칙 서술은 유지했다.
+
+- `new-miniapp`의 디자인 가이드 주입(`5-B`)을 통합 명령 하나로 경량화했다. 종전에는
+  하위 단계 8개(`5-B-0`~`5-B-7`)가 각각 "가드 → 실행"으로 서술돼 실행 에이전트가 매
+  run 도구 호출을 14턴 썼고, 그게 스캐폴드 세션 토큰의 절반가량을 차지했다. 이제
+  5-B는 verbatim bash 블록 하나다 — 첫 줄의 값 4개(`PROJ`·`SRC`·`TDS`·`NO_TOSSFACE`)만
+  채워 한 번 실행하면 자산 경로 해석, `docs/design-guide.md`·`src/styles/` CSS 2종·
+  아이콘(React/vanilla 분기) 복사, `AGENTS.md`/`CLAUDE.md` 캐리어, entry 배선까지
+  끝나고 마지막 줄이 항목별 수행/스킵을 한 줄로 요약한다.
+
+  동작 의미는 그대로다: 마커(`ait:design-guide v1`) 4상태(파일 없음·마커 없음
+  append·v1 skip·타 버전 skip), 플래그 3종(`--no-design-guide`·`--no-tossface`·
+  `--tds`)의 효과, 아이콘 계열 분기, entry 배선 우선순위(`src/index.css` 최상단
+  `@import` → JS entry 첫 import → `index.html` `<link>`)와 `vite/client` 앰비언트
+  타입 2자리 확인, 항목별 멱등 가드, 실패해도 scaffold를 중단하지 않는 완주 우선
+  원칙이 모두 유지된다. 자산을 못 찾으면 요약이 `assets=UNRESOLVED`로 끝나고 그때만
+  `Read`→`Write` 폴백을 쓴다.
+
+  같은 이유로 SKILL.md 본문도 압축했다 — 스킬이 커지면 로드 이후 모든 턴의 토큰이
+  함께 불어난다. 목적·입력·Step 0~4·Step 6·참고에서 중복 서술을 걷어내 978줄에서
+  800줄로 줄였다(frontmatter·Step 번호 체계·seam 블록 형식은 무변경).
+  `references/local-template.md`의 `L-3b`도 새 형태에 맞춰 갱신했다: 프리베이크
+  검증은 같은 블록을 한 번 돌려 요약이 전 항목 `skip`으로 끝나는지 보는 것으로
+  바뀌었고, `--no-tossface`는 블록의 `NO_TOSSFACE=1`이 프리베이크된 `base.css`에도
+  그대로 적용된다.
+
+- 동작 변경: `/ait:new`가 만든 프로젝트에 디자인 가이드가 기본으로 들어간다.
+  `new-miniapp` skill에 후처리 단계 `5-B`를 신설해 `design` skill이 소유한
+  `assets/project/`의 자산을 스캐폴드 직후 프로젝트로 복사한다 — 규칙 요약을 담은
+  캐리어 문서(`AGENTS.md` 본문 + `CLAUDE.md`의 `@AGENTS.md` 한 줄, HTML 주석 마커
+  `ait:design-guide v1`로 감싼다), `docs/design-guide.md`, `src/styles/tokens.css`·
+  `base.css`, 아이콘 6종(React면 `icons.tsx`, vanilla면 `.svg`), 그리고 진입 CSS/JS
+  entry 배선까지다. 이모지 서체 Tossface도 이 CSS로 함께 배선된다. 하위 단계마다
+  `test -f` 선행 멱등 가드를 두고, 어떤 실패도 scaffold를 중단시키지 않는다(실패한
+  항목만 산문 한 줄로 보고하고 계속 진행 — 나중에 `/ait:design`으로 채울 수 있다).
+
+  옵트아웃 플래그 2개를 더했다: `--no-design-guide`(주입 전체 skip),
+  `--no-tossface`(서체 배선만 제외). `--tds`는 CSS·아이콘을 넣지 않고 캐리어 문서만
+  받는다 — 색·크기·아이콘은 TDS 컴포넌트의 것을 쓴다.
+
+  `--local` 폴백 템플릿(`templates/react-vite`)은 같은 자산을 **프리베이크**로 담는다
+  (정본에서 복사한 사본 — 재저작하지 않는다). `src/main.tsx`에 `styles/base.css`
+  import를 넣고, `src/App.tsx`를 토큰 기반 화면으로 다시 썼다. 그 과정에서 이제
+  존재하지 않는 명령 4개(`/ait:setup-bundle`·`/ait:register`·`/ait:deploy-key`·
+  `/ait:deploy`)를 안내하던 문단을 `npm run build` → `/ait:test-on-device`로 바로잡았다.
+
+  `inject`의 tossface facet에는 스캐폴드 기본 배선을 만났을 때의 분기를 더했다 —
+  감지·보고만 하고 중복 배선하지 않으며, 오프라인 결정성이 필요하면 번들 포함 모드로
+  전환한다. `new-miniapp` Step 6의 완료 안내도 함께 고쳤다: Tossface를 "기본 주입하지
+  않는다"고 하던 서술이 사실과 반대가 되어 정정했고, `/ait:design` 줄이 등록 이미지
+  자산만 가리키던 것을 화면 생성·개선까지 포함하도록 바꿨다. README ko/en의 여정 3과
+  `/ait:new` 행도 같은 내용으로 갱신했다.
+
+- 플러그인 표시 이름 `displayName: "Apps in Toss"`를 plugin.json과 루트
+  marketplace.json 엔트리에 추가했다. 짧은 식별자 `ait`(명령 네임스페이스
+  `/ait:<verb>`·설치 참조 `ait@apps-in-toss`)는 그대로 유지되므로 기존 설치본에
+  영향이 없고, 플러그인 목록·브라우저 표시만 사람이 알아보는 이름으로 바뀐다 —
+  공식 marketplace의 displayName 관행(Convex·Hostinger 등)과 동일 패턴.
+- `welcome` skill이 진입 지도 인쇄에 더해 환경·연동 상태를 점검하도록 확장됐다
+  (maintainer 지시) — git·Node/npm/npx 존재, cwd 형상(빈 디렉토리/기존
+  프로젝트/git 저장소 여부), docs·콘솔 MCP 도구 노출, 프로젝트 `.mcp.json`의
+  `ait-devtools` 배선 여부를 한 번의 읽기 전용 점검으로 확인하고, 결과에 따라
+  `/ait:new`·`/ait:inject-devtools`·`/ait:setup-debugger`·`/mcp` 인가 등을
+  권유·제안한다. 사용자가 동의하면 해당 전담 skill로 이어가되, `welcome` 자체는
+  여전히 어떤 파일도 쓰지 않는다(mutation은 항상 전담 skill의 몫).
+
+  기존 station map 블록과 자연어 예시 5종 블록은 내용 무변 — 루트 README ko/en의
+  노출 예시와 결합돼 있어 문구를 바꾸지 않았다.
+
 ## 0.1.25
 
 ### Patch Changes
