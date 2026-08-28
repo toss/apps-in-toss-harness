@@ -60,8 +60,8 @@ done
 ## L-3b. 디자인 가이드 확인 (프리베이크 검증)
 
 템플릿이 이미 담고 있는 것이라 새로 넣을 일은 없지만, 실제로 다 왔는지는 한 번
-확인한다. **SKILL.md 5-B가 호출하는 것과 같은 스크립트를 같은 인자로 한 번
-실행한다** — 정상이면 마지막 요약 줄이 전 항목 `skip`(`guide=skip tokens=skip
+확인한다. **정본 경로의 Step 2 체인(5-B)이 호출하는 것과 같은 스크립트를 같은
+인자로 한 번 실행한다** — 정상이면 마지막 요약 줄이 전 항목 `skip`(`guide=skip tokens=skip
 base=skip icons=skip entry=skip agents=skip(…) claude=skip`)으로 끝나고 파일이
 하나도 새로 쓰이지 않는다. 그게 5-B 멱등 가드가 실제로 도는지 확인하는
 자리이기도 하다. `entry=skip`은 템플릿 `src/main.tsx` 첫 줄의
@@ -78,7 +78,7 @@ base=skip icons=skip entry=skip agents=skip(…) claude=skip`)으로 끝나고 �
 번거로우니, 디자인 가이드를 원치 않으면 `--local`보다 정본 경로에
 `--no-design-guide`를 주는 쪽을 권한다.
 
-`--no-tossface`면 5-B가 부르는 스크립트에도 `--no-tossface`를 준다 — 프리베이크된
+`--no-tossface`면 이 검증 호출에도 `--no-tossface`를 준다 — 프리베이크된
 `src/styles/base.css`에도 그대로 적용돼(복사는 skip해도 sed는 돈다) 첫 줄의
 Tossface CDN `@import`와 `body` `font-family` 스택 맨 앞의 `"Tossface", `가
 지워지고, 요약에 `tossface=off`가 찍힌다.

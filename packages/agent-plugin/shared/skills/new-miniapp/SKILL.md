@@ -192,10 +192,13 @@ scaffold는 **명령 하나**다 — CLI가 파일 생성 → `npm install` →
 `ait init --app-name <name> --skip-input`(devtools·번들 설정 배선)까지 전부
 수행한다. install을 떼어낼 방법은 없다(`--skip-install`은 0.2.3에서 제거됐다 —
 지정하면 `알 수 없는 옵션이에요: --skip-install`로 즉사하고 산출물이 0이다,
-실측 2026-08-10):
+실측 2026-08-10). 디자인 가이드 주입(5-B)도 같은 체인에 잇는다 — 별도 단계로
+미루면 일부 run이 건너뛰는 실측 사례가 있어, scaffold가 성공한 모든 run이
+반드시 주입까지 실행하도록 명령 레벨에서 결합했다:
 
 ```bash
-npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <template> | --tds) [--sample iap,iaa]
+npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <template> | --tds) [--sample iap,iaa] \
+  && bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
 ```
 
 > **핀을 쓰지 않는 이유와 남는 위험**: `create-ait-app`·`@apps-in-toss/*`는
@@ -227,6 +230,11 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
   이유도 유효하다 — 에이전트용 지식 주입은 이 plugin의 skill 체제가 담당한다.
 - **`npx -y`를 쓴다** — `-y`는 npx 최초 실행 시 나오는 설치 확인 프롬프트를
   비대화형으로 넘긴다(non-TTY 세션이 이 프롬프트에서 멈추는 것을 막는다).
+- **`&&` 뒤 주입 세그먼트의 인자 규칙** — `--tds`로 스캐폴드하면 스크립트에도
+  `--tds`를, `--no-tossface`면 `--no-tossface`를 덧붙인다. `--no-design-guide`면
+  `&&` 뒤 세그먼트를 통째로 뺀다. 스크립트 경로는 시스템이 이 skill을 로드할 때
+  표시한 base directory 기준이다. 스크립트 파일을 Read로 열어 보지 마라 —
+  내용을 알 필요 없이 이 호출 하나면 된다. 출력 해석·보고 규칙은 5-B 절.
 - **이 규칙과 실제 CLI가 어긋나면 CLI 에러가 최신 규칙이다** — `@latest`가
   여기 적힌 0.2.3보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
   그때는 플래그를 빼고 다시 넣어 보는 식으로 우회하지 말고, 에러 문구를 그대로
@@ -235,8 +243,9 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
 
 **성공 판정은 exit code로 한다** — 완료 메시지 문구는 버전마다 다르다(0.2.3은
 `✅ 프로젝트가 생성됐어요.`를 낸다). 문구 문자열 매칭으로 판정하면 CLI가 문구를
-바꿀 때 조용히 오탐한다. 에러로 끝나면 stderr를 그대로 사용자에게 전하고
-중단한다:
+바꿀 때 조용히 오탐한다. 주입 스크립트는 내부가 fail-soft라 항상 exit 0이므로
+`&&` 체인이 exit code의 의미를 바꾸지 않는다 — 0이 아니면 scaffold/install
+실패다. 에러로 끝나면 stderr를 그대로 사용자에게 전하고 중단한다:
 
 - **완전 오프라인**으로 보이면 `--local` 폴백을 안내한다.
 - **`create-ait-app@latest`의 버전 해석이 실패하는 경우** — 일부 사내망 프록시
@@ -511,23 +520,23 @@ test -f ./<package_name>/.gitignore && { \
 프로젝트에서 나중에 어떤 세션이 화면을 만들어도 같은 기준을 따른다. 절차의 정본은
 `design` skill의 `references/project-guide.md`다.
 
-`--no-design-guide`면 이 단계를 통째로 건너뛰고 바로 Step 6으로 간다 — 사용자가
-명시적으로 뺀 것이라 실패 보고도 하지 않는다.
+`--no-design-guide`면 이 단계 전체가 없던 것이 된다(Step 2에서 주입 세그먼트를
+뺐다) — 사용자가 명시적으로 뺀 것이라 실패 보고도 하지 않고 바로 Step 6으로 간다.
 
-**한 번의 Bash 호출로 아래 스크립트를 실행한다.** 스크립트 파일을 Read로 열어
-보지 마라 — 내용을 알 필요 없이 호출 한 번이면 되고, 나눠 실행할 것도 없다.
-경로는 이 skill의 base directory 기준
-`../design/scripts/inject-project-guide.sh`다:
+**실행은 Step 2의 명령 체인에서 이미 일어났다.** 이 절은 그 출력 끝의 `5-B:`
+요약 한 줄을 해석해 보고하는 곳이다. 플래그 효과: `--tds`는 CSS·아이콘·entry
+배선을 빼고 다이제스트의 `아이콘:` 두 줄만 TDS 문구로 바꾸며, `--no-tossface`는
+`base.css`의 Tossface CDN `@import`와 폰트 스택 항목만 지운다(`.tf` 클래스는
+남긴다).
+
+Step 2 출력에 `5-B:` 줄이 없으면(세그먼트가 누락된 채 실행된 경우) 지금 여기서
+같은 스크립트를 **한 번의 Bash 호출로** 보완 실행한다 — `--tds`/`--no-tossface`는
+Step 2와 같은 규칙으로 덧붙이고, 스크립트를 Read로 열어 보거나 나눠 실행하지
+않는다:
 
 ```bash
 bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
 ```
-
-- `--tds`로 호출됐으면 스크립트에도 `--tds`를 덧붙인다 — CSS·아이콘·entry 배선을
-  빼고 다이제스트의 `아이콘:` 두 줄만 TDS 문구로 바꾼다.
-- `--no-tossface`로 호출됐으면 스크립트에도 `--no-tossface`를 덧붙인다 —
-  `base.css`의 Tossface CDN `@import`와 폰트 스택 항목만 지운다(`.tf` 클래스는
-  남긴다).
 
 전 항목이 `test -f`/`grep` 멱등 가드를 인라인으로 갖고(이미 있으면 건드리지
 않는다), 개별 실패가 나머지를 죽이지 않으며(`set -e`를 쓰지 않는다), 마지막 줄이
