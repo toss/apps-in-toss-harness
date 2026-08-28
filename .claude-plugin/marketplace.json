@@ -7,6 +7,7 @@
   "plugins": [
     {
       "name": "ait",
+      "displayName": "Apps in Toss",
       "source": "./packages/agent-plugin",
       "description": "Build Apps in Toss mini-apps from inside AI coding agents — scaffolding via create-ait-app, docs MCP + console MCP by default, opt-in devtools/debugger."
     }
