@@ -910,23 +910,85 @@ Load the \`${DESIGN_SKILL_NAME}\` skill.
 `;
 }
 
-/** references/quality-bar.md 의 G0 절 — G0-1~G0-5 5항목을 모두 포함한 valid 버전. */
+/**
+ * references/quality-bar.md 픽스처 — 두 가드를 동시에 만족하는 valid 버전.
+ *
+ * - `A2/brand-guard-quality-bar-incomplete`(harness#137): `## G0` 절 +
+ *   G0-1~G0-5 5항목.
+ * - `A2/quality-bar-blocking-groups-mismatch`(N1): 항목별 `등급` 열의 실측
+ *   차단 그룹 ↔ 완료 판정 규칙 2 의 부기 줄 ↔ 검사기 상수
+ *   `QUALITY_BAR_BLOCKING_GROUPS` 3자 일치. 차단 그룹은
+ *   G0·G1·G2·G3·G4·G7·G8 이고, G5·G6 은 권장만 갖는다.
+ */
 function validQualityBarMd(): string {
   return `# 디자인 품질 판정 기준 (quality bar)
 
-## G0 — 브랜드·IP 안전 (차단)
+## G0 — 브랜드·IP 안전
 
-| # | 항목 | 근거 |
-|---|---|---|
-| G0-1 | 토스 로고·워드마크를 아이콘·화면·등록 자산에 쓰지 않았다 | H |
-| G0-2 | 토스 브랜드 컬러를 미니앱 primary 색으로 채택하지 않았다 | H |
-| G0-3 | 토스 앱 화면(특히 로그인/인증)의 구성을 복제하지 않았다 | H |
-| G0-4 | "토스" 상호로 미니앱 자체를 토스 공식 제품처럼 표방하지 않았다 | H |
-| G0-5 | 토스 전용 본문 서체를 쓰지 않았다 | H |
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G0-1 | 토스 로고·워드마크를 아이콘·화면·등록 자산에 쓰지 않았다 | 차단 | H |
+| G0-2 | 토스 브랜드 컬러를 미니앱 primary 색으로 채택하지 않았다 | 차단 | H |
+| G0-3 | 토스 앱 화면(특히 로그인/인증)의 구성을 복제하지 않았다 | 차단 | H |
+| G0-4 | "토스" 상호로 미니앱 자체를 토스 공식 제품처럼 표방하지 않았다 | 차단 | H |
+| G0-5 | 토스 전용 본문 서체를 쓰지 않았다 | 차단 | H |
 
 ## G1 — 컨테이너 적합성
 
-픽스처 본문.
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G1-1 | 최상단 콘텐츠가 safe-area inset을 반영한다 | 차단 | H |
+
+## G2 — 등록 자산 규격
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G2-1 | 필수 자산이 모두 존재한다 | 차단 | H |
+
+## G3 — 토큰 일관성
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G3-1 | 값이 이름 있는 토큰으로 모여 있다 | 권장 | H |
+| G3-5 | 모든 텍스트가 타입 스케일 범위 안에 있다 | 차단 | H |
+
+## G4 — 화면 구조·조작성
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G4-3 | 터치 타깃이 44×44 CSS px 이상이다 | 차단 | W |
+
+## G5 — 상태 완전성
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G5-1 | 로딩 상태가 정의돼 있다 | 권장 | H |
+
+## G6 — 카피
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G6-1 | 어투가 화면 전반에서 일관된다 | 권장 | H |
+
+## G7 — 렌더 무결성
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G7-1 | 요소가 서로 겹치거나 화면 밖으로 잘리지 않는다 | 차단 | H |
+
+## G8 — 다크패턴·광고
+
+| # | 항목 | 등급 | 근거 |
+|---|---|---|---|
+| G8-1 | 첫 화면이 전면 광고·팝업으로 가로막히지 않는다 | 차단 | H |
+
+## 완료 판정 규칙
+
+1. G0에 조정 필요가 1건이라도 있으면 즉시 중단한다.
+2. 차단 등급 항목에 조정 필요가 남아 있으면 완료가 아니다 — 렌더 단계로
+   돌아가 고친 뒤 재판정한다.
+   차단 항목을 가진 그룹: G0·G1·G2·G3·G4·G7·G8.
+3. 권장 등급은 목록으로 남기고 진행할 수 있다.
 `;
 }
 
@@ -2146,6 +2208,86 @@ G0 heading 이 삭제된 상태를 시뮬레이션한다. G0-1 ~ G0-4 항목 텍
 });
 
 // ---------------------------------------------------------------------------
+// A2/quality-bar-blocking-groups-mismatch (N1)
+// ---------------------------------------------------------------------------
+//
+// design 은 판정에서 멈추지 않고 **차단 등급 항목을 직접 고친다.** 그래서
+// "어느 그룹이 차단 항목을 갖는가"가 SKILL.md 의 동작을 가르는데, 그 정보가
+// 세 곳(검사기 상수 · 완료 판정 규칙 2 부기 줄 · 표 등급 열)에 중복 기재된다.
+// 한 곳만 고치고 나머지를 두면 "차단인 줄 알았는데 권장" 이라는 조용한 드리프트가
+// 나므로 3자 대조를 가드로 박는다.
+//
+// harness#137 관행대로 세 방향을 각각 픽스처로 둔다: 정상(무반응) / 지우기
+// (부기 줄에서 그룹 1개 삭제) / 위장(코드펜스 안 "폐지된 절"로 대체).
+describe('A2/quality-bar-blocking-groups-mismatch negative tests (N1)', () => {
+  /** design skill 3종(SKILL.md·command stub·quality-bar.md) 픽스처 배치. */
+  function writeDesignFixture(dir: string, qualityBar?: string): void {
+    buildValidFixture(dir);
+    writeFile(
+      path.join(dir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(dir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeFile(path.join(dir, QUALITY_BAR_REL), qualityBar ?? validQualityBarMd());
+  }
+
+  it('등급 열 · 규칙 2 부기 줄 · 상수가 일치하면 발화하지 않는다 (positive control)', async () => {
+    writeDesignFixture(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).not.toContain('A2/quality-bar-blocking-groups-mismatch');
+  });
+
+  it('규칙 2 부기 줄에서 그룹 1개(G3)를 지우면 위반이 난다', async () => {
+    // 등급 열에는 G3-5 가 '차단' 으로 남아 있는데 부기 줄에서만 G3 을 뺀 상태 —
+    // "G3 은 권장 그룹" 이라고 문서가 스스로 틀리게 말하는 드리프트다.
+    const dropped = validQualityBarMd().replace(
+      '차단 항목을 가진 그룹: G0·G1·G2·G3·G4·G7·G8.',
+      '차단 항목을 가진 그룹: G0·G1·G2·G4·G7·G8.',
+    );
+    expect(dropped).not.toContain('G0·G1·G2·G3·G4·G7·G8');
+    writeDesignFixture(tmpDir, dropped);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/quality-bar-blocking-groups-mismatch');
+    const messages = violations
+      .filter((v) => v.rule === 'A2/quality-bar-blocking-groups-mismatch')
+      .map((v) => v.message);
+    // 실측(등급 열) 쪽이 아니라 부기 줄 쪽이 틀렸다는 것까지 구별한다.
+    expect(messages.some((m) => m.includes('부기 줄'))).toBe(true);
+    expect(messages.some((m) => m.includes("실측 '"))).toBe(false);
+
+    writeValidQualityBar(tmpDir);
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A2/quality-bar-blocking-groups-mismatch');
+  });
+
+  it('부기 줄을 코드펜스 안 "폐지된 절"로 옮겨 위장해도 여전히 발화한다', async () => {
+    const disguised = validQualityBarMd().replace(
+      '   차단 항목을 가진 그룹: G0·G1·G2·G3·G4·G7·G8.\n',
+      `
+\`\`\`markdown
+폐지된 절 (참고용)
+차단 항목을 가진 그룹: G0·G1·G2·G3·G4·G7·G8.
+\`\`\`
+`,
+    );
+    expect(disguised).toContain('폐지된 절');
+    writeDesignFixture(tmpDir, disguised);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/quality-bar-blocking-groups-mismatch');
+    // 코드펜스는 비워지므로 "부기 줄이 없음" 으로 잡혀야 한다 — 인쇄용 예시
+    // 블록이 판정 규칙을 대신하지 못한다.
+    const messages = violations
+      .filter((v) => v.rule === 'A2/quality-bar-blocking-groups-mismatch')
+      .map((v) => v.message);
+    expect(messages.some((m) => m.includes('부기 줄이 없음'))).toBe(true);
+
+    writeValidQualityBar(tmpDir);
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A2/quality-bar-blocking-groups-mismatch');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // harness#137 적대 검증 **3회차** — 오탐 8종 + 구조 우회 5종.
 //
 // 3회차의 핵심 교훈은 방향이다: 실제 위협 모델은 검사기를 뚫으려는 적대적
@@ -2423,8 +2565,10 @@ describe('harness#137 3회차 오탐 #7 / 우회 S6 — quality-bar heading 레�
     );
     writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
     const real = validQualityBarMd();
-    const start = real.indexOf('## G0 — 브랜드·IP 안전 (차단)');
+    const start = real.indexOf('## G0 — 브랜드·IP 안전');
     const end = real.indexOf('## G1 — 컨테이너 적합성');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
     const decoyed = `${real.slice(0, start)}## 폐지된 절 (참고용)
 
 \`\`\`markdown
@@ -2433,12 +2577,16 @@ ${real.slice(start, end).trimEnd()}
 
 ${real.slice(end)}`;
     // 픽스처 자체를 단언한다 — 디코이가 정말 fence **안에만** 있어야 이
-    // 테스트가 무언가를 증명한다(fence 밖에는 G0 이 한 글자도 없어야 한다).
+    // 테스트가 무언가를 증명한다. fence 밖에 남아도 되는 것은 완료 판정
+    // 규칙이 산문으로 언급하는 'G0' 뿐이고(가드 신호가 아니다), **G0 heading
+    // 과 G0-N 항목 ID 는 한 개도 없어야 한다**.
     expect(decoyed).toContain('G0-1');
     const [beforeFence, rest] = decoyed.split('```markdown\n');
     const afterFence = rest.split('```\n')[1];
-    expect(beforeFence).not.toContain('G0');
-    expect(afterFence).not.toContain('G0');
+    for (const outside of [beforeFence, afterFence]) {
+      expect(outside).not.toMatch(/^#{1,6}\s+G0\b/m);
+      expect(outside).not.toMatch(/G0-\d/);
+    }
     writeFile(path.join(tmpDir, QUALITY_BAR_REL), decoyed);
     const { violations } = await runChecks(tmpDir);
     expect(rulesFired(violations)).toContain('A2/brand-guard-quality-bar-incomplete');

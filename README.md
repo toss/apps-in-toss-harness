@@ -92,7 +92,7 @@ codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-to
    - 실기기 토스 앱 WebView는 iOS에서 WebKit(Safari) 엔진을 씁니다. Chromium 기반 로컬 브라우저와 렌더링이 다를 수 있으니 출시 전 Safari로도 열어보거나 5의 `/ait:test-on-device`로 실기기에서 확인하세요.
 5. **실기기 확인** — `/ait:test-on-device`로 번들을 콘솔에 올려 **실제 토스 앱에서** 확인합니다. "폰에서 돌려보고 싶다"의 정규 경로가 이것입니다 — 번들 빌드 → 콘솔 업로드 → 컴파일 확인 → 도구가 돌려준 링크로 열기. React Native 전용 경로가 아니라 `.ait` 번들을 만드는 모든 프로젝트가 같은 절차를 씁니다. (`ait build`가 `brand.icon`을 요구하므로 자산이 없으면 7의 `/ait:design`을 먼저 돌립니다.)
 6. **debug (선택)** — 폰에서만 재현되는 문제를 코드 레벨로 파고들 때 `/ait:setup-debugger`로 디버그 MCP를 배선한 뒤 `/ait:debug`로 로컬·실기기 상태를 분석합니다.
-7. **design (선택)** — `/ait:design [figma-url]`로 등록 규격에 맞는 로고·썸네일·스크린샷을 산출합니다. `ait build`가 요구하는 `brand.icon`을 채우는 데도 필요합니다.
+7. **design** — `/ait:design [화면 또는 요청]`으로 화면을 만들고 고칩니다. 화면이 하나도 없는 프로젝트에서 처음부터 그려 내는 것, 이미 있는 화면을 진단하고 코드를 고치는 것, Figma 디자인을 반영하는 것, 등록용 로고·썸네일·스크린샷을 산출하는 것이 전부 한 명령에 있습니다. 본문 글자 크기 하한·터치 44px·하단 CTA safe-area 같은 하드 규칙에 걸리면 지적으로 끝내지 않고 코드를 직접 고칩니다. `ait build`가 요구하는 `brand.icon`을 채우는 데도 이 단계가 필요합니다.
 8. **ship** — 번들 빌드·업로드는 5(실기기 확인)에서 이미 끝나 있습니다. 배포 준비가 되면 콘솔에서 검수를 제출하고(`review_*`·`bundle_submit_review` — 비가역 전환이라 harness skill은 자동 호출하지 않습니다), 통과 후 릴리즈·프로모션으로 넘깁니다.
 9. **operate** — 콘솔 MCP의 `miniapp_get_status`, `bundle_list`로 배포 후 상태를 조회합니다.
 
@@ -110,6 +110,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 | 2. 기획(PRD) | "위치 기반 쿠폰 미니앱을 만들 건데, 필요한 SDK 도메인이랑 권한이랑 약관을 먼저 정리해줘" | `/ait:plan` |
 | 3. 개발·배포 | "앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로." | `/ait:new` |
 | | "빈 디렉토리에서 앱인토스 미니앱 프로젝트를 처음부터 스캐폴드하고 싶어" | `/ait:new` |
+| | "화면이 좀 구려 보여. 예쁘게 고쳐줘." | `/ait:design` |
 | 4. 테스트 | "만든 미니앱을 실제 토스 앱에서 돌려보고 싶어. 번들 올려서 폰에서 확인하게 해줘" | `/ait:test-on-device` |
 | | "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어" | `/ait:debug` |
 | 5. 기능별 | "토스 로그인으로 사용자를 식별하고 싶어" (`auth`) | `/ait:plan` → 개발 |
@@ -135,7 +136,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 | `/ait:setup-debugger` | 디버그 MCP 서버(`debugger`)를 프로젝트 `.mcp.json`에 opt-in으로 배선 | 3. debug |
 | `/ait:debug` | 로컬 브라우저·on-device candidate 두 환경을 관측 결과에 따라 분기해 디버깅 | 3. debug |
 | `/ait:test-on-device` | 번들을 빌드해 콘솔 MCP로 업로드하고 컴파일을 확인한 뒤, 도구가 돌려준 링크로 실제 토스 앱에서 확인 (검수 제출·릴리즈·프로모션은 하지 않음) | 5. register+ship |
-| `/ait:design [figma-url]` | Figma 디자인을 미니앱 UX 제약(safe-area, swipe-back, PageHeader)과 대조하고 등록용 이미지 자산을 산출 (등록·업로드는 하지 않음) | 8. design |
+| `/ait:design [화면 또는 요청]` | 화면을 만들거나 고침 — 제로베이스 생성, 기존 화면 진단과 자동 수정, Figma 매핑, 등록용 이미지 자산 산출. 하드 규칙 위반은 코드를 직접 고쳐 해소 (등록·업로드는 하지 않음) | 8. design |
 | `/ait:ux-writing [화면 또는 파일]` | 화면 카피를 문구 원칙으로 점검해 before/after를 제안 — design skill의 G6(카피) 판정 재작성 조력 (사용자 확인 없이는 적용하지 않음) | 8. design 짝 |
 | `ait build` (터미널 명령) | `granite.config.ts` 기반으로 `.ait` 네이티브 번들을 생성. `brand.icon`이 비어 있으면 실패합니다 | 5. register+ship |
 
