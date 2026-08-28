@@ -1,4 +1,4 @@
-# @ait-co/agent-plugin
+# @apps-in-toss/agent-plugin
 
 ## 0.1.26
 
