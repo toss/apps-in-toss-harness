@@ -3351,3 +3351,216 @@ describe('harness#137 4회차 F-g — 산문 면제 경계 확장 (문서화된 
     expect(rulesFired(violations)).not.toContain('A2/brand-guard-asset-before-checkpoint');
   });
 });
+
+// ---------------------------------------------------------------------------
+// N2 — A2/render-rules-tier1-incomplete · N3 — A2/design-icon-asset-invalid
+// (design skill 재건 Stage 2) — render-rules.md 의 1층 10항목(1-1~1-10)
+// 앵커 완전성과 assets/project/icons/ 6종의 유효성(색 상속 규칙 + icons.tsx
+// 파리티)을 검사하는 두 신규 가드. harness#137 관행대로 "지우기 / 위장하기
+// / 파일 통째 삭제" 세 방향을 각각 최소 한 번씩 픽스처로 박는다.
+// ---------------------------------------------------------------------------
+
+const RENDER_RULES_REL = path.join(
+  'shared',
+  'skills',
+  DESIGN_SKILL_NAME,
+  'references',
+  'render-rules.md',
+);
+
+/** 1-1~1-10 10항목을 전부 H3 heading 으로 앵커한 최소 valid render-rules.md. */
+function validRenderRulesMd(): string {
+  const sections = Array.from({ length: 10 }, (_, i) => {
+    const id = `1-${i + 1}`;
+    return `### ${id} 항목 제목\n\n픽스처 내용.\n`;
+  });
+  return `# 렌더 규칙 픽스처\n\n## 1층\n\n${sections.join('\n')}`;
+}
+
+function writeValidRenderRules(dir: string): void {
+  writeFile(path.join(dir, RENDER_RULES_REL), validRenderRulesMd());
+}
+
+// 아이콘 6종 — svg 와 icons.tsx 양쪽이 같은 d/circle 값을 쓰는 최소 valid 셋.
+const DESIGN_ICON_FIXTURE_SPECS: {
+  file: string;
+  component: string;
+  d: string;
+  circle?: { cx: string; cy: string; r: string };
+}[] = [
+  { file: 'chevron-right', component: 'ChevronRight', d: 'M9 5 L16 12 L9 19' },
+  { file: 'chevron-left', component: 'ChevronLeft', d: 'M15 5 L8 12 L15 19' },
+  { file: 'chevron-down', component: 'ChevronDown', d: 'M5 9 L12 16 L19 9' },
+  { file: 'chevron-up', component: 'ChevronUp', d: 'M5 15 L12 8 L19 15' },
+  { file: 'close', component: 'Close', d: 'M6 6 L18 18' },
+  {
+    file: 'search',
+    component: 'Search',
+    d: 'M15.5 15.5 L20 20',
+    circle: { cx: '11', cy: '11', r: '6' },
+  },
+];
+
+function validIconSvg(spec: (typeof DESIGN_ICON_FIXTURE_SPECS)[number]): string {
+  const circlePart = spec.circle
+    ? `<circle cx="${spec.circle.cx}" cy="${spec.circle.cy}" r="${spec.circle.r}" />\n  `
+    : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n  ${circlePart}<path d="${spec.d}" />\n</svg>\n`;
+}
+
+function validIconsTsx(): string {
+  const bodies = DESIGN_ICON_FIXTURE_SPECS.map(({ component, d, circle }) => {
+    const circleJsx = circle
+      ? `<circle cx="${circle.cx}" cy="${circle.cy}" r="${circle.r}" />\n      `
+      : '';
+    return `export function ${component}({ size = '1em' }: { size?: string | number }) {\n  return (\n    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">\n      ${circleJsx}<path d="${d}" />\n    </svg>\n  );\n}\n`;
+  });
+  return bodies.join('\n');
+}
+
+const ICONS_DIR_REL = path.join(
+  'shared',
+  'skills',
+  DESIGN_SKILL_NAME,
+  'assets',
+  'project',
+  'icons',
+);
+const ICONS_TSX_REL = path.join(
+  'shared',
+  'skills',
+  DESIGN_SKILL_NAME,
+  'assets',
+  'project',
+  'icons.tsx',
+);
+
+function writeValidDesignIcons(dir: string): void {
+  for (const spec of DESIGN_ICON_FIXTURE_SPECS) {
+    writeFile(path.join(dir, ICONS_DIR_REL, `${spec.file}.svg`), validIconSvg(spec));
+  }
+  writeFile(path.join(dir, ICONS_TSX_REL), validIconsTsx());
+}
+
+describe('A2/render-rules-tier1-incomplete negative tests (N2)', () => {
+  it('1-1~1-10 이 전부 앵커된 render-rules.md 는 발화하지 않는다 (positive control)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeValidQualityBar(tmpDir);
+    writeValidRenderRules(tmpDir);
+    writeValidDesignIcons(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).not.toContain('A2/render-rules-tier1-incomplete');
+  });
+
+  it('지우기 — "### 1-1" 만 지우고 "### 1-10" 은 남기면 위반이 난다 (접두 문자열 우회 방지)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeValidQualityBar(tmpDir);
+    // '### 1-1 항목 제목' 절만 지운다 — '### 1-10 항목 제목' 은 리터럴
+    // 문자열에 '### 1-1 항목 제목' 을 부분 문자열로 포함하지 않으므로(다음
+    // 문자가 '0') 이 replace 는 1-10 절을 건드리지 않는다.
+    const withoutOneOne = validRenderRulesMd().replace('### 1-1 항목 제목\n\n픽스처 내용.\n\n', '');
+    // 1-10 절이 살아 있는지 픽스처 자체를 먼저 검증한다(테스트의 전제 확인).
+    expect(withoutOneOne).toContain('### 1-10 항목 제목');
+    expect(withoutOneOne).not.toContain('### 1-1 항목 제목');
+    writeFile(path.join(tmpDir, RENDER_RULES_REL), withoutOneOne);
+    writeValidDesignIcons(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/render-rules-tier1-incomplete');
+
+    // 복원하면(negative → positive 왕복 실증) 다시 조용해진다.
+    writeValidRenderRules(tmpDir);
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A2/render-rules-tier1-incomplete');
+  });
+
+  it('파일 통째 삭제 — render-rules.md 가 없으면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeValidQualityBar(tmpDir);
+    writeValidDesignIcons(tmpDir);
+    // render-rules.md 를 아예 쓰지 않는다 — 파일 부재 상태.
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/render-rules-tier1-incomplete');
+  });
+});
+
+describe('A2/design-icon-asset-invalid negative tests (N3)', () => {
+  it('6종 svg + icons.tsx 파리티가 맞으면 발화하지 않는다 (positive control)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeValidQualityBar(tmpDir);
+    writeValidRenderRules(tmpDir);
+    writeValidDesignIcons(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).not.toContain('A2/design-icon-asset-invalid');
+  });
+
+  it('위장하기 — svg 에 하드코딩 hex(fill="#191F28")를 주입하면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeValidQualityBar(tmpDir);
+    writeValidRenderRules(tmpDir);
+    writeValidDesignIcons(tmpDir);
+    const chevronRightSpec = DESIGN_ICON_FIXTURE_SPECS[0];
+    const tampered = validIconSvg(chevronRightSpec).replace(
+      'fill="none"',
+      'fill="none" data-accent="1"',
+    );
+    // stroke="currentColor" 는 그대로 두고 fill 하드코딩 hex 만 몰래 얹는다 —
+    // "currentColor 를 쓰긴 쓰되 색을 박아 넣는" 위장 형태.
+    const withHardcodedColor = tampered.replace('<path', '<path fill="#191F28"');
+    writeFile(path.join(tmpDir, ICONS_DIR_REL, `${chevronRightSpec.file}.svg`), withHardcodedColor);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/design-icon-asset-invalid');
+
+    // 복원하면 다시 조용해진다.
+    writeValidDesignIcons(tmpDir);
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A2/design-icon-asset-invalid');
+  });
+
+  it('불일치 — icons.tsx 의 path 가 svg 와 다르면 위반이 난다 (파리티 실증)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'shared', 'skills', DESIGN_SKILL_NAME, 'SKILL.md'),
+      validDesignSkillMd(),
+    );
+    writeFile(path.join(tmpDir, 'shared', 'commands', DESIGN_CMD_FILE), validDesignCommandMd());
+    writeValidQualityBar(tmpDir);
+    writeValidRenderRules(tmpDir);
+    writeValidDesignIcons(tmpDir);
+    // icons.tsx 의 ChevronRight 좌표만 살짝 틀어 svg 와 어긋나게 만든다.
+    const mismatched = validIconsTsx().replace('M9 5 L16 12 L9 19', 'M9 5 L16 12 L9 20');
+    expect(mismatched).not.toEqual(validIconsTsx());
+    writeFile(path.join(tmpDir, ICONS_TSX_REL), mismatched);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A2/design-icon-asset-invalid');
+
+    // 복원하면 다시 조용해진다.
+    writeValidDesignIcons(tmpDir);
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A2/design-icon-asset-invalid');
+  });
+});
