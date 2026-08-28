@@ -5,6 +5,10 @@
 절차를 공유한다 — design skill의 "프로젝트 디자인 가이드 확인·주입" 단계와
 new-miniapp skill의 스캐폴드 후처리 단계. 둘 다 아래 절차를 그대로 따른다.
 
+실행형 정본은 `../scripts/inject-project-guide.sh`다 — new-miniapp skill의
+5-B가 이 스크립트를 호출 한 번으로 실행한다. 아래 절차 서술은 그 스크립트의
+동작을 설명하는 것이지, 별도로 손으로 재현해야 할 단계가 아니다.
+
 ## 마커 형식
 
 캐리어 파일(`CLAUDE.md`·`AGENTS.md`)에 심는 섹션은 아래 HTML 주석으로

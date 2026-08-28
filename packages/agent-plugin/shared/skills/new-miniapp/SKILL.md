@@ -183,7 +183,7 @@ npm도 함께 들어온다).
 
 `--local`이면 여기서 **`references/local-template.md`를 Read**해 그 절차(복사 +
 토큰 치환 + 디자인 가이드 확인 + install + 안내)로 진행하고, 아래 2~6은 건너뛴다.
-예외는 5-B 하나 — 그 문서의 L-3b가 확인 목적으로 같은 블록을 부르고, 템플릿이
+예외는 5-B 하나 — 그 문서의 L-3b가 확인 목적으로 같은 스크립트를 부르고, 템플릿이
 자산을 프리베이크로 담고 있어 정상이면 전 항목이 skip으로 끝난다.
 
 ### 2. scaffold — create-ait-app 비대화형 호출
@@ -514,85 +514,20 @@ test -f ./<package_name>/.gitignore && { \
 `--no-design-guide`면 이 단계를 통째로 건너뛰고 바로 Step 6으로 간다 — 사용자가
 명시적으로 뺀 것이라 실패 보고도 하지 않는다.
 
-그 외에는 **아래 블록 하나를 한 번만 실행한다.** 첫 줄의 값 4개만 채우고 나머지는
-그대로 둔다. 하위 항목을 나눠 여러 번 호출하지 마라 — 실측에서 그 형태가 스캐폴드
-세션 토큰의 절반을 먹었다.
-
-- `PROJ` — 스캐폴드 디렉터리(`./<package_name>`).
-- `SRC` — 자산 원본. **이 skill의 base directory 기준 `../design/assets/project`**
-  를 넣는다(`design` skill이 소유한 `tokens.css`·`base.css`·`design-guide.md`·
-  `memory-digest.md`·`icons.tsx`·`icons/*.svg` 6종). 비워 두면 블록이
-  `$CLAUDE_PLUGIN_ROOT` 아래 두 후보를 대신 시도한다.
-- `TDS` — `--tds`면 `1`. CSS·아이콘·entry 배선을 빼고(색·크기·아이콘을 TDS
-  컴포넌트가 주므로 토큰 파일을 또 넣으면 한 프로젝트에 체계가 둘이 된다),
-  다이제스트의 `아이콘:` 두 줄만 TDS용 두 줄로 바꿔 담는다.
-- `NO_TOSSFACE` — `--no-tossface`면 `1`. 복사한 `base.css`에서 Tossface CDN
-  `@import` 줄과 `body` 폰트 스택의 항목만 지운다(`.tf` 유틸 클래스는 남긴다 —
-  서체가 없으면 다음 폰트로 조용히 폴백한다).
+**한 번의 Bash 호출로 아래 스크립트를 실행한다.** 스크립트 파일을 Read로 열어
+보지 마라 — 내용을 알 필요 없이 호출 한 번이면 되고, 나눠 실행할 것도 없다.
+경로는 이 skill의 base directory 기준
+`../design/scripts/inject-project-guide.sh`다:
 
 ```bash
-PROJ="./<package_name>"; SRC=""; TDS=0; NO_TOSSFACE=0   # 이 줄의 값 4개만 채운다
-R=""; T=""; T2=""; MKR='ait:design-guide'
-for C in "$SRC" "${CLAUDE_PLUGIN_ROOT:-}/shared/skills/design/assets/project" "${CLAUDE_PLUGIN_ROOT:-}/skills/design/assets/project"; do
-  if [ -n "$C" ] && [ -f "$C/memory-digest.md" ]; then SRC="$C"; break; fi
-  SRC=""
-done
-if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
-  DG="$SRC/memory-digest.md"
-  if [ "$TDS" = 1 ]; then
-    T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^아이콘: React/{print "이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{print "1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다."; next} {print}' "$DG" > "$T" && DG="$T"
-  fi
-  mkdir -p "$PROJ/docs" 2>/dev/null
-  if [ -f "$PROJ/docs/design-guide.md" ]; then R="$R guide=skip"
-  elif cp "$SRC/design-guide.md" "$PROJ/docs/design-guide.md" 2>/dev/null; then R="$R guide=new"
-  else R="$R guide=FAIL"; fi
-  if [ "$TDS" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
-    mkdir -p "$PROJ/src/styles" 2>/dev/null
-    if [ -f "$PROJ/src/styles/tokens.css" ]; then R="$R tokens=skip"
-    elif cp "$SRC/tokens.css" "$PROJ/src/styles/tokens.css" 2>/dev/null; then R="$R tokens=new"
-    else R="$R tokens=FAIL"; fi
-    if [ -f "$PROJ/src/styles/base.css" ]; then R="$R base=skip"
-    elif cp "$SRC/base.css" "$PROJ/src/styles/base.css" 2>/dev/null; then R="$R base=new"
-    else R="$R base=FAIL"; fi
-    if [ "$NO_TOSSFACE" = 1 ] && grep -q 'tossface' "$PROJ/src/styles/base.css" 2>/dev/null; then
-      sed -i.aitbak -e '/tossface\.css/d' -e 's/"Tossface", -apple-system/-apple-system/' "$PROJ/src/styles/base.css" && rm -f "$PROJ/src/styles/base.css.aitbak" && R="$R tossface=off"
-    fi
-    if node -e "const p=require('node:path').resolve('$PROJ','package.json');process.exit(require(p).dependencies?.react?0:1)" 2>/dev/null; then
-      mkdir -p "$PROJ/src/components" 2>/dev/null
-      if [ -f "$PROJ/src/components/icons.tsx" ]; then R="$R icons=skip"
-      elif cp "$SRC/icons.tsx" "$PROJ/src/components/icons.tsx" 2>/dev/null; then R="$R icons=new"
-      else R="$R icons=FAIL"; fi
-    else
-      mkdir -p "$PROJ/src/assets/icons" 2>/dev/null
-      if [ -f "$PROJ/src/assets/icons/close.svg" ]; then R="$R icons=skip"
-      elif cp -n "$SRC/icons/"*.svg "$PROJ/src/assets/icons/" 2>/dev/null; then R="$R icons=new"
-      else R="$R icons=FAIL"; fi
-    fi
-    E=""
-    for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
-      if [ -f "$PROJ/$C" ]; then E="$PROJ/$C"; break; fi
-    done
-    if [ -n "$E" ] && grep -q 'styles/base.css' "$E"; then R="$R entry=skip"
-    elif [ -n "$E" ] && [ "${E%index.css}" != "$E" ]; then
-      T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=index.css" || R="$R entry=FAIL"
-    elif [ -n "$E" ] && { [ -f "$PROJ/src/vite-env.d.ts" ] || grep -q '"vite/client"' "$PROJ"/tsconfig*.json 2>/dev/null; }; then
-      T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=js" || R="$R entry=FAIL"
-    elif [ -f "$PROJ/index.html" ] && ! grep -q 'styles/base.css' "$PROJ/index.html"; then
-      T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/<\/head>/&&!d{print "    <link rel=\"stylesheet\" href=\"/src/styles/base.css\" />";d=1}{print}' "$PROJ/index.html" > "$T2" && mv "$T2" "$PROJ/index.html" && R="$R entry=index.html" || R="$R entry=FAIL"
-    else R="$R entry=skip"; fi
-  fi
-  AG="$PROJ/AGENTS.md"; MK="$(grep -o "$MKR v[0-9]*" "$AG" 2>/dev/null | head -1)"
-  if [ -n "$MK" ]; then R="$R agents=skip($MK)"
-  elif { [ -s "$AG" ] && printf '\n'; printf '<!-- %s v1 -->\n' "$MKR"; cat "$DG"; printf '<!-- /%s -->\n' "$MKR"; } >> "$AG" 2>/dev/null; then R="$R agents=new"
-  else R="$R agents=FAIL"; fi
-  CL="$PROJ/CLAUDE.md"
-  if grep -q "$MKR v" "$CL" 2>/dev/null; then R="$R claude=skip"
-  elif { [ -s "$CL" ] && printf '\n'; printf '<!-- %s v1 -->\n@AGENTS.md\n<!-- /%s -->\n' "$MKR" "$MKR"; } >> "$CL" 2>/dev/null; then R="$R claude=new"
-  else R="$R claude=FAIL"; fi
-  rm -f "$T" "$T2" 2>/dev/null
-fi
-echo "5-B:$R"
+bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
 ```
+
+- `--tds`로 호출됐으면 스크립트에도 `--tds`를 덧붙인다 — CSS·아이콘·entry 배선을
+  빼고 다이제스트의 `아이콘:` 두 줄만 TDS 문구로 바꾼다.
+- `--no-tossface`로 호출됐으면 스크립트에도 `--no-tossface`를 덧붙인다 —
+  `base.css`의 Tossface CDN `@import`와 폰트 스택 항목만 지운다(`.tf` 클래스는
+  남긴다).
 
 전 항목이 `test -f`/`grep` 멱등 가드를 인라인으로 갖고(이미 있으면 건드리지
 않는다), 개별 실패가 나머지를 죽이지 않으며(`set -e`를 쓰지 않는다), 마지막 줄이
@@ -606,11 +541,12 @@ echo "5-B:$R"
 넣었습니다.", 실패 항목이 있으면 그 항목과 "`/ait:design`으로 나중에 다시 넣을 수
 있습니다."를 함께. 이미 있어서 skip된 항목은 나열하지 않는다.
 
-요약이 `assets=UNRESOLVED`면 `SRC` 후보가 전부 빗나간 것이다 — 그때만 자산 6종을
-`Read`→`Write`로 하나씩 옮기는 폴백을 쓴다(느리지만 항상 동작하는 마지막 수단).
+요약이 `assets=UNRESOLVED`면 스크립트의 `SRC` 후보가 전부 빗나간 것이다 — 그때만
+자산 6종을 `Read`→`Write`로 하나씩 옮기는 폴백을 쓴다(느리지만 항상 동작하는
+마지막 수단). 스크립트 파일 자체를 찾지 못했을 때도 같은 폴백을 쓴다.
 
 캐리어 마커는 여는 줄 `<!-- ait:design-guide v1 -->`과 닫는 줄
-`<!-- /ait:design-guide -->`이고, 블록의 grep 가드가 네 상황을 전부 처리한다 —
+`<!-- /ait:design-guide -->`이고, 스크립트의 grep 가드가 네 상황을 전부 처리한다 —
 파일 없음(새로 생성)·마커 없음(파일 끝에 append, 기존 내용 무손상)·`v1`(skip)·다른
 버전(skip). 요약에 v1이 아닌 버전이 찍히면(`agents=skip(ait:design-guide v0)`)
 덮어쓰지 말고 "가이드 버전이 다릅니다 — `/ait:design`으로 갱신할 수 있습니다"만
@@ -618,13 +554,9 @@ echo "5-B:$R"
 고쳐 쓰지 않는다). `CLAUDE.md`에는 `@AGENTS.md` 한 줄만 넣는다 — 같은 본문을 두
 파일에 넣으면 세션마다 두 배로 실린다.
 
-entry 배선은 `src/index.css` 최상단 `@import` → JS entry 첫 import 줄 →
-`index.html`의 `<link>` 순으로 **첫 번째로 해당되는 하나만** 쓴다(실측:
-create-ait-app react-ts 산출물은 `src/index.css`가 있고 `src/main.tsx`가 그것을
-import한다). CSS `@import`가 `@charset` 말고 어떤 규칙보다 앞이어야 하는 것도, JS
-entry 경로에서 `vite/client` 앰비언트 타입을 두 자리(`src/vite-env.d.ts`와
-`tsconfig*.json`의 `types`)에서 보는 것도 블록 안에 있다 — 한쪽만 보면 오판한다
-(react-ts 산출물은 tsconfig 쪽, `--tds` 산출물은 `vite-env.d.ts` 쪽이다).
+entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry 첫 import →
+`index.html`의 `<link>`, 첫 번째로 해당되는 하나만 쓴다 — 판단(앰비언트 타입 확인
+등 세부 분기)은 스크립트 안에 있다.
 
 ### 6. 다음 단계 안내 + dev 서버 기동
 
