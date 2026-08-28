@@ -1054,6 +1054,75 @@ const BRAND_GUARD_EXEC_ORDER_HEADING_RE = /^##\s+실행\s*순서(?:\s*[(（[{:�
 const QUALITY_BAR_G0_HEADING_RE = /^(#{1,6})\s+G0\b/;
 const QUALITY_BAR_G0_REQUIRED_ITEMS = ['G0-1', 'G0-2', 'G0-3', 'G0-4', 'G0-5'];
 
+// A2/render-rules-tier1-incomplete (N2) — design skill 의
+// references/render-rules.md 는 1층(하드 규칙) 판정·자동 수정의 정본이다.
+// 1-1~1-10 10항목이 전부 `### 1-N ` H3 heading 앵커로 남아 있어야 한다.
+//
+// **`includes` 로 검사하지 않는다** — `1-1` 은 `1-10` 의 접두 문자열이라,
+// `### 1-1` 절만 지우고 `### 1-10` 만 남겨도 `text.includes('1-1')` 는
+// `### 1-10` 안에서 여전히 참이 된다. 그래서 각 id 뒤에 숫자가 더 오지
+// 않는지 negative lookahead 로 확인하는 `^###\s+<id>(?![0-9])` 형태의
+// 정규식을 heading 라인 전체 텍스트에 `m` 플래그로 매칭한다.
+const TIER1_REQUIRED_ITEMS = [
+  '1-1',
+  '1-2',
+  '1-3',
+  '1-4',
+  '1-5',
+  '1-6',
+  '1-7',
+  '1-8',
+  '1-9',
+  '1-10',
+];
+
+// A2/design-icon-asset-invalid (N3) — design skill 이 프로젝트에 심는
+// 아이콘 6종의 정본 경로(shared/skills/design/assets/project/icons/).
+// 1층(1-9)이 "이동·진입 꺾쇠는 텍스트 글리프가 아니라 SVG, 색은
+// currentColor 로 상속"을 요구하므로, 우리가 동봉하는 자산 자체가 색을
+// 하드코딩하면 자기 규칙을 어긴 자산을 배포하는 셈이다. 파일명 ↔
+// icons.tsx named export 매핑도 여기서 아이콘 path(`d`)·`circle` 파리티
+// 검사에 함께 쓴다(별도 가드로 쪼개지 않는다).
+const DESIGN_ICON_SPECS = [
+  { file: 'chevron-right', component: 'ChevronRight' },
+  { file: 'chevron-left', component: 'ChevronLeft' },
+  { file: 'chevron-down', component: 'ChevronDown' },
+  { file: 'chevron-up', component: 'ChevronUp' },
+  { file: 'close', component: 'Close' },
+  { file: 'search', component: 'Search' },
+];
+
+// SVG/TSX 양쪽에서 "모양"을 뽑아 비교하기 위한 서명 — `d="..."` path 값과
+// `<circle>` 의 cx/cy/r 을 순서대로 이어 붙인다. 값이 하나라도 다르면(예:
+// icons.tsx 를 손으로 고치다 좌표 하나를 오타 내면) 서명이 달라져 잡힌다.
+/** @param {string} src @returns {string} */
+function extractIconShapeSignature(src) {
+  const ds = [...src.matchAll(/\bd="([^"]+)"/g)].map((m) => m[1].trim().replace(/\s+/g, ' '));
+  const circles = [...src.matchAll(/<circle\b[^>]*\/?>/g)].map((m) => {
+    const attrs = m[0];
+    const cx = (attrs.match(/cx="([^"]+)"/) ?? ['', ''])[1];
+    const cy = (attrs.match(/cy="([^"]+)"/) ?? ['', ''])[1];
+    const r = (attrs.match(/r="([^"]+)"/) ?? ['', ''])[1];
+    return `circle(${cx},${cy},${r})`;
+  });
+  return [...ds, ...circles].join('|');
+}
+
+// icons.tsx 안에서 한 아이콘의 named export 블록만 잘라낸다(다음
+// `export function`/`export const` 전까지). 컴포넌트를 못 찾으면 null.
+/** @param {string} tsxSrc @param {string} componentName @returns {string | null} */
+function extractIconComponentBlock(tsxSrc, componentName) {
+  const startRe = new RegExp(`export (?:function|const)\\s+${componentName}\\b`);
+  const m = startRe.exec(tsxSrc);
+  if (!m) return null;
+  const restStart = m.index + m[0].length;
+  const rest = tsxSrc.slice(restStart);
+  const nextExportRe = /export (?:function|const)\s+[A-Za-z]/;
+  const next = nextExportRe.exec(rest);
+  const end = next ? restStart + next.index : tsxSrc.length;
+  return tsxSrc.slice(m.index, end);
+}
+
 // ---------------------------------------------------------------------------
 // A1 라우팅 스냅샷 — 명령 파일 ↔ skill 매핑 기대값
 // shared/commands/ 전수를 열거한다. 변경 시 이 상수도 함께 갱신.
@@ -1774,6 +1843,144 @@ function checkA2(root) {
                     `'G0' 절에 '${item}' 항목이 없음 (harness#137 AC — G0-1~G0-5 5항목 모두 필요. 코드펜스 안의 항목은 인쇄용 예시로 보고 세지 않는다)`,
                   ),
                 );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // N2/N3 — design skill 전용 렌더 자산 가드. render-rules.md 의 1층 10항목
+    // 완전성(N2)과 assets/project/icons/ 6종의 유효성(N3)을 검사한다. 둘 다
+    // BRAND_GUARD_REQUIRED_SKILLS 와 대상이 같지만(현재 design 하나), 검사
+    // 내용이 브랜드 가드와 직교하므로 별도 블록으로 둔다.
+    if (skillName === 'design') {
+      const skillDir = path.dirname(skillFile);
+
+      // N2 — render-rules.md 1층(1-1~1-10) 완전성
+      {
+        const renderRulesPath = path.join(skillDir, 'references', 'render-rules.md');
+        const relRenderRules = path.relative(root, renderRulesPath);
+        if (!fs.existsSync(renderRulesPath)) {
+          violations.push(
+            mkv(
+              relRenderRules,
+              1,
+              'A2/render-rules-tier1-incomplete',
+              `references/render-rules.md 파일이 없음 — 1층(하드 규칙) 판정·자동 수정의 정본이 사라지면 3단계 렌더가 근거를 잃는다 (fix: 1-1~1-10 10항목을 담은 render-rules.md를 복원하라)`,
+            ),
+          );
+        } else {
+          const rrSrc = readFile(renderRulesPath);
+          // G0 스캔과 같은 이유로 코드펜스·HTML 주석을 비운 텍스트만 본다 —
+          // 인용·예시로 인쇄된 heading 이 실제 앵커를 대신하지 못하게 한다.
+          const rrLines = blankFencedLines(stripHtmlComments(rrSrc).split('\n'));
+          const rrText = rrLines.join('\n');
+          for (const id of TIER1_REQUIRED_ITEMS) {
+            const anchorRe = new RegExp(`^###\\s+${id}(?![0-9])`, 'm');
+            if (!anchorRe.test(rrText)) {
+              violations.push(
+                mkv(
+                  relRenderRules,
+                  1,
+                  'A2/render-rules-tier1-incomplete',
+                  `render-rules.md에 '### ${id} ' H3 heading이 없음 — 1층 10항목(1-1~1-10)이 전부 앵커돼야 한다. '${id}' 는 다른 항목(예: 1-1↔1-10)의 접두일 수 있으므로 단순 문자열 포함 검사가 아니라 heading 앵커로 확인한다 (fix: '### ${id} <제목>' 형태로 복원하라)`,
+                ),
+              );
+            }
+          }
+        }
+      }
+
+      // N3 — assets/project/icons/ 6종 + icons.tsx 파리티
+      {
+        const iconsDir = path.join(skillDir, 'assets', 'project', 'icons');
+        const relIconsDir = path.relative(root, iconsDir);
+        const iconsTsxPath = path.join(skillDir, 'assets', 'project', 'icons.tsx');
+        const iconsTsxExists = fs.existsSync(iconsTsxPath);
+        const iconsTsxSrc = iconsTsxExists ? readFile(iconsTsxPath) : '';
+        const relIconsTsx = path.relative(root, iconsTsxPath);
+
+        if (!fs.existsSync(iconsDir)) {
+          violations.push(
+            mkv(
+              relIconsDir,
+              1,
+              'A2/design-icon-asset-invalid',
+              `아이콘 디렉터리 assets/project/icons/ 가 없음 — 1층(1-9)이 요구하는 SVG 아이콘 6종(chevron-right/left/down/up·close·search)의 정본이 사라졌다 (fix: 6개 svg 파일을 복원하라)`,
+            ),
+          );
+        } else {
+          if (!iconsTsxExists) {
+            violations.push(
+              mkv(
+                relIconsTsx,
+                1,
+                'A2/design-icon-asset-invalid',
+                `assets/project/icons.tsx 가 없음 — React 계열 프로젝트에 심을 named export 6종의 정본이 사라졌다 (fix: icons.tsx를 복원하라)`,
+              ),
+            );
+          }
+          for (const { file, component } of DESIGN_ICON_SPECS) {
+            const svgPath = path.join(iconsDir, `${file}.svg`);
+            const relSvg = path.relative(root, svgPath);
+            if (!fs.existsSync(svgPath)) {
+              violations.push(
+                mkv(
+                  relSvg,
+                  1,
+                  'A2/design-icon-asset-invalid',
+                  `${file}.svg 파일이 없음 — 아이콘 6종 중 하나가 빠짐 (fix: assets/project/icons/${file}.svg 를 복원하라)`,
+                ),
+              );
+              continue;
+            }
+            const svgSrc = readFile(svgPath);
+            if (!/stroke\s*=\s*"currentColor"/.test(svgSrc)) {
+              violations.push(
+                mkv(
+                  relSvg,
+                  1,
+                  'A2/design-icon-asset-invalid',
+                  `${file}.svg 가 stroke="currentColor" 를 쓰지 않음 — 1층(1-9)이 요구하는 색 상속을 자산 스스로 어긴다 (fix: stroke="currentColor" 로 고쳐라)`,
+                ),
+              );
+            }
+            const hardcodedMatch = svgSrc.match(/(?:fill|stroke)\s*=\s*"#[0-9a-fA-F]{3,8}"/);
+            if (hardcodedMatch) {
+              violations.push(
+                mkv(
+                  relSvg,
+                  1,
+                  'A2/design-icon-asset-invalid',
+                  `${file}.svg 에 하드코딩된 색상(${hardcodedMatch[0]})이 있음 — currentColor 상속 규칙 위반 (fix: hex 색상값을 지우고 currentColor만 남겨라)`,
+                ),
+              );
+            }
+            if (iconsTsxExists) {
+              const svgSig = extractIconShapeSignature(svgSrc);
+              const block = extractIconComponentBlock(iconsTsxSrc, component);
+              if (block === null) {
+                violations.push(
+                  mkv(
+                    relIconsTsx,
+                    1,
+                    'A2/design-icon-asset-invalid',
+                    `icons.tsx에 '${component}' named export가 없음 — ${file}.svg 와 짝이 맞지 않는다 (fix: export function ${component}(...) 를 복원하라)`,
+                  ),
+                );
+              } else {
+                const tsxSig = extractIconShapeSignature(block);
+                if (svgSig !== tsxSig) {
+                  violations.push(
+                    mkv(
+                      relIconsTsx,
+                      1,
+                      'A2/design-icon-asset-invalid',
+                      `icons.tsx의 '${component}' 모양이 ${file}.svg 와 다름(path/circle 파리티 불일치) — 두 자산이 같은 아이콘의 다른 표현이어야 한다 (fix: 좌표를 ${file}.svg 와 동일하게 맞춰라)`,
+                    ),
+                  );
+                }
               }
             }
           }
