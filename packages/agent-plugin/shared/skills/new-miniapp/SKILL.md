@@ -8,10 +8,15 @@ description: |
   manual wiring only when the CLI did not do it. Supports `--tds` and
   `--sample iap,iaa` passthrough. Falls back to the bundled react-vite template
   with `--local` (offline); `--no-devtools` un-wires devtools afterwards.
+  The freshly scaffolded project also gets a design guide seeded into it
+  (tokens, hard rules, icon set, Tossface emoji font wiring) so later sessions
+  build screens against the same standard — `--no-design-guide` and
+  `--no-tossface` opt out of that seeding.
   Greenfield only (see `inject-devtools` for existing projects).
   Triggered by `/ait:new <app-name> [--template <name>] [--tds]
-  [--sample <ids>] [--local] [--no-devtools]`.
-argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]'
+  [--sample <ids>] [--local] [--no-devtools] [--no-design-guide]
+  [--no-tossface]`.
+argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]'
 ---
 
 # new-miniapp skill
@@ -49,12 +54,18 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   아니다. RN 네이티브 컴포넌트나 `react-native` import를 쓰지 않는다.
   (설치 시 SDK가 RN을 peer로 선언해 뜨는 `unmet peer react-native` 경고는
   그래서 무시해도 된다.)
+- **디자인 가이드도 함께 심는다**(Step 5-B) — 토큰 파일·기본 CSS·아이콘 6종·
+  `docs/design-guide.md`와, 에이전트 메모리로 읽히는 캐리어 문서(`AGENTS.md` +
+  `CLAUDE.md`)가 프로젝트에 들어간다. 그래서 이 프로젝트에서 나중에 어떤 세션이
+  화면을 만들어도 같은 기준(글자 크기 하한·터치 44px·하단 CTA safe area 등)이
+  적용된다. 이모지 서체 Tossface도 이때 함께 배선된다. 빼고 싶으면
+  `--no-design-guide`(전체) 또는 `--no-tossface`(서체만)를 쓴다.
 - 다음 단계(`npm run dev` → 코드 수정 → `/ait:design` → `npm run build`(=
   `tsc -b && vite build && ait build`)로 번들 생성 → console MCP 도구로
   등록·업로드)가 명확히 안내된다.
 
 이 skill은 **scaffold 호출 + 후처리(설치 상태 확인 · 형상 가드 · devtools 배선
-확인/폴백 · `.gitignore`에 `*.ait` 추가)**만 담당한다. 콘솔 등록·번들 업로드는 console MCP 도구
+확인/폴백 · `.gitignore`에 `*.ait` 추가 · 디자인 가이드 주입)**만 담당한다. 콘솔 등록·번들 업로드는 console MCP 도구
 (`miniapp_create`/`bundle_upload`/`bundle_upload_complete`)의 책임 — 여기서
 자동 호출하지 않는다.
 
@@ -107,6 +118,14 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   (devDependency 제거 + 번들러 설정에서 unplugin 제거 — Step 4) — mock 없이
   실기기/샌드박스 위주로 개발하려는 경우. 나중에 필요해지면
   `/ait:inject-devtools`로 언제든 다시 배선할 수 있다.
+- `--no-design-guide` (선택): 디자인 가이드 주입(Step 5-B)을 통째로 건너뛴다 —
+  토큰·CSS·아이콘·캐리어 문서를 하나도 넣지 않는다. 자체 디자인 시스템이 이미
+  있거나 프로젝트를 최소 형상으로 두고 싶을 때. 나중에 `/ait:design`을 부르면
+  그때 넣을 수 있다.
+- `--no-tossface` (선택): 디자인 가이드는 넣되 이모지 서체 Tossface 배선만
+  뺀다 — 기본 CSS에서 CDN `@import` 한 줄과 폰트 스택의 `Tossface` 항목을
+  제거한다. 오프라인 결정성이 필요하거나 서체를 직접 고르고 싶을 때. 나중에
+  `/ait:inject-tossface`로 CDN·번들 두 모드 중 골라 배선할 수 있다.
 
 호출 예 (슬래시 명령과 자연어 요청은 같은 skill로 이어진다 — 슬래시
 네임스페이스가 그대로 오지 않는 에이전트에서는 아래 자연어 쪽이 정규 경로다):
@@ -117,6 +136,8 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 /ait:new my-shop --sample iap         # 말로: "인앱결제 예제까지 넣은 미니앱 my-shop 만들어줘"
 /ait:new my-app --local --no-install  # 말로: "오프라인 로컬 템플릿으로 만들고 설치는 건너뛰어줘"
 /ait:new my-app --no-devtools         # 말로: "devtools 배선 없이 미니앱만 만들어줘"
+/ait:new my-app --no-design-guide     # 말로: "디자인 가이드는 넣지 말고 미니앱만 만들어줘"
+/ait:new my-app --no-tossface         # 말로: "이모지 서체는 빼고 미니앱 만들어줘"
 ```
 
 ## 의존
@@ -182,7 +203,10 @@ raw 셸 오류를 마주치지 않도록 문제가 있으면 여기서 멈추고
   한국어 안내를 준다. CLI에는 `--force`/overwrite가 없다.)
 
 `--local`이면 여기서 **`references/local-template.md`를 Read**해 그 절차(복사 +
-토큰 치환 + install + 안내)로 진행하고, 아래 2~6은 건너뛴다.
+토큰 치환 + 디자인 가이드 확인 + install + 안내)로 진행하고, 아래 2~6은 건너뛴다.
+예외가 하나 있다 — 5-B(디자인 가이드 주입)는 그 문서의 L-3b가 확인 목적으로 다시
+부른다. 템플릿이 자산을 프리베이크로 담고 있어 정상이면 전 항목이 skip으로 끝나고,
+어긋난 항목이 있으면 그 자리에서 채워진다.
 
 ### 2. scaffold — create-ait-app 비대화형 호출
 
@@ -541,20 +565,245 @@ test -f ./<package_name>/.gitignore && { \
 
 (`git init` 자체는 하지 않는다 — 사용자 결정. Out of scope 참조.)
 
+### 5-B. 후처리 D — 디자인 가이드 주입
+
+갓 만들어진 프로젝트에 디자인 가이드를 심는다 — 토큰 파일·기본 CSS·아이콘
+6종·`docs/design-guide.md`, 그리고 에이전트 메모리로 읽히는 캐리어 문서
+(`AGENTS.md`·`CLAUDE.md`)다. 이걸 넣어 두면 이 프로젝트에서 나중에 어떤
+세션이 화면을 만들어도 같은 기준을 따르게 된다. 절차의 정본은 `design`
+skill의 `references/project-guide.md`이고, 아래는 스캐폴드 직후 형상에 맞춘
+실행 순서다.
+
+**이 단계는 scaffold를 중단시키지 않는다.** Step 3(형상 가드)이 실패하면
+즉시 멈추는 것과 반대인데, 근거가 다르기 때문이다 — 형상 가드가 걸린다는
+것은 이후 후처리가 딛고 설 산출물 자체가 없다는 뜻이라 계속 갈 이유가 없다.
+반면 디자인 가이드는 나중에 `/ait:design`으로 다시 넣을 수 있는 부가물이라,
+여기서 멈추면 프로젝트를 손에 넣지 못한 사용자만 손해다. 어떤 하위 단계가
+실패하든 그 항목만 기억해 두고 다음 하위 단계로 넘어가며, 5-B-7에서 한 줄로
+보고한 뒤 Step 6으로 간다.
+
+각 하위 단계는 서로 독립적인 멱등 가드를 갖는다 — `test -f`/`test -d`로 먼저
+존재를 확인하고, 있으면 `grep -q`로 내용까지 본 다음, 없을 때만 쓴다. 하나가
+이미 있다고 나머지까지 건너뛰지 않는다. (Step 5의 실측 함정을 그대로 물려받는다
+— `test -f` 없이 `grep … || printf … >>` 형태를 쓰면 파일이 없을 때 `||`가
+불완전한 파일을 새로 만들어 버린다.)
+
+#### 5-B-0. 플래그 판정
+
+- **`--no-design-guide`** — 5-B 전체를 건너뛴다. 사용자가 명시적으로 뺀 것이므로
+  실패 보고도 하지 않는다. 바로 Step 6으로 간다.
+- **`--no-tossface`** — 나머지는 그대로 하되 Tossface 배선만 뺀다(5-B-4의 편집
+  2건).
+- **`--tds`** — CSS 2종(5-B-4)과 아이콘(5-B-5), entry 배선(5-B-6)을 **주입하지
+  않는다.** 색·크기·아이콘을 TDS 컴포넌트가 제공하므로 별도 토큰 파일을 넣으면
+  한 프로젝트에 체계가 둘이 된다. 캐리어 문서(5-B-2)와 `docs/design-guide.md`
+  (5-B-3)만 넣고, 캐리어에 담는 다이제스트의 `아이콘:` 두 줄 자리에 아래 두
+  줄을 대신 넣는다:
+
+  ```
+  이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다).
+  1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다.
+  ```
+
+#### 5-B-1. 자산 원본 경로 확정
+
+주입할 원본은 `design` skill이 소유한 `assets/project/` 한 곳이다(`tokens.css`·
+`base.css`·`design-guide.md`·`memory-digest.md`·`icons.tsx`·`icons/*.svg` 6종).
+아래 순서로 찾아, 첫 번째로 실재가 확인된 경로를 이후 하위 단계에서 계속 쓴다:
+
+1. **이 skill의 base directory 기준 상대 경로** — `<이 skill의 base directory>/../design/assets/project`. 이 repo에서 확립된 관례이고, 플러그인을 로드하지 않는 형상에서도 도는 유일한 경로다. 가장 먼저 시도한다.
+2. **`$CLAUDE_PLUGIN_ROOT`** — 설정돼 있으면 `$CLAUDE_PLUGIN_ROOT/shared/skills/design/assets/project`.
+3. **`Read` → `Write`** — 위 둘 다 실패하면 파일마다 `Read`로 읽어 프로젝트 경로에 `Write`한다. 느리지만 항상 동작하는 마지막 수단이다.
+
+```bash
+ls "<자산 원본 경로>/tokens.css" "<자산 원본 경로>/memory-digest.md"
+```
+
+셋 다 실패하면 5-B 전체를 실패로 기록하고 5-B-7로 간다(중단하지 않는다).
+
+> **symlink 주의**: 설치 형상에 따라 skill 디렉터리가 실제 소스로 향한
+> symlink일 수 있다. `cp -R`은 symlink를 따라가므로 문제없지만,
+> `realpath`/`readlink` 검증 없이 `..`를 여러 번 타고 올라가는 형태는 쓰지
+> 않는다 — 구조가 예상과 다르면 엉뚱한 디렉터리를 건드린다.
+
+#### 5-B-2. 캐리어 문서 — `AGENTS.md` + `CLAUDE.md`
+
+에이전트 메모리로 자동 로드되는 자리에 다이제스트를 심는 단계다. **`AGENTS.md`가
+본문 정본**이고 `CLAUDE.md`는 그것을 가리키기만 한다 — 같은 본문을 두 파일에
+넣으면 세션마다 두 배로 실린다.
+
+심은 내용은 HTML 주석 마커로 감싼다. 그래서 이미 심겨 있는지, 심겼다면 몇
+버전인지를 grep 한 번으로 알 수 있다:
+
+```bash
+test -f ./<package_name>/AGENTS.md && grep -o 'ait:design-guide v[0-9]*' ./<package_name>/AGENTS.md
+```
+
+| 상황 | 동작 |
+|---|---|
+| 파일 없음 | 마커로 감싼 다이제스트만 담은 파일을 새로 만든다 |
+| 있음·마커 없음 | 파일 **끝에** append, 기존 내용은 한 글자도 건드리지 않는다 |
+| 있음·마커 `v1` | skip(보고만) |
+| 있음·마커가 다른 버전 | skip하고 "가이드 버전이 다릅니다(v0 → v1). `/ait:design`으로 갱신할 수 있습니다"를 알린다 — 여기서 자동으로 덮어쓰지 않는다 |
+
+마커는 여는 줄 `<!-- ait:design-guide v1 -->`과 닫는 줄
+`<!-- /ait:design-guide -->` 사이를 감싼 HTML 주석 구간이다(두 줄 다 파일에
+그대로 들어간다).
+
+`AGENTS.md`는 그 사이에 `<자산 원본 경로>/memory-digest.md`를 `Read`한 본문을
+그대로 넣는다 — 한 글자도 고쳐 쓰지 않는다(`--tds`면 5-B-0의 두 줄 치환만
+적용한다).
+
+`CLAUDE.md`는 본문 대신 `@AGENTS.md` 한 줄만 같은 마커 사이에 넣는다. 최신
+Claude Code가 `@`-import를 프로젝트 메모리로 읽어 하네스가 그 줄을 대신
+로드하므로, 같은 본문을 두 파일에 넣으면 세션마다 두 배로 실릴 뿐이다.
+
+갓 만든 프로젝트라 보통 두 파일 다 없다(create-ait-app 산출물에는 없다) — 그래도
+`test -f`를 건너뛰지 않는다. `--local` 템플릿에는 두 파일이 이미 들어 있어 이
+단계가 skip으로 끝나는데, 그게 멱등 가드가 실제로 도는지 확인해 주는 자리다.
+
+#### 5-B-3. `docs/design-guide.md`
+
+3층 규칙 전문이다. 매 세션 로드되는 다이제스트와 달리 필요할 때만 읽히는
+on-demand 문서라 길이를 줄이지 않는다.
+
+```bash
+mkdir -p ./<package_name>/docs
+test -f ./<package_name>/docs/design-guide.md || \
+  cp "<자산 원본 경로>/design-guide.md" ./<package_name>/docs/design-guide.md
+```
+
+#### 5-B-4. `src/styles/tokens.css` + `src/styles/base.css`
+
+(`--tds`면 건너뛴다.)
+
+```bash
+mkdir -p ./<package_name>/src/styles
+test -f ./<package_name>/src/styles/tokens.css || \
+  cp "<자산 원본 경로>/tokens.css" ./<package_name>/src/styles/tokens.css
+test -f ./<package_name>/src/styles/base.css || \
+  cp "<자산 원본 경로>/base.css" ./<package_name>/src/styles/base.css
+```
+
+스캐폴드가 이미 만들어 둔 `src/index.css`·`src/App.css`는 **고치지 않는다** —
+별도 파일을 더하는 것이지 기존 스타일을 대체하는 게 아니다.
+
+**`--no-tossface`면** 방금 복사한 `base.css`에서 두 곳을 `Edit`으로 손본다:
+
+1. 첫 줄의 Tossface CDN `@import url(...)` 한 줄을 지운다(`@import "./tokens.css";`는 남긴다).
+2. `body`의 `font-family` 스택에서 맨 앞 `"Tossface", `를 지운다.
+
+`.tf` 유틸 클래스는 그대로 둔다 — 서체가 없으면 다음 폰트로 조용히 폴백하므로
+화면이 깨지지 않는다.
+
+#### 5-B-5. 아이콘 — 계열 분기
+
+(`--tds`면 건너뛴다.) React 계열인지 아닌지에 따라 **한쪽만** 넣는다. 둘 다
+넣으면 안 쓰는 자산이 프로젝트에 남는다.
+
+```bash
+node -e "const p=require('./<package_name>/package.json'); process.exit(p.dependencies?.react ? 0 : 1)" \
+  && echo "react" || echo "vanilla"
+```
+
+- **React 계열** — `icons.tsx` 하나만:
+
+  ```bash
+  mkdir -p ./<package_name>/src/components
+  test -f ./<package_name>/src/components/icons.tsx || \
+    cp "<자산 원본 경로>/icons.tsx" ./<package_name>/src/components/icons.tsx
+  ```
+
+- **vanilla 계열** — `.svg` 6종만:
+
+  ```bash
+  mkdir -p ./<package_name>/src/assets/icons
+  cp -n "<자산 원본 경로>/icons/"*.svg ./<package_name>/src/assets/icons/
+  ```
+
+  (`cp -n`은 이미 있는 파일을 덮어쓰지 않는다.)
+
+#### 5-B-6. entry 배선
+
+(`--tds`면 건너뛴다.) `base.css`가 실제로 로드되게 진입점에 한 줄을 넣는다.
+아래 우선순위대로 **첫 번째로 해당되는 경로 하나만** 쓴다.
+
+1. **`src/index.css`가 있으면 그 파일 최상단에 CSS `@import`.** 실측
+   (create-ait-app react-ts 산출물)에서 이 파일이 이미 있고 `src/main.tsx`가
+   그것을 import한다 — 그래서 이 경로가 1순위다. TypeScript를 거치지 않으니
+   아래 `vite/client` 앰비언트 타입 조건과도 무관하다.
+
+   ```bash
+   if test -f ./<package_name>/src/index.css; then
+     grep -q "styles/base.css" ./<package_name>/src/index.css && echo "이미 배선됨" || echo "여기에 배선"
+   else
+     echo "index.css 없음 — 아래 2번으로"
+   fi
+   ```
+
+   (`test -f`를 `&&`로만 엮으면 파일이 없을 때도 "배선 필요"로 읽혀 2번 경로를
+   놓친다 — 세 갈래를 구분해야 한다.)
+
+   배선이 필요하면 `Edit`으로 **파일 맨 첫 줄**에 `@import './styles/base.css';`를
+   넣는다. CSS `@import`는 `@charset` 말고 다른 어떤 규칙보다도 앞에 와야 한다 —
+   중간이나 끝에 넣으면 브라우저가 에러 없이 조용히 무시해서 배선이 무효가 된다.
+   기존 내용은 그 아래로 그대로 둔다. `base.css` 안의 Tossface CDN `@import`는
+   한 단계 더 안쪽에 있지만, 번들러가 빌드 산출 CSS 최상단으로 끌어올린다(실측
+   확인).
+
+2. **`src/index.css`가 없으면 JS entry의 첫 import 줄.** 먼저 `vite/client`
+   앰비언트 타입이 있는지 확인한다 — 없으면 `.css` import가 타입 에러를 낸다.
+   **두 자리를 다 본다**: `src/vite-env.d.ts` 파일이 있거나, `tsconfig*.json`의
+   `types` 배열에 `vite/client`가 들어 있거나. 실측상 create-ait-app react-ts
+   산출물은 `vite-env.d.ts`가 **없고** `tsconfig.app.json`의
+   `"types": ["vite/client"]`로 제공하며, `--tds` 산출물은 반대로 `vite-env.d.ts`만
+   갖는다 — 한쪽만 보면 오판한다.
+
+   ```bash
+   test -f ./<package_name>/src/vite-env.d.ts || \
+     grep -l '"vite/client"' ./<package_name>/tsconfig*.json
+   ```
+
+   앰비언트 타입이 확인되면 아래 순서로 진입점을 찾는다:
+   `src/main.tsx` → `src/main.ts` → `src/index.tsx` → `src/index.ts` →
+   `index.tsx` → `index.ts`. 찾은 파일에 `styles/base.css`가 이미 있는지 grep으로
+   보고, 없을 때만 **첫 import 줄**로 `import './styles/base.css';`를 넣는다.
+
+3. **위 둘 다 아니면 `index.html` 폴백.** `</head>` 바로 앞에 한 줄:
+
+   ```html
+   <link rel="stylesheet" href="/src/styles/base.css" />
+   ```
+
+#### 5-B-7. 결과 보고
+
+여기까지의 결과를 **산문 한두 줄로** 알린다 — 코드 블록으로 인쇄하지 않는다.
+무엇이 들어갔는지는 Step 6 완료 안내가 한 줄로 다시 인쇄하므로, 여기서는
+평소와 다른 일이 있었을 때만 말하면 된다.
+
+- 전부 성공했으면: "디자인 가이드를 프로젝트에 넣었습니다." 한 줄.
+- 일부 실패했으면 실패한 항목만 적고 복구 경로를 함께 알린다 — 예: "디자인
+  가이드 주입 일부 실패: 아이콘 복사. `/ait:design`으로 나중에 다시 넣을 수
+  있습니다." 그리고 그대로 Step 6으로 간다.
+- 이미 다 있어서 건너뛴 항목은 굳이 나열하지 않는다.
+
 ### 6. 다음 단계 안내 + dev 서버 기동
 
 생성이 끝나면 한 블록으로 마무리:
 
 ```
 <app-name> 생성 완료 (./<package_name>/)
+디자인 가이드 포함: AGENTS.md·CLAUDE.md · docs/design-guide.md · src/styles/(tokens|base).css · src/components/icons.tsx · 이모지 서체 Tossface
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   cd <package_name>
   npm run dev       # 브라우저에서 devtools panel과 함께 실행
                      # 말로: "브라우저에서 개발 서버 띄워줘"
+  /ait:design       # 화면을 만들거나 고침 (방금 넣은 디자인 가이드를 그대로 따릅니다)
+                     # 말로: "화면이 좀 구려 보여. 예쁘게 고쳐줘."
 
 배포 준비가 되면 (번들 설정은 템플릿에 이미 포함):
-  /ait:design       # 등록용 이미지 자산 생성 (콘솔 등록용 아이콘·스크린샷)
+  /ait:design       # 등록용 로고·썸네일·스크린샷 산출
                      # 말로: "등록용 로고랑 스크린샷 만들어줘"
   npm run build     # tsc -b && vite build && ait build → .ait 번들 생성
   console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
@@ -573,14 +822,26 @@ test -f ./<package_name>/.gitignore && { \
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
-이 scaffold는 이모지 서체(Tossface)를 기본 주입하지 않는다 — CDN 링크로 쓸지
-번들에 포함할지, 번들이면 어느 subset이 필요한지가 앱마다 달라 용량 대가가
-고정돼 있지 않기 때문이다. 완료 블록 아래에 다음 한 줄을 항상 덧붙인다:
+첫 줄 뒤의 `디자인 가이드 포함:` 줄은 **5-B가 실제로 넣은 것만** 나열한다 —
+`--tds`면 CSS·아이콘이 빠지고, `--no-tossface`면 서체 항목이 빠지며,
+`--no-design-guide`면 이 줄 자체를 인쇄하지 않는다. 5-B에서 실패한 항목도
+빼고 적는다(있지도 않은 파일을 있다고 알리지 않는다).
+
+이 scaffold는 이모지 서체(Tossface)를 **기본으로 배선한다** — 5-B-4가 넣은
+`src/styles/base.css` 첫 줄의 CDN `@import`가 그것이다. 번들 용량은 늘지 않고,
+브라우저가 실제로 렌더하는 이모지가 속한 subset만 그때그때 내려받는다. 대신 CDN에
+닿지 못하는 환경에서는 시스템 이모지로 조용히 폴백하므로, 오프라인에서도 늘 같은
+글리프를 써야 하는 앱이면 서체 파일을 번들에 담는 쪽으로 바꿀 수 있다. 완료 블록
+아래에 다음 두 줄을 항상 덧붙인다:
 
 ```
-이모지 서체가 필요하면: /ait:inject-tossface
+오프라인에서도 이모지 서체를 확실히 렌더하려면: /ait:inject-tossface
                      # 말로: "이모지를 토스페이스 서체로 렌더하고 싶어"
 ```
+
+`--no-tossface`·`--no-design-guide`·`--tds`로 만들어 서체 배선이 없는 경우에는
+같은 자리에 첫 줄을 `이모지 서체가 필요하면:`으로 바꿔 인쇄한다 — 배선이 있는
+프로젝트와 없는 프로젝트에 같은 문장을 쓰면 사용자가 현재 상태를 오해한다.
 
 `--no-devtools`로 만들었으면 완료 블록에서 `npm run dev` 줄의 주석을
 `# 브라우저 실행 (devtools 미배선 — SDK 호출은 실기기/샌드박스 필요)`로 바꾸고,
@@ -700,7 +961,10 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 ## 참고
 
 - 짝 skill: `inject` (devtools facet — 기존 프로젝트에 devtools 추가,
-  debug-console facet — on-device attach 패키지 설치), `design` (등록 이미지 자산 생성).
+  debug-console facet — on-device attach 패키지 설치, tossface facet — 이모지
+  서체를 CDN이 아닌 번들 포함 모드로 전환), `design` (화면 생성·개선 + 등록
+  이미지 자산 생성 — 5-B가 넣는 디자인 가이드 주입 절차의 정본
+  `references/project-guide.md`도 이 skill이 소유한다).
 - 공식 스캐폴더: https://github.com/toss/create-ait-app — 번들된 create-vite에
   위임하는 템플릿(+ `--tds` 변형), IAP/IAA 샘플, brownfield `add-sample`
   서브커맨드. 이 skill의 호출 규칙·후처리 근거는 `create-ait-app@0.2.3` 소스

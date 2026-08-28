@@ -28,7 +28,9 @@
  *
  *   설치 명령이 실제로 사는 자리가 README라 표면에 넣었다. `docs/`·
  *   `CHANGELOG.md`는 넣지 않는다 — 정책 서술·이력 prose가 많아 false
- *   positive가 나기 때문이다.
+ *   positive가 나기 때문이다. 이 제외는 깊이 무관이다: 표면 디렉터리
+ *   안쪽의 `docs/`(예: 템플릿 동봉 `templates/react-vite/docs/`)도 같은
+ *   prose 부류라 walk 단계에서 통째로 건너뛴다.
  *
  * 규칙 3종:
  *
@@ -149,7 +151,8 @@ const FILENAME_RE = /^apps-in-toss-(?<pkg>.+)-(?<ver>\d[\w.+-]*)\.tgz$/;
 /**
  * 디렉터리를 재귀적으로 순회해 텍스트 파일 절대경로 배열을 반환한다.
  * node_modules·dist·.git 은 이 검사 표면에 있을 수 없는(또는 있으면 안 되는)
- * 디렉터리라 방어적으로 건너뛴다.
+ * 디렉터리라 방어적으로 건너뛰고, docs 는 표면 정책(위 docstring — prose
+ * false positive 방지)에 따라 깊이 무관하게 건너뛴다.
  * @param {string} absDir
  * @returns {Promise<string[]>}
  */
@@ -159,7 +162,7 @@ async function walkFiles(absDir) {
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const parentRel = entry.parentPath ?? entry.path ?? absDir;
-    if (/[\\/](node_modules|dist|\.git)[\\/]/.test(`${parentRel}/`)) continue;
+    if (/[\\/](node_modules|dist|\.git|docs)[\\/]/.test(`${parentRel}/`)) continue;
     files.push(join(parentRel, entry.name));
   }
   return files;

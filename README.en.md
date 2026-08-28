@@ -86,7 +86,7 @@ The commands in this section were verified against codex-cli `0.146.0`; the non-
 
 1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, then authorize `apps-in-toss-console` from `/mcp`.
 2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
-3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. devtools gets wired in as a post-processing step.
+3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
 4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.
    - At a desktop browser's default width, the mini-app layout looks different from the real thing. Check it at mobile width from the AIT panel's Viewport tab (or your browser's responsive mode).
    - The real Toss app's WebView runs on WebKit (Safari's engine) on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari too before shipping, or verify it on a real device with step 5's `/ait:test-on-device`.
@@ -129,7 +129,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 |---|---|---|
 | `/ait:welcome` | Prints the harness entry map right after install, checks environment/integration state (git, Node/npm/npx, MCP exposure, etc.), and suggests/hands off the next step | 0 → 1 hand-off |
 | `/ait:plan [requirements]` | Takes a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms (planning only — hands off to `/ait:new`) | 7. plan |
-| `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools]` | Drives `create-ait-app` non-interactively to scaffold a mini-app, then wires up devtools (mock SDK + panel) as a post-step (greenfield only) | 1. scaffold |
+| `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | Drives `create-ait-app` non-interactively to scaffold a mini-app, then wires up devtools (mock SDK + panel) and seeds the design guide (tokens, CSS, icons, `AGENTS.md`) as post-steps (greenfield only) | 1. scaffold |
 | `/ait:inject-devtools` | Adds the devtools unplugin to an existing project's build config (brownfield) | 2. dev |
 | `/ait:inject-debug-console` | Installs `debug-console` (on-device attach + eruda) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
 | `/ait:inject-tossface` | Wires the Tossface emoji web font in via a CDN link (zero bundle cost) or by bundling only the subsets the project needs (deterministic, roughly 520KB–1.9MB per subset) | 2. dev |

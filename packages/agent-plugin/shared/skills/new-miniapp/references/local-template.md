@@ -3,8 +3,15 @@
 `/ait:new`의 정본 경로는 create-ait-app 비대화형 호출(SKILL.md Step 2~6)이다.
 이 문서는 **오프라인·네트워크 제한·create-ait-app 실행 불가** 상황의 폴백
 절차다 — plugin에 동봉된 `react-vite` 템플릿(React 19 + Vite 8 + TS +
-`@apps-in-toss/devtools` 배선 완료)을 복사한다. SKILL.md의 Step 0(toolchain 검사)과
-Step 1(입력 정규화 + 충돌 검사)은 이미 끝난 상태를 전제한다.
+`@apps-in-toss/devtools` 배선 완료 + 디자인 가이드 프리베이크)을 복사한다.
+SKILL.md의 Step 0(toolchain 검사)과 Step 1(입력 정규화 + 충돌 검사)은 이미 끝난
+상태를 전제한다.
+
+디자인 가이드는 이 템플릿에 **이미 들어 있다** — 정본 경로처럼 스캐폴드 뒤에
+주입하는 게 아니라 파일로 동봉돼 있어서, 복사만으로 같은 형상이 된다
+(`AGENTS.md`·`CLAUDE.md`·`docs/design-guide.md`·`src/styles/tokens.css`·
+`src/styles/base.css`·`src/components/icons.tsx`, `src/main.tsx` 첫 줄의
+`import './styles/base.css';`까지). 확인은 아래 L-3b에서 한다.
 
 ## L-1. 템플릿 위치 확인
 
@@ -29,7 +36,9 @@ rm "./<package_name>/template.json"   # 메타파일 — 사용자 프로젝트�
 
 `{{app_name}}`, `{{package_name}}`을 치환한다. **대상 파일은 `template.json`의
 `substitute.files`가 source of truth** (react-vite: `package.json`,
-`index.html`, `README.md` 3개). 그 외 파일은 건드리지 않는다.
+`index.html`, `README.md` 3개). 그 외 파일은 건드리지 않는다 — 디자인 가이드
+파일들(`AGENTS.md`·`CLAUDE.md`·`docs/design-guide.md`·CSS·아이콘)에는 토큰이
+아예 없어서 치환 대상이 아니다.
 
 | Token | 의미 | 예시 (`<app-name>` = "My Mini App") |
 |---|---|---|
@@ -47,6 +56,35 @@ for f in ./<package_name>/package.json ./<package_name>/index.html ./<package_na
   sed -i '' "s/{{app_name}}/${APP_NAME//\//\\/}/g; s/{{package_name}}/${PACKAGE_NAME}/g" "$f"
 done
 ```
+
+## L-3b. 디자인 가이드 확인 (프리베이크 검증)
+
+템플릿이 이미 담고 있는 것이라 새로 넣을 일은 없지만, 실제로 다 왔는지는 한 번
+확인한다. **SKILL.md의 5-B를 그대로 돌린다** — 정상이면 모든 하위 단계가
+"이미 존재 → skip"으로 끝나고 파일이 하나도 새로 쓰이지 않는다. 그게 5-B 멱등
+가드가 제대로 도는지 확인하는 자리이기도 하다.
+
+```bash
+ls ./<package_name>/AGENTS.md ./<package_name>/CLAUDE.md \
+   ./<package_name>/docs/design-guide.md \
+   ./<package_name>/src/styles/tokens.css ./<package_name>/src/styles/base.css \
+   ./<package_name>/src/components/icons.tsx
+grep -q "styles/base.css" ./<package_name>/src/main.tsx && echo "entry 배선 확인"
+```
+
+하나라도 없으면(템플릿이 정본 자산과 어긋난 것) 5-B의 해당 하위 단계가 그 자리에서
+채운다 — scaffold를 중단하지는 않는다.
+
+`--no-design-guide`로 호출됐으면 위 파일들을 복사 직후 지우는 대신 **애초에 복사
+대상에서 뺀다**: L-2의 `cp -R` 뒤에 `AGENTS.md`·`CLAUDE.md`·`docs/`·
+`src/styles/`·`src/components/icons.tsx`를 제거하고, `src/main.tsx` 첫 줄의
+`import './styles/base.css';`와 `src/App.tsx`가 쓰는 `var(--…)` 토큰이 함께
+사라지므로 **`src/App.tsx`도 토큰 없는 최소 화면으로 되돌린다**. 이 조합은
+번거로우니, 디자인 가이드를 원치 않으면 `--local`보다 정본 경로에
+`--no-design-guide`를 주는 쪽을 권한다.
+
+`--no-tossface`면 `src/styles/base.css` 첫 줄의 Tossface CDN `@import`와 `body`
+`font-family` 스택 맨 앞의 `"Tossface", `만 지운다(SKILL.md 5-B-4와 같다).
 
 ## L-4. 의존성 설치 (옵션)
 
@@ -120,14 +158,17 @@ npm --prefix ./<package_name> install
 
 ```
 <app-name> 생성 완료 (./<package_name>/)
+디자인 가이드 포함: AGENTS.md·CLAUDE.md · docs/design-guide.md · src/styles/(tokens|base).css · src/components/icons.tsx · 이모지 서체 Tossface
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   cd <package_name>
   npm run dev       # 브라우저에서 devtools panel과 함께 실행
                      # 말로: "브라우저에서 개발 서버 띄워줘"
+  /ait:design       # 화면을 만들거나 고침 (템플릿에 담긴 디자인 가이드를 그대로 따릅니다)
+                     # 말로: "화면이 좀 구려 보여. 예쁘게 고쳐줘."
 
 배포 준비가 되면:
-  /ait:design       # 등록용 이미지 자산 생성 (앱 아이콘·스크린샷 — 등록 전제)
+  /ait:design       # 등록용 로고·썸네일·스크린샷 산출 (앱 아이콘은 등록 전제)
                      # 말로: "등록용 로고랑 스크린샷 만들어줘"
                      # → 호스팅한 아이콘 https:// URL을 (L-5로 만들) granite.config.ts의
                      #   brand.icon에 채운다 (빈 값이어도 ait build는 통과한다 —
@@ -146,7 +187,7 @@ npm --prefix ./<package_name> install
 
 `--no-install`이었으면 안내에 `npm install`을 한 줄 추가하고, dev 서버
 자동 기동은 **하지 않는다**(사용자가 workspace 통합·lockfile 수동 관리를
-의도한 신호). install을 했다면 SKILL.md Step 8의 "dev 서버 자동 기동"과
+의도한 신호). install을 했다면 SKILL.md Step 6의 "dev 서버 자동 기동"과
 동일하게 `npm --prefix <project_abs_path> run dev`를 `run_in_background: true`로
 기동하고 Local URL을 파싱해 알린다.
 
@@ -157,3 +198,9 @@ npm --prefix ./<package_name> install
   `scripts/validate-plugin.mjs`의 A3 token-contract 검사도 함께 재편한다.
 - 템플릿 추가/수정 시 `template.json`의 `tokens` ↔ `substitute.files` 정합은
   A3가 커밋 시점에 강제한다.
+- 템플릿의 디자인 가이드 파일 6종은 `design` skill의
+  `assets/project/`에서 **복사한 사본**이다(`tokens.css`·`base.css`·`icons.tsx`·
+  `design-guide.md`는 바이트 동일, `AGENTS.md`는 `memory-digest.md`를 마커로
+  감싼 것). 값이 바뀌면 사본을 손으로 고치지 말고 정본을 고친 뒤 다시 복사한다 —
+  두 곳에서 따로 편집하면 정본 경로(5-B 주입)와 `--local` 경로가 서로 다른
+  디자인을 내놓는다.
