@@ -2,7 +2,7 @@
 
 # apps-in-toss-harness
 
-A harness monorepo that lets you go from an empty directory to a published Apps in Toss mini-app without ever leaving your AI coding agent (Claude Code, etc.). The Claude Code plugin `ait` acts as the orchestrator, weaving scaffolding, development, debugging, bundling, registration, and operations into a single flow. Scaffolding is built on `create-ait-app`; docs lookup and console integration are handled by two MCP servers enabled by default; and dev/debug tooling like devtools and debugger are wired in only when you opt in.
+A harness monorepo that lets you go from an empty directory to a published Apps in Toss mini-app without ever leaving your AI coding agent (Claude Code, Codex, Cursor). The agent plugin `ait` acts as the orchestrator, weaving scaffolding, development, debugging, bundling, registration, and operations into a single flow. Scaffolding is built on `create-ait-app`; docs lookup and console integration are handled by two MCP servers enabled by default; and dev/debug tooling like devtools and debugger are wired in only when you opt in.
 
 ## Quick start
 
@@ -82,6 +82,68 @@ On that path, don't drop `--oauth-client-id mcp-gateway`: the auth server doesn'
 
 The commands in this section were verified against codex-cli `0.146.0`; the non-interactive notes were additionally verified against `0.146.1`.
 
+### Using it from Cursor
+
+Cursor reads its own plugin format, so this repo ships a Cursor manifest (`.cursor-plugin/`) alongside the Claude Code one. Register the marketplace from the CLI, then install inside an interactive session (there is no non-interactive install command yet).
+
+```
+# 1) Register the harness plugin marketplace (the toss/… shorthand fails; use the full URL)
+agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
+
+# 2) Install the ait plugin — from an interactive session
+agent
+/plugins        # pick ait from the marketplace list and install it
+
+# 3) See the harness entry map (skills use flat names, no namespace)
+/welcome
+```
+
+The install is **activated per project.** Installing from `/plugins` records it in the current project's `.cursor/settings.json`, and other projects need their own activation. Sessions in an activated project expose all nine skills and the four docs-MCP tools right away. Plugin-provided MCP servers do not appear in `agent mcp list`; that command only covers servers registered in `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global).
+
+**Authorize the console MCP from the desktop editor.** While unauthorized, the plugin's console MCP exposes a single `mcp_auth` tool, and calling it from the CLI returns "Interactive MCP authentication is only available in the Cursor desktop IDE". Authorizing from the editor opens the full console toolset (102 tools) to that project's editor sessions. The authorization does not carry over to CLI sessions, so to use the console MCP from a CLI session, register the servers directly in `.cursor/mcp.json` (the plugin-less path below) and authorize there.
+
+**Four things differ from Claude Code.**
+
+- The slash-command namespace (`/ait:<verb>`) does not carry over. You invoke skills by their flat names: `/welcome` shows up as a first-class slash command, and typing `/ait:welcome` still reaches the same skill through model interpretation.
+- The four command stubs (`/ait:new` and friends) are not installed. Use the phrasings in [Just ask for it](#just-ask-for-it--five-kinds-of-plain-language-examples) below. For scaffolding, asking "scaffold a new mini-app called my-app" runs the `new-miniapp` skill through the same procedure.
+- `setup-debugger` wires the debug MCP into **`.cursor/mcp.json`**, not `.mcp.json` (a `"type": "stdio"` entry; the skill detects the host and handles this on its own).
+- On-device debugging (the attach section of the `debug` skill) depends on Claude Code-only mechanisms, the same limitation as in Codex. Scaffolding, development, docs lookup, and console registration/upload are all available from Cursor (verified up to skill injection, MCP connectivity, and console authorization).
+
+**Notes for non-interactive (`agent -p`) runs:**
+
+- `agent plugin marketplace add` is scriptable, but the install itself is interactive-only (`/plugins`), and console authorization needs a browser (the editor, or `agent mcp login`).
+- In some proxy environments `agent -p` hangs forever with no output (proxies that break HTTP/2 streaming). Adding `"network": { "useHttp1ForAgent": true }` to `~/.cursor/cli-config.json` fixes it.
+
+If you want **only the MCP servers** without the plugin, create `.cursor/mcp.json` in your project and register them directly.
+
+```json
+{
+  "mcpServers": {
+    "apps-in-toss-docs": {
+      "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    },
+    "apps-in-toss-console": {
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
+      "auth": {
+        "CLIENT_ID": "mcp-gateway"
+      }
+    }
+  }
+}
+```
+
+On that path, don't drop `auth.CLIENT_ID`: the auth server doesn't support dynamic client registration (DCR), so a static client id is required. After registering, you can finish server approval and console authorization from the CLI.
+
+```
+agent mcp enable apps-in-toss-docs
+agent mcp enable apps-in-toss-console
+agent mcp login apps-in-toss-console
+```
+
+Once authorized, `agent mcp list` shows both servers as `ready` (the docs MCP needs no auth, so it turns `ready` right after enable; the console MCP shows `requires_authentication` until then).
+
+The commands in this section were verified against Cursor CLI `2026.08.25-3e8eec8`.
+
 ## Development journey
 
 1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, then authorize `apps-in-toss-console` from `/mcp`.
@@ -100,7 +162,7 @@ Station 4 (auth) only covers the client-side `appLogin()` mock. The server side 
 
 ## Just ask for it — five kinds of plain-language examples
 
-A `/ait:<verb>` slash command and a plain-language request **reach the same skill.** You never have to memorize the commands, and in agents where the slash namespace does not carry over (see [Using it from Codex](#using-it-from-codex) above) plain language is the standard path. Every skill's hand-off block prints both surfaces: the slash command and its plain-language equivalent.
+A `/ait:<verb>` slash command and a plain-language request **reach the same skill.** You never have to memorize the commands, and in agents where the slash namespace does not carry over (see [Using it from Codex](#using-it-from-codex) and [Using it from Cursor](#using-it-from-cursor) above) plain language is the standard path. Every skill's hand-off block prints both surfaces: the slash command and its plain-language equivalent.
 
 | What you want | Say this | Command it reaches |
 |---|---|---|
@@ -144,7 +206,7 @@ Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands;
 
 ## MCP servers
 
-Installing the plugin registers two MCP servers, in Claude Code and in Codex alike. To register the servers directly without the plugin, see [Using it from Codex](#using-it-from-codex) above.
+Installing the plugin registers two MCP servers, in Claude Code, Codex, and Cursor alike. To register the servers directly without the plugin, see [Using it from Codex](#using-it-from-codex) or [Using it from Cursor](#using-it-from-cursor) above.
 
 | Server | Auth | Key tools |
 |---|---|---|
@@ -159,7 +221,7 @@ Three packages managed as a pnpm workspace.
 
 | Package | Directory | Role | Published |
 |---|---|---|---|
-| `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code and Codex) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
+| `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code, Codex, and Cursor) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.2`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.5`) |
 
