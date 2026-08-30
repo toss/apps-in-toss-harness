@@ -218,6 +218,9 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
 - **`<package_name>`(positional)·`--pm npm`·(`--template`|`--tds`)를 전부 명시**
   — `--inline`이면 이 중 하나만 빠져도 CLI가 **에러로 즉시 중단**한다
   (`assertNonInteractiveArgs`). 프롬프트로 빠지는 게 아니라 실패한다.
+- **스캐폴더는 `create-ait-app` 하나다** — `npm create @apps-in-toss/app` 같은
+  변형 명칭을 기억으로 지어내 시도하지 마라(존재하지 않는 패키지라 404가 난다 —
+  실측). 위 fence의 `npx -y create-ait-app@latest` 형태 그대로 쓴다.
 - **생성 위치는 positional 경로로 지정한다** — `--cwd` 플래그는 없다(알 수 없는
   옵션으로 즉시 에러). 현재 디렉터리에 만들려면 positional에 `.`을 준다
   (`npx -y create-ait-app@latest . --inline …`). positional은 하나만 받는다 —
@@ -343,13 +346,17 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
 test -f ./<package_name>/apps-in-toss.config.ts && \
   node -e "const p=require('./<package_name>/package.json'); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" && \
   echo "형상 일치" || echo "형상 불일치"
+grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음" || echo "디자인 가이드 없음"
 ```
 
 세 가지를 본다: `apps-in-toss.config.ts` 존재, `dependencies`의
 `@apps-in-toss/web-framework`, `scripts.build`의 `ait build`. 앞뒤 둘은 `ait init`이
 만들고(create-ait-app 0.2.3 dist에는 이 설정 파일도 `build` 스크립트도 쓰는 코드가
 없다) 가운데 하나만 create-ait-app이 직접 쓴다 — 이 한 줄이 "CLI가 자기 몫과
-`ait init` 몫을 둘 다 끝냈는가"를 판정한다.
+`ait init` 몫을 둘 다 끝냈는가"를 판정한다. fence 마지막 줄(`grep`)은 네 번째
+신호(디자인 가이드 실재)를 함께 찍는다 — 이 fence를 실행할 때 그 줄을 빼고
+실행하지 마라. 판정 규칙은 아래 "디자인 가이드 실재" 절이 정의하며, 바로 아래
+"하나라도 실패하면 중단"의 대상이 **아니다**(fail-soft).
 
 - **통과해도 아직 Step 4로 가지 않는다** — 바로 아래 **wf major 확인 → `ait` bin
   확인** 두 서브체크까지 이어서 하고, 셋을 다 통과한 뒤에 Step 4로 간다.
@@ -414,20 +421,16 @@ ls ./<package_name>/node_modules/.bin/ait
 명령은 어떤 형태로도 실행하지 않는다** — 정본 산출물은 3.x이고, 강등은 그걸
 되레 깨뜨린다.
 
-**세 서브체크를 통과했으면 디자인 가이드 실재도 여기서 확인한다**
-(`--no-design-guide`였으면 이 확인 자체를 건너뛴다 — 사용자가 명시적으로 뺀
-것이다):
-
-```bash
-grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음" || echo "디자인 가이드 없음"
-```
-
-`디자인 가이드 없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온
-것이다 — 위 형상 불일치와 달리 **중단하지 않고**, 5-B의 보완 호출(같은 스크립트,
-같은 인자 규칙)을 지금 바로 한 번 실행해 채운 뒤 진행한다. 스크립트는 멱등이라
-이미 주입된 프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 확인은
-Step 2가 백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력 줄(`5-B:`)을
-놓쳤어도 파일 실재가 최종 판정이다.
+**디자인 가이드 실재** — 위 형상 fence의 마지막 `grep` 줄이 찍은 신호를 세
+서브체크를 마친 여기서 판정한다(따로 명령을 다시 돌릴 필요 없다 — 형상 fence를
+줄여 실행했다면 그 `grep` 한 줄만 지금 실행한다). `--no-design-guide`였으면
+`디자인 가이드 없음`이 정상이다 — 사용자가 명시적으로 뺀 것이라 보완하지 않는다.
+그 외에 `없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온 것이다 —
+위 형상 불일치와 달리 **중단하지 않고**, 5-B의 보완 호출(같은 스크립트, 같은
+인자 규칙)을 지금 바로 한 번 실행해 채운 뒤 진행한다. 스크립트는 멱등이라 이미
+주입된 프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 판정은 Step 2가
+백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력 줄(`5-B:`)을 놓쳤어도
+파일 실재가 최종 판정이다.
 
 ### 4. 후처리 B — devtools 배선 확인 (브라우저 dev 활성화)
 
@@ -618,7 +621,7 @@ entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry �
 배포 준비가 되면 (번들 설정은 템플릿에 이미 포함):
   /ait:design       # 등록용 로고·썸네일·스크린샷 산출
                      # 말로: "등록용 로고랑 스크린샷 만들어줘"
-  npm run build     # tsc -b && vite build && ait build → 프로젝트 루트에 <package_name>.ait 생성
+  npm run build     # tsc -b && vite build && ait build → 프로젝트 디렉터리 안에 <package_name>.ait 생성 (package.json 옆)
   console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
                      # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
   /ait:test-on-device # 위 빌드·업로드·컴파일 확인을 한 번에 (실기기 확인의 정규 경로)
@@ -626,7 +629,8 @@ entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry �
 
 주의: ait build를 단독으로 실행하면 dist/가 없어 실패합니다 — 항상 npm run build
   (또는 vite build 이후)로 실행하세요. 빌드가 오래 걸려도 .ait는 완료 후
-  프로젝트 루트에 생깁니다 — 완료 전에 없다고 판단해 재빌드하지 마세요.
+  프로젝트 디렉터리 바로 아래(package.json 옆)에 생깁니다 — 상위 폴더가 아니라
+  프로젝트 안입니다. 완료 전에 없다고 판단해 재빌드하지 마세요.
 
 참고: 브라우저 mock은 web-framework 2.x(flat 함수)·3.x(네임스페이스,
   Clipboard.* 등) 표면을 모두 지원하며, 이 프로젝트(wf 3.x)에서는 자동
