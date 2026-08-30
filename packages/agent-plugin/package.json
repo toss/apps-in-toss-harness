@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/agent-plugin",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "description": "Plugin for building Apps in Toss mini-apps from inside AI coding agents (Claude Code first; Codex and others to follow)",
   "type": "module",
   "private": true,
