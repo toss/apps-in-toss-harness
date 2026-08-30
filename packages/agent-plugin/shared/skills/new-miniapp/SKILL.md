@@ -222,6 +222,16 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
   옵션으로 즉시 에러). 현재 디렉터리에 만들려면 positional에 `.`을 준다
   (`npx -y create-ait-app@latest . --inline …`). positional은 하나만 받는다 —
   두 개 이상이면 `알 수 없는 인수예요`로 거부한다.
+- **현재 작업 디렉터리에서 실행한다 — 명령 앞에 `cd`를 붙이지 마라.** 사용자가
+  위치를 명시하지 않았다면 세션의 작업 디렉터리가 곧 프로젝트를 둘 자리다.
+  scaffold 앞에 `cd /tmp`·`cd ~` 같은 이동을 붙이면 산출물이 사용자가 찾을 수
+  없는 곳에 생긴다 — 이후 후처리가 전부 통과해도 사용자 눈에는 결과물이 없는
+  실패다(실측 사례 있음). 도구 셸은 호출마다 원래 작업 디렉터리로 돌아오므로,
+  Step 3 이후의 모든 후처리 fence도 `cd` 없이 적힌 그대로(작업 디렉터리 기준
+  `./<package_name>/…` 상대 경로) 실행한다 — `cd`를 덧붙이면 가드들이 엉뚱한
+  위치를 검사한다. "Shell cwd was reset" 알림이 보이면 직전 호출을 작업 디렉터리
+  밖에서 실행했다는 경고다 — 같은 밖 경로로 다시 `cd`해 계속하지 말고, 프로젝트가
+  `./<package_name>`에 있는지부터 재확인한다.
 - **`--skills`·`--skip-install`은 존재하지 않는다** — 0.2.3의 플래그 표는 값
   플래그 `--pm`·`--sample`·`--template`, 불리언 플래그
   `--help`·`--inline`·`--list-templates`·`--tds`가 전부다(dist 실측). 없는
@@ -608,14 +618,15 @@ entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry �
 배포 준비가 되면 (번들 설정은 템플릿에 이미 포함):
   /ait:design       # 등록용 로고·썸네일·스크린샷 산출
                      # 말로: "등록용 로고랑 스크린샷 만들어줘"
-  npm run build     # tsc -b && vite build && ait build → .ait 번들 생성
+  npm run build     # tsc -b && vite build && ait build → 프로젝트 루트에 <package_name>.ait 생성
   console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
                      # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
   /ait:test-on-device # 위 빌드·업로드·컴파일 확인을 한 번에 (실기기 확인의 정규 경로)
                      # 말로: "만든 미니앱을 실제 토스 앱에서 돌려보고 싶어"
 
 주의: ait build를 단독으로 실행하면 dist/가 없어 실패합니다 — 항상 npm run build
-  (또는 vite build 이후)로 실행하세요.
+  (또는 vite build 이후)로 실행하세요. 빌드가 오래 걸려도 .ait는 완료 후
+  프로젝트 루트에 생깁니다 — 완료 전에 없다고 판단해 재빌드하지 마세요.
 
 참고: 브라우저 mock은 web-framework 2.x(flat 함수)·3.x(네임스페이스,
   Clipboard.* 등) 표면을 모두 지원하며, 이 프로젝트(wf 3.x)에서는 자동
