@@ -197,8 +197,7 @@ scaffold는 **명령 하나**다 — CLI가 파일 생성 → `npm install` →
 반드시 주입까지 실행하도록 명령 레벨에서 결합했다:
 
 ```bash
-npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <template> | --tds) [--sample iap,iaa] \
-  && bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
+npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <template> | --tds) [--sample iap,iaa] && bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
 ```
 
 > **핀을 쓰지 않는 이유와 남는 위험**: `create-ait-app`·`@apps-in-toss/*`는
@@ -230,11 +229,19 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
   이유도 유효하다 — 에이전트용 지식 주입은 이 plugin의 skill 체제가 담당한다.
 - **`npx -y`를 쓴다** — `-y`는 npx 최초 실행 시 나오는 설치 확인 프롬프트를
   비대화형으로 넘긴다(non-TTY 세션이 이 프롬프트에서 멈추는 것을 막는다).
-- **`&&` 뒤 주입 세그먼트의 인자 규칙** — `--tds`로 스캐폴드하면 스크립트에도
-  `--tds`를, `--no-tossface`면 `--no-tossface`를 덧붙인다. `--no-design-guide`면
-  `&&` 뒤 세그먼트를 통째로 뺀다. 스크립트 경로는 시스템이 이 skill을 로드할 때
-  표시한 base directory 기준이다. 스크립트 파일을 Read로 열어 보지 마라 —
-  내용을 알 필요 없이 이 호출 하나면 된다. 출력 해석·보고 규칙은 5-B 절.
+- **`&&` 뒤 주입 세그먼트는 조립할 때 빼먹기 가장 쉬운 부분이다 — 생략하지
+  마라.** 세그먼트를 뺄 수 있는 경우는 `--no-design-guide` 하나뿐이고, 그 외에는
+  위 fence의 두 명령을 그대로 **한 번의 Bash 호출**로 실행한다 — 주입을 뒤로
+  미뤄 별도 호출로 쪼개지 않는다. 인자 규칙: `--tds`로 스캐폴드하면 스크립트에도
+  `--tds`를, `--no-tossface`면 `--no-tossface`를 덧붙인다.
+- **스크립트 경로는 재계산하지 않는다** — 시스템이 이 skill을 로드할 때 표시한
+  base directory 문자열 뒤에 `/../design/scripts/inject-project-guide.sh`를
+  그대로 붙인 것 하나뿐이다. `$PWD`·`dirname` 조합으로 새로 만들거나 `find`로
+  찾아 헤매지 마라 — 그렇게 만든 경로는 실측에서 대부분 틀렸다. "No such file"이
+  나면 base directory를 다시 확인해 같은 형태로 한 번만 재시도하고, 그래도 없으면
+  5-B 말미의 폴백(자산 `Read`→`Write`)으로 간다. 스크립트 파일을 Read로 열어
+  보지 마라 — 내용을 알 필요 없이 이 호출 하나면 된다. 출력 해석·보고 규칙은
+  5-B 절.
 - **이 규칙과 실제 CLI가 어긋나면 CLI 에러가 최신 규칙이다** — `@latest`가
   여기 적힌 0.2.3보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
   그때는 플래그를 빼고 다시 넣어 보는 식으로 우회하지 말고, 에러 문구를 그대로
@@ -397,6 +404,21 @@ ls ./<package_name>/node_modules/.bin/ait
 명령은 어떤 형태로도 실행하지 않는다** — 정본 산출물은 3.x이고, 강등은 그걸
 되레 깨뜨린다.
 
+**세 서브체크를 통과했으면 디자인 가이드 실재도 여기서 확인한다**
+(`--no-design-guide`였으면 이 확인 자체를 건너뛴다 — 사용자가 명시적으로 뺀
+것이다):
+
+```bash
+grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음" || echo "디자인 가이드 없음"
+```
+
+`디자인 가이드 없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온
+것이다 — 위 형상 불일치와 달리 **중단하지 않고**, 5-B의 보완 호출(같은 스크립트,
+같은 인자 규칙)을 지금 바로 한 번 실행해 채운 뒤 진행한다. 스크립트는 멱등이라
+이미 주입된 프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 확인은
+Step 2가 백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력 줄(`5-B:`)을
+놓쳤어도 파일 실재가 최종 판정이다.
+
 ### 4. 후처리 B — devtools 배선 확인 (브라우저 dev 활성화)
 
 배선은 **CLI(`ait init`)가 이미 한다** — 이 단계는 그 결과를 확인하고, 안 돼
@@ -530,9 +552,10 @@ test -f ./<package_name>/.gitignore && { \
 남긴다).
 
 Step 2 출력에 `5-B:` 줄이 없으면(세그먼트가 누락된 채 실행된 경우) 지금 여기서
-같은 스크립트를 **한 번의 Bash 호출로** 보완 실행한다 — `--tds`/`--no-tossface`는
-Step 2와 같은 규칙으로 덧붙이고, 스크립트를 Read로 열어 보거나 나눠 실행하지
-않는다:
+같은 스크립트를 **한 번의 Bash 호출로** 보완 실행한다 — Step 3 말미의 실재
+확인이 이 누락을 먼저 잡아 보완했다면 그 실행의 요약 줄을 해석하면 되고, 다시
+실행해도 멱등이라 무해하다. `--tds`/`--no-tossface`는 Step 2와 같은 규칙으로
+덧붙이고, 스크립트를 Read로 열어 보거나 나눠 실행하지 않는다:
 
 ```bash
 bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
