@@ -1,5 +1,31 @@
 # @apps-in-toss/agent-plugin
 
+## 0.1.27
+
+### Patch Changes
+
+- `new-miniapp`의 디자인 가이드 주입 호출을 별도 후처리(5-B)에서 Step 2 스캐폴드
+  명령 체인(`npx create-ait-app … && bash inject-project-guide.sh …`)으로 옮겼다.
+  별도 단계로 두면 일부 run(특히 haiku)이 주입을 통째로 건너뛰는 것이 세 라운드
+  측정에서 반복 관측됐는데(1~2/5), scaffold가 성공한 run은 반드시 주입까지
+  실행하도록 명령 레벨에서 결합한 것이다. 주입 스크립트는 항상 exit 0(fail-soft)
+  이라 성공 판정(exit code) 의미는 그대로다.
+
+  5-B 절은 `5-B:` 요약 해석·보고 전용으로 줄었고, Step 2 출력에 요약 줄이 없을
+  때만 같은 스크립트를 1회 보완 호출하는 안전망을 남겼다. 주입 항목·멱등·플래그
+  효과(`--tds`/`--no-tossface`/`--no-design-guide`)는 동일하다.
+
+- `setup-debugger`의 노출 발화("말로:" 예시·README 표)를 교체했다. 종전 문장("온디바이스
+  디버깅용 ait-devtools MCP 서버를 이 프로젝트 .mcp.json에 등록해줘")은 기계적 JSON 편집
+  요청으로 해석돼 모델이 Skill 라우팅을 통째로 건너뛰는 것이 라우팅 프로브에서 결정적으로
+  재현됐고(0/5 — 자가 실행 시 틀린 `.mcp.json`을 임의 생성할 위험), 새 문장("나중에 폰
+  디버깅할 수 있게 디버거 연결을 미리 세팅해줘")은 5/5로 `setup-debugger`에 닿는다. README
+  ko/en·debug·test-on-device·welcome 5표면을 같은 커밋에서 갱신했다.
+
+  description에도 반증 문구를 넣었다 — `.mcp.json` 등록처럼 들리는 기계적 요청도 손으로
+  JSON을 쓰지 말고 이 skill로 오라는 것과, `debug-console` 패키지 설치는 `inject`라는 경계.
+  인접 경계 케이스(inject 3 facet·debug·test-on-device) 15/15 무회귀 실측.
+
 ## 0.1.26
 
 ### Patch Changes
