@@ -117,7 +117,7 @@ This section was verified against Claude Code `2.1.250` and codex-cli `0.149.1`.
 
 ## Development journey
 
-1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, turn on auto-update from `/plugin`, then authorize `apps-in-toss-console` from `/mcp`.
+1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `apps-in-toss-console` from `/mcp`, then turn on auto-update from `/plugin`.
 2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
 3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
 4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.

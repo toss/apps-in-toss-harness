@@ -117,7 +117,7 @@ codex plugin list
 
 ## 개발 여정
 
-1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/plugin`에서 자동 업데이트를 켠 뒤 `/mcp`에서 `apps-in-toss-console`을 인가합니다.
+1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `apps-in-toss-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
 2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
 3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘 6종·`docs/design-guide.md`)와 이모지 서체 Tossface가 프로젝트에 들어갑니다. 에이전트가 자동으로 읽는 `AGENTS.md`에 규칙 요약이 남아, 이후 어떤 세션에서 화면을 만들어도 같은 기준이 적용됩니다 (`--no-design-guide`로 통째로, `--no-tossface`로 서체만 뺄 수 있습니다).
 4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
