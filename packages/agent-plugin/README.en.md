@@ -2,7 +2,7 @@
 
 [한국어](./README.md) · **English**
 
-Plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside coding agents — currently supports [Claude Code](https://claude.com/claude-code). Codex and other agents are planned for later phases.
+Plugin for building [Apps in Toss](https://toss.im/) mini-apps from inside coding agents. Supports [Claude Code](https://claude.com/claude-code), [Codex](https://openai.com/codex/), and [Cursor](https://cursor.com/); Gemini CLI and Windsurf are planned for later.
 
 ## Goal
 
@@ -37,8 +37,8 @@ agent-plugin/
 │   ├── skills/              # SKILL.md bundles
 │   ├── commands/            # slash command entry points (thin wrappers)
 │   └── templates/           # scaffolding templates
-├── .claude-plugin/          # Claude Code plugin manifest (Phase 1, current) — marketplace manifest lives at the repo root
-└── .codex-plugin/           # Codex (Phase 3, after spec is finalised)
+├── .claude-plugin/          # Claude Code plugin manifest — marketplace manifest lives at the repo root. Codex also reads this manifest via the legacy marketplace path
+└── .cursor-plugin/          # Cursor 2.5+ first-class plugin manifest (no-build adapter)
 ```
 
 `shared/` is the source of truth. Real logic lives in skills; slash commands are thin wrappers. See [`CLAUDE.md`](./CLAUDE.md) for architecture and decision background.
@@ -54,7 +54,7 @@ In Claude Code, add the marketplace and install the plugin:
 
 After installation the `/ait:` commands (`/ait:new`, `/ait:debug`, etc.) become available. The plugin name is the namespace, so the colon form is the real command — a space form (`/ait new`) does not exist.
 
-Codex / Gemini CLI / Cursor / Windsurf are planned for Phase 2+. See the deployment-phases section in [`CLAUDE.md`](./CLAUDE.md).
+Codex and Cursor can be installed today — see [Using it from Codex](../../README.md#using-it-from-codex) and [Using it from Cursor](../../README.md#using-it-from-cursor) in the root README for setup and the differences from Claude Code. Gemini CLI and Windsurf are planned for later. See the deployment-phases section in [`CLAUDE.md`](./CLAUDE.md).
 
 ## Development
 

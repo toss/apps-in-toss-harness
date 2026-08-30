@@ -1,0 +1,16 @@
+{
+  "name": "apps-in-toss",
+  "owner": {
+    "name": "toss"
+  },
+  "metadata": {
+    "description": "Apps in Toss — AI agent harness plugin marketplace"
+  },
+  "plugins": [
+    {
+      "name": "ait",
+      "source": "packages/agent-plugin",
+      "description": "Build Apps in Toss mini-apps from inside AI coding agents — scaffolding via create-ait-app, docs MCP + console MCP by default, opt-in devtools/debugger."
+    }
+  ]
+}

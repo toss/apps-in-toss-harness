@@ -7,7 +7,7 @@ description: |
   install` itself prints no next step. Station-0→1 hand-off. Triggered by
   `/ait:welcome`, no args.
 argument-hint: ''
-adapter-note: 'MCP introspection here (own tool list, `/mcp`, project `.mcp.json`) is Claude Code-specific — other agent targets replace step 1-c with that agent’s own MCP configuration surface.'
+adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface.'
 ---
 
 # welcome skill
@@ -60,7 +60,9 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 - `.git` 없음 → git 저장소가 아니라는 사실만 알린다(초기화는 사용자 결정 —
   이 skill은 `git init`을 실행하지 않는다).
 
-**c. MCP 연동** (Claude Code-specific — adapter-note 참조):
+**c. MCP 연동** (호스트 분기 — adapter-note 참조):
+
+Claude Code:
 
 - 에이전트 자신에게 노출된 도구 목록을 훑어 서버 키 `apps-in-toss-docs`·
   `apps-in-toss-console`가 포함된 도구가 보이는지 확인한다 — 직접 등록 형태
@@ -80,9 +82,23 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
   본다). 없으면 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에
   넣는다 — 강제하지 않는다(디버깅 계획이 없는 세션도 많다).
 
-다른 에이전트 타깃에서는 `/mcp`·`.mcp.json`·`mcp__` 네이밍이 그대로 오지
-않는다 — 그런 환경에서는 이 c 단계를 그 에이전트의 MCP 설정 표면으로
-대체한다(graceful degrade, `debug` skill §5 adapter-note와 동일 패턴).
+Cursor:
+
+- 도구 이름 규칙이 실측 전이라 개별 도구명까지 대조하지 않는다 — 도구 목록에서
+  `apps-in-toss-docs`라는 이름의 서버에서 온 도구가 **하나라도** 보이면 docs
+  MCP 연결로 본다(서버명 매칭으로 판정을 낮춘 것이지, 규칙을 지어낸 게
+  아니다). 콘솔 MCP도 같은 방식으로 `apps-in-toss-console` 서버 도구 존재
+  여부만 확인한다.
+- 콘솔 MCP 도구가 안 보이면 인가를 권유한다 — 안내 명령은
+  ⟨실측: `agent mcp login apps-in-toss-console`⟩.
+- cwd에 `package.json`이 있으면 `.cursor/mcp.json`을 `Read`해
+  `mcpServers.ait-devtools` 항목이 있는지 확인한다. 없으면 Claude Code와
+  동일하게 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에 넣는다.
+
+그 밖의 에이전트(Codex 등)에서는 `/mcp`·`.mcp.json`·`.cursor/mcp.json`·
+`mcp__` 네이밍이 그대로 오지 않는다 — 그런 환경에서는 이 c 단계 중 확인
+가능한 것만 확인하고 나머지는 조용히 건너뛴다(graceful degrade, `debug`
+skill §5 adapter-note와 동일 패턴).
 
 ### 2. 결과 인쇄
 
@@ -105,7 +121,9 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 ```
 
 (위는 예시 조합이다 — 실제로는 점검에서 관측된 항목만 인쇄한다. 전부 ✅면
-"환경·연동 점검 결과: 이상 없음"처럼 짧게 줄인다.)
+"환경·연동 점검 결과: 이상 없음"처럼 짧게 줄인다. 이 예시는 Claude Code
+기준이며, Cursor에서는 인가 안내 줄과 배선 확인 파일이 위 1-c의 Cursor
+분기대로 바뀐다.)
 
 이어서 **station map 블록과 자연어 예시 5종 블록을 아래 그대로** 인쇄한다.
 (이 두 블록은 루트 README ko/en의 노출 예시 5종과 결합돼 있다 — 문구를 바꿀

@@ -12,20 +12,27 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkgPath = join(root, 'package.json');
-const manifestPath = join(root, '.claude-plugin', 'plugin.json');
+
+// 두 어댑터 manifest 를 모두 동기화한다 — 하나만 갱신되면 A5 가 하드 실패한다.
+const manifestRelPaths = [
+  ['.claude-plugin', 'plugin.json'],
+  ['.cursor-plugin', 'plugin.json'],
+];
 
 const { version } = JSON.parse(readFileSync(pkgPath, 'utf8'));
-const raw = readFileSync(manifestPath, 'utf8');
-
 const versionRe = /("version"\s*:\s*")[^"]*(")/;
-if (!versionRe.test(raw)) {
-  throw new Error('no "version" field found in .claude-plugin/plugin.json');
-}
 
-const next = raw.replace(versionRe, `$1${version}$2`);
-if (next === raw) {
-  process.exit(0);
+for (const rel of manifestRelPaths) {
+  const manifestPath = join(root, ...rel);
+  const label = rel.join('/');
+  const raw = readFileSync(manifestPath, 'utf8');
+  if (!versionRe.test(raw)) {
+    throw new Error(`no "version" field found in ${label}`);
+  }
+  const next = raw.replace(versionRe, `$1${version}$2`);
+  if (next === raw) {
+    continue;
+  }
+  writeFileSync(manifestPath, next);
+  console.log(`synced ${label} version → ${version}`);
 }
-
-writeFileSync(manifestPath, next);
-console.log(`synced .claude-plugin/plugin.json version → ${version}`);

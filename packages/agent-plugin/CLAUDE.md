@@ -66,7 +66,7 @@
 
 설치 형상(`/plugin install`)에서 **플러그인 이름이 네임스페이스**가 된다. 그래서 사용자가 실제로 치는 형태는 `/ait:<verb>`이고, 공백 형태 `/ait <verb>`는 어떤 형상에서도 존재한 적이 없다(`Unknown command: /ait`). 문서·skill seam은 전부 콜론 형태로 인쇄한다 — 검증기 A8이 공백 형태를 하드 실패로 잡는다.
 
-**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`·`plan`은 변환에서 아예 빠진다 — 루트 `README.md` "Codex에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시 5종(루트 README ko/en + `welcome` 출력)이 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
+**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)나 애초에 manifest에 `commands` 필드를 안 갖는 에이전트(Cursor — `.cursor-plugin/plugin.json`에 미탑재)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`·`plan`은 Codex 변환에서 아예 빠진다 — 루트 `README.md` "Codex에서 쓰기"·"Cursor에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시 5종(루트 README ko/en + `welcome` 출력)이 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
 
 같은 목록에 두 종류가 함께 오른다:
 
@@ -91,32 +91,32 @@ agent-plugin/
 │   ├── skills/                  # SKILL.md + 하위 리소스
 │   ├── commands/                # slash command 진입점
 │   └── templates/               # (README만, 실제 템플릿 계획)
-├── .claude-plugin/              # ✅ Claude Code plugin manifest (Phase 1) — marketplace manifest는 루트 `.claude-plugin/marketplace.json`이 정본
-├── gemini-extension.json        # 🔜 Gemini CLI extension (Phase 2, multi-target build harness 미착수 — harness M3 이후)
-├── .codex-plugin/               # 🔜 Codex (Phase 3, 스펙 확정 후)
-├── .cursor-plugin/              # 🔜 Cursor (Phase 4, multi-target build harness 미착수 — harness M3 이후)
-├── install/                     # 🔜 cursor.sh / windsurf.sh (multi-target build harness 미착수 — harness M3 이후)
-└── scripts/build.ts             # 🔜 shared/ → 각 타겟 생성 (multi-target build harness 미착수 — harness M3 이후)
+├── .claude-plugin/              # ✅ Claude Code plugin manifest — marketplace manifest는 루트 `.claude-plugin/marketplace.json`이 정본. Codex도 legacy marketplace 경로로 이 manifest를 그대로 읽는다(추가 파일 0)
+├── .cursor-plugin/              # ✅ Cursor 2.5+ 1급 plugin manifest — 무빌드 어댑터(`shared/skills/`를 그대로 지목, `commands` 미탑재)
+├── gemini-extension.json        # 🔜 Gemini CLI extension (multi-target build harness 미착수 — harness M3 이후)
+├── install/                     # 🔜 windsurf.sh (multi-target build harness 미착수 — harness M3 이후)
+└── scripts/build.ts             # 🔜 shared/ → Gemini CLI·Windsurf 타겟 생성 (multi-target build harness 미착수 — harness M3 이후)
 ```
 
 `shared/`가 single source of truth. 각 도구별 어댑터 디렉토리는 파일 복사/변환만.
 
 ## 배포 phases (repo-specific)
 
-Phase 2-4 어댑터는 harness roadmap M3 달성 후 착수.
+Codex·Cursor는 이미 출하됐다. Gemini CLI·Windsurf 어댑터만 harness roadmap M3 달성 후 착수한다.
 
 단일 repo에서 지원 도구들 marketplace로 동시 배포 (Figma `mcp-server-guide`의 `.claude-plugin/` + `.cursor-plugin/` 패턴과 유사):
 
 1. **Claude Code** — 공식 plugin manifest, 전 기능 풀스택.
-2. **Gemini CLI** — `gemini-extension.json` 매니페스트, skills 네이티브 지원.
-3. **Codex** — 스펙이 2026-04 기준 유동적이라 확정 후 착수.
-4. **Cursor / Windsurf** — 공식 번들 포맷 부재. `install/*.sh`로 `.cursor/rules/`, `.windsurf/workflows/`에 파일을 꽂는 방식. 자동 업데이트 불가라 후순위.
+2. **Gemini CLI** — `gemini-extension.json` 매니페스트, skills 네이티브 지원. M3 이후.
+3. **Codex** — 별도 어댑터가 없다. Claude 매니페스트(`.claude-plugin/plugin.json`)를 legacy marketplace 경로로 그대로 읽어 이미 커버된다 — 추가 파일 0.
+4. **Cursor** — `.cursor-plugin/plugin.json` 무빌드 어댑터로 출하됐다(Cursor 2.5+ 1급 plugin 포맷). `commands`는 담지 않는다 — Cursor에는 `$ARGUMENTS` 치환이 없고 Commands 표면 자체가 Skills로 deprecated되는 중이며, 스텁을 얹으면 플랫 `/new`가 다른 플러그인과 충돌할 위험이 있다.
+5. **Windsurf** — 공식 번들 포맷 부재. M3 이후 `install/windsurf.sh`로 `.windsurf/workflows/`에 파일을 꽂는 방식만 남았다(자동 업데이트 불가라 후순위).
 
 당장은 main branch + latest only, 태그/버전 없음. Changesets는 도입되어 있지만 npm publish는 skip (Git repo 자체가 배포 산출물).
 
 ## adapter 계약 (multi-target)
 
-`shared/`는 모든 어댑터의 single source of truth다. 새 어댑터를 추가할 때 아래 계약을 따른다.
+`shared/`는 모든 어댑터의 single source of truth다. 새 어댑터를 추가할 때 아래 계약을 따른다. 버전 필드는 `package.json`이 정본이고 `scripts/sync-plugin-version.mjs`가 `.claude-plugin/plugin.json`·`.cursor-plugin/plugin.json` 양쪽으로 함께 올린다(`release:version`이 호출).
 
 **REQUIRED — skills · commands path 필드**
 
@@ -130,6 +130,8 @@ Phase 2-4 어댑터는 harness roadmap M3 달성 후 착수.
 ```
 
 다른 어댑터도 같은 디렉토리를 참조한다(경로 형식은 어댑터 포맷에 따라 조정).
+
+**EXCEPTION — Cursor는 `commands`가 없다.** `.cursor-plugin/plugin.json`은 `skills`만 갖고 `commands`는 의도적으로 뺐다 — Cursor에는 `$ARGUMENTS` 치환이 없고 Commands 표면 자체가 Skills로 deprecated되는 중이며, 스텁을 얹으면 플랫 `/new`가 다른 플러그인과 충돌할 위험이 있다(사유는 위 "배포 phases" Phase 4와 동일). 검증기 A11이 이 생략을 강제한다 — `commands` 키가 있으면 실패.
 
 **mcpServers — manifest에 remote 2종, 로컬 1종은 프로젝트 opt-in**
 
@@ -153,6 +155,24 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 `apps-in-toss-console`은 첫 사용 시 `/mcp`에서 브라우저 OAuth 1회 인가가 필요하다. 이 2종은 remote 서버라 로컬 프로세스·공급망 표면이 없으므로 manifest 상시 등록의 비용이 낮다 — `ait-devtools`(로컬 npx 데몬)와 대비된다.
 
+Cursor adapter(`.cursor-plugin/plugin.json`)는 같은 서버 2종을 다른 필드 형식으로 담는다 — `type: "http"`/`oauth.clientId` 대신 `url`/`auth.CLIENT_ID`:
+
+```json
+{
+  "mcpServers": {
+    "apps-in-toss-docs": {
+      "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    },
+    "apps-in-toss-console": {
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
+      "auth": { "CLIENT_ID": "mcp-gateway" }
+    }
+  }
+}
+```
+
+검증기 A11(어댑터 manifest 정합성 `.cursor-plugin` ↔ `.claude-plugin`)이 두 manifest의 정합성을 강제한다 — name·`skills` 경로·서버 집합(키 이름)·`url`·auth 값(`oauth.clientId` ↔ `auth.CLIENT_ID`)이 일치하는지, 그리고 Cursor manifest에 `commands`가 없는지.
+
 `ait-devtools` MCP server는 manifest에 **없다** — station 2·3의 live CDP attach를 위해 **프로젝트 scope `.mcp.json`**에 opt-in 등록되며(harness#1 타깃 아키텍처), 그 배선은 `setup-debugger` skill(`/ait:setup-debugger`)이 담당한다. 항목의 정본 형태:
 
 ```json
@@ -170,7 +190,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 **OPTIONAL — install script**
 
-`install/*.sh`는 `.cursor/rules/`·`.windsurf/workflows/` 같이 manifest 기반 설치가 없는 에이전트를 위한 파일 복사 스크립트다. Phase 4(Cursor/Windsurf) 착수 시 추가.
+`install/windsurf.sh`는 manifest 기반 설치가 없는 Windsurf를 위한 파일 복사 스크립트(`.windsurf/workflows/`에 꽂는 방식)다 — Cursor는 2.5+ 1급 plugin 포맷이 생겨 더 이상 이 방식이 필요 없다. Phase 5(Windsurf) 착수 시 추가.
 
 ## eval (성능 측정) — 두 슈트로 분업
 
@@ -189,7 +209,7 @@ plugin manifest(`.claude-plugin/plugin.json`)의 `mcpServers`는 remote http 서
 
 ## Status
 
-Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/plugin.json` 존재 — 루트 `.claude-plugin/marketplace.json`(monorepo 정본, source `./packages/agent-plugin`)이 `/plugin marketplace add toss/apps-in-toss-harness` → `/plugin install ait@apps-in-toss` 설치 경로(harness station 0)를 지탱한다(패키지 자체 `.claude-plugin/marketplace.json`은 미사용 커뮤니티 잔재라 제거됨). manifest `mcpServers`는 remote http 서버 2종(`apps-in-toss-docs`, `apps-in-toss-console`)을 기본 포함한다. `ait-devtools` MCP(station 2·3 attach surface)는 여기 포함되지 않고 `setup-debugger` skill이 프로젝트 `.mcp.json`에 opt-in 배선한다(harness#1 전환. Phase 3 분리 후 데몬 패키지는 `@apps-in-toss/debugger` — server key `ait-devtools`는 개명하지 않는다).
+Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/plugin.json` 존재 — 루트 `.claude-plugin/marketplace.json`(monorepo 정본, source `./packages/agent-plugin`)이 `/plugin marketplace add toss/apps-in-toss-harness` → `/plugin install ait@apps-in-toss` 설치 경로(harness station 0)를 지탱한다(패키지 자체 `.claude-plugin/marketplace.json`은 미사용 커뮤니티 잔재라 제거됨). manifest `mcpServers`는 remote http 서버 2종(`apps-in-toss-docs`, `apps-in-toss-console`)을 기본 포함한다. `ait-devtools` MCP(station 2·3 attach surface)는 여기 포함되지 않고 `setup-debugger` skill이 프로젝트 `.mcp.json`에 opt-in 배선한다(harness#1 전환. Phase 3 분리 후 데몬 패키지는 `@apps-in-toss/debugger` — server key `ait-devtools`는 개명하지 않는다). `.cursor-plugin/`도 2종 존재한다 — 패키지 `plugin.json`(Cursor 2.5+ 1급 포맷, 같은 `shared/skills/`를 지목)과 루트 `.cursor-plugin/marketplace.json`(source `packages/agent-plugin`). 검증기에 A11(어댑터 manifest 정합성 `.cursor-plugin` ↔ `.claude-plugin`)이 추가됐다.
 
 - ✅ **작동** (9 skill / 4 command stub): `welcome`(진입 지도 인쇄에 더해 환경·연동 점검 — git·Node/npm/npx, cwd 형상, docs·콘솔 MCP 노출, 프로젝트 `.mcp.json` `ait-devtools` 배선 — 결과에 따라 권유·제안하고 동의 시 전담 skill로 hand-off), `new-miniapp`, `plan`, `design`, `ux-writing`, `inject`(devtools·debug-console·tossface facet), `setup-debugger`, `debug`, `test-on-device`. harness aitcc 정리로 `docs`·`status`(+logs facet)·`deploy`(+Deploy Key facet)·`setup-bundle`·`register`·`changeset` 6개 skill 제거(콘솔 MCP·docs MCP·harness 외부 도구로 대체). `auth-setup`도 같은 정리에서 제거됐지만 사유는 별개다 — 서버 인증(미니앱 사용자 로그인 축)이 harness scope 밖으로 결정됐기 때문(Dave, 2026-07-31, harness#5)이지 콘솔 MCP OAuth(개발자→콘솔 축)로 대체된 게 아니다. auth-setup skill은 재신설하지 않는다. `inject`의 polyfill facet도 공식 harness 스코프 밖 패키지를 안내한다는 이유로 제거됐다. `setup-phone-preview`는 환경 2(PWA Sandbox launcher) 전면 제거(harness#103)와 함께 빠졌다. `ux-writing`은 command stub 없이 skill 디렉터리 자체로 `/ait:ux-writing`에 오른다 — `design`의 quality bar G6(카피) 판정을 재작성으로 이어받는 조력 skill이다. `inject`는 3번째 facet `/ait:inject-tossface`(Tossface 이모지 서체 CDN 링크/subset 번들 배선)가 추가돼 command stub이 3→4가 됐다. `design`은 판정만 하던 skill이 아니라 **화면 파일을 직접 쓰고 고치는 생성형 skill**이다 — 1층 하드 규칙 위반은 목록으로 남기지 않고 코드를 고쳐 해소하고, 기존 파일 편집은 3택 승인을 거친다.
 - ✅ **배선 경로**: `/ait:setup-debugger` → 프로젝트 `.mcp.json`의 `ait-devtools`(`npx -y -p <Release tarball URL> debugger`) → `/ait:debug`가 환경 3 attach 경로(`start_attach` QR) 발급. attach 전 bootstrap 도구만, 폰 attach 후 `list_changed`로 동적 등록(devtools #208).

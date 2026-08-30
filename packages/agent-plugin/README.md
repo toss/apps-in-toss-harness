@@ -2,7 +2,7 @@
 
 **한국어** · [English](./README.en.md)
 
-AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테스트·배포까지 할 수 있게 해주는 플러그인입니다. 현재 [Claude Code](https://claude.com/claude-code)를 지원하며, Codex 등 다른 에이전트는 후속 Phase에서 추가됩니다.
+AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테스트·배포까지 할 수 있게 해주는 플러그인입니다. [Claude Code](https://claude.com/claude-code)·[Codex](https://openai.com/codex/)·[Cursor](https://cursor.com/)를 지원하며, Gemini CLI·Windsurf는 후속입니다.
 
 ## 목표
 
@@ -33,8 +33,8 @@ agent-plugin/
 │   ├── skills/              # SKILL.md 번들
 │   ├── commands/            # slash command 진입점 (얇은 래퍼)
 │   └── templates/           # 스캐폴딩 템플릿
-├── .claude-plugin/          # Claude Code plugin manifest (Phase 1, 현재) — marketplace manifest는 repo 루트 정본
-└── .codex-plugin/           # Codex (Phase 3, 스펙 확정 후)
+├── .claude-plugin/          # Claude Code plugin manifest — marketplace manifest는 repo 루트 정본. Codex도 legacy marketplace 경로로 이 manifest를 그대로 읽음
+└── .cursor-plugin/          # Cursor 2.5+ 1급 plugin manifest (무빌드 어댑터)
 ```
 
 `shared/`가 source of truth입니다. 실로직은 skill에 담고, slash command는 얇은 래퍼. 아키텍처·의사결정 배경은 [`CLAUDE.md`](./CLAUDE.md) 참고.
@@ -50,7 +50,7 @@ Claude Code에서 marketplace를 추가하고 플러그인을 설치합니다:
 
 설치 후 `/ait:` 명령(`/ait:new`, `/ait:debug` 등)을 사용할 수 있습니다. 플러그인 이름이 네임스페이스라 콜론 형태가 실제 명령이고, 공백 형태(`/ait new`)는 존재하지 않습니다.
 
-Codex / Gemini CLI / Cursor / Windsurf는 Phase 2+ 예정입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
+Codex·Cursor는 지금 설치할 수 있습니다 — 설치·차이점은 루트 README의 [Codex에서 쓰기](../../README.md#codex에서-쓰기)·[Cursor에서 쓰기](../../README.md#cursor에서-쓰기) 절 참고. Gemini CLI·Windsurf는 후속입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
 
 ## 개발 환경
 
