@@ -42,6 +42,7 @@ function rulesFired(violations: Violation[]): string[] {
 //   shared/templates/<tpl>/template.json — 올바른 JSON + substitute files 존재
 //   eval/promptfoo/promptfooconfig.yaml  — skills 블록에 skill name 포함
 //   .claude-plugin/plugin.json           — version 일치
+//   .cursor-plugin/plugin.json           — name·version·skills 경로가 claude 매니페스트와 정합 (A11)
 //   package.json                         — version 일치
 //   CHANGELOG.md                         — package.json 버전의 '## <version>' 섹션 존재
 //
@@ -179,6 +180,11 @@ function buildValidFixture(dir: string): void {
   writeFile(
     path.join(dir, '.claude-plugin', 'plugin.json'),
     JSON.stringify({ name: 'ait', version: '0.1.0' }),
+  );
+  // .cursor-plugin/plugin.json — 이름·버전·skills 경로가 claude 매니페스트와 정합 (A11 baseline)
+  writeFile(
+    path.join(dir, '.cursor-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'ait', version: '0.1.0', skills: './shared/skills/' }),
   );
   writeFile(
     path.join(dir, 'package.json'),
@@ -637,6 +643,21 @@ describe('A5 negative tests', () => {
     const { violations } = await runChecks(tmpDir);
     expect(rulesFired(violations)).toContain('A5/plugin-json-version-drift');
   });
+
+  it('A5/plugin-json-version-drift — .cursor-plugin/plugin.json 버전이 package.json 과 다르면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    // cursor 매니페스트 버전만 다르게 (claude 쪽은 그대로 0.1.0 — 격리)
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'ait', version: '0.0.1', skills: './shared/skills/' }),
+    );
+    const { violations } = await runChecks(tmpDir);
+    const drift = violations.find(
+      (v) => v.rule === 'A5/plugin-json-version-drift' && v.file.includes('.cursor-plugin'),
+    );
+    expect(drift).toBeDefined();
+    expect(drift?.file).toContain('.cursor-plugin');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -647,6 +668,8 @@ describe('A7 negative tests', () => {
   it('A7/mcp-npx-bare-bin — npx args 가 -p 없이 패키지+bin 토큰을 두면 위반이 난다', async () => {
     buildValidFixture(tmpDir);
     // bare form: ["-y", "<pkg>", "<bin>"] — npm 이 bin 을 추론해야 해서 모호.
+    // (참고: claude 쪽에만 mcpServers.ait-devtools 를 추가하므로 A11/cursor-mcp-servers-drift 도
+    // 같이 발화한다 — 의도된 노이즈. 이 테스트는 toContain 이라 초록 유지.)
     writeFile(
       path.join(tmpDir, '.claude-plugin', 'plugin.json'),
       JSON.stringify({
@@ -664,6 +687,8 @@ describe('A7 negative tests', () => {
   it('A7/mcp-npx-bare-bin — -p/--package 형태는 발화하지 않는다 (positive control)', async () => {
     buildValidFixture(tmpDir);
     // 올바른 form: ["-y", "-p", "<pkg>", "<bin>"] — bin 추론 모호성 없음.
+    // (참고: 여기도 claude 쪽에만 mcpServers.ait-devtools 를 추가해 A11/cursor-mcp-servers-drift 가
+    // 같이 발화한다 — 이 테스트는 A7 rule 하나만 not.toContain 으로 보므로 초록 유지.)
     writeFile(
       path.join(tmpDir, '.claude-plugin', 'plugin.json'),
       JSON.stringify({
@@ -3710,5 +3735,320 @@ describe('A2/design-icon-asset-invalid negative tests (N3)', () => {
     writeValidDesignIcons(tmpDir);
     const { violations: restored } = await runChecks(tmpDir);
     expect(rulesFired(restored)).not.toContain('A2/design-icon-asset-invalid');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A11 — 어댑터 manifest 정합성 (.cursor-plugin ↔ .claude-plugin)
+// ---------------------------------------------------------------------------
+//
+// buildValidFixture 가 이미 정합한 최소 쌍(name/version/skills 일치, mcpServers
+// 없음)을 깔아 두므로 대부분의 케이스는 그 위에서 한 파일만 덮어써 격리한다.
+// mcpServers 관련 3건(servers-drift·url-drift·auth-drift)은 실제 두 매니페스트의
+// 형식 차이(claude: {type:'http',url,oauth:{clientId}} / cursor: {url,auth:{CLIENT_ID}})
+// 를 그대로 재현해야 해서 아래 두 헬퍼로 "완전히 정합한 mcpServers 쌍"을 만든다.
+
+function baseClaudePluginWithMcp(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: 'ait',
+    version: '0.1.0', // package.json 과 일치 (A5 격리)
+    mcpServers: {
+      'apps-in-toss-docs': {
+        type: 'http',
+        url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp',
+      },
+      'apps-in-toss-console': {
+        type: 'http',
+        url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
+        oauth: { clientId: 'mcp-gateway' },
+      },
+    },
+    ...overrides,
+  };
+}
+
+function baseCursorPluginWithMcp(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: 'ait',
+    version: '0.1.0',
+    skills: './shared/skills/',
+    mcpServers: {
+      'apps-in-toss-docs': {
+        url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp',
+      },
+      'apps-in-toss-console': {
+        url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
+        auth: { CLIENT_ID: 'mcp-gateway' },
+      },
+    },
+    ...overrides,
+  };
+}
+
+describe('A11 negative tests', () => {
+  it('A11/cursor-manifest-missing — .cursor-plugin/plugin.json 이 없으면 위반이 나고 A5 는 침묵한다', async () => {
+    buildValidFixture(tmpDir);
+    fs.rmSync(path.join(tmpDir, '.cursor-plugin', 'plugin.json'));
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-manifest-missing');
+    // 부재는 A11 이 전담 — A5 는 조용히 넘긴다(중복 신고 방지, A7 이 "A5 가 부재를
+    // 별도로 다룬다"며 skip 하는 것과 같은 관례).
+    expect(rulesFired(violations).some((r) => r.startsWith('A5/'))).toBe(false);
+  });
+
+  it('A11/cursor-manifest-invalid — .cursor-plugin/plugin.json 이 JSON 파싱에 실패하면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(path.join(tmpDir, '.cursor-plugin', 'plugin.json'), '{ not valid json');
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-manifest-invalid');
+  });
+
+  it('A11/cursor-name-mismatch — cursor.name 이 claude.name 과 다르면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'ait-other', version: '0.1.0', skills: './shared/skills/' }),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-name-mismatch');
+  });
+
+  it('A11/cursor-name-pattern — name 이 Cursor 패턴을 어긋나면 위반이 난다 (mismatch 는 격리)', async () => {
+    buildValidFixture(tmpDir);
+    // 두 매니페스트 모두 같은(패턴 위반) 이름으로 맞춰 mismatch 가 아니라
+    // pattern 규칙만 발화하게 격리한다.
+    writeFile(
+      path.join(tmpDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'AIT_Plugin', version: '0.1.0' }),
+    );
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'AIT_Plugin', version: '0.1.0', skills: './shared/skills/' }),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-name-pattern');
+    expect(rulesFired(violations)).not.toContain('A11/cursor-name-mismatch');
+  });
+
+  it('A11/cursor-skills-path — skills 가 ./shared/skills/ 가 아니면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'ait', version: '0.1.0', skills: './shared/wrong-path/' }),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-skills-path');
+  });
+
+  it('A11/cursor-commands-present — commands 키가 있으면 위반이 난다 (v1 설계 결정)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({
+        name: 'ait',
+        version: '0.1.0',
+        skills: './shared/skills/',
+        commands: './shared/commands/',
+      }),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-commands-present');
+  });
+
+  it('A11/cursor-mcp-servers-drift — 서버 키 집합이 다르면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify(baseClaudePluginWithMcp()),
+    );
+    // cursor 쪽엔 apps-in-toss-console 을 뺀다.
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify(
+        baseCursorPluginWithMcp({
+          mcpServers: {
+            'apps-in-toss-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
+          },
+        }),
+      ),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-mcp-servers-drift');
+  });
+
+  it('A11/cursor-mcp-url-drift — 같은 키의 url 이 다르면 위반이 나고 servers-drift 는 발화하지 않는다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify(baseClaudePluginWithMcp()),
+    );
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify(
+        baseCursorPluginWithMcp({
+          mcpServers: {
+            'apps-in-toss-docs': { url: 'https://example.invalid/different-docs-mcp' },
+            'apps-in-toss-console': {
+              url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
+              auth: { CLIENT_ID: 'mcp-gateway' },
+            },
+          },
+        }),
+      ),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-mcp-url-drift');
+    expect(rulesFired(violations)).not.toContain('A11/cursor-mcp-servers-drift');
+  });
+
+  it('A11/cursor-mcp-auth-drift — 같은 서버의 클라이언트 id 가 다르면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify(baseClaudePluginWithMcp()),
+    );
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify(
+        baseCursorPluginWithMcp({
+          mcpServers: {
+            'apps-in-toss-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
+            'apps-in-toss-console': {
+              url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
+              auth: { CLIENT_ID: 'some-other-client' },
+            },
+          },
+        }),
+      ),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-mcp-auth-drift');
+  });
+
+  it('A11/cursor-unknown-key — 최상위 키가 허용 목록에 없으면 위반이 난다 (oauth 누출 시나리오)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify({
+        name: 'ait',
+        version: '0.1.0',
+        skills: './shared/skills/',
+        oauth: { clientId: 'mcp-gateway' }, // claude 쪽 필드를 잘못 복붙한 시나리오
+      }),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A11/cursor-unknown-key');
+  });
+
+  it('정합한 쌍은 A11 위반을 내지 않는다 (positive control)', async () => {
+    buildValidFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify(baseClaudePluginWithMcp()),
+    );
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
+      JSON.stringify(baseCursorPluginWithMcp()),
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations).filter((r) => r.startsWith('A11/'))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A11 — 루트 marketplace 정합성 (.cursor-plugin/marketplace.json ↔ .claude-plugin/marketplace.json)
+// ---------------------------------------------------------------------------
+//
+// checkA11Marketplaces 는 repoRoot(= package root 의 두 단계 위에 pnpm-workspace.yaml
+// 이 있는가) 가 감지될 때만 돈다 — 위 A11 negative tests 는 buildValidFixture 만
+// 쓰는 평범한 tmpDir 이라 pnpm-workspace.yaml 이 없어 이 축이 조용히 skip 된다.
+// 여기서는 그 감지가 되도록 fixture 를 monorepo 형태로 한 단계 더 쌓는다.
+
+function buildRepoRootFixture(dir: string): void {
+  const pkgDir = path.join(dir, 'packages', 'agent-plugin');
+  buildValidFixture(pkgDir);
+  writeFile(path.join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n");
+  writeFile(
+    path.join(dir, '.claude-plugin', 'marketplace.json'),
+    JSON.stringify({
+      name: 'apps-in-toss',
+      owner: { name: 'toss' },
+      description: 'Apps in Toss — AI agent harness plugin marketplace',
+      plugins: [
+        {
+          name: 'ait',
+          displayName: 'Apps in Toss',
+          source: './packages/agent-plugin', // claude 쪽은 './' 접두 — 정규화 대상
+          description: 'fixture entry',
+        },
+      ],
+    }),
+  );
+  writeFile(
+    path.join(dir, '.cursor-plugin', 'marketplace.json'),
+    JSON.stringify({
+      name: 'apps-in-toss',
+      owner: { name: 'toss' },
+      metadata: { description: 'Apps in Toss — AI agent harness plugin marketplace' },
+      plugins: [
+        {
+          name: 'ait',
+          source: 'packages/agent-plugin', // cursor 쪽은 접두 없음 — normalizeSource 로 같아져야 한다
+          description: 'fixture entry',
+        },
+      ],
+    }),
+  );
+}
+
+describe('A11 marketplace negative tests', () => {
+  it('정합한 루트 marketplace 2종은 A11/marketplace-* 위반을 내지 않는다 (baseline)', async () => {
+    buildRepoRootFixture(tmpDir);
+    const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
+    expect(rulesFired(violations).filter((r) => r.startsWith('A11/marketplace-'))).toEqual([]);
+  });
+
+  it('A11/marketplace-missing — .cursor-plugin/marketplace.json 이 없으면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    fs.rmSync(path.join(tmpDir, '.cursor-plugin', 'marketplace.json'));
+    const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
+    expect(rulesFired(violations)).toContain('A11/marketplace-missing');
+  });
+
+  it('A11/marketplace-source-drift — cursor 항목 source 가 실제 위치와 다르면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'marketplace.json'),
+      JSON.stringify({
+        name: 'apps-in-toss',
+        owner: { name: 'toss' },
+        metadata: { description: 'fixture' },
+        plugins: [{ name: 'ait', source: 'packages/other', description: 'fixture entry' }],
+      }),
+    );
+    const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
+    expect(rulesFired(violations)).toContain('A11/marketplace-source-drift');
+  });
+
+  it('A11/marketplace-unknown-key — cursor 항목에 displayName 이 섞이면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'marketplace.json'),
+      JSON.stringify({
+        name: 'apps-in-toss',
+        owner: { name: 'toss' },
+        metadata: { description: 'fixture' },
+        plugins: [
+          {
+            name: 'ait',
+            displayName: 'Apps in Toss', // Cursor marketplace 스키마엔 없는 키 — 복붙 실수 시나리오
+            source: 'packages/agent-plugin',
+            description: 'fixture entry',
+          },
+        ],
+      }),
+    );
+    const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
+    expect(rulesFired(violations)).toContain('A11/marketplace-unknown-key');
   });
 });

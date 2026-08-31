@@ -10,7 +10,7 @@ description: |
   `/ait:debug` (no args). Distinct from `status`/`logs` (console-side, not
   live device state).
 argument-hint: ''
-adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_background, /mcp auto-start, notifications/tools/list_changed handling are Claude Code-specific. Replace §5 with an adapter-specific overlay when targeting other agents.'
+adapter-note: '§5 (on-device MCP attach) is Claude Code-only — run_in_background, /mcp auto-start and notifications/tools/list_changed handling are Claude Code-specific. Not supported on Codex or Cursor; environment 1 (browser) works there unchanged. Replace §5 with an adapter-specific overlay when targeting other agents.'
 ---
 
 # debug skill

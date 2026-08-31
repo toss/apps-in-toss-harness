@@ -2,12 +2,13 @@
  * validate-plugin.mjs
  *
  * 구조 검증기 — shared/{skills,commands,templates} + eval/ 의 정합성을 확인.
- * 9개 그룹으로 나뉜다 (A4 — CLI 토큰 크로스체크는 대상이 없어져 제거됨, harness
+ * 10개 그룹으로 나뉜다 (A4 — CLI 토큰 크로스체크는 대상이 없어져 제거됨, harness
  * 절단 이후 이 repo에는 console-cli/aitcc 크로스체크 대상이 존재하지 않는다):
  *   A1 — frontmatter + 1:1 매핑 + 라우팅 스냅샷 (hard-fail)
  *   A2 — 본문 구조 + seam 검사 (슬래시·자연어 2표면 포함, hard-fail)
  *   A3 — 템플릿 + eval 동기화 (hard-fail)
- *   A5 — plugin.json ↔ package.json 버전 드리프트 (hard-fail)
+ *   A5 — plugin.json ↔ package.json 버전 드리프트 (hard-fail — `.claude-plugin`·
+ *        `.cursor-plugin` 두 어댑터 매니페스트 모두 대상)
  *   A6 — aitc.dev 링크 부재 검사 (opt-in warn, VALIDATE_LINKS=1 일 때만 —
  *        허용 목록 외 aitc.dev 링크가 남아있지 않은지 확인. 네트워크 비의존)
  *   A7 — mcpServers npx args 해석 가능성 (hard-fail)
@@ -29,18 +30,23 @@
  *        불변식을 "현재 package.json 버전 섹션이 CHANGELOG.md 에 있는가"
  *        하나로 단순화한다 — 버전을 올리는 경로가 무엇이든(수동/`changeset
  *        version`/스크립트) CHANGELOG 동반 기록을 강제한다)
+ *   A11 — 어댑터 manifest 정합성, .cursor-plugin ↔ .claude-plugin (hard-fail —
+ *        `.cursor-plugin/plugin.json` 이 `.claude-plugin/plugin.json` 과 이름·
+ *        skills 경로·mcpServers 를 어긋나게 들고 가지 않는지, 루트 marketplace
+ *        2종에 이 패키지 항목이 정합하게 등록돼 있는지 확인. `keywords` 는
+ *        의도적으로 대조하지 않는다)
  *
- * A1–A3·A5·A7·A8·A10 은 runChecks() 가 동기로 돈다(기본 `pnpm test` 경로,
+ * A1–A3·A5·A7·A8·A10·A11 은 runChecks() 가 동기로 돈다(기본 `pnpm test` 경로,
  * 네트워크 비의존). A6·A9 는 CLI 진입점에서만 opt-in 으로 돌고, 각각의
  * 환경변수가 아니면 skip — A6 는 네트워크가 필요 없어졌지만(§A6 참조) 기존
  * CLI 계약과의 호환을 위해, A9 는 CLI 세션 비용이 커서 opt-in 게이트를
  * 유지한다.
  *
- * CLI:           node scripts/validate-plugin.mjs        (A1–A3·A5·A7·A8·A10; A6·A9 skip)
+ * CLI:           node scripts/validate-plugin.mjs        (A1–A3·A5·A7·A8·A10·A11; A6·A9 skip)
  *                VALIDATE_LINKS=1 node scripts/validate-plugin.mjs      (+ A6 링크 부재 sweep)
  *                VALIDATE_SKILL_LOAD=1 node scripts/validate-plugin.mjs (+ A9 skill 본문 주입 실측)
  * API: import { runChecks } from './scripts/validate-plugin.mjs'
- *      const { violations } = runChecks(repoRoot)        (A1–A3·A5·A7·A8·A10, 동기)
+ *      const { violations } = runChecks(repoRoot)        (A1–A3·A5·A7·A8·A10·A11, 동기)
  */
 
 import fs from 'node:fs';
@@ -2380,11 +2386,24 @@ function checkA3(root) {
 // A5 — plugin.json ↔ package.json 버전 드리프트
 // ---------------------------------------------------------------------------
 
+/**
+ * 버전 정합을 검사하는 어댑터 매니페스트 목록. `requiredHere: true`(Claude
+ * Code)는 파일 부재·파싱 실패 자체를 A5 위반으로 본다 — 이 매니페스트는
+ * 플러그인의 1급 진입점이라 없으면 안 된다. `requiredHere: false`(Cursor)는
+ * 부재·파싱 실패를 A5 가 조용히 넘긴다 — 그 상태는 A11(어댑터 manifest
+ * 정합성)이 `A11/cursor-manifest-missing`·`A11/cursor-manifest-invalid` 로
+ * 보고한다(중복 신고 방지 — A7 이 "A5 가 부재를 별도로 다룬다"며 자기 검사를
+ * skip 하는 것과 같은 관례).
+ */
+const VERSIONED_ADAPTER_MANIFESTS = [
+  { segs: ['.claude-plugin', 'plugin.json'], requiredHere: true },
+  { segs: ['.cursor-plugin', 'plugin.json'], requiredHere: false },
+];
+
 /** @param {string} root @returns {Violation[]} */
 function checkA5(root) {
+  const violations = [];
   const pkgPath = path.join(root, 'package.json');
-  const pluginPath = path.join(root, '.claude-plugin', 'plugin.json');
-  const relPlugin = path.relative(root, pluginPath);
 
   /** @type {{ version?: string }} */
   let pkg;
@@ -2394,28 +2413,379 @@ function checkA5(root) {
     return [mkv('package.json', 1, 'A5/plugin-json-version-drift', 'package.json 파싱 실패')];
   }
 
-  /** @type {{ version?: string }} */
-  let plugin;
+  for (const { segs, requiredHere } of VERSIONED_ADAPTER_MANIFESTS) {
+    const pluginPath = path.join(root, ...segs);
+    const relPlugin = path.relative(root, pluginPath);
+
+    if (!fs.existsSync(pluginPath)) {
+      if (requiredHere) {
+        violations.push(
+          mkv(relPlugin, 1, 'A5/plugin-json-version-drift', `${relPlugin} 파일이 없음`),
+        );
+      }
+      continue;
+    }
+
+    /** @type {{ version?: string }} */
+    let plugin;
+    try {
+      plugin = JSON.parse(readFile(pluginPath));
+    } catch {
+      if (requiredHere) {
+        violations.push(
+          mkv(relPlugin, 1, 'A5/plugin-json-version-drift', `${relPlugin} 파싱 실패`),
+        );
+      }
+      continue;
+    }
+
+    if (pkg.version !== plugin.version) {
+      violations.push(
+        mkv(
+          relPlugin,
+          1,
+          'A5/plugin-json-version-drift',
+          `버전 불일치: ${relPlugin} '${plugin.version}' vs package.json '${pkg.version}' (fix: pnpm sync:plugin-version 실행 또는 두 파일 직접 동기화)`,
+        ),
+      );
+    }
+  }
+
+  return violations;
+}
+
+// ---------------------------------------------------------------------------
+// A11 — 어댑터 manifest 정합성 (.cursor-plugin ↔ .claude-plugin) (hard-fail)
+// ---------------------------------------------------------------------------
+//
+// .cursor-plugin/plugin.json 은 무빌드 어댑터로 shared/skills 를 그대로
+// 가리키는 두 번째 진입점이다 — 어떤 A-규칙도 이전에는 .cursor-plugin/ 을
+// 스캔하지 않았으므로, 새 파일을 추가하는 것만으로는 두 매니페스트의
+// 드리프트(이름·skills 경로·mcpServers 불일치)가 위반으로 잡히지 않았다.
+// 그 침묵을 여기서 메운다. `keywords` 는 두 어댑터에서 의도적으로 다르게
+// 유지하므로(예: `claude-code` vs `cursor`) 대조하지 않는다.
+
+/**
+ * Cursor 플러그인 manifest 스키마가 허용하는 최상위 키 21개(additionalProperties:
+ * false). 출처: github.com/cursor/plugins 의 JSON schema + cursor.com/docs/reference/plugins
+ * (확인일 2026-08-28).
+ */
+const CURSOR_MANIFEST_KEYS = new Set([
+  'name',
+  'displayName',
+  'description',
+  'version',
+  'minClientVersions',
+  'author',
+  'publisher',
+  'homepage',
+  'repository',
+  'license',
+  'logo',
+  'keywords',
+  'category',
+  'tags',
+  'commands',
+  'agents',
+  'skills',
+  'rules',
+  'hooks',
+  'variables',
+  'mcpServers',
+]);
+
+/** 루트 marketplace.json 의 plugins[] 항목이 허용하는 키(Cursor 스키마) — `displayName` 은 불가. */
+const CURSOR_MARKETPLACE_ENTRY_KEYS = new Set([
+  'name',
+  'source',
+  'description',
+  'minClientVersions',
+]);
+
+/** Cursor 플러그인 이름 패턴. */
+const CURSOR_NAME_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
+
+/** 두 어댑터가 함께 가리켜야 하는 skills 경로(무빌드 — shared/ 를 그대로 지목). */
+const ADAPTER_SKILLS_PATH = './shared/skills/';
+
+/**
+ * Cursor 매니페스트에서 의도적으로 뺀 mcpServers 키 집합 — 기본은 빈 집합.
+ * (예: 콘솔 MCP 의 인라인 auth 가 Cursor 에서 거부돼 폴백을 택하면 이
+ * 집합에 'apps-in-toss-console' 을 채우고 사유를 여기 주석에 남긴다.)
+ */
+const CURSOR_MANIFEST_MCP_OMIT = new Set();
+
+/**
+ * `root`(패키지 디렉터리) 에서 두 단계 위에 `pnpm-workspace.yaml` 이 있으면
+ * 그 경로를 monorepo 루트로 본다 — 없으면 null 을 돌려줘 tmp fixture 에서
+ * 루트 marketplace 검사를 조용히 skip 하게 한다.
+ * @param {string} root @returns {string | null}
+ */
+function findRepoRoot(root) {
+  const candidate = path.join(root, '..', '..');
+  return fs.existsSync(path.join(candidate, 'pnpm-workspace.yaml')) ? candidate : null;
+}
+
+/** 선행 `./` 와 후행 `/` 를 제거해 marketplace `source` 표기 차이를 정규화한다. @param {string} source @returns {string} */
+function normalizeSource(source) {
+  return source.replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+/**
+ * 루트 marketplace 파일(`.claude-plugin/marketplace.json`·`.cursor-plugin/marketplace.json`)
+ * 에서 이 패키지 항목이 정합한지 확인한다. `repoRoot` 가 감지되지 않으면(pnpm
+ * workspace 밖 — tmp fixture 등) 조용히 skip 한다.
+ *
+ * 주의: 이 함수가 만드는 violation 의 `file` 은 (다른 A11 규칙과 달리)
+ * repo-root 상대경로다 — marketplace.json 자체가 repo 루트 파일이라 패키지
+ * `root` 상대경로로는 표현할 수 없기 때문이다.
+ *
+ * @param {string} root @param {string | null} repoRoot @param {string} manifestName
+ * @returns {Violation[]}
+ */
+function checkA11Marketplaces(root, repoRoot, manifestName) {
+  const violations = [];
+  if (!repoRoot) return violations;
+
+  const expectedSource = normalizeSource(path.relative(repoRoot, root));
+
+  const marketplaces = [
+    { segs: ['.claude-plugin', 'marketplace.json'], isCursor: false },
+    { segs: ['.cursor-plugin', 'marketplace.json'], isCursor: true },
+  ];
+
+  for (const { segs, isCursor } of marketplaces) {
+    const mpPath = path.join(repoRoot, ...segs);
+    const relMp = path.relative(repoRoot, mpPath); // repo-root 상대경로 — 위 주석 참조
+
+    if (!fs.existsSync(mpPath)) {
+      violations.push(mkv(relMp, 1, 'A11/marketplace-missing', `${relMp} 파일이 없음`));
+      continue;
+    }
+
+    /** @type {{ plugins?: Array<Record<string, unknown>> }} */
+    let mp;
+    try {
+      mp = JSON.parse(readFile(mpPath));
+    } catch {
+      violations.push(
+        mkv(relMp, 1, 'A11/marketplace-entry-drift', `${relMp} 파싱 실패 (fix: JSON 문법 확인)`),
+      );
+      continue;
+    }
+
+    const plugins = Array.isArray(mp.plugins) ? mp.plugins : [];
+    const entry = plugins.find((p) => p && p.name === manifestName);
+    if (!entry) {
+      violations.push(
+        mkv(
+          relMp,
+          1,
+          'A11/marketplace-entry-drift',
+          `${relMp} 의 plugins[] 에 name '${manifestName}' 항목이 없음 (fix: 항목 추가)`,
+        ),
+      );
+      continue;
+    }
+
+    const entrySource =
+      typeof entry.source === 'string' ? normalizeSource(entry.source) : entry.source;
+    if (entrySource !== expectedSource) {
+      violations.push(
+        mkv(
+          relMp,
+          1,
+          'A11/marketplace-source-drift',
+          `${relMp} 의 '${manifestName}' 항목 source '${entry.source}' 가 실제 위치 '${expectedSource}' 와 다름 (fix: source 를 '${expectedSource}' 로 맞춘다)`,
+        ),
+      );
+    }
+
+    if (isCursor) {
+      for (const key of Object.keys(entry)) {
+        if (!CURSOR_MARKETPLACE_ENTRY_KEYS.has(key)) {
+          violations.push(
+            mkv(
+              relMp,
+              1,
+              'A11/marketplace-unknown-key',
+              `${relMp} 의 '${manifestName}' 항목 키 '${key}' 가 Cursor marketplace 스키마에 없음(예: displayName 복붙 실수) (fix: 키 제거)`,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
+/** @param {string} root @returns {Violation[]} */
+function checkA11(root) {
+  const violations = [];
+  const claudePath = path.join(root, '.claude-plugin', 'plugin.json');
+  const cursorPath = path.join(root, '.cursor-plugin', 'plugin.json');
+  const relCursor = path.relative(root, cursorPath);
+
+  if (!fs.existsSync(claudePath)) return violations; // A5 가 부재를 별도로 다룬다
+
+  /**
+   * @type {{ name?: string, skills?: string, commands?: string,
+   *   mcpServers?: Record<string, { url?: string, oauth?: { clientId?: string } }> }}
+   */
+  let claude;
   try {
-    plugin = JSON.parse(readFile(pluginPath));
+    claude = JSON.parse(readFile(claudePath));
   } catch {
-    return [
-      mkv(relPlugin, 1, 'A5/plugin-json-version-drift', '.claude-plugin/plugin.json 파싱 실패'),
-    ];
+    return violations; // A5 가 파싱 실패를 별도로 다룬다
   }
 
-  if (pkg.version !== plugin.version) {
-    return [
+  if (!fs.existsSync(cursorPath)) {
+    violations.push(
       mkv(
-        relPlugin,
+        relCursor,
         1,
-        'A5/plugin-json-version-drift',
-        `버전 불일치: .claude-plugin/plugin.json '${plugin.version}' vs package.json '${pkg.version}' (fix: pnpm sync:plugin-version 실행 또는 두 파일 직접 동기화)`,
+        'A11/cursor-manifest-missing',
+        `${relCursor} 파일이 없음 (fix: .claude-plugin/plugin.json 을 미러링해 새로 작성)`,
       ),
-    ];
+    );
+    return violations;
   }
 
-  return [];
+  /**
+   * @type {{ name?: string, skills?: string, commands?: unknown,
+   *   mcpServers?: Record<string, { url?: string, auth?: { CLIENT_ID?: string } }> }}
+   */
+  let cursor;
+  try {
+    cursor = JSON.parse(readFile(cursorPath));
+  } catch {
+    violations.push(
+      mkv(
+        relCursor,
+        1,
+        'A11/cursor-manifest-invalid',
+        `${relCursor} 파싱 실패 (fix: JSON 문법 확인)`,
+      ),
+    );
+    return violations;
+  }
+
+  if (cursor.name !== claude.name) {
+    violations.push(
+      mkv(
+        relCursor,
+        1,
+        'A11/cursor-name-mismatch',
+        `이름 불일치: ${relCursor} '${cursor.name}' vs .claude-plugin/plugin.json '${claude.name}' (fix: 두 매니페스트 name 을 동일하게)`,
+      ),
+    );
+  }
+
+  if (typeof cursor.name !== 'string' || !CURSOR_NAME_RE.test(cursor.name)) {
+    violations.push(
+      mkv(
+        relCursor,
+        1,
+        'A11/cursor-name-pattern',
+        `${relCursor} 의 name '${cursor.name}' 이 Cursor 스키마 패턴(소문자·숫자·.·- 만, 양끝은 영숫자) 을 어긋난다 (fix: name 을 패턴에 맞게 수정)`,
+      ),
+    );
+  }
+
+  if (cursor.skills !== ADAPTER_SKILLS_PATH) {
+    violations.push(
+      mkv(
+        relCursor,
+        1,
+        'A11/cursor-skills-path',
+        `${relCursor} 의 skills 가 '${cursor.skills}' — '${ADAPTER_SKILLS_PATH}' 이어야 shared/ 를 정본으로 유지한다 (fix: skills: '${ADAPTER_SKILLS_PATH}')`,
+      ),
+    );
+  }
+
+  if ('commands' in cursor) {
+    violations.push(
+      mkv(
+        relCursor,
+        1,
+        'A11/cursor-commands-present',
+        `${relCursor} 에 commands 키가 있다 — Cursor 어댑터는 v1 에서 commands 를 뺀다(설계 결정: $ARGUMENTS 미지원·Commands limbo) (fix: commands 키 제거, 뒤집으려면 이 규칙과 CLAUDE.md adapter 계약을 같이 고친다)`,
+      ),
+    );
+  }
+
+  const claudeServers = claude.mcpServers ?? {};
+  const cursorServers = cursor.mcpServers ?? {};
+  const claudeKeys = new Set(Object.keys(claudeServers));
+  const cursorKeys = new Set(Object.keys(cursorServers));
+  const expectedCursorKeys = new Set(
+    [...claudeKeys].filter((k) => !CURSOR_MANIFEST_MCP_OMIT.has(k)),
+  );
+
+  const missingInCursor = [...expectedCursorKeys].filter((k) => !cursorKeys.has(k));
+  const extraInCursor = [...cursorKeys].filter((k) => !claudeKeys.has(k));
+  if (missingInCursor.length > 0 || extraInCursor.length > 0) {
+    const detail = [
+      missingInCursor.length > 0 ? `cursor 에 없음: ${missingInCursor.join(', ')}` : null,
+      extraInCursor.length > 0 ? `cursor 에만 있음: ${extraInCursor.join(', ')}` : null,
+    ]
+      .filter(Boolean)
+      .join('; ');
+    violations.push(
+      mkv(
+        relCursor,
+        1,
+        'A11/cursor-mcp-servers-drift',
+        `mcpServers 키 집합 불일치 (${detail}) (fix: 두 매니페스트의 mcpServers 키를 맞추거나 CURSOR_MANIFEST_MCP_OMIT 에 사유와 함께 등록)`,
+      ),
+    );
+  }
+
+  for (const key of [...claudeKeys].filter((k) => cursorKeys.has(k))) {
+    const claudeUrl = claudeServers[key]?.url;
+    const cursorUrl = cursorServers[key]?.url;
+    if (claudeUrl !== cursorUrl) {
+      violations.push(
+        mkv(
+          relCursor,
+          1,
+          'A11/cursor-mcp-url-drift',
+          `mcpServers.${key}.url 불일치: ${relCursor} '${cursorUrl}' vs .claude-plugin/plugin.json '${claudeUrl}' (fix: url 을 동일하게 맞춘다)`,
+        ),
+      );
+    }
+
+    const claudeClientId = claudeServers[key]?.oauth?.clientId;
+    const cursorClientId = cursorServers[key]?.auth?.CLIENT_ID;
+    if ((claudeClientId || cursorClientId) && claudeClientId !== cursorClientId) {
+      violations.push(
+        mkv(
+          relCursor,
+          1,
+          'A11/cursor-mcp-auth-drift',
+          `mcpServers.${key} 인증 클라이언트 불일치: ${relCursor} auth.CLIENT_ID '${cursorClientId}' vs .claude-plugin/plugin.json oauth.clientId '${claudeClientId}' (fix: 두 값을 동일하게 맞춘다)`,
+        ),
+      );
+    }
+  }
+
+  for (const key of Object.keys(cursor)) {
+    if (!CURSOR_MANIFEST_KEYS.has(key)) {
+      violations.push(
+        mkv(
+          relCursor,
+          1,
+          'A11/cursor-unknown-key',
+          `${relCursor} 최상위 키 '${key}' 가 Cursor 플러그인 manifest 스키마에 없음 (fix: 키 제거 또는 오타 확인)`,
+        ),
+      );
+    }
+  }
+
+  violations.push(...checkA11Marketplaces(root, findRepoRoot(root), claude.name ?? cursor.name));
+
+  return violations;
 }
 
 // ---------------------------------------------------------------------------
@@ -2904,6 +3274,7 @@ export function runChecks(repoRoot) {
     ...checkA7(root),
     ...checkA8(root),
     ...checkA10(root),
+    ...checkA11(root),
   ];
 
   const hasErrors = allViolations.some((viol) => viol.level === 'error');
@@ -2938,6 +3309,7 @@ function printViolations(violations) {
     A8: 'A8 — seam /ait:verb 형태·해석 가능성',
     A9: 'A9 — skill 본문 실제 주입 여부 (opt-in, BEHAVIOR)',
     A10: 'A10 — CHANGELOG.md 버전 섹션 존재',
+    A11: 'A11 — 어댑터 manifest 정합성 (.cursor-plugin ↔ .claude-plugin)',
   };
 
   for (const [prefix, items] of groups) {

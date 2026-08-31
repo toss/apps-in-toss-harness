@@ -2,7 +2,7 @@
 
 # apps-in-toss-harness
 
-AI 코딩 에이전트(Claude Code 등) 안에서 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주할 수 있게 하는 harness monorepo입니다. Claude Code 플러그인 `ait`가 오케스트레이터가 되어 scaffold·개발·디버그·번들·등록·운영을 하나의 흐름으로 엮습니다. scaffolding은 `create-ait-app` 기반입니다. 문서 조회와 콘솔 연동은 기본으로 켜지는 MCP 서버 두 개가 담당하며 devtools·debugger 같은 개발/디버깅 도구는 필요할 때만 opt-in으로 배선됩니다.
+AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주할 수 있게 하는 harness monorepo입니다. 에이전트 플러그인 `ait`가 오케스트레이터가 되어 scaffold·개발·디버그·번들·등록·운영을 하나의 흐름으로 엮습니다. scaffolding은 `create-ait-app` 기반입니다. 문서 조회와 콘솔 연동은 기본으로 켜지는 MCP 서버 두 개가 담당하며 devtools·debugger 같은 개발/디버깅 도구는 필요할 때만 opt-in으로 배선됩니다.
 
 ## 빠른 시작
 
@@ -85,6 +85,68 @@ codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-to
 
 이 절의 명령은 codex-cli `0.146.0`에서 확인했고 비대화형 단서는 `0.146.1`에서 추가 확인했습니다.
 
+### Cursor에서 쓰기
+
+Cursor는 자체 플러그인 포맷을 읽으므로 이 repo에는 Claude Code manifest 옆에 Cursor manifest(`.cursor-plugin/`)가 함께 들어 있습니다. 마켓플레이스 등록은 CLI에서 하고 설치는 대화형 세션에서 합니다(비대화형 설치 명령은 아직 없습니다).
+
+```
+# 1) harness 플러그인 마켓플레이스 등록 (toss/… 축약형은 안 되고 전체 URL이 필요합니다)
+agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
+
+# 2) ait 플러그인 설치 — 대화형 세션에서
+agent
+/plugins        # 마켓플레이스 목록에서 ait 선택 → 설치
+
+# 3) harness 진입 지도 확인 (skill은 네임스페이스 없이 플랫 이름)
+/welcome
+```
+
+설치는 **프로젝트 단위로 활성화**됩니다. `/plugins`에서 설치하면 현재 프로젝트의 `.cursor/settings.json`에 기록됩니다. 다른 프로젝트에서 쓰려면 거기서도 활성화해야 합니다. 활성화된 프로젝트의 세션에는 skill 9종과 문서 MCP 도구 4종이 바로 노출됩니다. 플러그인이 제공하는 MCP 서버는 `agent mcp list`에는 나오지 않습니다 — 그 명령은 `.cursor/mcp.json`(프로젝트)·`~/.cursor/mcp.json`(전역)에 등록된 서버 전용입니다.
+
+**콘솔 MCP 인가는 데스크톱 에디터에서 합니다.** 플러그인이 제공하는 콘솔 MCP는 미인가 상태에서 `mcp_auth` 도구 1종만 노출되는데, CLI에서 이걸 호출하면 "Interactive MCP authentication is only available in the Cursor desktop IDE"가 돌아옵니다. 에디터에서 인가하면 그 프로젝트의 에디터 세션에 콘솔 도구 전체(102종)가 열립니다. 이 인가는 CLI 세션에는 전파되지 않으므로, CLI 세션에서 콘솔 MCP를 쓰려면 아래 "플러그인 없이 MCP 서버만" 경로로 `.cursor/mcp.json`에 직접 등록한 뒤 인가하세요.
+
+**Claude Code와 다른 점** 네 가지입니다.
+
+- 슬래시 명령 네임스페이스(`/ait:<verb>`)가 그대로 오지 않습니다. skill은 네임스페이스 없이 플랫 이름으로 호출합니다 — `/welcome`은 1급 슬래시 명령으로 뜨고 `/ait:welcome`처럼 쳐도 모델이 해석해 같은 skill에 도달합니다.
+- 명령 stub 4종(`/ait:new` 등)은 탑재되지 않습니다. 발화 예시는 아래 [말로 시키기](#말로-시키기--자연어-예시-5종)를 그대로 쓰면 됩니다 — 예를 들어 scaffold는 "새 미니앱 my-app을 만들어 줘"라고 요청하면 `new-miniapp` skill이 같은 절차를 탑니다.
+- `setup-debugger`는 디버그 MCP를 `.mcp.json`이 아니라 **`.cursor/mcp.json`**에 배선합니다(`"type": "stdio"` 항목 — skill이 호스트를 판별해 알아서 처리합니다).
+- on-device 디버깅(`debug` skill의 attach 절)은 Claude Code 전용 메커니즘에 기댑니다 — Codex와 같은 제약입니다. scaffold·개발·문서 조회·콘솔 등록/업로드는 Cursor에서도 쓸 수 있습니다(skill 본문 주입·MCP 연결·콘솔 인가까지 실측).
+
+**비대화형(`agent -p`) 구동 시 참고:**
+
+- `agent plugin marketplace add`는 스크립트로 돌릴 수 있지만 플러그인 설치 자체는 대화형 `/plugins` 전용입니다. 콘솔 MCP 인가도 브라우저(에디터 또는 `agent mcp login`)가 필요합니다.
+- 일부 프록시 환경에서는 `agent -p`가 출력 없이 무한 대기할 수 있습니다(HTTP/2 스트리밍이 깨지는 환경). `~/.cursor/cli-config.json`에 `"network": { "useHttp1ForAgent": true }`를 넣으면 해소됩니다.
+
+플러그인 없이 **MCP 서버만** 쓰고 싶다면 프로젝트에 `.cursor/mcp.json`을 만들어 직접 등록합니다.
+
+```json
+{
+  "mcpServers": {
+    "apps-in-toss-docs": {
+      "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    },
+    "apps-in-toss-console": {
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
+      "auth": {
+        "CLIENT_ID": "mcp-gateway"
+      }
+    }
+  }
+}
+```
+
+이 경로에서는 `auth.CLIENT_ID`를 생략하면 안 됩니다. 인증 서버가 동적 클라이언트 등록(DCR)을 지원하지 않아 정적 client id가 필요합니다. 등록 후 서버 승인과 콘솔 인가는 CLI에서 끝낼 수 있습니다.
+
+```
+agent mcp enable apps-in-toss-docs
+agent mcp enable apps-in-toss-console
+agent mcp login apps-in-toss-console
+```
+
+인가가 끝나면 `agent mcp list`에 두 서버가 `ready`로 표시됩니다(문서 MCP는 무인증이라 enable 직후부터 `ready`, 콘솔 MCP는 인가 전까지 `requires_authentication`).
+
+이 절의 명령은 Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
+
 ## 업데이트
 
 플러그인은 `plugin.json`의 버전이 올라간 릴리즈만 새 버전으로 인식합니다.
@@ -133,7 +195,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 
 ## 말로 시키기 — 자연어 예시 5종
 
-`/ait:<verb>` 슬래시 명령과 자연어 발화는 같은 skill로 이어집니다. 명령을 외울 필요가 없고 슬래시 네임스페이스가 그대로 오지 않는 에이전트(위 [Codex에서 쓰기](#codex에서-쓰기))에서는 자연어 쪽이 정규 경로입니다. 각 skill의 완료 안내도 슬래시 명령과 자연어 동치를 **두 표면으로 함께** 인쇄합니다.
+`/ait:<verb>` 슬래시 명령과 자연어 발화는 같은 skill로 이어집니다. 명령을 외울 필요가 없고 슬래시 네임스페이스가 그대로 오지 않는 에이전트(위 [Codex에서 쓰기](#codex에서-쓰기)·[Cursor에서 쓰기](#cursor에서-쓰기))에서는 자연어 쪽이 정규 경로입니다. 각 skill의 완료 안내도 슬래시 명령과 자연어 동치를 **두 표면으로 함께** 인쇄합니다.
 
 | 하고 싶은 일 | 이렇게 말하면 됩니다 | 이어지는 명령 |
 |---|---|---|
@@ -177,7 +239,7 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 
 ## MCP 서버
 
-플러그인을 설치하면 두 MCP 서버가 함께 등록됩니다. Claude Code와 Codex 모두 그렇습니다. 플러그인 없이 서버만 직접 등록하는 방법은 위 [Codex에서 쓰기](#codex에서-쓰기)를 참고하세요.
+플러그인을 설치하면 두 MCP 서버가 함께 등록됩니다. Claude Code·Codex·Cursor 모두 그렇습니다. 플러그인 없이 서버만 직접 등록하는 방법은 위 [Codex에서 쓰기](#codex에서-쓰기)·[Cursor에서 쓰기](#cursor에서-쓰기)를 참고하세요.
 
 | 서버 | 인증 | 주요 도구 |
 |---|---|---|
@@ -192,7 +254,7 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 
 | 패키지 | 디렉터리 | 역할 | 배포 |
 |---|---|---|---|
-| `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
+| `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex·Cursor) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.2.2`) |
 | `@apps-in-toss/debug-console` | `packages/debug-console` | on-device attach + eruda 콘솔 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debug-console-v0.1.5`) |
 
