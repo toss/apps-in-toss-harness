@@ -20,18 +20,21 @@ AI 코딩 에이전트(Claude Code 등) 안에서 빈 디렉토리부터 앱인�
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회) — 문서 MCP(apps-in-toss-docs)는 인증 없이 자동 연결됨
 /mcp
 
-# 4) harness 진입 지도 확인
+# 4) 자동 업데이트 켜기 (Marketplaces > apps-in-toss > Enable auto-update)
+/plugin
+
+# 5) harness 진입 지도 확인
 /ait:welcome
 ```
 
-3번에서는 `/mcp` 목록에 뜬 `apps-in-toss-console`을 선택해 OAuth 인가를 완료하세요. `/ait:welcome` 대신 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수도 있습니다.
+3번에서는 `/mcp` 목록에 뜬 `apps-in-toss-console`을 선택해 OAuth 인가를 완료하세요. 4번에서는 `/plugin` 화면에서 Marketplaces를 고르고 `apps-in-toss`를 선택한 뒤 Enable auto-update를 누르세요. 서드파티 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하기 때문에 한 번은 직접 켜야 합니다. `/ait:welcome` 대신 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수도 있습니다.
 
 **데스크톱 앱의 플러그인 브라우저에서 `ait`를 검색하지 마세요.** 검색 결과에는 공식 마켓플레이스 플러그인만 나오고 `ait`는 뜨지 않습니다. 설치 경로는 검색이 아니라 위 블록의 명령을 입력창에 붙여넣는 것입니다.
 
 위 슬래시 명령이 동작하지 않는 환경이라면, 아래 문장을 통째로 입력창에 붙여넣으세요. 터미널을 열 필요 없이 Claude가 자기 셸에서 설치를 대신 진행합니다.
 
 ```
-앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행하고, 성공을 확인한 뒤 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
+앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. 그다음 `~/.claude/settings.json`의 `extraKnownMarketplaces`에 `"apps-in-toss": {"source": {"source": "github", "repo": "toss/apps-in-toss-harness"}, "autoUpdate": true}`를 병합해서 자동 업데이트를 켜줘. 기존 키는 그대로 두고. 성공을 확인한 뒤 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
 ```
 
 설치된 플러그인은 새 세션부터 로드되므로, 위 문장에는 새 세션을 열어 `/ait:welcome`을 실행하라는 안내까지 포함돼 있습니다.
@@ -82,9 +85,39 @@ codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-to
 
 이 절의 명령은 codex-cli `0.146.0`에서 확인했고 비대화형 단서는 `0.146.1`에서 추가 확인했습니다.
 
+## 업데이트
+
+플러그인은 `plugin.json`의 버전이 올라간 릴리즈만 새 버전으로 인식합니다.
+
+**Claude Code.** 빠른 시작 4번에서 자동 업데이트를 켜뒀다면 세션이 시작되고 10분 안에 백그라운드에서 마켓플레이스를 다시 읽고 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
+
+```
+claude plugin marketplace update apps-in-toss
+claude plugin update ait@apps-in-toss
+```
+
+`claude plugin update`의 기본 scope는 `user`입니다. 설치할 때 다른 scope를 골랐다면 `--scope project`처럼 붙이세요. 실행한 뒤에는 세션에서 `/reload-plugins`를 입력하거나 새 세션을 여세요.
+
+터미널을 열기 번거로우면 입력창에 이렇게 붙여넣어도 됩니다.
+
+```
+ait 플러그인을 최신으로 올려줘. 쉘에서 `claude plugin list --json`으로 `ait@apps-in-toss`의 scope를 확인한 뒤 `claude plugin marketplace update apps-in-toss`와 `claude plugin update ait@apps-in-toss --scope <확인한 scope>`를 실행하고, 끝나면 /reload-plugins 를 입력하라고 안내해줘.
+```
+
+**Codex.** Codex는 세션을 시작할 때 등록된 git 마켓플레이스를 스스로 다시 확인하고 새 커밋이 있으면 받아옵니다. 따로 켤 설정은 없습니다. 지금 바로 올리려면 아래를 실행하세요. 새 버전은 새 세션부터 로드됩니다.
+
+```
+codex plugin marketplace upgrade apps-in-toss
+codex plugin list
+```
+
+`codex plugin marketplace upgrade`는 버전을 출력하지 않으니 `codex plugin list`의 VERSION 열로 확인하세요. TUI 안에서는 `/plugins`를 열고 `Ctrl+U`를 눌러도 같습니다.
+
+이 절은 Claude Code `2.1.250`과 codex-cli `0.149.1`에서 확인했습니다.
+
 ## 개발 여정
 
-1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고 `/mcp`에서 `apps-in-toss-console`을 인가합니다.
+1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `apps-in-toss-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
 2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
 3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘 6종·`docs/design-guide.md`)와 이모지 서체 Tossface가 프로젝트에 들어갑니다. 에이전트가 자동으로 읽는 `AGENTS.md`에 규칙 요약이 남아, 이후 어떤 세션에서 화면을 만들어도 같은 기준이 적용됩니다 (`--no-design-guide`로 통째로, `--no-tossface`로 서체만 뺄 수 있습니다).
 4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
