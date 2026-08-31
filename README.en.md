@@ -8,6 +8,28 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 You'll need Node 24+ (npm ships with it), git (adding the plugin marketplace fetches this repository via git clone), and an Apps in Toss console account.
 
+### One command
+
+One line in a terminal sets up every host it finds. Name a host as an argument to narrow it.
+
+```bash
+# Every detected host (with no argument it shows what it found and lets you pick)
+npx -y -p github:toss/apps-in-toss-harness ait-setup
+
+# Pick a host — claude, codex, cursor, or all
+npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
+```
+
+The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end — the console MCP's browser OAuth, and Cursor's first `/plugins` pick.
+
+**You don't need a CLI on your PATH — the desktop apps are enough.** Claude and Codex each ship a CLI inside the app bundle, and the installer finds it and installs with it. That CLI reads and writes the same user state (`~/.claude`, `~/.codex`) as the terminal CLI, so nothing diverges. The Cursor app carries no such CLI, so that is the one case that stays an instruction.
+
+If the plugin is installed but does not show up, or shows up stale, `ait-setup --repair` tells you which of the known causes you hit. It only diagnoses; it deletes nothing.
+
+Common options: `--dry-run` (print the plan only), `--yes` (skip confirmation), `--project` (also wire the current project), `--lang ko|en`, `--help`.
+
+### Installing from inside an agent
+
 Paste the block below into Claude Code's chat input box (in the desktop app, that's the Code tab session — not a terminal), one line at a time, top to bottom. It takes you from entering the harness all the way to the entry map.
 
 ```

@@ -8,6 +8,28 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 
 준비물은 Node 24 이상(npm이 동봉됩니다), git(플러그인 마켓플레이스 추가가 이 저장소를 git clone으로 받아옵니다), 앱인토스 콘솔 계정입니다.
 
+### 한 줄로 끝내기
+
+터미널에서 아래 한 줄이면 감지된 호스트에 전부 설치됩니다. 특정 호스트만 원하면 인자로 지정하세요.
+
+```bash
+# 감지된 호스트 전부 (인자를 생략하면 무엇이 감지됐는지 보여주고 고르게 합니다)
+npx -y -p github:toss/apps-in-toss-harness ait-setup
+
+# 호스트 지정 — claude · codex · cursor · all
+npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
+```
+
+installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, Claude Code의 자동 업데이트를 켜고, 콘솔 MCP가 실제로 붙었는지 확인합니다. 여러 번 실행해도 안전합니다 — 이미 끝난 단계는 건너뛰고, 재실행이 곧 최신화가 됩니다. 사람이 직접 해야 하는 단계만 마지막에 번호를 매겨 알려줍니다. 그건 콘솔 MCP의 브라우저 OAuth와 Cursor의 `/plugins` 최초 선택 두 가지입니다.
+
+**CLI 없이 데스크톱 앱만 설치돼 있어도 됩니다.** Claude와 Codex는 앱이 자기 안에 싣고 다니는 CLI를 찾아 그대로 설치합니다. 그 CLI는 터미널 CLI와 같은 사용자 상태(`~/.claude`·`~/.codex`)를 쓰기 때문에 결과가 갈리지 않습니다. Cursor 앱에는 그런 CLI가 없어서, 이 경우에만 무엇을 하면 되는지 안내로 남습니다.
+
+설치했는데 목록에 안 보이거나 옛 버전이 뜬다면 `ait-setup --repair`가 원인을 가려줍니다. 진단만 하고 아무것도 지우지 않습니다.
+
+자주 쓰는 옵션: `--dry-run`(무엇을 할지만 출력) · `--yes`(확인 없이 진행) · `--project`(현재 프로젝트에도 배선) · `--lang ko|en` · `--help`.
+
+### 에이전트 안에서 설치하기
+
 아래 블록을 Claude Code의 대화 입력창(데스크톱 앱이면 Code 탭 세션 포함, 터미널이 아닙니다)에 위에서부터 한 줄씩 복사해 붙여넣으면 harness 진입부터 진입 지도 확인까지 끝납니다.
 
 ```
