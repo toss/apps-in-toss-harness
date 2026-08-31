@@ -20,18 +20,21 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 # 3) Authorize the console MCP (OAuth, one time) — the docs MCP (apps-in-toss-docs) connects automatically, no auth required
 /mcp
 
-# 4) See the harness entry map
+# 4) Turn on auto-update (Marketplaces > apps-in-toss > Enable auto-update)
+/plugin
+
+# 5) See the harness entry map
 /ait:welcome
 ```
 
-For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OAuth authorization. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app.
+For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OAuth authorization. For step 4, `/plugin` opens the plugin manager: choose Marketplaces, select `apps-in-toss`, and press Enable auto-update. Third-party marketplaces start with auto-update off, so you have to turn it on once. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app.
 
 **Don't search for `ait` in the desktop app's plugin browser.** Search results only surface plugins from the official marketplace, so `ait` won't show up there. Installation goes through pasting the commands above into the chat input, not through search.
 
 If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
 
 ```
-Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`, confirm they succeeded, and tell me to open a new session and run /ait:welcome.
+Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`. Next, turn on auto-update by merging `"apps-in-toss": {"source": {"source": "github", "repo": "toss/apps-in-toss-harness"}, "autoUpdate": true}` into `extraKnownMarketplaces` in `~/.claude/settings.json`, leaving the other keys alone. Confirm it all succeeded, then tell me to open a new session and run /ait:welcome.
 ```
 
 Installed plugins only load starting from a new session, so the sentence above already tells the agent to have you open one and run `/ait:welcome`.
@@ -144,9 +147,39 @@ Once authorized, `agent mcp list` shows both servers as `ready` (the docs MCP ne
 
 The commands in this section were verified against Cursor CLI `2026.08.25-3e8eec8`.
 
+## Updating
+
+A new plugin version only registers when `plugin.json` gets a version bump.
+
+**Claude Code.** With auto-update turned on in step 4 of the quick start, Claude Code refreshes the marketplace and updates the plugin in the background within ten minutes of a session start. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
+
+```
+claude plugin marketplace update apps-in-toss
+claude plugin update ait@apps-in-toss
+```
+
+`claude plugin update` defaults to the `user` scope. If you installed at a different scope, pass it (for example `--scope project`). Afterwards, run `/reload-plugins` in your session or start a new one.
+
+If you would rather not open a terminal, paste this into the chat input:
+
+```
+Update the ait plugin to the latest version. In the shell, run `claude plugin list --json` to find the scope of `ait@apps-in-toss`, then run `claude plugin marketplace update apps-in-toss` and `claude plugin update ait@apps-in-toss --scope <that scope>`, and when done tell me to run /reload-plugins.
+```
+
+**Codex.** Codex re-checks every registered git marketplace when a session starts and pulls new commits on its own. There is nothing to turn on. To update right now, run the commands below; the new version loads from the next session.
+
+```
+codex plugin marketplace upgrade apps-in-toss
+codex plugin list
+```
+
+`codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
+
+This section was verified against Claude Code `2.1.250` and codex-cli `0.149.1`.
+
 ## Development journey
 
-1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, then authorize `apps-in-toss-console` from `/mcp`.
+1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `apps-in-toss-console` from `/mcp`, then turn on auto-update from `/plugin`.
 2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
 3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
 4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.

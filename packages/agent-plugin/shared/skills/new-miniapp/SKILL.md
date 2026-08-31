@@ -245,8 +245,12 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
 - **`&&` 뒤 주입 세그먼트는 조립할 때 빼먹기 가장 쉬운 부분이다 — 생략하지
   마라.** 세그먼트를 뺄 수 있는 경우는 `--no-design-guide` 하나뿐이고, 그 외에는
   위 fence의 두 명령을 그대로 **한 번의 Bash 호출**로 실행한다 — 주입을 뒤로
-  미뤄 별도 호출로 쪼개지 않는다. 인자 규칙: `--tds`로 스캐폴드하면 스크립트에도
-  `--tds`를, `--no-tossface`면 `--no-tossface`를 덧붙인다.
+  미뤄 별도 호출로 쪼개지 않는다. **재시도에도 그대로 적용된다** — scaffold가
+  실패해 같은 명령을 다시 돌릴 때도 주입 세그먼트가 붙은 전체 한 줄을
+  재실행한다. 스캐폴더 부분만 따로 재실행하면 주입이 조용히 빠진다(실측: 재시도
+  run이 체인을 쪼갠 채 주입을 한 번도 실행하지 않았다). 인자 규칙: `--tds`로
+  스캐폴드하면 스크립트에도 `--tds`를, `--no-tossface`면 `--no-tossface`를
+  덧붙인다.
 - **스크립트 경로는 재계산하지 않는다** — 시스템이 이 skill을 로드할 때 표시한
   base directory 문자열 뒤에 `/../design/scripts/inject-project-guide.sh`를
   그대로 붙인 것 하나뿐이다. `$PWD`·`dirname` 조합으로 새로 만들거나 `find`로
@@ -279,7 +283,8 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
   `installDependencies` 실패를 최상위에서 잡아 `rmSync`하기 때문이다(0.2.3 dist
   실측 — 실패 원인과 무관하게 일어난다). `--skip-install`도 없어져 자동 복구
   수단이 없다. 에러를 그대로 보고하고 중단한 뒤 선택지를 준다: (a) 같은 명령 1회
-  재시도, (b) `--local` 폴백.
+  재시도(주입 세그먼트가 붙은 전체 한 줄 그대로 — 스캐폴더 부분만 재실행하지
+  않는다), (b) `--local` 폴백.
 - **`package.json`의 `"@apps-in-toss/web-framework": "latest"`는 semver
   range가 아니라 dist-tag 리터럴**이다 — 설치 시점의 registry `latest`가
   그대로 해석되므로 같은 명령이라도 시점마다 다른 버전이 설치될 수 있다
@@ -343,20 +348,20 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
 산출물 형상을 바꾸면 여기서 멈춰야, 어긋난 형상 위에서 후처리가 헛돌지 않는다:
 
 ```bash
-test -f ./<package_name>/apps-in-toss.config.ts && \
-  node -e "const p=require('./<package_name>/package.json'); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" && \
-  echo "형상 일치" || echo "형상 불일치"
-grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음" || echo "디자인 가이드 없음"
+test -f ./<package_name>/apps-in-toss.config.ts && node -e "const p=require('./<package_name>/package.json'); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" && echo "형상 일치" || echo "형상 불일치"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음" || echo "디자인 가이드 없음"
 ```
+
+**이 fence는 한 줄이다 — 그대로 복사해 한 번의 Bash 호출로 실행한다.** 검사
+항목을 추려 자기 식으로 다시 조립하지 마라 — 자체 조립한 run이 끝의 `grep`
+세그먼트만 빼먹은 것이 실측됐다(Step 2 fence를 한 줄로 만든 것과 같은 이유다).
 
 세 가지를 본다: `apps-in-toss.config.ts` 존재, `dependencies`의
 `@apps-in-toss/web-framework`, `scripts.build`의 `ait build`. 앞뒤 둘은 `ait init`이
 만들고(create-ait-app 0.2.3 dist에는 이 설정 파일도 `build` 스크립트도 쓰는 코드가
-없다) 가운데 하나만 create-ait-app이 직접 쓴다 — 이 한 줄이 "CLI가 자기 몫과
-`ait init` 몫을 둘 다 끝냈는가"를 판정한다. fence 마지막 줄(`grep`)은 네 번째
-신호(디자인 가이드 실재)를 함께 찍는다 — 이 fence를 실행할 때 그 줄을 빼고
-실행하지 마라. 판정 규칙은 아래 "디자인 가이드 실재" 절이 정의하며, 바로 아래
-"하나라도 실패하면 중단"의 대상이 **아니다**(fail-soft).
+없다) 가운데 하나만 create-ait-app이 직접 쓴다 — 이 부분이 "CLI가 자기 몫과
+`ait init` 몫을 둘 다 끝냈는가"를 판정한다. `;` 뒤의 `grep` 세그먼트는 네 번째
+신호(디자인 가이드 실재)를 함께 찍는다. 판정 규칙은 아래 "디자인 가이드 실재"
+절이 정의하며, 바로 아래 "하나라도 실패하면 중단"의 대상이 **아니다**(fail-soft).
 
 - **통과해도 아직 Step 4로 가지 않는다** — 바로 아래 **wf major 확인 → `ait` bin
   확인** 두 서브체크까지 이어서 하고, 셋을 다 통과한 뒤에 Step 4로 간다.
@@ -421,16 +426,26 @@ ls ./<package_name>/node_modules/.bin/ait
 명령은 어떤 형태로도 실행하지 않는다** — 정본 산출물은 3.x이고, 강등은 그걸
 되레 깨뜨린다.
 
-**디자인 가이드 실재** — 위 형상 fence의 마지막 `grep` 줄이 찍은 신호를 세
+**디자인 가이드 실재** — 위 형상 fence 끝의 `grep` 세그먼트가 찍은 신호를 세
 서브체크를 마친 여기서 판정한다(따로 명령을 다시 돌릴 필요 없다 — 형상 fence를
 줄여 실행했다면 그 `grep` 한 줄만 지금 실행한다). `--no-design-guide`였으면
 `디자인 가이드 없음`이 정상이다 — 사용자가 명시적으로 뺀 것이라 보완하지 않는다.
 그 외에 `없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온 것이다 —
-위 형상 불일치와 달리 **중단하지 않고**, 5-B의 보완 호출(같은 스크립트, 같은
-인자 규칙)을 지금 바로 한 번 실행해 채운 뒤 진행한다. 스크립트는 멱등이라 이미
-주입된 프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 판정은 Step 2가
+위 형상 불일치와 달리 **중단하지 않고**, 아래 보완 호출을 **지금 이 자리에서**
+실행해 채운 뒤 진행한다(인자 규칙은 Step 2와 동일 — `--tds`/`--no-tossface`를
+그대로 덧붙인다):
+
+```bash
+bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
+```
+
+`없음`을 확인하고도 이 호출 없이 다음 단계로 넘어가는 것은 금지다 — 탐지만 하고
+보완을 미루면 이 가드는 없는 것과 같다(실측: 한 run이 `없음`을 정확히 찍고도
+보완 없이 후처리를 이어가 "완료"를 선언했다). 스크립트는 멱등이라 이미 주입된
+프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 판정은 Step 2가
 백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력 줄(`5-B:`)을 놓쳤어도
-파일 실재가 최종 판정이다.
+파일 실재가 최종 판정이다. **이 판정이 `있음`(또는 `--no-design-guide`의 의도된
+`없음`)으로 닫히기 전에는 Step 6의 완료 블록을 인쇄하지 않는다.**
 
 ### 4. 후처리 B — devtools 배선 확인 (브라우저 dev 활성화)
 
