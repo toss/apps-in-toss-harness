@@ -56,11 +56,20 @@ async function main() {
   const constants = loadConstants()
   const detected = detectAll()
 
+  // `--json`을 준 쪽은 stdout을 파싱한다. 사람용 한 줄이라도 앞에 끼면 그 파싱은
+  // 통째로 깨진다(실측: `--json --dry-run`이 "Dry run — nothing will be changed."를
+  // 먼저 찍어 JSON.parse가 첫 글자에서 죽었다). 그래서 사람용 출력은 전부 이
+  // 함수를 통해 나가고, --json일 때는 stderr로 비켜선다.
+  const note = (line) => {
+    if (options.json) console.error(line)
+    else console.log(line)
+  }
+
   if (options.repair) return runRepair({ constants, detected, options, t })
 
   const chosen = await chooseHosts({ detected, options, t })
   if (chosen === null) {
-    console.log(t('ui.aborted'))
+    note(t('ui.aborted'))
     return 0
   }
 
@@ -68,18 +77,24 @@ async function main() {
   const unusable = chosen.filter((h) => !h.bin)
 
   if (usable.length === 0) {
-    console.log(`${color('yellow', '!')} ${t('ui.nothingToDo')}`)
-    for (const h of unusable) console.log(`  - ${t(`app.only.${h.host}`)}`)
-    if (unusable.length > 0) console.log(`  ${color('dim', t('app.only.marketplaceHint'))}`)
-    else console.log(`  ${t('ui.noHostsHint')}`)
+    // --json 소비자에게도 "아무것도 못 했다"를 같은 모양의 문서로 준다 —
+    // 성공했을 때만 JSON이고 실패하면 산문인 인터페이스는 쓸 수 없다.
+    if (options.json) {
+      console.log(JSON.stringify({ constants, results: [], manual: [], unusable }, null, 2))
+      return unusable.length > 0 ? 2 : 1
+    }
+    note(`${color('yellow', '!')} ${t('ui.nothingToDo')}`)
+    for (const h of unusable) note(`  - ${t(`app.only.${h.host}`)}`)
+    if (unusable.length > 0) note(`  ${color('dim', t('app.only.marketplaceHint'))}`)
+    else note(`  ${t('ui.noHostsHint')}`)
     return unusable.length > 0 ? 2 : 1
   }
 
-  if (options.dryRun) console.log(`${color('dim', t('ui.dryRun'))}\n`)
+  if (options.dryRun) note(`${color('dim', t('ui.dryRun'))}\n`)
   if (!options.yes && !options.dryRun && !options.verify) {
     const ok = await confirm({ usable, t })
     if (!ok) {
-      console.log(t('ui.aborted'))
+      note(t('ui.aborted'))
       return 0
     }
   }
@@ -227,7 +242,7 @@ function render({ results, unusable, manual, t }) {
       const mark =
         step.status === 'failed'
           ? color('red', '×')
-          : step.status === 'planned'
+          : step.status === 'planned' || step.status === 'pending'
             ? color('dim', '·')
             : step.status === 'skipped'
               ? color('yellow', '-')
@@ -246,8 +261,16 @@ function render({ results, unusable, manual, t }) {
 }
 
 function runRepair({ constants, detected, options, t }) {
+  // --repair는 Claude Code의 설치 상태만 읽는다. `ait-setup codex --repair`처럼
+  // 다른 호스트를 지정해 부르면 예전엔 그 인자를 조용히 버리고 Claude를
+  // 진단해 놓고 아무 말도 안 했다 — 사용자는 codex를 진단받았다고 믿는다.
+  const asked = options.hosts ?? []
+  const unsupported = asked.filter((h) => h !== 'claude')
+  if (unsupported.length > 0) console.error(`${color('yellow', '!')} ${t('repair.claudeOnly')}`)
+
   const claude = detected.find((d) => d.host === 'claude')
-  const { findings, inspected } = diagnose({ bin: claude?.bin ?? null, constants })
+  // t를 넘기지 않으면 소견만 환경 변수 언어로 나가서 --lang이 안 먹는다.
+  const { findings, inspected } = diagnose({ bin: claude?.bin ?? null, constants, t })
   if (options.json) {
     console.log(JSON.stringify({ findings, inspected }, null, 2))
     return findings.some((f) => f.severity === 'error') ? 2 : 0

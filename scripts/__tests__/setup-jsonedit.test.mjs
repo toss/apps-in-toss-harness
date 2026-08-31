@@ -159,3 +159,45 @@ describe('readJsonFile', () => {
     })
   })
 })
+
+// 재실행이 권장되는 도구라, 백업이 안 지워지면 사용자의 `~/.claude`에
+// `settings.json.bak-…`가 무한정 쌓인다. 최근 것 몇 개만 남는지 확인한다.
+describe('백업 보존', () => {
+  test('같은 파일을 여러 번 고쳐도 백업은 최근 3개만 남는다', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonedit-bak-'))
+    try {
+      const file = path.join(dir, 'settings.json')
+      fs.writeFileSync(file, JSON.stringify({ n: 0 }))
+
+      for (let i = 1; i <= 6; i += 1) {
+        const result = updateJsonFile(file, (draft) => {
+          draft.n = i
+        })
+        assert.equal(result.status, 'written')
+      }
+
+      const backups = fs.readdirSync(dir).filter((name) => name.startsWith('settings.json.bak-'))
+      assert.equal(backups.length, 3, `백업이 ${backups.length}개 남았습니다: ${backups.join(', ')}`)
+      // 본 파일은 마지막 값을 그대로 갖고 있어야 한다 — 정리가 본체를 건드리면 안 된다.
+      assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { n: 6 })
+      // 남은 것은 가장 최근 것들이어야 한다.
+      assert.deepEqual([...backups].sort(), backups.sort())
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('임시 파일(.tmp-)을 남기지 않는다', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonedit-tmp-'))
+    try {
+      const file = path.join(dir, 'settings.json')
+      updateJsonFile(file, (draft) => {
+        draft.a = 1
+      })
+      const leftovers = fs.readdirSync(dir).filter((name) => name.includes('.tmp-'))
+      assert.deepEqual(leftovers, [])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

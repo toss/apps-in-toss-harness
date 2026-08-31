@@ -21,6 +21,7 @@ export default {
   'status.planned': '실행 예정',
   'status.failed': '실패',
   'status.skipped': '건너뜀',
+  'status.pending': '다음 세션부터',
   'verify.marketplace': '마켓플레이스가 등록돼 있음',
   'verify.plugin': '플러그인이 설치돼 있음',
   'verify.introspect': '호스트 CLI 조회 실패 — 상태를 확인할 수 없습니다',
@@ -52,7 +53,8 @@ export default {
   'cursor.project.enable': '이 프로젝트에서 플러그인 활성화',
   'cursor.project.mcp': '프로젝트 .cursor/mcp.json에 MCP 서버 등록',
   'cursor.mcp.enable': 'MCP 서버 활성화',
-  'cursor.manual.pluginsPick': 'agent 를 실행해 /plugins 에서 ait 를 골라 설치하세요. Cursor에는 비대화형 설치 명령이 없습니다.',
+  'cursor.manual.pluginsPick':
+    '아직 설치하지 않았다면 agent 를 실행해 /plugins 에서 ait 를 고르세요. Cursor CLI에는 플러그인 목록 조회 명령조차 없어서, 이미 설치했는지를 installer가 알 수 없습니다.',
   'cursor.manual.autoRefresh': '자동 갱신은 /plugins 의 apps-in-toss 마켓플레이스 항목에서 Enable Auto Refresh 를 켜세요. Cursor에는 이걸 켜는 명령이 없습니다.',
   'cursor.manual.perProject': 'Cursor의 플러그인 활성화는 프로젝트 단위입니다. 다른 프로젝트에서는 그쪽에서 다시 활성화하세요(--project 로 자동화 가능).',
   'cursor.manual.consoleAuth': '콘솔 MCP 인가는 데스크톱 에디터에서 합니다. CLI 세션에서 쓰려면 --cursor-mcp-fallback 으로 프로젝트에 직접 등록한 뒤 agent mcp login 을 실행하세요.',
@@ -61,6 +63,7 @@ export default {
   'app.only.codex': 'Codex 앱은 있는데 CLI를 찾지 못했습니다. Codex CLI를 설치한 뒤 다시 실행하세요 — 마켓플레이스 등록은 CLI에서만 됩니다.',
   'app.only.cursor': 'Cursor는 있는데 CLI(agent)를 찾지 못했습니다. Cursor CLI를 설치하거나, 에디터에서 /plugins 로 설치하세요.',
   'app.only.marketplaceHint': '공식 마켓플레이스 입점이 끝나면 앱 안에서 검색해 설치하는 경로가 열립니다.',
+  'repair.claudeOnly': '--repair 는 Claude Code의 설치 상태만 봅니다 — 지정한 다른 호스트는 진단하지 않았습니다.',
   'repair.c1.summary':
     '플러그인 브라우저의 목록·검색은 공식 카탈로그만 보여줍니다. 서드파티 마켓플레이스의 플러그인은 설치가 정상이어도 거기 나타나지 않습니다 — 고장이 아닙니다.',
   'repair.c1.remedy': '설치는 브라우저 검색이 아니라 명령(또는 이 installer)으로 합니다.',

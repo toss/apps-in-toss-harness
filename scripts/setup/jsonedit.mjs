@@ -10,10 +10,24 @@
  *   2. 파싱에 실패하면 **아무것도 쓰지 않고 포기**한다. 주석 섞인 JSON이나 손상된
  *      파일을 만나면 덮어쓰는 게 아니라 사용자에게 수동 안내를 돌려준다.
  *   3. 쓰기 전에 타임스탬프 백업을 남기고, temp 파일에 쓴 뒤 rename으로 바꾼다
- *      (중간에 죽어도 반쪽짜리 파일이 남지 않는다).
+ *      (중간에 죽어도 반쪽짜리 파일이 남지 않는다). 백업은 최근 것 몇 개만
+ *      남기고 나머지는 지운다 — 재실행이 권장되는 도구라, 안 지우면 사용자의
+ *      `~/.claude`가 `settings.json.bak-…`로 계속 불어난다.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
+
+/** 파일 하나당 남겨 둘 백업 개수. */
+const KEEP_BACKUPS = 3
 
 /**
  * @param {string} file
@@ -71,7 +85,31 @@ export function updateJsonFile(file, mutate, opts = {}) {
   } catch (err) {
     return { status: 'skipped', reason: `쓰기 실패: ${/** @type {Error} */ (err).message}` }
   }
+  pruneBackups(file)
   return { status: 'written', backup }
+}
+
+/**
+ * 같은 파일의 옛 백업을 최근 KEEP_BACKUPS개만 남기고 지운다.
+ *
+ * 이름에 박힌 타임스탬프가 ISO라 사전순 정렬이 곧 시간순이다. 여기서 실패하는
+ * 것은 사용자에게 아무 의미가 없으므로(본 파일은 이미 안전하게 쓰였다) 조용히
+ * 넘어간다 — 정리에 실패했다고 설치를 실패로 보고하면 안 된다.
+ * @param {string} file
+ */
+function pruneBackups(file) {
+  try {
+    const dir = dirname(file)
+    const prefix = `${basename(file)}.bak-`
+    const olds = readdirSync(dir)
+      .filter((name) => name.startsWith(prefix))
+      .sort()
+      .reverse()
+      .slice(KEEP_BACKUPS)
+    for (const name of olds) unlinkSync(join(dir, name))
+  } catch {
+    // 무시 — 백업 정리는 부가 작업이다.
+  }
 }
 
 /** @param {string} p */

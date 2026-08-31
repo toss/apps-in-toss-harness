@@ -20,6 +20,7 @@ export default {
   'status.already': 'already set',
   'status.planned': 'will run',
   'status.failed': 'failed',
+  'status.pending': 'from next session',
   'status.skipped': 'skipped',
   'verify.marketplace': 'Marketplace is registered',
   'verify.plugin': 'Plugin is installed',
@@ -52,7 +53,8 @@ export default {
   'cursor.project.enable': 'Enable the plugin for this project',
   'cursor.project.mcp': 'Register the MCP servers in the project’s .cursor/mcp.json',
   'cursor.mcp.enable': 'Enable the MCP server',
-  'cursor.manual.pluginsPick': 'Run agent, open /plugins, and pick ait to install. Cursor ships no non-interactive install command.',
+  'cursor.manual.pluginsPick':
+    'If you have not installed it yet, run agent, open /plugins, and pick ait. The Cursor CLI has no command that lists plugins, so the installer cannot tell whether it is already there.',
   'cursor.manual.autoRefresh': "Turn auto-refresh on from /plugins: open the apps-in-toss marketplace entry and enable Auto Refresh. Cursor has no command for it.",
   'cursor.manual.perProject': 'Cursor enables plugins per project. Enable it again in each new project (--project automates that write).',
   'cursor.manual.consoleAuth': 'Console MCP authorization happens in the desktop editor. To use it from a CLI session, register it in the project with --cursor-mcp-fallback and run agent mcp login.',
@@ -61,6 +63,8 @@ export default {
   'app.only.codex': 'The Codex app is installed but no CLI was found. Install the Codex CLI and run this again — marketplace registration is CLI-only.',
   'app.only.cursor': 'Cursor is installed but its CLI (agent) was not found. Install the Cursor CLI, or install the plugin from /plugins in the editor.',
   'app.only.marketplaceHint': 'Once the official-marketplace listing lands, installing from inside the app’s own search becomes an option.',
+  'repair.claudeOnly':
+    '--repair only reads Claude Code’s install state — the other hosts you named were not diagnosed.',
   'repair.c1.summary':
     'The plugin browser only lists and searches the official catalog. A plugin from a third-party marketplace never appears there, even when it is installed correctly — nothing is broken.',
   'repair.c1.remedy': 'Install with a command (or this installer) rather than the browser search.',

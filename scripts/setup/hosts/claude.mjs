@@ -112,7 +112,7 @@ export function consoleMcpState(bin, serverKey) {
  */
 export function install({ bin, origin, constants, options }) {
   const dryRun = Boolean(options.dryRun)
-  /** @type {Array<{id: string, status: 'done'|'already'|'planned'|'failed'|'skipped', detail?: string, command?: string}>} */
+  /** @type {Array<{id: string, status: 'done'|'already'|'planned'|'pending'|'failed'|'skipped', detail?: string, command?: string}>} */
   const steps = []
   const state = inspect({ bin, constants, options })
 
@@ -192,7 +192,7 @@ export function install({ bin, origin, constants, options }) {
     const runtime = dryRun ? null : readJsonFile(knownMarketplacesPath())
     const live = runtime?.ok ? runtime.value?.[constants.marketplaceName]?.autoUpdate : undefined
     if (live !== true) {
-      steps.push({ id: 'claude.autoupdate.runtime-pending', status: 'planned' })
+      steps.push({ id: 'claude.autoupdate.runtime-pending', status: 'pending' })
     }
   }
 
