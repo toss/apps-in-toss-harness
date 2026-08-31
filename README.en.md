@@ -56,10 +56,12 @@ For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OA
 If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
 
 ```
-Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`. Next, turn on auto-update by merging `"apps-in-toss": {"source": {"source": "github", "repo": "toss/apps-in-toss-harness"}, "autoUpdate": true}` into `extraKnownMarketplaces` in `~/.claude/settings.json`, leaving the other keys alone. Confirm it all succeeded, then tell me to open a new session and run /ait:welcome.
+Install the Apps in Toss mini-app dev plugin. In the shell, run `npx -y -p github:toss/apps-in-toss-harness ait-setup claude --yes`, then tell me any manual steps its output still lists.
 ```
 
-Installed plugins only load starting from a new session, so the sentence above already tells the agent to have you open one and run `/ait:welcome`.
+That sentence calls the same installer as "One command" above. It registers the marketplace, installs the plugin, and turns auto-update on, then reports whatever is left. Don't ask an agent to edit `~/.claude/settings.json` by hand: the `source` under `extraKnownMarketplaces` belongs to the CLI (a sparse registration keeps `sparsePaths` in there), and overwriting it wholesale makes the declaration disagree with the on-disk clone, after which Claude Code stops finding that marketplace at all.
+
+Installed plugins only load starting from a new session. Follow whatever steps the installer lists at the end, then open a new session and run `/ait:welcome`.
 
 ### Using it from Codex
 

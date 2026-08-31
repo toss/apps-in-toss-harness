@@ -56,10 +56,12 @@ installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, C
 위 슬래시 명령이 동작하지 않는 환경이라면, 아래 문장을 통째로 입력창에 붙여넣으세요. 터미널을 열 필요 없이 Claude가 자기 셸에서 설치를 대신 진행합니다.
 
 ```
-앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. 그다음 `~/.claude/settings.json`의 `extraKnownMarketplaces`에 `"apps-in-toss": {"source": {"source": "github", "repo": "toss/apps-in-toss-harness"}, "autoUpdate": true}`를 병합해서 자동 업데이트를 켜줘. 기존 키는 그대로 두고. 성공을 확인한 뒤 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
+앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `npx -y -p github:toss/apps-in-toss-harness ait-setup claude --yes`를 실행하고, 출력에 남은 수동 단계가 있으면 그대로 알려줘.
 ```
 
-설치된 플러그인은 새 세션부터 로드되므로, 위 문장에는 새 세션을 열어 `/ait:welcome`을 실행하라는 안내까지 포함돼 있습니다.
+이 문장이 부르는 것이 위 "한 줄로 끝내기"의 installer입니다. 마켓플레이스 등록·플러그인 설치·자동 업데이트까지 한 번에 처리하고, 남는 것만 알려줍니다. `~/.claude/settings.json`을 직접 고치라고 시키지 마세요 — `extraKnownMarketplaces`의 `source`는 CLI가 소유하는 값이고(sparse 등록이면 `sparsePaths`가 들어 있습니다), 그걸 통째로 덮어쓰면 선언과 clone이 어긋나 Claude Code가 그 마켓플레이스를 아예 못 찾게 됩니다.
+
+설치된 플러그인은 새 세션부터 로드됩니다. installer가 마지막에 남은 단계를 알려주니 그대로 따르고, 끝나면 새 세션에서 `/ait:welcome`을 실행하세요.
 
 ### Codex에서 쓰기
 
