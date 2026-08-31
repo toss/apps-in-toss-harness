@@ -97,7 +97,10 @@ agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 agent
 /plugins        # 마켓플레이스 목록에서 ait 선택 → 설치
 
-# 3) harness 진입 지도 확인 (skill은 네임스페이스 없이 플랫 이름)
+# 3) 자동 갱신 켜기 (/plugins > apps-in-toss > Enable Auto Refresh)
+/plugins
+
+# 4) harness 진입 지도 확인 (skill은 네임스페이스 없이 플랫 이름)
 /welcome
 ```
 
@@ -175,13 +178,13 @@ codex plugin list
 
 `codex plugin marketplace upgrade`는 버전을 출력하지 않으니 `codex plugin list`의 VERSION 열로 확인하세요. TUI 안에서는 `/plugins`를 열고 `Ctrl+U`를 눌러도 같습니다.
 
-**Cursor.** Cursor에는 플러그인 단위 업데이트 명령이나 버튼이 없습니다. 설치된 플러그인 화면에도 Uninstall만 있습니다. 새 버전은 재설치로 받습니다. 셸에서 아래를 실행해 마켓플레이스를 재색인하세요.
+**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. 대신 `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있습니다(데스크톱 에디터와 `agent` CLI 양쪽). 켜두면 마켓플레이스가 추적하는 브랜치에 새 커밋이 push될 때 플러그인이 갱신됩니다. 셸에서 즉시 재색인하려면 아래를 실행하세요.
 
 ```
 agent plugin marketplace update apps-in-toss
 ```
 
-그다음 새 `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 설치 캐시가 이전 커밋에 고정돼 재설치가 구버전을 그대로 되살리는 경우가 있습니다. 그때는 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 마켓플레이스를 remove → add로 재등록한 뒤 다시 설치하면 됩니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
+새 버전이 그래도 오지 않으면 새 `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 설치 캐시가 이전 커밋에 고정돼 재설치가 구버전을 그대로 되살리는 경우가 있습니다. 그때는 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 마켓플레이스를 remove → add로 재등록한 뒤 다시 설치하면 됩니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
 
 이 절은 Claude Code `2.1.250`·codex-cli `0.149.1`·Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
 
