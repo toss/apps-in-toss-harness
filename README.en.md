@@ -97,7 +97,10 @@ agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 agent
 /plugins        # pick ait from the marketplace list and install it
 
-# 3) See the harness entry map (skills use flat names, no namespace)
+# 3) Turn on auto-refresh (/plugins > apps-in-toss > Enable Auto Refresh)
+/plugins
+
+# 4) See the harness entry map (skills use flat names, no namespace)
 /welcome
 ```
 
@@ -175,13 +178,13 @@ codex plugin list
 
 `codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
 
-**Cursor.** Cursor has no per-plugin update command or button; the installed-plugin screen only offers Uninstall. You get a new version by reinstalling. Run this in your shell to re-index the marketplace:
+**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. Instead, the `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI. With it on, plugins update when new commits land on the branch the marketplace tracks. To re-index right now, run this in your shell:
 
 ```
 agent plugin marketplace update apps-in-toss
 ```
 
-Then open a fresh `agent` session, run `/plugins`, uninstall ait, and install it again. The install cache is pinned to a commit, so a reinstall can silently bring back the old version. If that happens, delete `~/.cursor/plugins/cache/apps-in-toss`, re-register the marketplace (remove, then add), and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
+If a new version still doesn't arrive, open a fresh `agent` session, run `/plugins`, uninstall ait, and install it again. The install cache is pinned to a commit, so a reinstall can silently bring back the old version. If that happens, delete `~/.cursor/plugins/cache/apps-in-toss`, re-register the marketplace (remove, then add), and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
 
 This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
 
