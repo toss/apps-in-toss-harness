@@ -44,6 +44,12 @@ jobs:
       # 2건(debugger-v0.2.0·debug-console-v0.1.4, 2026-08-06)이 발행되고
       # 스코프 치환까지 끝난 지금은 무장 상태로 실질 검사한다.
       - run: pnpm check:dist-urls
+      # installer 상수 드리프트 가드. `scripts/setup/`의 installer는 플러그인
+      # 사실을 manifest에서 런타임에 읽지만, manifest가 동봉되지 않는 배포
+      # 채널에서는 손으로 적은 fallback 리터럴이 쓰인다 — 그 리터럴이 manifest와
+      # 갈라지면 "설치는 성공했는데 엉뚱한 마켓플레이스를 등록"하는 조용한 사고가
+      # 난다. 패키징 allowlist 누락과 ko/en 메시지 카탈로그 비대칭도 함께 잡는다.
+      - run: pnpm check:installer-constants
       - run: pnpm typecheck
       - run: pnpm test
       # 의존성 취약점 게이트(공개 전환 보안검토 ①). 사내망에서는 프록시가
