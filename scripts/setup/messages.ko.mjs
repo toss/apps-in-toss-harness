@@ -34,7 +34,7 @@ export default {
   'claude.autoupdate.runtime-pending': '자동 업데이트 설정은 기록했지만 런타임 파일에는 아직 반영되지 않았습니다. 다음 세션에서 적용됩니다.',
   'claude.hint.usedDesktopBundle': 'CLI가 PATH에 없어 데스크톱 앱이 번들한 claude 실행 파일로 설치했습니다. 같은 ~/.claude 상태를 씁니다.',
   'claude.hint.desktopBrowserSearch': '데스크톱 앱의 플러그인 브라우저에서 ait를 검색하지 마세요 — 검색에는 공식 마켓플레이스 플러그인만 나옵니다.',
-  'claude.hint.desktopRestart': '데스크톱 앱에서 쓰려면 앱을 완전히 종료했다가 다시 여세요(재시작 전에는 반영되지 않습니다).',
+  'claude.hint.desktopRestart': '데스크톱 앱에 바로 안 뜨면 앱을 완전히 종료했다가 다시 여세요 — 실행 중인 앱은 새로 설치된 플러그인을 바로 못 잡을 수 있습니다.',
   'claude.manual.mcpAuth': '세션에서 /mcp 를 실행하고 apps-in-toss-console 인가를 완료하세요(브라우저 OAuth).',
   'claude.manual.newSession': '새 세션을 열면 플러그인이 로드됩니다. 세션 안이라면 /reload-plugins 를 입력하세요.',
   'claude.manual.welcome': '/ait:welcome 으로 시작하세요.',

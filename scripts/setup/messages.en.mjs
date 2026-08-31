@@ -34,7 +34,7 @@ export default {
   'claude.autoupdate.runtime-pending': 'Auto-update is declared in settings, but the runtime file has not picked it up yet. It applies from the next session.',
   'claude.hint.usedDesktopBundle': 'No claude CLI on PATH, so the desktop app’s bundled claude binary was used. It shares the same ~/.claude state.',
   'claude.hint.desktopBrowserSearch': 'Do not search for ait in the desktop app’s plugin browser — search only surfaces official-marketplace plugins.',
-  'claude.hint.desktopRestart': 'To use it in the desktop app, fully quit and reopen it (a restart is required before it shows up).',
+  'claude.hint.desktopRestart': 'If it does not show up in the desktop app, fully quit and reopen it — a running app may not pick up a freshly installed plugin.',
   'claude.manual.mcpAuth': 'Run /mcp in a session and complete the apps-in-toss-console authorization (browser OAuth).',
   'claude.manual.newSession': 'Open a new session to load the plugin. Inside a session, run /reload-plugins.',
   'claude.manual.welcome': 'Start with /ait:welcome.',
