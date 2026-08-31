@@ -175,7 +175,15 @@ codex plugin list
 
 `codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
 
-This section was verified against Claude Code `2.1.250` and codex-cli `0.149.1`.
+**Cursor.** Cursor has no per-plugin update command or button; the installed-plugin screen only offers Uninstall. You get a new version by reinstalling. Run this in your shell to re-index the marketplace:
+
+```
+agent plugin marketplace update apps-in-toss
+```
+
+Then open a fresh `agent` session, run `/plugins`, uninstall ait, and install it again. The install cache is pinned to a commit, so a reinstall can silently bring back the old version. If that happens, delete `~/.cursor/plugins/cache/apps-in-toss`, re-register the marketplace (remove, then add), and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
+
+This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
 
 ## Development journey
 
