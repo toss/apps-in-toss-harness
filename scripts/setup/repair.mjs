@@ -20,10 +20,23 @@
  *   R4 캐시 적체 — 옛 버전 디렉터리가 계속 쌓인다(정리는 선택).
  */
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { run } from './exec.mjs'
 import { readJsonFile } from './jsonedit.mjs'
+import { messages, pickLanguage } from './messages.mjs'
 import { claudeConfigDir } from './paths.mjs'
+
+/**
+ * 카탈로그 문자열의 `{name}` 자리를 채운다.
+ *
+ * 진단 문구도 나머지 출력과 같은 언어로 나가야 한다 — 예전엔 여기만 한국어가
+ * 박혀 있어서 `--lang en`으로 돌려도 헤더는 영어, 소견은 한국어로 갈렸다.
+ * @param {string} template
+ * @param {Record<string, string|number>} values
+ */
+function fill(template, values) {
+  return template.replace(/\{(\w+)\}/g, (whole, key) => (key in values ? `${values[key]}` : whole))
+}
 
 const claudePlugins = () => join(claudeConfigDir(), 'plugins')
 
@@ -31,10 +44,10 @@ const claudePlugins = () => join(claudeConfigDir(), 'plugins')
 const STALE_DAYS = 14
 
 /**
- * @param {{bin: string|null, constants: any}} ctx
+ * @param {{bin: string|null, constants: any, t?: (key: string) => string}} ctx
  * @returns {{findings: Array<{code: string, severity: 'info'|'warn'|'error', summary: string, remedy: string[]}>, inspected: Record<string, unknown>}}
  */
-export function diagnose({ bin, constants }) {
+export function diagnose({ bin, constants, t = messages(pickLanguage(undefined)) }) {
   const base = claudePlugins()
   const name = constants.marketplaceName
   const plugin = constants.pluginName
@@ -67,9 +80,8 @@ export function diagnose({ bin, constants }) {
       findings.push({
         code: 'C1',
         severity: 'info',
-        summary:
-          '플러그인 브라우저의 목록·검색은 공식 카탈로그만 보여줍니다. 서드파티 마켓플레이스의 플러그인은 설치가 정상이어도 거기 나타나지 않습니다 — 고장이 아닙니다.',
-        remedy: ['설치는 브라우저 검색이 아니라 명령(또는 이 installer)으로 합니다.'],
+        summary: t('repair.c1.summary'),
+        remedy: [t('repair.c1.remedy')],
       })
     }
   }
@@ -101,25 +113,26 @@ export function diagnose({ bin, constants }) {
         code: 'R1',
         severity: stale ? 'warn' : 'info',
         summary: stale
-          ? `마켓플레이스 clone이 shallow + fast-forward 전용인데 ${
-              ageDays === null ? '마지막 갱신 기록이 없습니다' : `마지막 갱신이 ${ageDays}일 전입니다`
-            }. 상류 이력이 바뀌면(force-push·repo 재생성) 갱신이 막혀 옛 상태로 고착됩니다(이 clone 안에서 git status로는 알 수 없습니다).`
-          : `마켓플레이스 clone은 shallow + fast-forward 전용입니다(${ageDays}일 전 갱신 — 정상 범위). 나중에 갱신이 안 되는 증상이 보이면 이게 원인일 수 있습니다.`,
+          ? ageDays === null
+            ? t('repair.r1.staleNoRecord')
+            : fill(t('repair.r1.staleAged'), { days: ageDays })
+          : fill(t('repair.r1.fresh'), { days: `${ageDays}` }),
         remedy: stale
           ? [
               `claude plugin marketplace update ${name}`,
-              `# 위 명령 후에도 목록이 그대로면, 이 마켓플레이스만 재등록합니다:`,
-              `claude plugin marketplace remove ${name}`,
-              `claude plugin marketplace add ${constants.marketplaceRepo}`,
+              t('repair.r1.reclone1'),
+              t('repair.r1.reclone2'),
+              `rm -rf ${clonePath}`,
+              `claude plugin marketplace update ${name}`,
             ]
-          : [`지금 할 일은 없습니다. 갱신을 앞당기려면: claude plugin marketplace update ${name}`],
+          : [t('repair.r1.freshRemedy'), `claude plugin marketplace update ${name}`],
       })
     }
   } else if (registered) {
     findings.push({
       code: 'R1',
       severity: 'error',
-      summary: '마켓플레이스가 등록돼 있는데 로컬 clone이 없습니다.',
+      summary: t('repair.r1.missing'),
       remedy: [`claude plugin marketplace update ${name}`],
     })
   }
@@ -136,21 +149,32 @@ export function diagnose({ bin, constants }) {
     if (Array.isArray(entries)) {
       const ours = entries.filter((e) => e?.id === `${plugin}@${name}`)
       inspected.installedEntries = ours.length
+      // project/local scope의 설치는 그 프로젝트 디렉터리에 매여 있다. 명령만
+      // 복사해 아무 데서나 돌리면 엉뚱한 scope를 고치므로, 어디서 돌려야 하는지
+      // 같이 적는다.
       for (const entry of ours) {
         const path = `${entry?.installPath ?? ''}`
+        const scope = entry?.scope ?? 'user'
+        const projectPath = typeof entry?.projectPath === 'string' ? entry.projectPath : null
+        const where = scope !== 'user' && projectPath ? [`cd ${projectPath}`] : []
+        const at = scope !== 'user' && projectPath ? ` (${projectPath})` : ''
         if (path && !existsSync(path)) {
           findings.push({
             code: 'R2',
             severity: 'error',
-            summary: `설치 기록(${entry.scope} scope, ${entry.version})이 가리키는 디렉터리가 없습니다.`,
-            remedy: [`claude plugin install ${plugin}@${name} -y --scope ${entry.scope ?? 'user'}`],
+            summary: fill(t('repair.r2.summary'), { scope, at, version: entry.version }),
+            remedy: [...where, `claude plugin install ${plugin}@${name} -y --scope ${scope}`],
           })
-        } else if (path && !path.startsWith(join(base, 'cache'))) {
+        } else if (path && !path.startsWith(join(base, 'cache') + sep)) {
           findings.push({
             code: 'R3',
             severity: 'warn',
-            summary: `설치 경로가 플러그인 캐시 밖을 가리킵니다: ${path}`,
-            remedy: [`claude plugin uninstall ${plugin}@${name}`, `claude plugin install ${plugin}@${name} -y`],
+            summary: fill(t('repair.r3.summary'), { path }),
+            remedy: [
+              ...where,
+              `claude plugin uninstall ${plugin}@${name} --scope ${scope}`,
+              `claude plugin install ${plugin}@${name} -y --scope ${scope}`,
+            ],
           })
         }
       }
@@ -158,6 +182,12 @@ export function diagnose({ bin, constants }) {
   }
 
   // R4 — 캐시 적체. 지우라고 하지 않고 사실만 말한다.
+  //
+  // 여기서 `claude plugin prune`을 권하면 안 된다. 그 명령이 지우는 건 "더는
+  // 필요 없는 자동 설치된 의존 플러그인"이지 버전 디렉터리가 아니다(실측:
+  // 옛 버전 4개가 그대로 있는데도 `prune --dry-run`은 "Nothing to prune").
+  // 대신 Claude Code 자신이 안 쓰는 버전에 `.orphaned_at` 마커를 남기므로,
+  // 그 마커가 붙은 것만 지울 대상으로 세어 정확한 경로를 출력한다.
   if (existsSync(cachePath)) {
     let versions = []
     try {
@@ -172,12 +202,18 @@ export function diagnose({ bin, constants }) {
       versions = []
     }
     inspected.cachedVersions = versions
-    if (versions.length > 2) {
+    const orphaned = versions.filter((v) => existsSync(join(cachePath, v, '.orphaned_at')))
+    inspected.orphanedVersions = orphaned
+    if (orphaned.length > 0) {
       findings.push({
         code: 'R4',
         severity: 'info',
-        summary: `캐시에 옛 버전 디렉터리가 ${versions.length}개 남아 있습니다(동작에는 영향 없음).`,
-        remedy: ['claude plugin prune'],
+        summary: fill(t('repair.r4.summary'), { total: versions.length, orphaned: orphaned.length }),
+        remedy: [
+          t('repair.r4.note1'),
+          t('repair.r4.note2'),
+          ...orphaned.map((v) => `rm -rf ${join(cachePath, v)}`),
+        ],
       })
     }
   }

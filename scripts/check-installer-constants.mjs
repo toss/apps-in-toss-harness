@@ -22,7 +22,7 @@
  *   installer가 세 번째 문서 표면이 되어, ko/en README를 같은 PR에서 함께
  *   고치는 이 repo의 규율 밖에서 따로 낡는다.
  *
- * 검사 3종 (전부 오프라인·결정적):
+ * 검사 4종 (전부 오프라인·결정적):
  *
  *   ① FALLBACK ↔ manifest 일치 — constants.mjs의 fallback 리터럴이
  *      `.claude-plugin/marketplace.json`·`packages/agent-plugin/.claude-plugin/plugin.json`의
@@ -38,6 +38,12 @@
  *   ③ 메시지 카탈로그 대칭 — ko/en 키 집합이 같아야 한다. 갈라지면 한쪽 언어
  *      사용자에게만 키 이름이 그대로 노출된다. (테스트에도 같은 검사가 있지만,
  *      이 게이트는 테스트를 돌리지 않는 lint 단계에서도 걸리게 하려고 둔다.)
+ *
+ *   ④ README ↔ manifest 식별자 — ko/en README에 적힌 설치 명령이 가리키는
+ *      repo slug·플러그인 id·installer bin 이름이 manifest·package.json과
+ *      같아야 한다. 이름이 바뀌었을 때 코드만 고치고 문서를 놓치면, 문서를
+ *      따라간 사용자는 존재하지 않는 마켓플레이스를 등록하게 된다. 두 README를
+ *      같은 PR에서 함께 고치는 이 repo의 규율을 기계가 대신 확인한다.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -141,6 +147,52 @@ for (const [lang, catalog] of [
   for (const [key, value] of Object.entries(catalog)) {
     if (typeof value !== 'string' || value.trim() === '') {
       violations.push(`${lang} 카탈로그의 '${key}'가 비어 있습니다.`)
+    }
+  }
+}
+
+// ④ README ↔ manifest 식별자
+//
+// 문장까지 대조하지는 않는다 — 그건 문서를 고칠 때마다 게이트가 우는 쪽이 된다.
+// 대신 틀리면 사용자가 실제로 막히는 것, 즉 명령에 박힌 식별자만 본다.
+{
+  const binName = pkg?.bin ? Object.keys(pkg.bin)[0] : null
+  const repo = FALLBACK.marketplaceRepo
+  const pluginId = `${FALLBACK.pluginName}@${FALLBACK.marketplaceName}`
+
+  for (const rel of ['README.md', 'README.en.md']) {
+    const path = join(ROOT, rel)
+    if (!existsSync(path)) {
+      violations.push(`파일이 없습니다: ${rel}`)
+      continue
+    }
+    const text = readFileSync(path, 'utf8')
+
+    // npx 한 줄: `npx … -p github:<slug> <bin>`
+    const npx = [...text.matchAll(/-p\s+github:([^\s`]+)\s+([\w-]+)/g)]
+    if (npx.length === 0) {
+      violations.push(`${rel}에 installer 실행 한 줄(npx -p github:… ait-setup)이 없습니다.`)
+    }
+    for (const [, slug, bin] of npx) {
+      if (slug !== repo) violations.push(`${rel}의 npx 명령이 다른 repo를 가리킵니다: ${slug} ≠ ${repo}`)
+      if (binName && bin !== binName) {
+        violations.push(`${rel}의 npx 명령이 다른 bin을 부릅니다: ${bin} ≠ ${binName}`)
+      }
+    }
+
+    // marketplace 등록: 단축형(owner/repo)과 전체 URL 둘 다 쓰인다.
+    for (const [, source] of text.matchAll(/plugin marketplace add\s+([^\s`\n]+)/g)) {
+      const normalized = source.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '')
+      if (normalized !== repo) {
+        violations.push(`${rel}의 marketplace 등록 명령이 다른 repo를 가리킵니다: ${source} ≠ ${repo}`)
+      }
+    }
+
+    // 플러그인 설치: Claude는 `plugin install`, Codex는 `plugin add`.
+    for (const [, id] of text.matchAll(/plugin (?:install|add)\s+([\w.-]+@[\w.-]+)/g)) {
+      if (id !== pluginId) {
+        violations.push(`${rel}의 플러그인 설치 명령이 다른 id를 가리킵니다: ${id} ≠ ${pluginId}`)
+      }
     }
   }
 }

@@ -20,11 +20,11 @@ npx -y -p github:toss/apps-in-toss-harness ait-setup
 npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
 ```
 
-installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, Claude Code의 자동 업데이트를 켜고, 콘솔 MCP가 실제로 붙었는지 확인합니다. 여러 번 실행해도 안전합니다 — 이미 끝난 단계는 건너뛰고, 재실행이 곧 최신화가 됩니다. 사람이 직접 해야 하는 단계만 마지막에 번호를 매겨 알려줍니다. 그건 콘솔 MCP의 브라우저 OAuth와 Cursor의 `/plugins` 최초 선택 두 가지입니다.
+installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, Claude Code의 자동 업데이트를 켜고, 콘솔 MCP가 실제로 붙었는지 확인합니다. 여러 번 실행해도 안전합니다 — 이미 끝난 단계는 건너뛰고, 재실행이 곧 최신화가 됩니다. 사람이 직접 해야 하는 단계만 마지막에 번호를 매겨 알려줍니다. 콘솔 MCP의 브라우저 OAuth, 플러그인을 로드할 새 세션, Cursor라면 `/plugins` 최초 선택과 자동 갱신 토글이 여기 들어갑니다. 정확히 무엇이 남는지는 감지된 호스트와 지금 상태에 따라 달라지니, 출력에 뜬 목록을 따르세요.
 
-**CLI 없이 데스크톱 앱만 설치돼 있어도 됩니다.** Claude와 Codex는 앱이 자기 안에 싣고 다니는 CLI를 찾아 그대로 설치합니다. 그 CLI는 터미널 CLI와 같은 사용자 상태(`~/.claude`·`~/.codex`)를 쓰기 때문에 결과가 갈리지 않습니다. Cursor 앱에는 그런 CLI가 없어서, 이 경우에만 무엇을 하면 되는지 안내로 남습니다.
+**CLI 없이 데스크톱 앱만 설치돼 있어도 됩니다(macOS).** Claude와 Codex는 앱이 자기 안에 싣고 다니는 CLI를 찾아 그대로 설치합니다. 앱 번들을 뒤지는 이 경로는 지금 macOS에서만 동작합니다 — 다른 OS에서는 CLI를 따로 설치하세요. 그 CLI는 터미널 CLI와 같은 사용자 상태(`~/.claude`·`~/.codex`)를 쓰기 때문에 결과가 갈리지 않습니다. Cursor 앱에는 그런 CLI가 없어서, 이 경우에만 무엇을 하면 되는지 안내로 남습니다.
 
-설치했는데 목록에 안 보이거나 옛 버전이 뜬다면 `ait-setup --repair`가 원인을 가려줍니다. 진단만 하고 아무것도 지우지 않습니다.
+설치했는데 목록에 안 보이거나 옛 버전이 뜬다면 `ait-setup --repair`가 원인을 가려줍니다. 진단만 하고 아무것도 지우지 않습니다. 지금은 Claude Code의 설치 상태만 봅니다 — Codex·Cursor는 대상이 아닙니다.
 
 자주 쓰는 옵션: `--dry-run`(무엇을 할지만 출력) · `--yes`(확인 없이 진행) · `--project`(현재 프로젝트에도 배선) · `--lang ko|en` · `--help`.
 
@@ -59,7 +59,7 @@ installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, C
 앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `npx -y -p github:toss/apps-in-toss-harness ait-setup claude --yes`를 실행하고, 출력에 남은 수동 단계가 있으면 그대로 알려줘.
 ```
 
-이 문장이 부르는 것이 위 "한 줄로 끝내기"의 installer입니다. 마켓플레이스 등록·플러그인 설치·자동 업데이트까지 한 번에 처리하고, 남는 것만 알려줍니다. `~/.claude/settings.json`을 직접 고치라고 시키지 마세요 — `extraKnownMarketplaces`의 `source`는 CLI가 소유하는 값이고(sparse 등록이면 `sparsePaths`가 들어 있습니다), 그걸 통째로 덮어쓰면 선언과 clone이 어긋나 Claude Code가 그 마켓플레이스를 아예 못 찾게 됩니다.
+이 문장은 위 "한 줄로 끝내기"와 같은 installer를 부릅니다. 마켓플레이스 등록·플러그인 설치·자동 업데이트까지 한 번에 처리하고, 남는 것만 알려줍니다. `~/.claude/settings.json`을 직접 고치라고 시키지 마세요 — `extraKnownMarketplaces`의 `source`는 CLI가 소유하는 값이고(sparse 등록이면 `sparsePaths`가 들어 있습니다), 그걸 통째로 덮어쓰면 선언과 clone이 어긋나 Claude Code가 그 마켓플레이스를 아예 못 찾게 됩니다.
 
 설치된 플러그인은 새 세션부터 로드됩니다. installer가 마지막에 남은 단계를 알려주니 그대로 따르고, 끝나면 새 세션에서 `/ait:welcome`을 실행하세요.
 

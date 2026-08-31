@@ -20,11 +20,11 @@ npx -y -p github:toss/apps-in-toss-harness ait-setup
 npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
 ```
 
-The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end — the console MCP's browser OAuth, and Cursor's first `/plugins` pick.
+The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end: the console MCP's browser OAuth, a new session to load the plugin, and on Cursor the first `/plugins` pick and the auto-refresh toggle. Exactly which ones remain depends on the hosts it found and the state they were in, so follow the list it prints.
 
-**You don't need a CLI on your PATH — the desktop apps are enough.** Claude and Codex each ship a CLI inside the app bundle, and the installer finds it and installs with it. That CLI reads and writes the same user state (`~/.claude`, `~/.codex`) as the terminal CLI, so nothing diverges. The Cursor app carries no such CLI, so that is the one case that stays an instruction.
+**You don't need a CLI on your PATH — the desktop apps are enough (macOS).** Claude and Codex each ship a CLI inside the app bundle, and the installer finds it and installs with it. Looking inside app bundles only works on macOS today; on other systems, install the CLI itself. That CLI reads and writes the same user state (`~/.claude`, `~/.codex`) as the terminal CLI, so nothing diverges. The Cursor app carries no such CLI, so that is the one case that stays an instruction.
 
-If the plugin is installed but does not show up, or shows up stale, `ait-setup --repair` tells you which of the known causes you hit. It only diagnoses; it deletes nothing.
+If the plugin is installed but does not show up, or shows up stale, `ait-setup --repair` tells you which of the known causes you hit. It only diagnoses; it deletes nothing. It reads Claude Code's install state only — Codex and Cursor are not covered.
 
 Common options: `--dry-run` (print the plan only), `--yes` (skip confirmation), `--project` (also wire the current project), `--lang ko|en`, `--help`.
 

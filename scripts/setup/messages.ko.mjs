@@ -48,6 +48,7 @@ export default {
   'codex.manual.welcome': '새 세션에서 /ait:welcome 을 실행하세요. 슬래시가 안 오면 자연어로 요청해도 같은 skill을 탑니다.',
 
   'cursor.marketplace.add': '마켓플레이스 등록',
+  'cursor.marketplace.update': '마켓플레이스 최신화',
   'cursor.project.enable': '이 프로젝트에서 플러그인 활성화',
   'cursor.project.mcp': '프로젝트 .cursor/mcp.json에 MCP 서버 등록',
   'cursor.mcp.enable': 'MCP 서버 활성화',
@@ -60,4 +61,23 @@ export default {
   'app.only.codex': 'Codex 앱은 있는데 CLI를 찾지 못했습니다. Codex CLI를 설치한 뒤 다시 실행하세요 — 마켓플레이스 등록은 CLI에서만 됩니다.',
   'app.only.cursor': 'Cursor는 있는데 CLI(agent)를 찾지 못했습니다. Cursor CLI를 설치하거나, 에디터에서 /plugins 로 설치하세요.',
   'app.only.marketplaceHint': '공식 마켓플레이스 입점이 끝나면 앱 안에서 검색해 설치하는 경로가 열립니다.',
+  'repair.c1.summary':
+    '플러그인 브라우저의 목록·검색은 공식 카탈로그만 보여줍니다. 서드파티 마켓플레이스의 플러그인은 설치가 정상이어도 거기 나타나지 않습니다 — 고장이 아닙니다.',
+  'repair.c1.remedy': '설치는 브라우저 검색이 아니라 명령(또는 이 installer)으로 합니다.',
+  'repair.r1.staleNoRecord':
+    '마켓플레이스 clone이 shallow + fast-forward 전용인데 마지막 갱신 기록이 없습니다. 상류 이력이 바뀌면(force-push·repo 재생성) 갱신이 막혀 옛 상태로 고착됩니다(이 clone 안에서 git status로는 알 수 없습니다).',
+  'repair.r1.staleAged':
+    '마켓플레이스 clone이 shallow + fast-forward 전용인데 마지막 갱신이 {days}일 전입니다. 상류 이력이 바뀌면(force-push·repo 재생성) 갱신이 막혀 옛 상태로 고착됩니다(이 clone 안에서 git status로는 알 수 없습니다).',
+  'repair.r1.fresh':
+    '마켓플레이스 clone은 shallow + fast-forward 전용입니다({days}일 전 갱신 — 정상 범위). 나중에 갱신이 안 되는 증상이 보이면 이게 원인일 수 있습니다.',
+  'repair.r1.freshRemedy': '# 지금 할 일은 없습니다. 갱신을 앞당기고 싶을 때만:',
+  'repair.r1.reclone1': '# 위 명령 후에도 목록이 그대로면, clone만 지우고 다시 받습니다.',
+  'repair.r1.reclone2': '# 등록 선언(sparse 설정 포함)과 설치된 플러그인은 그대로 남습니다.',
+  'repair.r1.missing': '마켓플레이스가 등록돼 있는데 로컬 clone이 없습니다.',
+  'repair.r2.summary': '설치 기록({scope} scope{at}, {version})이 가리키는 디렉터리가 없습니다.',
+  'repair.r3.summary': '설치 경로가 플러그인 캐시 밖을 가리킵니다: {path}',
+  'repair.r4.summary':
+    '캐시에 버전 디렉터리가 {total}개 있고 그중 {orphaned}개가 Claude Code에 의해 \'안 쓰임\'으로 표시돼 있습니다(동작에는 영향 없음 — 디스크만 씁니다).',
+  'repair.r4.note1': '# 이걸 정리하는 지원 명령은 없습니다(claude plugin prune 은 의존 플러그인용이라 이 디렉터리는 안 건드립니다).',
+  'repair.r4.note2': '# 공간을 되찾고 싶을 때만, 표시된 것만 지우세요:',
 }

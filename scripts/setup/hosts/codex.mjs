@@ -11,18 +11,33 @@
  * 사용자가 대화형으로 동의하거나 `--login`을 준 경우에만 실행한다. 무인
  * 실행(CI·에이전트 셸)이 브라우저를 띄우고 멈춰 있는 사고를 막는 선택이다.
  */
-import { run } from '../exec.mjs'
+import { json, run } from '../exec.mjs'
 
 /**
+ * 두 목록 다 `--json`으로 읽는다(codex-cli 0.149.1에서 확인).
+ *
+ * 사람이 보라고 만든 표를 문자열 포함으로 훑으면 안 된다. `codex plugin list`는
+ * **설치 안 된 것까지** 같은 표에 찍는다 — 실측하면 `openai-curated`의 플러그인
+ * 십수 개가 `not installed` 상태로 나란히 나온다. 거기서 이름만 찾으면 아무것도
+ * 안 깔린 머신에서 "이미 설치됨"이 된다. 게다가 플러그인 이름이 `ait`라 남의
+ * 행 경로에도 우연히 박힐 수 있는 짧은 문자열이다.
+ *
  * @param {{bin: string, constants: any}} ctx
  */
 export function inspect({ bin, constants }) {
-  const marketplaces = run(bin, ['plugin', 'marketplace', 'list'], { timeout: 60_000 })
-  const plugins = run(bin, ['plugin', 'list'], { timeout: 60_000 })
+  const marketplacesRaw = run(bin, ['plugin', 'marketplace', 'list', '--json'], { timeout: 60_000 })
+  const pluginsRaw = run(bin, ['plugin', 'list', '--json'], { timeout: 60_000 })
+  const marketplaces = json(marketplacesRaw)
+  const plugins = json(pluginsRaw)
+
+  const marketplaceList = Array.isArray(marketplaces?.marketplaces) ? marketplaces.marketplaces : null
+  const installedList = Array.isArray(plugins?.installed) ? plugins.installed : null
+  const pluginId = `${constants.pluginName}@${constants.marketplaceName}`
+
   return {
-    marketplaceAdded: marketplaces.ok ? marketplaces.stdout.includes(constants.marketplaceName) : null,
-    pluginInstalled: plugins.ok ? plugins.stdout.includes(constants.pluginName) : null,
-    introspectable: marketplaces.ok && plugins.ok,
+    marketplaceAdded: marketplaceList ? marketplaceList.some((m) => m?.name === constants.marketplaceName) : null,
+    pluginInstalled: installedList ? installedList.some((p) => p?.pluginId === pluginId && p?.installed) : null,
+    introspectable: marketplaceList !== null && installedList !== null,
   }
 }
 

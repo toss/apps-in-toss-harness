@@ -48,6 +48,7 @@ export default {
   'codex.manual.welcome': 'Run /ait:welcome in a new session. If the slash namespace does not come through, plain language reaches the same skill.',
 
   'cursor.marketplace.add': 'Register the marketplace',
+  'cursor.marketplace.update': 'Refresh the marketplace',
   'cursor.project.enable': 'Enable the plugin for this project',
   'cursor.project.mcp': 'Register the MCP servers in the project’s .cursor/mcp.json',
   'cursor.mcp.enable': 'Enable the MCP server',
@@ -60,4 +61,23 @@ export default {
   'app.only.codex': 'The Codex app is installed but no CLI was found. Install the Codex CLI and run this again — marketplace registration is CLI-only.',
   'app.only.cursor': 'Cursor is installed but its CLI (agent) was not found. Install the Cursor CLI, or install the plugin from /plugins in the editor.',
   'app.only.marketplaceHint': 'Once the official-marketplace listing lands, installing from inside the app’s own search becomes an option.',
+  'repair.c1.summary':
+    'The plugin browser only lists and searches the official catalog. A plugin from a third-party marketplace never appears there, even when it is installed correctly — nothing is broken.',
+  'repair.c1.remedy': 'Install with a command (or this installer) rather than the browser search.',
+  'repair.r1.staleNoRecord':
+    'The marketplace clone is shallow and fast-forward only, and there is no record of it ever being refreshed. If upstream history changes (a force-push, a repo recreation), the pull is refused and the clone stays frozen at the old state — you cannot tell from git status inside the clone.',
+  'repair.r1.staleAged':
+    'The marketplace clone is shallow and fast-forward only, and was last refreshed {days} days ago. If upstream history changes (a force-push, a repo recreation), the pull is refused and the clone stays frozen at the old state — you cannot tell from git status inside the clone.',
+  'repair.r1.fresh':
+    'The marketplace clone is shallow and fast-forward only (refreshed {days} days ago — normal). If it ever stops picking up updates, this is the likely reason.',
+  'repair.r1.freshRemedy': '# Nothing to do. Only if you want to refresh it now:',
+  'repair.r1.reclone1': '# If the listing is still stale after that, delete just the clone and fetch it again.',
+  'repair.r1.reclone2': '# The registration (including its sparse settings) and the installed plugin both survive.',
+  'repair.r1.missing': 'The marketplace is registered but its local clone is missing.',
+  'repair.r2.summary': 'The install record ({scope} scope{at}, {version}) points at a directory that does not exist.',
+  'repair.r3.summary': 'The install path points outside the plugin cache: {path}',
+  'repair.r4.summary':
+    'The cache holds {total} version directories, {orphaned} of which Claude Code has marked as unused (harmless — they only take disk space).',
+  'repair.r4.note1': '# There is no supported command for this (claude plugin prune targets dependency plugins, not these directories).',
+  'repair.r4.note2': '# Only if you want the space back, delete just the marked ones:',
 }

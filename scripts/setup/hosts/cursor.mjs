@@ -19,17 +19,22 @@
  * 지어내지 않는다.
  */
 import { join } from 'node:path'
-import { run } from '../exec.mjs'
+import { json, run } from '../exec.mjs'
 import { updateJsonFile } from '../jsonedit.mjs'
 
 /**
+ * 목록은 `--format json`으로 읽는다(Cursor CLI 2026.08.25에서 확인 — 다른 두
+ * 호스트의 `--json`과 플래그 이름이 다르다).
+ *
  * @param {{bin: string, constants: any}} ctx
  */
 export function inspect({ bin, constants }) {
-  const r = run(bin, ['plugin', 'marketplace', 'list'], { timeout: 60_000 })
+  const r = run(bin, ['plugin', 'marketplace', 'list', '--format', 'json'], { timeout: 60_000 })
+  const list = json(r)
+  const rows = Array.isArray(list) ? list : null
   return {
-    marketplaceAdded: r.ok ? r.stdout.includes(constants.marketplaceName) : null,
-    introspectable: r.ok,
+    marketplaceAdded: rows ? rows.some((m) => m?.name === constants.marketplaceName) : null,
+    introspectable: rows !== null,
   }
 }
 
@@ -42,8 +47,18 @@ export function install({ bin, origin, constants, options, cwd }) {
   const steps = []
   const state = inspect({ bin, constants })
 
+  // 이미 등록돼 있으면 재색인한다. Cursor는 등록 시점의 커밋을 고정해 두고
+  // (`gitRef`) 스스로 따라오지 않는다 — 실측하면 등록해 둔 마켓플레이스가 상류
+  // main보다 몇 커밋 뒤에 멈춰 있다. 다른 두 호스트에서 재실행이 곧 최신화인
+  // 것과 결과를 맞춘다.
   if (state.marketplaceAdded === true) {
-    steps.push({ id: 'cursor.marketplace.add', status: 'already' })
+    const r = run(bin, ['plugin', 'marketplace', 'update', constants.marketplaceName], { dryRun, mutating: true })
+    steps.push({
+      id: 'cursor.marketplace.update',
+      status: r.skipped ? 'planned' : r.ok ? 'done' : 'failed',
+      detail: r.ok ? undefined : firstLine(r.stderr || r.stdout),
+      command: r.command,
+    })
   } else {
     const url = `https://github.com/${constants.marketplaceRepo}`
     const r = run(bin, ['plugin', 'marketplace', 'add', url], { dryRun, mutating: true })
@@ -100,12 +115,14 @@ export function install({ bin, origin, constants, options, cwd }) {
       detail: result.reason ?? file,
     })
 
-    if (!dryRun && result.status !== 'skipped') {
+    // dry-run에서도 이 두 줄을 계획으로 내보낸다 — 안 그러면 `--dry-run` 출력이
+    // 실제로 일어날 일보다 짧아서, 미리 보라고 만든 기능이 거짓말을 하게 된다.
+    if (result.status !== 'skipped') {
       for (const key of Object.keys(constants.mcpServers)) {
-        const r = run(bin, ['mcp', 'enable', key], { timeout: 60_000 })
+        const r = run(bin, ['mcp', 'enable', key], { dryRun, mutating: true, timeout: 60_000 })
         steps.push({
           id: 'cursor.mcp.enable',
-          status: r.ok ? 'done' : 'failed',
+          status: r.skipped ? 'planned' : r.ok ? 'done' : 'failed',
           detail: r.ok ? key : `${key}: ${firstLine(r.stderr || r.stdout)}`,
           command: r.command,
         })
