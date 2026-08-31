@@ -255,14 +255,17 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
   run이 체인을 쪼갠 채 주입을 한 번도 실행하지 않았다). 인자 규칙: `--tds`로
   스캐폴드하면 스크립트에도 `--tds`를, `--no-tossface`면 `--no-tossface`를
   덧붙인다.
-- **스크립트 경로는 재계산하지 않는다** — 시스템이 이 skill을 로드할 때 표시한
-  base directory 문자열 뒤에 `/../design/scripts/inject-project-guide.sh`를
-  그대로 붙인 것 하나뿐이다. `$PWD`·`dirname` 조합으로 새로 만들거나 `find`로
-  찾아 헤매지 마라 — 그렇게 만든 경로는 실측에서 대부분 틀렸다. "No such file"이
-  나면 base directory를 다시 확인해 같은 형태로 한 번만 재시도하고, 그래도 없으면
-  5-B 말미의 폴백(자산 `Read`→`Write`)으로 간다. 스크립트 파일을 Read로 열어
-  보지 마라 — 내용을 알 필요 없이 이 호출 하나면 된다. 출력 해석·보고 규칙은
-  5-B 절.
+- **스크립트 경로는 기억으로 지어내지 않는다** — 시스템이 이 skill을 로드할 때
+  표시한 base directory 문자열 뒤에 `/../design/scripts/inject-project-guide.sh`를
+  그대로 붙인다. 그 문자열을 눈으로 다시 확인하고 옮겨라. `$PWD`·`dirname`
+  조합으로 새로 만들거나 `find`로 찾아 헤매지 말고, `$HOME/.claude/skills/…`처럼
+  "보통 여기 있겠지" 하는 위치를 써 넣지도 마라 — 그렇게 만든 경로는 실측에서
+  대부분 틀렸다(실측: 한 run은 `$HOME` 기반 경로를, 다른 run은 skill 이름
+  세그먼트가 빠진 경로를 써서 스크립트를 아예 못 찾았다). "No such file"이 나도
+  거기서 포기하지 마라 — Step 3의 보완 fence는 **후보 여러 곳을 스스로 훑어
+  스크립트를 다시 찾으므로**, 이 자리에서 경로가 틀렸어도 그 fence가 복구한다.
+  스크립트 파일을 Read로 열어 보지 마라 — 내용을 알 필요 없이 이 호출 하나면
+  된다. 출력 해석·보고 규칙은 5-B 절.
 - **이 규칙과 실제 CLI가 어긋나면 CLI 에러가 최신 규칙이다** — `@latest`가
   여기 적힌 0.2.3보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
   그때는 플래그를 빼고 다시 넣어 보는 식으로 우회하지 말고, 에러 문구를 그대로
@@ -436,22 +439,33 @@ ls ./<package_name>/node_modules/.bin/ait
 `디자인 가이드 없음`이 정상이다 — 사용자가 명시적으로 뺀 것이라 보완하지 않는다.
 그 외에 `없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온 것이다 —
 위 형상 불일치와 달리 **중단하지 않고**, 아래 보완 fence를 **지금 이 자리에서**
-실행한다. 이 fence는 호출→확인→실패 시 1회 재시도→최종 판정까지를 **한 호출에
-전부 담고 있다** — 한 줄 그대로 복사해 실행하고, 조각내거나 앞부분만 실행하지
-마라(실측: 호출·재확인·재시도를 여러 턴에 걸쳐 직접 조율하게 했더니 재시도
-단계가 확률적으로 누락됐다 — 루프를 셸에 담으면 누락될 단계 자체가 없다). 인자
-규칙은 Step 2와 동일 — `--tds`/`--no-tossface`를 **두 호출 모두에** 그대로
-덧붙인다:
+실행한다. 이 fence는 스크립트 경로 탐색→호출→확인→실패 시 1회 재시도→최종
+판정까지를 **한 호출에 전부 담고 있다** — 한 줄 그대로 복사해 실행하고,
+조각내거나 앞부분만 실행하지 마라(실측: 호출·재확인·재시도를 여러 턴에 걸쳐 직접
+조율하게 했더니 재시도 단계가 확률적으로 누락됐다 — 루프를 셸에 담으면 누락될
+단계 자체가 없다).
+
+**Step 2에서 경로가 틀려 스크립트를 못 찾았더라도 이 fence는 반드시 실행한다.**
+앞의 `ls`가 base directory·`$CLAUDE_PLUGIN_ROOT`·프로젝트 scope·사용자 scope
+네 갈래를 한 번에 훑어 실재하는 경로를 스스로 고르기 때문에, Step 2의 틀린
+경로는 여기서 복구된다(실측: 경로가 깨진 run이 "같은 경로를 쓰는 fence는
+무의미하다"고 판단해 fence를 건너뛰고 수기 창작으로 빠졌다 — 그 전제가 틀렸다).
+첫 후보의 base directory 문자열만 Step 2와 같은 규칙으로 채우고 나머지 네 후보는
+그대로 둔다. 인자 규칙도 Step 2와 동일 — `--tds`/`--no-tossface`를 **두 호출
+모두에** 그대로 덧붙인다:
 
 ```bash
-bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패"
+G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"
 ```
 
-마지막에 인쇄되는 한 줄이 곧 판정이다: `디자인 가이드 있음(보완됨)`이면 닫힘
-①로 그대로 진행하고, `디자인 가이드 주입 실패`면 두 번의 시도가 모두 실패한
-것이다 — **더 반복하지 말고** 닫힘 ③으로 간다(5-B 말미의 폴백, 자산
-`Read`→`Write`를 시도할 수 있는 경우는 예외 — 그걸로 채웠으면 `grep` 한 줄로
-재확인해 ①로 닫는다).
+마지막에 인쇄되는 한 줄이 곧 판정이고, 괄호 안이 원인을 함께 알려준다:
+
+- `디자인 가이드 있음(보완됨)` — 닫힘 ①로 그대로 진행한다.
+- `디자인 가이드 주입 실패(스크립트=<경로>)` — 스크립트는 찾았는데 두 번 다
+  실패했다. **더 반복하지 말고** 닫힘 ③으로 간다.
+- `디자인 가이드 주입 실패(스크립트=못찾음)` — 네 후보 어디에도 스크립트가
+  없다. 이때만 5-B 말미의 자산 폴백(`Read`→`Write`)을 쓰고, 그걸로 채웠으면
+  `grep` 한 줄로 재확인해 ①로 닫는다. 폴백도 못 하면 닫힘 ③이다.
 
 `없음`을 확인하고도 이 fence 없이 다음 단계로 넘어가는 것은 금지다 — 탐지만 하고
 보완을 미루면 이 가드는 없는 것과 같다(실측: 한 run이 `없음`을 정확히 찍고도
@@ -607,7 +621,7 @@ Step 3의 보완 fence(호출→확인→재시도→판정이 한 줄에 든 �
 스크립트를 Read로 열어 보거나 나눠 실행하지 않는다:
 
 ```bash
-bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패"
+G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"
 ```
 
 전 항목이 `test -f`/`grep` 멱등 가드를 인라인으로 갖고(이미 있으면 건드리지
@@ -624,7 +638,18 @@ bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "
 
 요약이 `assets=UNRESOLVED`면 스크립트의 `SRC` 후보가 전부 빗나간 것이다 — 그때만
 자산 6종을 `Read`→`Write`로 하나씩 옮기는 폴백을 쓴다(느리지만 항상 동작하는
-마지막 수단). 스크립트 파일 자체를 찾지 못했을 때도 같은 폴백을 쓴다.
+마지막 수단). 스크립트 파일 자체를 찾지 못했을 때(`스크립트=못찾음`)도 같은
+폴백을 쓴다.
+
+**이 폴백은 원본을 실제로 `Read`한 내용만 쓴다 — 내용을 지어내는 것은 금지다.**
+토큰 값·하드 규칙·아이콘·다이제스트 본문은 `design` skill의
+`assets/project/`에 있는 파일이 정본이고, 폴백은 그 파일을 열어 그대로 옮기는
+작업이지 같은 이름의 파일을 새로 만드는 작업이 아니다. 원본을 한 번도 못 읽었으면
+폴백은 실패한 것이다 — 그럴듯한 팔레트나 규칙을 창작해 채우지 말고 닫힘 ③으로
+정직하게 닫아라(실측: 한 run이 원본을 한 번도 읽지 않은 채 임의 팔레트로 파일
+5종을 지어내고 완료 보고에는 `디자인 가이드: 포함`으로 적었다 — 파일은 있지만
+프로젝트가 따를 기준은 없는 상태이므로, 이것은 성공이 아니라 위장이다).
+지어낸 대체물을 정규 산출물처럼 보고하는 것은 금지다.
 
 캐리어 마커는 여는 줄 `<!-- ait:design-guide v1 -->`과 닫는 줄
 `<!-- /ait:design-guide -->`이고, 스크립트의 grep 가드가 네 상황을 전부 처리한다 —
