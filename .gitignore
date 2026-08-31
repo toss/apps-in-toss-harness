@@ -29,3 +29,6 @@ packages/agent-plugin/eval/
 # SECRET-HANDLING (eval 슈트 B): ANTHROPIC_API_KEY 주입 파일. op:// 참조가
 # 권장이지만 op 미설치 환경에선 평문 키가 들어올 수 있다 — 추적 금지.
 .env.eval
+
+# Cursor — 플러그인 활성화 기록(로컬 상태, 머신·사용자별)
+/.cursor/settings.json
