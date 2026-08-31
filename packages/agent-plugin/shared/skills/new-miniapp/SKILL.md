@@ -435,29 +435,30 @@ ls ./<package_name>/node_modules/.bin/ait
 줄여 실행했다면 그 `grep` 한 줄만 지금 실행한다). `--no-design-guide`였으면
 `디자인 가이드 없음`이 정상이다 — 사용자가 명시적으로 뺀 것이라 보완하지 않는다.
 그 외에 `없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온 것이다 —
-위 형상 불일치와 달리 **중단하지 않고**, 아래 보완 호출을 **지금 이 자리에서**
-실행해 채운 뒤 진행한다(인자 규칙은 Step 2와 동일 — `--tds`/`--no-tossface`를
-그대로 덧붙인다):
+위 형상 불일치와 달리 **중단하지 않고**, 아래 보완 fence를 **지금 이 자리에서**
+실행한다. 이 fence는 호출→확인→실패 시 1회 재시도→최종 판정까지를 **한 호출에
+전부 담고 있다** — 한 줄 그대로 복사해 실행하고, 조각내거나 앞부분만 실행하지
+마라(실측: 호출·재확인·재시도를 여러 턴에 걸쳐 직접 조율하게 했더니 재시도
+단계가 확률적으로 누락됐다 — 루프를 셸에 담으면 누락될 단계 자체가 없다). 인자
+규칙은 Step 2와 동일 — `--tds`/`--no-tossface`를 **두 호출 모두에** 그대로
+덧붙인다:
 
 ```bash
-bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
+bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패"
 ```
 
-`없음`을 확인하고도 이 호출 없이 다음 단계로 넘어가는 것은 금지다 — 탐지만 하고
+마지막에 인쇄되는 한 줄이 곧 판정이다: `디자인 가이드 있음(보완됨)`이면 닫힘
+①로 그대로 진행하고, `디자인 가이드 주입 실패`면 두 번의 시도가 모두 실패한
+것이다 — **더 반복하지 말고** 닫힘 ③으로 간다(5-B 말미의 폴백, 자산
+`Read`→`Write`를 시도할 수 있는 경우는 예외 — 그걸로 채웠으면 `grep` 한 줄로
+재확인해 ①로 닫는다).
+
+`없음`을 확인하고도 이 fence 없이 다음 단계로 넘어가는 것은 금지다 — 탐지만 하고
 보완을 미루면 이 가드는 없는 것과 같다(실측: 한 run이 `없음`을 정확히 찍고도
 보완 없이 후처리를 이어가 "완료"를 선언했다). 스크립트는 멱등이라 이미 주입된
 프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 판정은 Step 2가
 백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력 줄(`5-B:`)을 놓쳤어도
 파일 실재가 최종 판정이다.
-
-**보완 호출은 실행만으로 닫히지 않는다 — 결과를 재확인해야 닫힌다.** 호출 출력
-끝의 `5-B:` 요약이 성공(`agents=new` 등)을 찍었으면 그것으로 충분하고, 요약이
-아예 없거나(무음 종료) `FAIL`이 섞였으면 위 fence의 `grep` 한 줄을 다시 돌려
-`있음`을 확인한다. **여전히 `없음`이면 같은 보완 호출을 한 번 더 실행하고 다시
-확인한다**(실측: 보완 1회가 조용히 실패했는데 재확인의 `없음`을 보고도 재시도
-없이 진행해, 미주입 상태로 "완료"를 선언한 run이 있다). 두 번째 재확인도
-`없음`이면 더 반복하지 않는다 — 미주입 상태임을 아는 채로 진행하되, 완료 보고에
-그 사실을 명시한다(아래 닫힘 규칙 ③).
 
 **이 판정이 닫히기 전에는 Step 6의 완료 블록을 인쇄하지 않는다.** 닫힘은 세
 가지뿐이다: ① `있음` 확인, ② `--no-design-guide`의 의도된 `없음`, ③ 재시도
@@ -599,13 +600,14 @@ test -f ./<package_name>/.gitignore && { \
 남긴다).
 
 Step 2 출력에 `5-B:` 줄이 없으면(세그먼트가 누락된 채 실행된 경우) 지금 여기서
-같은 스크립트를 **한 번의 Bash 호출로** 보완 실행한다 — Step 3 말미의 실재
-확인이 이 누락을 먼저 잡아 보완했다면 그 실행의 요약 줄을 해석하면 되고, 다시
-실행해도 멱등이라 무해하다. `--tds`/`--no-tossface`는 Step 2와 같은 규칙으로
-덧붙이고, 스크립트를 Read로 열어 보거나 나눠 실행하지 않는다:
+Step 3의 보완 fence(호출→확인→재시도→판정이 한 줄에 든 것)를 **한 번의 Bash
+호출로** 실행한다 — Step 3 말미의 실재 확인이 이 누락을 먼저 잡아 보완했다면 그
+실행의 요약 줄을 해석하면 되고, 다시 실행해도 멱등이라 무해하다.
+`--tds`/`--no-tossface`는 Step 2와 같은 규칙으로 두 호출 모두에 덧붙이고,
+스크립트를 Read로 열어 보거나 나눠 실행하지 않는다:
 
 ```bash
-bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
+bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패"
 ```
 
 전 항목이 `test -f`/`grep` 멱등 가드를 인라인으로 갖고(이미 있으면 건드리지
