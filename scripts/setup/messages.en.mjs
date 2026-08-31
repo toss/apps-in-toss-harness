@@ -8,6 +8,7 @@ export default {
   'ui.selectPrompt': 'Pick the hosts to set up (comma-separated; Enter = every detected host)',
   'ui.plan': 'Planned actions',
   'ui.confirm': 'Proceed?',
+  'ui.unknownPick': 'Not recognized',
   'ui.aborted': 'Aborted. Nothing was changed.',
   'ui.dryRun': 'Dry run — nothing will be changed.',
   'ui.result': 'Result',
@@ -62,6 +63,9 @@ export default {
   'app.only.claude': 'The Claude desktop app is installed but no CLI was found. Paste the install commands into the app’s Code tab, or install the CLI and run this again.',
   'app.only.codex': 'The Codex app is installed but no CLI was found. Install the Codex CLI and run this again — marketplace registration is CLI-only.',
   'app.only.cursor': 'Cursor is installed but its CLI (agent) was not found. Install the Cursor CLI, or install the plugin from /plugins in the editor.',
+  'app.missing.claude': 'Claude Code is not on this machine. Install the terminal CLI or the desktop app, then run this again.',
+  'app.missing.codex': 'Codex is not on this machine. Install the Codex CLI, then run this again — marketplace registration is CLI-only.',
+  'app.missing.cursor': 'Cursor is not on this machine. Install Cursor, then run this again.',
   'app.only.marketplaceHint': 'Once the official-marketplace listing lands, installing from inside the app’s own search becomes an option.',
   'repair.claudeOnly':
     '--repair only reads Claude Code’s install state — the other hosts you named were not diagnosed.',

@@ -201,3 +201,68 @@ describe('백업 보존', () => {
     }
   })
 })
+
+// rename은 링크 자체를 갈아치운다. dotfiles로 설정을 관리하는 사람은 그 순간
+// 링크가 끊기고, 원본은 그대로라 다음 재배치 때 설치 결과가 조용히 되돌아간다.
+// 권한도 마찬가지 — 새 inode는 기본 권한(보통 0644)으로 만들어진다.
+describe('symlink·권한 보존', () => {
+  test('symlink를 따라가 실제 파일을 고치고 링크를 그대로 둔다', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonedit-symlink-'))
+    try {
+      const real = path.join(dir, 'real.json')
+      const link = path.join(dir, 'link.json')
+      fs.writeFileSync(real, JSON.stringify({ a: 1 }))
+      fs.symlinkSync(real, link)
+
+      const result = updateJsonFile(link, (draft) => {
+        draft.b = 2
+      })
+
+      assert.equal(result.status, 'written')
+      assert.ok(fs.lstatSync(link).isSymbolicLink(), 'symlink가 일반 파일로 바뀌면 안 된다')
+      assert.deepEqual(JSON.parse(fs.readFileSync(real, 'utf8')), { a: 1, b: 2 })
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('일부러 좁혀 놓은 권한(0600)을 넓히지 않는다', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonedit-mode-'))
+    try {
+      const file = path.join(dir, 'settings.json')
+      fs.writeFileSync(file, JSON.stringify({ a: 1 }))
+      fs.chmodSync(file, 0o600)
+
+      updateJsonFile(file, (draft) => {
+        draft.b = 2
+      })
+
+      assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('백업은 링크 옆에 남긴다 (남의 dotfiles repo를 어지르지 않는다)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonedit-bakloc-'))
+    try {
+      const dotfiles = path.join(dir, 'dotfiles')
+      const home = path.join(dir, 'home')
+      fs.mkdirSync(dotfiles)
+      fs.mkdirSync(home)
+      const real = path.join(dotfiles, 'settings.json')
+      const link = path.join(home, 'settings.json')
+      fs.writeFileSync(real, JSON.stringify({ a: 1 }))
+      fs.symlinkSync(real, link)
+
+      updateJsonFile(link, (draft) => {
+        draft.b = 2
+      })
+
+      assert.deepEqual(fs.readdirSync(dotfiles), ['settings.json'])
+      assert.ok(fs.readdirSync(home).some((n) => n.startsWith('settings.json.bak-')))
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

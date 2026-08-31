@@ -94,3 +94,41 @@ describe('parseArgs — 기본값', () => {
     assert.deepEqual(out.errors, [])
   })
 })
+
+// 값을 받는 플래그가 다음 플래그를 값으로 삼키면, 삼켜진 플래그가 통째로
+// 사라진다 — 그래서 `--scope --json`은 오류를 산문으로 냈고,
+// `--lang --help`는 사용법 대신 종료 코드 1을 냈다.
+describe('값을 받는 플래그', () => {
+  test('--scope 가 뒤따르는 --json 을 값으로 먹지 않는다', () => {
+    const r = parseArgs(['--scope', '--json'])
+    assert.equal(r.json, true, '--json 이 살아 있어야 오류도 JSON으로 나간다')
+    assert.equal(r.errors.length, 1)
+  })
+
+  test('--lang 이 뒤따르는 --help 를 값으로 먹지 않는다', () => {
+    const r = parseArgs(['--lang', '--help'])
+    assert.equal(r.help, true)
+  })
+
+  test('정상적인 값은 그대로 받는다', () => {
+    assert.equal(parseArgs(['--scope', 'project']).scope, 'project')
+    assert.equal(parseArgs(['--lang', 'ko']).lang, 'ko')
+  })
+
+  test('값이 아예 없어도 죽지 않는다', () => {
+    const r = parseArgs(['--lang'])
+    assert.equal(r.errors.length, 1)
+  })
+})
+
+// 빈 배열은 truthy라, 호출부가 "사용자가 고른 목록"으로 받아들인다 —
+// 그러면 무엇이 잘못됐는지 아무도 말해주지 않은 채 "호스트를 찾지 못했습니다"만 뜬다.
+describe('빈 호스트 인자', () => {
+  for (const arg of ['', ',', ' , ']) {
+    test(`${JSON.stringify(arg)} 는 선택이 아니라 오류다`, () => {
+      const r = parseArgs([arg])
+      assert.equal(r.hosts, null, 'hosts가 [] 로 남으면 호출부가 선택으로 오해한다')
+      assert.equal(r.errors.length, 1)
+    })
+  }
+})

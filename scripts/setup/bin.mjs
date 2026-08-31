@@ -48,6 +48,9 @@ async function main() {
     return 0
   }
   if (options.errors.length > 0) {
+    // --json을 준 쪽에는 오류도 JSON으로 준다 — 성공할 때만 JSON인 인터페이스는
+    // 정작 무엇이 잘못됐는지 알아야 할 때 쓸 수 없다.
+    if (options.json) console.log(JSON.stringify({ errors: options.errors }, null, 2))
     for (const e of options.errors) console.error(`${color('red', '×')} ${e}`)
     console.error(`\n${USAGE}`)
     return 1
@@ -79,15 +82,16 @@ async function main() {
   if (usable.length === 0) {
     // --json 소비자에게도 "아무것도 못 했다"를 같은 모양의 문서로 준다 —
     // 성공했을 때만 JSON이고 실패하면 산문인 인터페이스는 쓸 수 없다.
+    const appOnly = unusable.some((h) => h.desktopApp)
     if (options.json) {
       console.log(JSON.stringify({ constants, results: [], manual: [], unusable }, null, 2))
-      return unusable.length > 0 ? 2 : 1
+      return appOnly ? 2 : 1
     }
     note(`${color('yellow', '!')} ${t('ui.nothingToDo')}`)
-    for (const h of unusable) note(`  - ${t(`app.only.${h.host}`)}`)
-    if (unusable.length > 0) note(`  ${color('dim', t('app.only.marketplaceHint'))}`)
+    for (const h of unusable) note(`  - ${t(hostUnusableKey(h))}`)
+    if (appOnly) note(`  ${color('dim', t('app.only.marketplaceHint'))}`)
     else note(`  ${t('ui.noHostsHint')}`)
-    return unusable.length > 0 ? 2 : 1
+    return appOnly ? 2 : 1
   }
 
   if (options.dryRun) note(`${color('dim', t('ui.dryRun'))}\n`)
@@ -151,15 +155,35 @@ async function chooseHosts({ detected, options, t }) {
   if (available.length === 0) return detected
 
   const rl = createInterface({ input: process.stdin, output: process.stdout })
-  const answer = (await rl.question(`\n${t('ui.selectPrompt')}: `)).trim()
-  rl.close()
+  /** @type {string|null} */
+  let answer
+  try {
+    // Ctrl+D를 누르면 이 promise가 AbortError로 거부된다. 안 잡으면 Node가
+    // 스택 트레이스를 그대로 토한다(실측) — 프롬프트에서 그만두겠다는 뜻이니
+    // 취소로 받는다.
+    answer = (await rl.question(`\n${t('ui.selectPrompt')}: `)).trim()
+  } catch {
+    answer = null
+  } finally {
+    rl.close()
+  }
+  if (answer === null) return null
   if (answer === '') return available
 
-  const picked = answer
+  const tokens = answer
     .split(',')
     .map((s) => s.trim())
-    .map((s) => (/^\d+$/.test(s) ? detected[Number(s) - 1] : detected.find((d) => d.host === s)))
     .filter(Boolean)
+  const picked = []
+  const unknown = []
+  for (const token of tokens) {
+    const match = /^\d+$/.test(token) ? detected[Number(token) - 1] : detected.find((d) => d.host === token)
+    if (match) picked.push(match)
+    else unknown.push(token)
+  }
+  // 못 알아들은 입력을 말없이 취소로 삼키면, 오타를 낸 사람은 자기가 무엇을
+  // 잘못 눌렀는지 모른 채 "취소됨"만 본다.
+  if (unknown.length > 0) console.log(`${color('yellow', '!')} ${t('ui.unknownPick')}: ${unknown.join(', ')}`)
   return picked.length > 0 ? picked : null
 }
 
@@ -252,7 +276,7 @@ function render({ results, unusable, manual, t }) {
     }
   }
 
-  for (const h of unusable) console.log(`\n  ${color('yellow', '!')} ${t(`app.only.${h.host}`)}`)
+  for (const h of unusable) console.log(`\n  ${color('yellow', '!')} ${t(hostUnusableKey(h))}`)
 
   if (manual.length > 0) {
     console.log(`\n${color('bold', t('ui.manual'))}`)
@@ -289,9 +313,25 @@ function runRepair({ constants, detected, options, t }) {
   return findings.some((f) => f.severity === 'error') ? 2 : 0
 }
 
+/**
+ * CLI가 없는 호스트를 어떻게 부를지 고른다.
+ *
+ * `app.only.*`는 전부 "앱은 깔려 있다"고 단언하는 문장이라, 아무것도 안 깔린
+ * 머신에서 `ait-setup codex`를 부른 사람에게 그대로 내보내면 거짓말이 된다.
+ * 앱 흔적이 있을 때만 그 문장을 쓴다.
+ * @param {{host: string, desktopApp?: boolean}} h
+ */
+function hostUnusableKey(h) {
+  return h.desktopApp ? `app.only.${h.host}` : `app.missing.${h.host}`
+}
+
+/**
+ * 0 다 했다 · 2 사람이 이어서 해야 한다 · 3 실행한 단계가 실패했다.
+ * (1은 설치할 호스트 자체가 없을 때 — 위에서 따로 낸다.)
+ */
 function exitCode(results) {
   const failed = results.some((r) => r.steps.some((s) => s.status === 'failed'))
-  return failed ? 2 : 0
+  return failed ? 3 : 0
 }
 
 main()

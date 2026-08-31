@@ -8,6 +8,7 @@ export default {
   'ui.selectPrompt': '설치할 호스트를 고르세요 (쉼표로 여러 개, Enter는 감지된 전부)',
   'ui.plan': '실행할 작업',
   'ui.confirm': '진행할까요?',
+  'ui.unknownPick': '알아듣지 못한 입력',
   'ui.aborted': '취소했습니다. 아무것도 바꾸지 않았습니다.',
   'ui.dryRun': '미리보기 모드 — 아무것도 바꾸지 않습니다.',
   'ui.result': '결과',
@@ -62,6 +63,9 @@ export default {
   'app.only.claude': 'Claude 데스크톱 앱은 있는데 CLI를 찾지 못했습니다. 앱의 Code 탭 입력창에 설치 명령을 붙여넣거나, CLI를 설치한 뒤 다시 실행하세요.',
   'app.only.codex': 'Codex 앱은 있는데 CLI를 찾지 못했습니다. Codex CLI를 설치한 뒤 다시 실행하세요 — 마켓플레이스 등록은 CLI에서만 됩니다.',
   'app.only.cursor': 'Cursor는 있는데 CLI(agent)를 찾지 못했습니다. Cursor CLI를 설치하거나, 에디터에서 /plugins 로 설치하세요.',
+  'app.missing.claude': 'Claude Code가 이 머신에 없습니다. 터미널 CLI나 데스크톱 앱을 설치한 뒤 다시 실행하세요.',
+  'app.missing.codex': 'Codex가 이 머신에 없습니다. Codex CLI를 설치한 뒤 다시 실행하세요 — 마켓플레이스 등록은 CLI로만 됩니다.',
+  'app.missing.cursor': 'Cursor가 이 머신에 없습니다. Cursor를 설치한 뒤 다시 실행하세요.',
   'app.only.marketplaceHint': '공식 마켓플레이스 입점이 끝나면 앱 안에서 검색해 설치하는 경로가 열립니다.',
   'repair.claudeOnly': '--repair 는 Claude Code의 설치 상태만 봅니다 — 지정한 다른 호스트는 진단하지 않았습니다.',
   'repair.c1.summary':

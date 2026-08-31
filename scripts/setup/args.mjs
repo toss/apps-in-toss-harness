@@ -23,7 +23,13 @@ export const USAGE = `ait-setup [claude|codex|cursor|all] [options]
   --scope <user|project|local>  Claude Code 설치 scope (기본 user)
   --lang <ko|en>        출력 언어 (기본: 환경 로캘)
   --json                결과를 JSON으로 출력
-  -h, --help            이 도움말`
+  -h, --help            이 도움말
+
+  종료 코드
+    0  할 일을 다 했습니다
+    1  설치할 호스트가 없습니다(인자가 잘못됐거나, 셋 다 안 깔려 있음)
+    2  사람이 이어서 해야 합니다(앱만 있고 CLI가 없음)
+    3  실행한 단계가 실패했습니다`
 
 /**
  * @param {string[]} argv
@@ -52,7 +58,25 @@ export function parseArgs(argv) {
     errors: [],
   }
 
-  for (let i = 0; i < argv.length; i++) {
+  // takeValue가 커서를 앞당길 수 있게 루프 밖에 둔다.
+  let i = 0
+
+  /**
+   * 값을 받는 플래그가 **다음 플래그를 값으로 삼키지 않게** 한다.
+   *
+   * 예전엔 `--scope --json`이 `--json`을 scope 값으로 먹어서, 잘못된 scope라는
+   * 오류를 내면서 동시에 `--json`도 사라졌다 — 그래서 그 오류가 JSON이 아니라
+   * 산문으로 나갔다. `--lang --help`는 `--help`를 삼켜 사용법 대신 종료 코드
+   * 1을 냈다. 다음 인자가 `-`로 시작하면 값이 없는 것으로 본다.
+   */
+  const takeValue = () => {
+    const next = argv[i + 1]
+    if (next === undefined || next.startsWith('-')) return undefined
+    i += 1
+    return next
+  }
+
+  for (; i < argv.length; i++) {
     const arg = argv[i]
     switch (arg) {
       case '-y':
@@ -95,14 +119,18 @@ export function parseArgs(argv) {
       case '--help':
         out.help = true
         break
-      case '--scope':
-        out.scope = argv[++i] ?? ''
+      case '--scope': {
+        const value = takeValue()
+        out.scope = value ?? ''
         if (!['user', 'project', 'local'].includes(out.scope)) out.errors.push(`--scope: ${out.scope || '(없음)'}`)
         break
-      case '--lang':
-        out.lang = argv[++i]
+      }
+      case '--lang': {
+        const value = takeValue()
+        out.lang = value
         if (!['ko', 'en'].includes(`${out.lang}`)) out.errors.push(`--lang: ${out.lang ?? '(없음)'}`)
         break
+      }
       default: {
         if (arg.startsWith('-')) {
           out.errors.push(`알 수 없는 옵션: ${arg}`)
@@ -112,6 +140,14 @@ export function parseArgs(argv) {
         const unknown = hosts.filter((h) => !HOSTS.includes(/** @type {any} */ (h)))
         if (unknown.length > 0) {
           out.errors.push(`알 수 없는 호스트: ${unknown.join(', ')}`)
+          break
+        }
+        // 빈 문자열이나 `,` 하나를 주면 여기서 hosts가 [] 가 된다. 빈 배열은
+        // truthy라 호출부가 "사용자가 고른 목록"으로 받아들이고, 그 결과
+        // "설치할 호스트를 찾지 못했습니다"만 뜬 채 무엇이 잘못됐는지는
+        // 아무도 말해주지 않는다. 선택으로 치지 않고 오류로 돌려준다.
+        if (hosts.length === 0) {
+          out.errors.push(`알 수 없는 호스트: ${JSON.stringify(arg)}`)
           break
         }
         out.hosts = [...new Set([...(out.hosts ?? []), ...hosts])]
