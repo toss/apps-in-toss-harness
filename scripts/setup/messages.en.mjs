@@ -21,6 +21,10 @@ export default {
   'status.planned': 'will run',
   'status.failed': 'failed',
   'status.skipped': 'skipped',
+  'verify.marketplace': 'Marketplace is registered',
+  'verify.plugin': 'Plugin is installed',
+  'verify.introspect': 'Host CLI query failed — cannot determine state',
+  'status.unknown': 'unknown',
 
   'claude.marketplace.add': 'Register the marketplace',
   'claude.marketplace.update': 'Refresh the marketplace',

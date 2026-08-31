@@ -25,13 +25,20 @@ const constants = {
   mcpServers: {},
 }
 
-/** HOME(및 win32의 USERPROFILE)을 임시 디렉터리로 바꿔치기하고 fn을 돌린 뒤 원복한다. */
-function withFakeHome(fn) {
+/**
+ * HOME(및 win32의 USERPROFILE)을 임시 디렉터리로 바꿔치기하고 fn을 돌린 뒤 원복한다.
+ * CLAUDE_CONFIG_DIR도 함께 비운다 — 그게 설정돼 있으면 diagnose()가 HOME이 아니라
+ * 그쪽을 보므로(설계상 옳다), 안 비우면 이 테스트들이 개발자 환경에 따라 갈린다.
+ */
+function withFakeHome(fn, { configDir } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-repair-home-'))
   const savedHome = process.env.HOME
   const savedUserProfile = process.env.USERPROFILE
+  const savedConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.HOME = dir
   if (process.platform === 'win32') process.env.USERPROFILE = dir
+  if (configDir) process.env.CLAUDE_CONFIG_DIR = configDir(dir)
+  else delete process.env.CLAUDE_CONFIG_DIR
   try {
     return fn(dir)
   } finally {
@@ -41,6 +48,8 @@ function withFakeHome(fn) {
       if (savedUserProfile === undefined) delete process.env.USERPROFILE
       else process.env.USERPROFILE = savedUserProfile
     }
+    if (savedConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
+    else process.env.CLAUDE_CONFIG_DIR = savedConfigDir
     fs.rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -103,6 +112,49 @@ describe('diagnose — 합성 상태 (실 홈 디렉터리는 절대 건드리�
     })
   })
 
+  // shallow는 Claude Code가 만드는 모든 마켓플레이스 clone의 기본값이라, 이걸
+  // 무조건 warn으로 올리면 갓 설치한 사람에게도 매번 뜬다. 항상 뜨는 경고는
+  // 아무도 안 읽으므로, 갱신 기록이 최근이면 info로 내려가야 한다.
+  test('R1 — 갱신 기록이 최근이면 warn이 아니라 info로 내려간다', () => {
+    withFakeHome((home) => {
+      const base = path.join(home, '.claude', 'plugins')
+      const clonePath = path.join(base, 'marketplaces', constants.marketplaceName)
+      fs.mkdirSync(path.join(clonePath, '.git'), { recursive: true })
+      fs.writeFileSync(path.join(clonePath, '.git', 'shallow'), '')
+      fs.writeFileSync(
+        path.join(base, 'known_marketplaces.json'),
+        JSON.stringify({ [constants.marketplaceName]: { lastUpdated: new Date().toISOString() } }),
+      )
+      // 카탈로그 캐시를 안 만들면 C1은 애초에 판정 자체를 안 한다 — R1만 남는다.
+
+      const { findings, inspected } = diagnose({ bin: null, constants })
+      assert.equal(findings.length, 1)
+      assert.equal(findings[0].code, 'R1')
+      assert.equal(findings[0].severity, 'info')
+      assert.equal(inspected.marketplaceAgeDays, 0)
+    })
+  })
+
+  test('R1 — 갱신 기록이 오래됐으면 warn으로 올라간다', () => {
+    withFakeHome((home) => {
+      const base = path.join(home, '.claude', 'plugins')
+      const clonePath = path.join(base, 'marketplaces', constants.marketplaceName)
+      fs.mkdirSync(path.join(clonePath, '.git'), { recursive: true })
+      fs.writeFileSync(path.join(clonePath, '.git', 'shallow'), '')
+      const old = new Date(Date.now() - 40 * 86_400_000).toISOString()
+      fs.writeFileSync(
+        path.join(base, 'known_marketplaces.json'),
+        JSON.stringify({ [constants.marketplaceName]: { lastUpdated: old } }),
+      )
+
+      const { findings, inspected } = diagnose({ bin: null, constants })
+      assert.equal(findings.length, 1)
+      assert.equal(findings[0].code, 'R1')
+      assert.equal(findings[0].severity, 'warn')
+      assert.equal(inspected.marketplaceAgeDays, 40)
+    })
+  })
+
   test('R4 — 캐시에 옛 버전 디렉터리가 2개 넘게 쌓여 있으면 info finding (동작에는 영향 없다는 톤 그대로 검증)', () => {
     withFakeHome((home) => {
       const cachePath = path.join(home, '.claude', 'plugins', 'cache', constants.marketplaceName, constants.pluginName)
@@ -116,5 +168,40 @@ describe('diagnose — 합성 상태 (실 홈 디렉터리는 절대 건드리�
       assert.equal(findings[0].severity, 'info')
       assert.equal(inspected.cachedVersions.length, 3)
     })
+  })
+
+  // Claude Code는 CLAUDE_CONFIG_DIR가 있으면 설정·플러그인 상태를 통째로 그쪽에
+  // 둔다. 이걸 안 따라가면 --repair가 멀쩡한 설치를 "설치 안 됨"으로 오진한다 —
+  // 조용히 틀리는 종류라, HOME 아래에 미끼를 깔아두고 진짜로 CONFIG_DIR을 보는지
+  // 확인한다.
+  test('CLAUDE_CONFIG_DIR이 있으면 ~/.claude가 아니라 그쪽을 본다', () => {
+    withFakeHome(
+      (home) => {
+        // 미끼: HOME 아래에는 아무 문제 없는 상태를 만들어 둔다.
+        fs.mkdirSync(path.join(home, '.claude', 'plugins', 'marketplaces', constants.marketplaceName), {
+          recursive: true,
+        })
+
+        // 진짜 설정 홈에는 R4를 심는다.
+        const cachePath = path.join(
+          home,
+          'custom-config',
+          'plugins',
+          'cache',
+          constants.marketplaceName,
+          constants.pluginName,
+        )
+        for (const version of ['0.1.0', '0.1.1', '0.1.2']) {
+          fs.mkdirSync(path.join(cachePath, version), { recursive: true })
+        }
+
+        const { findings, inspected } = diagnose({ bin: null, constants })
+        assert.equal(findings.length, 1, 'HOME 쪽 미끼가 아니라 CLAUDE_CONFIG_DIR 쪽 상태만 보여야 한다')
+        assert.equal(findings[0].code, 'R4')
+        assert.equal(inspected.cachedVersions.length, 3)
+        assert.equal(inspected.registered, false, 'HOME 쪽 marketplaces 디렉터리를 주워오면 안 된다')
+      },
+      { configDir: (home) => path.join(home, 'custom-config') },
+    )
   })
 })

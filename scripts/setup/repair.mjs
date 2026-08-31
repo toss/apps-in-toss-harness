@@ -20,12 +20,15 @@
  *   R4 캐시 적체 — 옛 버전 디렉터리가 계속 쌓인다(정리는 선택).
  */
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { run } from './exec.mjs'
 import { readJsonFile } from './jsonedit.mjs'
+import { claudeConfigDir } from './paths.mjs'
 
-const claudePlugins = () => join(homedir(), '.claude', 'plugins')
+const claudePlugins = () => join(claudeConfigDir(), 'plugins')
+
+/** 이 일수 이상 갱신 기록이 없으면 shallow clone을 '고착 의심'으로 올린다. */
+const STALE_DAYS = 14
 
 /**
  * @param {{bin: string|null, constants: any}} ctx
@@ -72,23 +75,44 @@ export function diagnose({ bin, constants }) {
   }
 
   // R1 — clone 고착. 오프라인에서는 shallow 여부와 등록 기록만 본다.
+  //
+  // shallow 자체는 고장이 아니다 — Claude Code가 만드는 마켓플레이스 clone은
+  // 전부 shallow라서, 이걸 그대로 warn으로 올리면 멀쩡한 새 설치에서도 매번
+  // 뜬다. 항상 뜨는 경고는 곧 아무도 안 읽는 경고다. 그래서 "오래 갱신되지
+  // 않았다"는 방증이 같이 있을 때만 warn으로 올리고, 아니면 증상이 있을 때
+  // 참고하라는 info로 둔다. 오프라인에서 쓸 수 있는 방증은 등록 기록의
+  // lastUpdated 나이뿐이다(auto-update가 돌면 이 값이 갱신된다).
   if (existsSync(clonePath)) {
     const shallow = existsSync(join(clonePath, '.git', 'shallow'))
     inspected.shallowClone = shallow
     const head = run('git', ['-C', clonePath, 'rev-parse', 'HEAD'], { timeout: 30_000 })
     inspected.cloneHead = head.ok ? head.stdout.trim().slice(0, 12) : null
+
+    const lastUpdated = known.ok ? known.value?.[name]?.lastUpdated : undefined
+    const ageDays =
+      typeof lastUpdated === 'string' && !Number.isNaN(Date.parse(lastUpdated))
+        ? Math.floor((Date.now() - Date.parse(lastUpdated)) / 86_400_000)
+        : null
+    inspected.marketplaceAgeDays = ageDays
+    const stale = ageDays === null || ageDays >= STALE_DAYS
+
     if (shallow) {
       findings.push({
         code: 'R1',
-        severity: 'warn',
-        summary:
-          '마켓플레이스 clone이 shallow + fast-forward 전용입니다. 상류 이력이 바뀌면 갱신이 막혀 옛 상태로 고착될 수 있습니다(이 clone 안에서 git status로는 알 수 없습니다).',
-        remedy: [
-          `claude plugin marketplace update ${name}`,
-          `# 위 명령 후에도 목록이 그대로면, 이 마켓플레이스만 재등록합니다:`,
-          `claude plugin marketplace remove ${name}`,
-          `claude plugin marketplace add ${constants.marketplaceRepo}`,
-        ],
+        severity: stale ? 'warn' : 'info',
+        summary: stale
+          ? `마켓플레이스 clone이 shallow + fast-forward 전용인데 ${
+              ageDays === null ? '마지막 갱신 기록이 없습니다' : `마지막 갱신이 ${ageDays}일 전입니다`
+            }. 상류 이력이 바뀌면(force-push·repo 재생성) 갱신이 막혀 옛 상태로 고착됩니다(이 clone 안에서 git status로는 알 수 없습니다).`
+          : `마켓플레이스 clone은 shallow + fast-forward 전용입니다(${ageDays}일 전 갱신 — 정상 범위). 나중에 갱신이 안 되는 증상이 보이면 이게 원인일 수 있습니다.`,
+        remedy: stale
+          ? [
+              `claude plugin marketplace update ${name}`,
+              `# 위 명령 후에도 목록이 그대로면, 이 마켓플레이스만 재등록합니다:`,
+              `claude plugin marketplace remove ${name}`,
+              `claude plugin marketplace add ${constants.marketplaceRepo}`,
+            ]
+          : [`지금 할 일은 없습니다. 갱신을 앞당기려면: claude plugin marketplace update ${name}`],
       })
     }
   } else if (registered) {

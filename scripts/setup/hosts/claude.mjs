@@ -22,14 +22,40 @@
  * 성공했다고 말하지 않고 그대로 보고한다.
  */
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { json, run } from '../exec.mjs'
 import { readJsonFile, updateJsonFile } from '../jsonedit.mjs'
+import { claudeConfigDir } from '../paths.mjs'
 
-const claudeDir = () => join(homedir(), '.claude')
+const claudeDir = () => claudeConfigDir()
 const settingsPath = () => join(claudeDir(), 'settings.json')
 const knownMarketplacesPath = () => join(claudeDir(), 'plugins', 'known_marketplaces.json')
+
+/**
+ * settings.json의 extraKnownMarketplaces에 auto-update를 켠다.
+ *
+ * `source`는 손대지 않는 것이 핵심이다. 그건 CLI가 add할 때 써 넣고, 우리가
+ * 모르는 필드가 붙는다 — `--sparse`로 등록하면 `sparsePaths`가 여기 들어간다.
+ * 통째로 덮어쓰면 선언과 on-disk clone이 어긋나서 Claude Code가 그 마켓플레이스를
+ * 아예 못 찾는다(실측: `marketplace list`는 "No marketplaces configured", 설치된
+ * 플러그인에는 "Marketplace … not found" 에러가 붙는다). 없을 때만 최소 형태로
+ * 채우고, 있으면 그대로 둔다.
+ *
+ * @param {any} draft settings.json 초안 (제자리 변경)
+ * @param {{marketplaceName: string, marketplaceRepo: string}} constants
+ */
+export function mergeAutoUpdate(draft, constants) {
+  if (!draft.extraKnownMarketplaces || typeof draft.extraKnownMarketplaces !== 'object') {
+    draft.extraKnownMarketplaces = {}
+  }
+  const entry = draft.extraKnownMarketplaces[constants.marketplaceName] ?? {}
+  if (!entry.source || typeof entry.source !== 'object') {
+    entry.source = { source: 'github', repo: constants.marketplaceRepo }
+  }
+  entry.autoUpdate = true
+  draft.extraKnownMarketplaces[constants.marketplaceName] = entry
+  return draft
+}
 
 /**
  * @param {{bin: string, constants: any, options: any}} ctx
@@ -127,19 +153,7 @@ export function install({ bin, origin, constants, options }) {
   if (options.autoUpdate === false) {
     steps.push({ id: 'claude.autoupdate.skipped', status: 'skipped' })
   } else {
-    const result = updateJsonFile(
-      settingsPath(),
-      (draft) => {
-        if (!draft.extraKnownMarketplaces || typeof draft.extraKnownMarketplaces !== 'object') {
-          draft.extraKnownMarketplaces = {}
-        }
-        const entry = draft.extraKnownMarketplaces[constants.marketplaceName] ?? {}
-        entry.source = { source: 'github', repo: constants.marketplaceRepo }
-        entry.autoUpdate = true
-        draft.extraKnownMarketplaces[constants.marketplaceName] = entry
-      },
-      { dryRun },
-    )
+    const result = updateJsonFile(settingsPath(), (draft) => mergeAutoUpdate(draft, constants), { dryRun })
     steps.push({
       id: 'claude.autoupdate',
       status:

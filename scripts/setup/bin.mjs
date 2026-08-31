@@ -88,9 +88,13 @@ async function main() {
   const results = []
   for (const host of usable) {
     const mod = HOST_MODULES[host.host]
-    const result = options.verify
-      ? { steps: [], state: mod.inspect({ bin: host.bin, constants, options }), origin: host.origin }
-      : mod.install({ bin: host.bin, origin: host.origin, constants, options, cwd: process.cwd() })
+    let result
+    if (options.verify) {
+      const state = mod.inspect({ bin: host.bin, constants, options })
+      result = { steps: verifySteps(state), state, origin: host.origin }
+    } else {
+      result = mod.install({ bin: host.bin, origin: host.origin, constants, options, cwd: process.cwd() })
+    }
     results.push({ host: host.host, bin: host.bin, origin: host.origin, desktopApp: host.desktopApp, ...result })
   }
 
@@ -155,6 +159,35 @@ async function confirm({ usable, t }) {
   const answer = (await rl.question(`${t('ui.confirm')} [Y/n] `)).trim().toLowerCase()
   rl.close()
   return answer === '' || answer === 'y' || answer === 'yes'
+}
+
+/**
+ * --verify는 아무것도 바꾸지 않으므로 보고할 step이 없다. 그런데 step이 없으면
+ * 화면에 호스트 이름만 덩그러니 찍혀서, 아무 일도 안 일어난 것처럼 보인다.
+ * inspect()가 이미 들고 있는 상태를 같은 모양의 줄로 바꿔 보여준다.
+ * 호스트마다 키가 조금씩 다르므로, 있는 키만 골라 읽는다.
+ * @param {any} state
+ */
+function verifySteps(state) {
+  /** @param {unknown} v */
+  const flag = (v) => (v === true ? 'already' : v === false ? 'failed' : 'skipped')
+  const steps = []
+  if ('marketplaceAdded' in state) {
+    steps.push({ id: 'verify.marketplace', status: flag(state.marketplaceAdded) })
+  }
+  if ('pluginInstalled' in state) {
+    steps.push({ id: 'verify.plugin', status: flag(state.pluginInstalled) })
+  }
+  if ('installedVersions' in state) {
+    const versions = Array.isArray(state.installedVersions) ? state.installedVersions : null
+    steps.push({
+      id: 'verify.plugin',
+      status: flag(versions ? versions.length > 0 : null),
+      ...(versions && versions.length > 0 ? { detail: versions.join(', ') } : {}),
+    })
+  }
+  if (state.introspectable === false) steps.push({ id: 'verify.introspect', status: 'skipped' })
+  return steps
 }
 
 function collectManual({ results, constants, options, t }) {

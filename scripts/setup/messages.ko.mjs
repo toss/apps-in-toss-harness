@@ -21,6 +21,10 @@ export default {
   'status.planned': '실행 예정',
   'status.failed': '실패',
   'status.skipped': '건너뜀',
+  'verify.marketplace': '마켓플레이스가 등록돼 있음',
+  'verify.plugin': '플러그인이 설치돼 있음',
+  'verify.introspect': '호스트 CLI 조회 실패 — 상태를 확인할 수 없습니다',
+  'status.unknown': '확인 불가',
 
   'claude.marketplace.add': '마켓플레이스 등록',
   'claude.marketplace.update': '마켓플레이스 최신화',
