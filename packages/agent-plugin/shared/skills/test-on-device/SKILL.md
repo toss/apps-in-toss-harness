@@ -127,6 +127,16 @@ npm run build && npm run bundle:ait   # vite build → ait build → .ait 번들
   `npm run build && npm run bundle:ait`에서 앞의 `npm run build`는 버려지는 중복 작업이다
   (해가 되지는 않는다).
 
+**산출물은 프로젝트 디렉터리 바로 아래의 `<appName>.ait`다** — `package.json`
+옆이다. `dist/` 안도 아니고, **프로젝트의 상위 디렉터리도 아니다**(정본 scaffold
+실측: 프로젝트 `timer` → `timer/timer.ait`. appName 기본값은 package 이름과
+동일). 확인은 한 번이면 된다 — 프로젝트 밖에서 실행 중이면
+`ls ./<package_name>/*.ait`, 프로젝트 안이면 `ls ./*.ait`. 그래도 없으면 빌드
+로그가 찍은 산출 경로를 따른다 — 상위·하위 디렉터리를 `find`로 뒤지거나 빌드를
+다시 돌리는 것부터 하지 않는다. 빌드 명령이 오래 걸려 백그라운드로 전환됐다면
+**완료(exit code)를 확인한 뒤에** 이 확인을 한다 — 완료 전 조기 탐색으로
+"`.ait`가 없다"고 판단해 재빌드하는 것이 낭비의 전형이다(실측 사례 있음).
+
 빌드 산출물의 `deploymentId`는 4에서 그대로 쓴다.
 
 실기기에서 CDP attach까지 하려는 경우라면 이 skill이 아니라
