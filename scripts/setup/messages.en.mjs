@@ -48,11 +48,13 @@ export default {
   'codex.manual.welcome': 'Run /ait:welcome in a new session. If the slash namespace does not come through, plain language reaches the same skill.',
 
   'cursor.marketplace.add': 'Register the marketplace',
+  'cursor.marketplace.refresh': 'Refresh the marketplace snapshot (re-register)',
   'cursor.project.enable': 'Enable the plugin for this project',
   'cursor.project.mcp': 'Register the MCP servers in the project’s .cursor/mcp.json',
   'cursor.mcp.enable': 'Enable the MCP server',
   'cursor.manual.pluginsPick': 'Run agent, open /plugins, and pick ait to install. Cursor ships no non-interactive install command.',
-  'cursor.manual.autoRefresh': "Turn auto-refresh on from /plugins: open the apps-in-toss marketplace entry and enable Auto Refresh. Cursor has no command for it.",
+  'cursor.manual.autoRefresh':
+    "Turn auto-refresh on from /plugins: open the apps-in-toss marketplace entry and enable Auto Refresh (Cursor has no command for it). We have measured it leaving the snapshot untouched, so when you need a new version, running this script again is the reliable route.",
   'cursor.manual.perProject': 'Cursor enables plugins per project. Enable it again in each new project (--project automates that write).',
   'cursor.manual.consoleAuth': 'Console MCP authorization happens in the desktop editor. To use it from a CLI session, register it in the project with --cursor-mcp-fallback and run agent mcp login.',
 

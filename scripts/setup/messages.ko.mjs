@@ -48,11 +48,12 @@ export default {
   'codex.manual.welcome': '새 세션에서 /ait:welcome 을 실행하세요. 슬래시가 안 오면 자연어로 요청해도 같은 skill을 탑니다.',
 
   'cursor.marketplace.add': '마켓플레이스 등록',
+  'cursor.marketplace.refresh': '마켓플레이스 스냅샷 갱신(재등록)',
   'cursor.project.enable': '이 프로젝트에서 플러그인 활성화',
   'cursor.project.mcp': '프로젝트 .cursor/mcp.json에 MCP 서버 등록',
   'cursor.mcp.enable': 'MCP 서버 활성화',
   'cursor.manual.pluginsPick': 'agent 를 실행해 /plugins 에서 ait 를 골라 설치하세요. Cursor에는 비대화형 설치 명령이 없습니다.',
-  'cursor.manual.autoRefresh': '자동 갱신은 /plugins 의 apps-in-toss 마켓플레이스 항목에서 Enable Auto Refresh 를 켜세요. Cursor에는 이걸 켜는 명령이 없습니다.',
+  'cursor.manual.autoRefresh': '자동 갱신은 /plugins 의 apps-in-toss 마켓플레이스 항목에서 Enable Auto Refresh 를 켜세요(Cursor에는 이걸 켜는 명령이 없습니다). 다만 켜도 스냅샷이 안 움직인 실측이 있어, 새 버전이 필요하면 이 스크립트를 다시 돌리는 쪽이 확실합니다.',
   'cursor.manual.perProject': 'Cursor의 플러그인 활성화는 프로젝트 단위입니다. 다른 프로젝트에서는 그쪽에서 다시 활성화하세요(--project 로 자동화 가능).',
   'cursor.manual.consoleAuth': '콘솔 MCP 인가는 데스크톱 에디터에서 합니다. CLI 세션에서 쓰려면 --cursor-mcp-fallback 으로 프로젝트에 직접 등록한 뒤 agent mcp login 을 실행하세요.',
 
