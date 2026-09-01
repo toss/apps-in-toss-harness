@@ -149,6 +149,65 @@ describe('install.sh', () => {
     assert.equal(piped.stderr, '')
   })
 
+  // 설치기는 Node로 짜여 있지만 설치 자체는 호스트 CLI 명령 두 줄이라 Node가
+  // 필요 없다. Node가 없다고 그냥 죽으면 Node 없이도 할 수 있는 일까지 막는다.
+  describe('Node가 없을 때', () => {
+    /** node가 전혀 없는 PATH를 만든다 — 이 머신은 fnm·homebrew 양쪽에 node가 있다. */
+    function nodelessPath(withHosts) {
+      const dir = mkdtempSync(join(workdir, 'hosts-'))
+      if (withHosts) {
+        for (const h of ['claude', 'codex', 'agent']) {
+          writeFileSync(join(dir, h), '#!/bin/sh\nexit 0\n')
+          chmodSync(join(dir, h), 0o755)
+        }
+      }
+      return `${dir}:/usr/bin:/bin`
+    }
+
+    test('죽지 않고 감지된 호스트별 수동 명령을 알려준다', async () => {
+      await assert.rejects(
+        run('sh', [SCRIPT], { env: { ...env(), PATH: nodelessPath(true) } }),
+        (err) => {
+          assert.equal(err.code, 1)
+          // 세 호스트 모두, 설치기가 실제로 쓰는 식별자로.
+          assert.match(err.stderr, /claude plugin marketplace add toss\/apps-in-toss-harness/)
+          assert.match(err.stderr, /claude plugin install ait@apps-in-toss/)
+          assert.match(err.stderr, /codex plugin add ait@apps-in-toss/)
+          assert.match(err.stderr, /agent plugin marketplace add https:\/\/github\.com\//)
+          return true
+        },
+      )
+    })
+
+    test('호스트도 없으면 무엇을 봐야 하는지 알려준다', async () => {
+      await assert.rejects(
+        run('sh', [SCRIPT], { env: { ...env(), PATH: nodelessPath(false) } }),
+        (err) => {
+          assert.doesNotMatch(err.stderr, /plugin marketplace add/)
+          assert.match(err.stderr, /nodejs\.org/)
+          return true
+        },
+      )
+    })
+
+    test('아무것도 설치하지 않는다 (아카이브도 받지 않는다)', async () => {
+      let hits = 0
+      const orig = server.listeners('request')[0]
+      server.removeAllListeners('request')
+      server.on('request', (req, res) => {
+        hits += 1
+        orig(req, res)
+      })
+      try {
+        await assert.rejects(run('sh', [SCRIPT], { env: { ...env(), PATH: nodelessPath(true) } }))
+        assert.equal(hits, 0)
+      } finally {
+        server.removeAllListeners('request')
+        server.on('request', orig)
+      }
+    })
+  })
+
   test('전송이 잘리면 반쪽 실행되지 않는다 (main() 감싸기 회귀)', async () => {
     // 닫는 중괄호와 `main "$@"` 이전에서 끊긴 스크립트.
     const full = readFileSync(SCRIPT, 'utf8')

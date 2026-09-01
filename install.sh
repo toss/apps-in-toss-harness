@@ -30,13 +30,16 @@ main() {
 
   need curl "curl이 필요합니다."
   need tar "tar가 필요합니다."
-  need node "Node 24 이상이 필요합니다. https://nodejs.org 에서 설치하세요."
 
-  # 버전 미달을 여기서 걸러야 한다 — 아니면 사용자는 설치기 안쪽의 문법·API
+  # 설치기 본체는 Node로 짜여 있다. 하지만 **설치 자체는 호스트 CLI 명령 두
+  # 줄이라 Node가 필요 없다** — 설치기가 더 해주는 건 호스트 감지, 자동 업데이트
+  # 설정 병합, 콘솔 MCP 연결 실검증, 재실행 안전성이다. 그래서 Node가 없다고
+  # 그냥 죽으면, 정작 Node 없이도 할 수 있는 일까지 막는 셈이 된다.
+  # 버전 미달도 같은 취급이다 — 안 그러면 사용자는 설치기 안쪽의 문법·API
   # 오류를 보게 되고, 그건 원인을 짐작할 수 없는 종류의 실패다.
-  major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  if ! [ "$major" -ge 24 ] 2>/dev/null; then
-    die "Node 24 이상이 필요합니다 (지금: $(node -v 2>/dev/null || echo '알 수 없음'))."
+  if ! node_ok; then
+    manual_steps
+    exit 1
   fi
 
   tmp="$(mktemp -d)"
@@ -79,5 +82,65 @@ main() {
 
 die() { echo "ait-setup: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$2"; }
+
+node_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+  [ "$major" -ge 24 ] 2>/dev/null
+}
+
+# Node 없이 갈 수 있는 데까지 안내한다. 여기 적히는 명령은 설치기가 실제로
+# 실행하는 것과 같아야 한다 — 어긋나면 이 경로로 온 사용자만 조용히 다른
+# 상태에 도달한다. `scripts/setup/hosts/*.mjs`가 정본이다.
+manual_steps() {
+  if command -v node >/dev/null 2>&1; then
+    echo "ait-setup: Node 24 이상이 필요합니다 (지금: $(node -v 2>/dev/null || echo '알 수 없음'))." >&2
+  else
+    echo "ait-setup: Node 24 이상이 없어 자동 설치를 건너뜁니다." >&2
+  fi
+  echo "" >&2
+  echo "설치 자체는 Node 없이도 됩니다. 쓰는 도구에 맞춰 아래를 붙여넣으세요." >&2
+
+  found=0
+  if command -v claude >/dev/null 2>&1; then
+    found=1
+    cat >&2 <<EOF
+
+[Claude Code]
+  claude plugin marketplace add $REPO --sparse .claude-plugin packages/agent-plugin
+  claude plugin install ait@apps-in-toss -y --scope user
+  그다음 세션에서 /plugin 을 열어 apps-in-toss 의 자동 업데이트를 켜세요.
+EOF
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    found=1
+    cat >&2 <<EOF
+
+[Codex]
+  codex plugin marketplace add $REPO
+  codex plugin add ait@apps-in-toss
+  자동 업데이트는 켤 것이 없습니다 — 세션을 시작할 때마다 스스로 다시 받아옵니다.
+EOF
+  fi
+  if command -v agent >/dev/null 2>&1; then
+    found=1
+    cat >&2 <<EOF
+
+[Cursor]
+  agent plugin marketplace add https://github.com/$REPO
+  그다음 agent 세션에서 /plugins 를 열어 ait 를 고르세요(비대화형 설치 명령이 없습니다).
+  같은 화면에서 Enable Auto Refresh 도 켜세요.
+EOF
+  fi
+  if [ "$found" = 0 ]; then
+    echo "" >&2
+    echo "  Claude Code·Codex·Cursor 중 어느 CLI도 찾지 못했습니다." >&2
+    echo "  https://github.com/$REPO 의 설치 절을 참고하세요." >&2
+  fi
+
+  echo "" >&2
+  echo "미니앱 개발 자체에는 어차피 Node 24 이상이 필요합니다 — https://nodejs.org" >&2
+  echo "설치한 뒤 이 명령을 다시 돌리면 나머지(자동 업데이트·콘솔 MCP 연결 확인)까지 처리합니다." >&2
+}
 
 main "$@"

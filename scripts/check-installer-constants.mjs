@@ -228,6 +228,13 @@ for (const [lang, catalog] of [
       }
     }
 
+    // Node가 없을 때 출력하는 수동 명령이 설치기가 실제로 쓰는 식별자와
+    // 같아야 한다. 어긋나면 그 경로로 온 사용자만 조용히 다른 상태에 간다.
+    const pluginRef = `${FALLBACK.pluginName}@${FALLBACK.marketplaceName}`
+    if (!text.includes(pluginRef)) {
+      violations.push(`${rel}의 수동 안내가 플러그인 id(${pluginRef})를 쓰지 않습니다.`)
+    }
+
     // 부트스트랩이 실제로 실행하는 파일이 package.json bin과 같아야 한다.
     const binPath = pkg?.bin ? Object.values(pkg.bin)[0] : null
     if (typeof binPath === 'string') {
