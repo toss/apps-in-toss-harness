@@ -2,7 +2,8 @@
 name: setup-debugger
 description: |
   Wire the `ait-devtools` debug MCP server (`@apps-in-toss/debugger`) into the
-  current project's `.mcp.json` (project scope, opt-in) so `/ait:debug` can
+  current project's MCP config (project scope, opt-in) — `.mcp.json` on Claude
+  Code, `.cursor/mcp.json` on Cursor — so `/ait:debug` can
   run on-device CDP relay attach (environment 3). Idempotent JSON merge —
   preserves other server entries, never renames the `ait-devtools` key.
   Run THIS skill instead of hand-writing `.mcp.json` or inventing a server
@@ -152,10 +153,9 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 .cursor/mcp.json에 ait-devtools MCP 서버를 등록했습니다.
 - 에디터면: Cursor 설정의 MCP 서버 목록에서 ait-devtools를 켜고 승인해주세요.
 - CLI면: agent mcp enable ait-devtools 로 승인한 뒤, agent mcp list 로 연결을 확인해주세요.
-연결되면 /ait:debug 가 환경 3 attach(QR) 경로를 안내합니다.
-  말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
-환경 3 attach 절차(debug §5)는 Claude Code에서 확인된 경로입니다 — Cursor에서는 아직
-확인되지 않았습니다.
+폰에 붙는 환경 3 attach(debug §5)는 Claude Code 전용 메커니즘에 기대므로 Cursor에서는
+동작하지 않습니다(Codex와 같은 제약). 브라우저 환경(환경 1) 디버깅은 그대로 씁니다.
+  말로: "브라우저에서 미니앱 동작을 확인하고 싶어"
 ```
 
 ## 다음 단계

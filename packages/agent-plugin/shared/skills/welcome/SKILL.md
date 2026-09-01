@@ -163,7 +163,8 @@ Apps in Toss 플러그인이 설치됐습니다.
   /ait:new <app-name>   # 말로: "앱인토스 미니앱 새로 하나 만들어줘"
 
 콘솔 도구를 쓰려면 먼저 1회 인가가 필요합니다:
-  /mcp                  # apps-in-toss-console 서버를 승인(브라우저 OAuth)
+  /mcp                  # Claude Code — apps-in-toss-console 서버를 승인(브라우저 OAuth)
+                        #    Cursor는 데스크톱 에디터에서 승인한다 (위 1-c 참고)
 
 기존 프로젝트에 들어가려면:
   /ait:inject-devtools  # 기존 프로젝트에 devtools 주입

@@ -20,7 +20,7 @@ npx -y -p github:toss/apps-in-toss-harness ait-setup
 npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
 ```
 
-installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, Claude Code의 자동 업데이트를 켜고, 콘솔 MCP가 실제로 붙었는지 확인합니다. 여러 번 실행해도 안전합니다 — 이미 끝난 단계는 건너뛰고, 재실행이 곧 최신화가 됩니다. 사람이 직접 해야 하는 단계만 마지막에 번호를 매겨 알려줍니다. 그건 콘솔 MCP의 브라우저 OAuth와 Cursor의 `/plugins` 최초 선택 두 가지입니다.
+installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, Claude Code의 자동 업데이트를 켜고, 콘솔 MCP가 실제로 붙었는지 확인합니다. 여러 번 실행해도 안전합니다 — 이미 끝난 단계는 건너뛰고, 재실행이 곧 최신화가 됩니다. 사람이 직접 해야 하는 단계만 마지막에 번호를 매겨 알려줍니다. 남는 단계는 호스트마다 다릅니다. 콘솔 MCP의 브라우저 OAuth는 공통이고, Cursor는 `/plugins`에서 첫 설치를 고르는 것과 Enable Auto Refresh를 켜는 것이 더해집니다. 플러그인 활성화가 프로젝트 단위라 `--project` 없이 돌렸다면 새 프로젝트에서 다시 켜는 것도 직접 해야 합니다.
 
 **CLI 없이 데스크톱 앱만 설치돼 있어도 됩니다.** Claude와 Codex는 앱이 자기 안에 싣고 다니는 CLI를 찾아 그대로 설치합니다. 그 CLI는 터미널 CLI와 같은 사용자 상태(`~/.claude`·`~/.codex`)를 쓰기 때문에 결과가 갈리지 않습니다. Cursor 앱에는 그런 CLI가 없어서, 이 경우에만 무엇을 하면 되는지 안내로 남습니다.
 
@@ -202,13 +202,13 @@ codex plugin list
 
 `codex plugin marketplace upgrade`는 버전을 출력하지 않으니 `codex plugin list`의 VERSION 열로 확인하세요. TUI 안에서는 `/plugins`를 열고 `Ctrl+U`를 눌러도 같습니다.
 
-**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. 대신 `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있습니다(데스크톱 에디터와 `agent` CLI 양쪽). 켜두면 마켓플레이스가 추적하는 브랜치에 새 커밋이 push될 때 플러그인이 갱신됩니다. 셸에서 즉시 재색인하려면 아래를 실행하세요.
+**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있고(데스크톱 에디터와 `agent` CLI 양쪽), 공식 문서는 켜두면 마켓플레이스가 추적하는 브랜치의 변경을 따라 플러그인이 갱신된다고 안내합니다. 다만 실측에서는 토글을 켠 뒤 13커밋·12시간이 지나도 로컬 스냅샷(마켓플레이스·설치 캐시 양쪽)이 그대로였습니다. 에디터가 떠 있고 새 CLI 세션을 열어도 같았습니다. 확실하게 올리려면 셸에서 재색인하세요. 무엇이 새 버전인지는 이 절 첫 문장대로 `plugin.json`의 버전이 정합니다. Auto Refresh는 그 확인을 대신 돌려줄 뿐이라 기준 자체는 바뀌지 않습니다.
 
 ```
 agent plugin marketplace update apps-in-toss
 ```
 
-새 버전이 그래도 오지 않으면 새 `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 설치 캐시가 이전 커밋에 고정돼 재설치가 구버전을 그대로 되살리는 경우가 있습니다. 그때는 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 마켓플레이스를 remove → add로 재등록한 뒤 다시 설치하면 됩니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
+재색인해도 새 버전이 오지 않으면 새 `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 설치 캐시가 이전 커밋에 고정돼 재설치가 구버전을 그대로 되살리는 경우가 있습니다. 그때는 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 마켓플레이스를 remove → add로 재등록한 뒤 다시 설치하면 됩니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
 
 이 절은 Claude Code `2.1.250`·codex-cli `0.149.1`·Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
 
@@ -263,7 +263,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 | `/ait:inject-devtools` | 기존 프로젝트 빌드 설정에 devtools unplugin을 추가 (brownfield) | 2. dev |
 | `/ait:inject-debug-console` | `debug-console`(on-device attach + eruda)을 dependencies로 설치하고 self-gating import 배선 — 프로덕션 번들에 들어갈 수 있는 유일한 디버그 패키지 | 2. dev / 3. debug |
 | `/ait:inject-tossface` | 이모지 서체 Tossface를 CDN 링크(번들 증가 0) 또는 필요한 subset만 골라 번들(결정적 렌더, subset당 약 520KB~1.9MB)로 배선 | 2. dev |
-| `/ait:setup-debugger` | 디버그 MCP 서버(`debugger`)를 프로젝트 `.mcp.json`에 opt-in으로 배선 | 3. debug |
+| `/ait:setup-debugger` | 디버그 MCP 서버(`debugger`)를 프로젝트 `.mcp.json`(Cursor면 `.cursor/mcp.json`)에 opt-in으로 배선 | 3. debug |
 | `/ait:debug` | 로컬 브라우저·on-device candidate 두 환경을 관측 결과에 따라 분기해 디버깅 | 3. debug |
 | `/ait:test-on-device` | 번들을 빌드해 콘솔 MCP로 업로드하고 컴파일을 확인한 뒤, 도구가 돌려준 링크로 실제 토스 앱에서 확인 (검수 제출·릴리즈·프로모션은 하지 않음) | 5. register+ship |
 | `/ait:design [화면 또는 요청]` | 화면을 만들거나 고침 — 제로베이스 생성, 기존 화면 진단과 자동 수정, Figma 매핑, 등록용 이미지 자산 산출. 하드 규칙 위반은 코드를 직접 고쳐 해소 (등록·업로드는 하지 않음) | 8. design |
