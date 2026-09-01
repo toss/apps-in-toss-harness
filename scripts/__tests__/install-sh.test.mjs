@@ -138,7 +138,10 @@ describe('install.sh', () => {
     writeFileSync(cut, truncated)
     const { stdout, stderr } = await run('sh', ['-c', `sh ${cut} claude 2>&1 || true`], { env: env() })
     assert.doesNotMatch(stdout + stderr, /FAKE-BIN/)
-    // 아무 일도 안 일어난 게 아니라, 문법 오류로 멈춘 것이어야 한다.
-    assert.match(stdout + stderr, /(syntax error|unexpected end of file)/i)
+    // 아무 일도 안 일어난 게 아니라, 문법 오류로 멈춘 것이어야 한다. 정확히
+    // 어디서 잘리느냐에 따라 dash는 "unexpected end of file"을, bash는
+    // "unexpected EOF while looking for matching ..."를 낸다 — 셸 방언에
+    // 따라 문구가 갈리므로 둘 다 받는다.
+    assert.match(stdout + stderr, /(syntax error|unexpected (end of file|eof))/i)
   })
 })

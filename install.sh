@@ -65,7 +65,12 @@ main() {
   # node에만 터미널을 물려준다 — 인자 없이 돌렸을 때의 대화형 호스트 선택기가
   # 즉시 EOF를 받지 않도록. 제어 터미널이 없으면 그대로 두고, 설치기가 알아서
   # 비대화형으로 처리한다.
-  if [ ! -t 0 ] && { : </dev/tty; } 2>/dev/null; then
+  # 중괄호 그룹 `{ ...; }`이 아니라 서브셸 `( ... )`을 쓴다 — dash는 if 조건의
+  # 마지막 항이 실패해도 그 실패가 무시돼야 한다는 POSIX 규칙을, 리다이렉션이
+  # 붙은 중괄호 그룹에는 적용하지 않는 버그가 있다(set -e가 새어나가 스크립트
+  # 전체가 조용히 죽는다 — 실측: GNU/dash CI에서만 재현, macOS bash에서는
+  # 재현되지 않음). 서브셸은 이 버그가 없다.
+  if [ ! -t 0 ] && ( : </dev/tty ) 2>/dev/null; then
     node "$tmp/scripts/setup/bin.mjs" "$@" </dev/tty
   else
     node "$tmp/scripts/setup/bin.mjs" "$@"
