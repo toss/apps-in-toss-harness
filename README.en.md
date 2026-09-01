@@ -14,11 +14,23 @@ One line in a terminal sets up every host it finds. Name a host as an argument t
 
 ```bash
 # Every detected host (with no argument it shows what it found and lets you pick)
-npx -y -p github:toss/apps-in-toss-harness ait-setup
+curl -fsSL https://raw.githubusercontent.com/toss/apps-in-toss-harness/main/install.sh | sh
 
 # Pick a host — claude, codex, cursor, or all
+curl -fsSL https://raw.githubusercontent.com/toss/apps-in-toss-harness/main/install.sh | sh -s -- cursor
+```
+
+<details>
+<summary>On Windows PowerShell, or if you'd rather go through npm</summary>
+
+The same installer is available through npm. It does the same work, but npm pulls this repository's dev dependencies along with any git dependency, so the first run takes about a minute (measured: 67s, 174MB). The shell path above fetches only the installer's own source and finishes the same work in under a second.
+
+```bash
+npx -y -p github:toss/apps-in-toss-harness ait-setup
 npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
 ```
+
+</details>
 
 The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end: the console MCP's browser OAuth, a new session to load the plugin, and on Cursor the first `/plugins` pick and the auto-refresh toggle. Exactly which ones remain depends on the hosts it found and the state they were in, so follow the list it prints.
 
@@ -56,7 +68,7 @@ For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OA
 If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
 
 ```
-Install the Apps in Toss mini-app dev plugin. In the shell, run `npx -y -p github:toss/apps-in-toss-harness ait-setup claude --yes`, then tell me any manual steps its output still lists.
+Install the Apps in Toss mini-app dev plugin. In the shell, run `curl -fsSL https://raw.githubusercontent.com/toss/apps-in-toss-harness/main/install.sh | sh -s -- claude --yes`, then tell me any manual steps its output still lists.
 ```
 
 That sentence calls the same installer as "One command" above. It registers the marketplace, installs the plugin, and turns auto-update on, then reports whatever is left. Don't ask an agent to edit `~/.claude/settings.json` by hand: the `source` under `extraKnownMarketplaces` belongs to the CLI (a sparse registration keeps `sparsePaths` in there), and overwriting it wholesale makes the declaration disagree with the on-disk clone, after which Claude Code stops finding that marketplace at all.

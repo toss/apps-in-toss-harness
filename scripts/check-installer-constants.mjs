@@ -197,6 +197,67 @@ for (const [lang, catalog] of [
   }
 }
 
+// ⑤ install.sh — curl 부트스트랩이 실재하는 경로를 받아오는가.
+//
+// 이 스크립트는 npm을 거치지 않고 tar에서 파일을 직접 골라 뽑는다. 그래서
+// `scripts/setup`을 옮기거나 manifest를 개명하면 tar가 "그런 항목 없음"으로
+// 죽는데, 그 실패는 사용자 머신에서만 보인다 — 레포 안에서는 아무 테스트도
+// 깨지지 않는다. 뽑는 경로가 실제로 존재하는지 여기서 못 박는다.
+{
+  const rel = 'install.sh'
+  const path = join(ROOT, rel)
+  if (!existsSync(path)) {
+    violations.push(`파일이 없습니다: ${rel}`)
+  } else {
+    const text = readFileSync(path, 'utf8')
+
+    const repoMatch = text.match(/^\s*REPO="([^"]+)"/m)
+    if (!repoMatch) {
+      violations.push(`${rel}에서 REPO를 찾지 못했습니다.`)
+    } else if (repoMatch[1] !== FALLBACK.marketplaceRepo) {
+      violations.push(`${rel}의 REPO가 다른 repo를 가리킵니다: ${repoMatch[1]} ≠ ${FALLBACK.marketplaceRepo}`)
+    }
+
+    const extracted = [...text.matchAll(/"\$root\/([^"]+)"/g)].map(([, p]) => p)
+    if (extracted.length === 0) {
+      violations.push(`${rel}가 tar에서 아무 경로도 뽑지 않습니다.`)
+    }
+    for (const target of extracted) {
+      if (!existsSync(join(ROOT, target))) {
+        violations.push(`${rel}가 없는 경로를 tar에서 뽑으려 합니다: ${target}`)
+      }
+    }
+
+    // 부트스트랩이 실제로 실행하는 파일이 package.json bin과 같아야 한다.
+    const binPath = pkg?.bin ? Object.values(pkg.bin)[0] : null
+    if (typeof binPath === 'string') {
+      const normalized = binPath.replace(/^\.\//, '')
+      if (!text.includes(normalized)) {
+        violations.push(`${rel}가 bin(${normalized})을 실행하지 않습니다.`)
+      }
+    }
+  }
+
+  // README 양어의 curl 한 줄도 같은 repo·같은 스크립트를 가리켜야 한다.
+  for (const rel of ['README.md', 'README.en.md']) {
+    const path = join(ROOT, rel)
+    if (!existsSync(path)) continue
+    const text = readFileSync(path, 'utf8')
+    const curls = [...text.matchAll(/raw\.githubusercontent\.com\/([^\s/]+\/[^\s/]+)\/[^\s/]+\/([^\s`|]+)/g)]
+    if (curls.length === 0) {
+      violations.push(`${rel}에 installer 실행 한 줄(curl … | sh)이 없습니다.`)
+    }
+    for (const [, slug, file] of curls) {
+      if (slug !== FALLBACK.marketplaceRepo) {
+        violations.push(`${rel}의 curl 명령이 다른 repo를 가리킵니다: ${slug} ≠ ${FALLBACK.marketplaceRepo}`)
+      }
+      if (file !== 'install.sh') {
+        violations.push(`${rel}의 curl 명령이 다른 파일을 가리킵니다: ${file} ≠ install.sh`)
+      }
+    }
+  }
+}
+
 if (violations.length > 0) {
   console.error('installer 상수 게이트 위반:\n')
   for (const v of violations) console.error(`  - ${v}`)

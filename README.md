@@ -14,11 +14,23 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 
 ```bash
 # 감지된 호스트 전부 (인자를 생략하면 무엇이 감지됐는지 보여주고 고르게 합니다)
-npx -y -p github:toss/apps-in-toss-harness ait-setup
+curl -fsSL https://raw.githubusercontent.com/toss/apps-in-toss-harness/main/install.sh | sh
 
 # 호스트 지정 — claude · codex · cursor · all
+curl -fsSL https://raw.githubusercontent.com/toss/apps-in-toss-harness/main/install.sh | sh -s -- cursor
+```
+
+<details>
+<summary>Windows PowerShell이거나 npm 쪽이 편하다면</summary>
+
+같은 설치기를 npm으로도 받을 수 있습니다. 결과는 같지만, npm은 git 저장소를 의존성으로 받을 때 이 저장소의 개발 의존성까지 함께 내려받기 때문에 첫 실행이 1분 남짓 걸립니다(실측 67초·174MB). 위 셸 경로는 설치기 소스만 받아서 같은 일을 1초 안에 끝냅니다.
+
+```bash
+npx -y -p github:toss/apps-in-toss-harness ait-setup
 npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
 ```
+
+</details>
 
 installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, Claude Code의 자동 업데이트를 켜고, 콘솔 MCP가 실제로 붙었는지 확인합니다. 여러 번 실행해도 안전합니다 — 이미 끝난 단계는 건너뛰고, 재실행이 곧 최신화가 됩니다. 사람이 직접 해야 하는 단계만 마지막에 번호를 매겨 알려줍니다. 콘솔 MCP의 브라우저 OAuth, 플러그인을 로드할 새 세션, Cursor라면 `/plugins` 최초 선택과 자동 갱신 토글이 여기 들어갑니다. 정확히 무엇이 남는지는 감지된 호스트와 지금 상태에 따라 달라지니, 출력에 뜬 목록을 따르세요.
 
@@ -56,7 +68,7 @@ installer는 마켓플레이스를 등록하고, 플러그인을 설치하고, C
 위 슬래시 명령이 동작하지 않는 환경이라면, 아래 문장을 통째로 입력창에 붙여넣으세요. 터미널을 열 필요 없이 Claude가 자기 셸에서 설치를 대신 진행합니다.
 
 ```
-앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `npx -y -p github:toss/apps-in-toss-harness ait-setup claude --yes`를 실행하고, 출력에 남은 수동 단계가 있으면 그대로 알려줘.
+앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `curl -fsSL https://raw.githubusercontent.com/toss/apps-in-toss-harness/main/install.sh | sh -s -- claude --yes`를 실행하고, 출력에 남은 수동 단계가 있으면 그대로 알려줘.
 ```
 
 이 문장은 위 "한 줄로 끝내기"와 같은 installer를 부릅니다. 마켓플레이스 등록·플러그인 설치·자동 업데이트까지 한 번에 처리하고, 남는 것만 알려줍니다. `~/.claude/settings.json`을 직접 고치라고 시키지 마세요 — `extraKnownMarketplaces`의 `source`는 CLI가 소유하는 값이고(sparse 등록이면 `sparsePaths`가 들어 있습니다), 그걸 통째로 덮어쓰면 선언과 clone이 어긋나 Claude Code가 그 마켓플레이스를 아예 못 찾게 됩니다.
