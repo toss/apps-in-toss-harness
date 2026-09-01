@@ -20,7 +20,7 @@ npx -y -p github:toss/apps-in-toss-harness ait-setup
 npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
 ```
 
-The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end — the console MCP's browser OAuth, and Cursor's first `/plugins` pick.
+The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end. Which ones those are depends on the host: the console MCP's browser OAuth applies everywhere, and Cursor adds the first `/plugins` pick plus turning on Enable Auto Refresh. Because Cursor enables plugins per project, a run without `--project` also leaves per-project activation to you.
 
 **You don't need a CLI on your PATH — the desktop apps are enough.** Claude and Codex each ship a CLI inside the app bundle, and the installer finds it and installs with it. That CLI reads and writes the same user state (`~/.claude`, `~/.codex`) as the terminal CLI, so nothing diverges. The Cursor app carries no such CLI, so that is the one case that stays an instruction.
 
@@ -202,13 +202,13 @@ codex plugin list
 
 `codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
 
-**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. Instead, the `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI. With it on, plugins update when new commits land on the branch the marketplace tracks. To re-index right now, run this in your shell:
+**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. The `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI, and Cursor's documentation says turning it on keeps plugins in step with the branch the marketplace tracks. In our own measurement, though, the local snapshot (both the marketplace copy and the install cache) sat unchanged 12 hours and 13 commits after the toggle went on, with the editor running and a fresh CLI session opened. To move a version for certain, re-index from your shell. What counts as a new version is still the `plugin.json` version bump described at the top of this section; Auto Refresh only automates the re-index.
 
 ```
 agent plugin marketplace update apps-in-toss
 ```
 
-If a new version still doesn't arrive, open a fresh `agent` session, run `/plugins`, uninstall ait, and install it again. The install cache is pinned to a commit, so a reinstall can silently bring back the old version. If that happens, delete `~/.cursor/plugins/cache/apps-in-toss`, re-register the marketplace (remove, then add), and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
+If re-indexing still doesn't bring the new version, open a fresh `agent` session, run `/plugins`, uninstall ait, and install it again. The install cache is pinned to a commit, so a reinstall can silently bring back the old version. If that happens, delete `~/.cursor/plugins/cache/apps-in-toss`, re-register the marketplace (remove, then add), and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
 
 This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
 
@@ -263,7 +263,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:inject-devtools` | Adds the devtools unplugin to an existing project's build config (brownfield) | 2. dev |
 | `/ait:inject-debug-console` | Installs `debug-console` (on-device attach + eruda) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
 | `/ait:inject-tossface` | Wires the Tossface emoji web font in via a CDN link (zero bundle cost) or by bundling only the subsets the project needs (deterministic, roughly 520KB–1.9MB per subset) | 2. dev |
-| `/ait:setup-debugger` | Wires the debug MCP server (`debugger`) into the project's `.mcp.json` as an opt-in | 3. debug |
+| `/ait:setup-debugger` | Wires the debug MCP server (`debugger`) into the project's `.mcp.json`, or `.cursor/mcp.json` on Cursor, as an opt-in | 3. debug |
 | `/ait:debug` | Debugs by branching across two environments — local browser and on-device candidate — based on what it observes | 3. debug |
 | `/ait:test-on-device` | Builds the bundle, uploads it via console MCP, confirms the compile, and hands over the entry link the tools returned so you can check it in the real Toss app (never submits for review, releases, or promotes) | 5. register+ship |
 | `/ait:design [screen or request]` | Creates or fixes screens — from scratch, diagnosing and auto-fixing existing ones, mapping a Figma design, and producing the registration image assets. Hard-rule violations are fixed in the code, not just reported (does not register or upload) | 8. design |

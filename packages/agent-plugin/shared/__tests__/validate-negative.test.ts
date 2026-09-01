@@ -4051,4 +4051,29 @@ describe('A11 marketplace negative tests', () => {
     const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
     expect(rulesFired(violations)).toContain('A11/marketplace-unknown-key');
   });
+
+  it('A11/marketplace-entry-drift — cursor marketplace 가 JSON 파싱에 실패하면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeFile(path.join(tmpDir, '.cursor-plugin', 'marketplace.json'), '{ "plugins": [ ');
+    const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
+    expect(rulesFired(violations)).toContain('A11/marketplace-entry-drift');
+  });
+
+  it('A11/marketplace-entry-drift — plugins[] 에 manifest name 항목이 없으면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, '.cursor-plugin', 'marketplace.json'),
+      JSON.stringify({
+        name: 'apps-in-toss',
+        owner: { name: 'toss' },
+        metadata: { description: 'fixture' },
+        // plugin.json 의 name 은 'ait' 다 — 오타 rename 시나리오
+        plugins: [
+          { name: 'ait-typo', source: 'packages/agent-plugin', description: 'fixture entry' },
+        ],
+      }),
+    );
+    const { violations } = await runChecks(path.join(tmpDir, 'packages', 'agent-plugin'));
+    expect(rulesFired(violations)).toContain('A11/marketplace-entry-drift');
+  });
 });
