@@ -7,6 +7,11 @@
  * 비대화형 설치 동사가 아예 없다(실측). 그래서 여기서 하는 일은 셋이다.
  *
  *   1. 마켓플레이스 등록 — 스크립트 가능. 단축형(`toss/...`)이 아니라 전체 URL이어야 한다.
+ *      **이미 등록돼 있어도 매번 다시 돌린다.** `add`가 추적 브랜치의 현재 HEAD로 스냅샷을
+ *      다시 클론하는 유일한 명령이기 때문이다. 이름이 그럴듯한 `marketplace update`는
+ *      새 커밋을 가져오지 않는다 — "✓ Updated marketplace … 1 plugin indexed"를 출력하면서
+ *      clone의 `.git/FETCH_HEAD`·`.git/HEAD`가 그대로였고(2026-09-01 실측, 두 번), 이미 받아둔
+ *      스냅샷을 다시 색인만 한다. 그래서 등록 여부로 건너뛰면 재실행이 갱신이 되지 못한다.
  *   2. `--project`일 때 프로젝트 `.cursor/settings.json`에 활성화 키를 병합 —
  *      Cursor의 플러그인 활성화는 프로젝트 단위라 새 프로젝트마다 반복되는 고통인데,
  *      이 파일이 그 상태의 저장소다(이 repo의 실제 파일 형상과 동일하게 쓴다).
@@ -23,10 +28,10 @@ import { run } from '../exec.mjs'
 import { updateJsonFile } from '../jsonedit.mjs'
 
 /**
- * @param {{bin: string, constants: any}} ctx
+ * @param {{bin: string, constants: any, exec?: typeof run}} ctx
  */
-export function inspect({ bin, constants }) {
-  const r = run(bin, ['plugin', 'marketplace', 'list'], { timeout: 60_000 })
+export function inspect({ bin, constants, exec = run }) {
+  const r = exec(bin, ['plugin', 'marketplace', 'list'], { timeout: 60_000 })
   return {
     marketplaceAdded: r.ok ? r.stdout.includes(constants.marketplaceName) : null,
     introspectable: r.ok,
@@ -34,26 +39,23 @@ export function inspect({ bin, constants }) {
 }
 
 /**
- * @param {{bin: string, origin: string, constants: any, options: any, cwd: string}} ctx
+ * @param {{bin: string, origin: string, constants: any, options: any, cwd: string, exec?: typeof run}} ctx
  */
-export function install({ bin, origin, constants, options, cwd }) {
+export function install({ bin, origin, constants, options, cwd, exec = run }) {
   const dryRun = Boolean(options.dryRun)
   /** @type {Array<{id: string, status: 'done'|'already'|'planned'|'failed'|'skipped', detail?: string, command?: string}>} */
   const steps = []
-  const state = inspect({ bin, constants })
+  const state = inspect({ bin, constants, exec })
 
-  if (state.marketplaceAdded === true) {
-    steps.push({ id: 'cursor.marketplace.add', status: 'already' })
-  } else {
-    const url = `https://github.com/${constants.marketplaceRepo}`
-    const r = run(bin, ['plugin', 'marketplace', 'add', url], { dryRun, mutating: true })
-    steps.push({
-      id: 'cursor.marketplace.add',
-      status: r.skipped ? 'planned' : r.ok ? 'done' : 'failed',
-      detail: r.ok ? undefined : firstLine(r.stderr || r.stdout),
-      command: r.command,
-    })
-  }
+  // 등록 여부는 어느 단계로 보고할지만 정한다 — 명령 자체는 양쪽 다 돌린다(위 헤더 1번).
+  const url = `https://github.com/${constants.marketplaceRepo}`
+  const r = exec(bin, ['plugin', 'marketplace', 'add', url], { dryRun, mutating: true })
+  steps.push({
+    id: state.marketplaceAdded === true ? 'cursor.marketplace.refresh' : 'cursor.marketplace.add',
+    status: r.skipped ? 'planned' : r.ok ? 'done' : 'failed',
+    detail: r.ok ? undefined : firstLine(r.stderr || r.stdout),
+    command: r.command,
+  })
 
   if (options.project) {
     const file = join(cwd, '.cursor', 'settings.json')

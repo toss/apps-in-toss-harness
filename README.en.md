@@ -202,13 +202,17 @@ codex plugin list
 
 `codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
 
-**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. The `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI, and Cursor's documentation says turning it on keeps plugins in step with the branch the marketplace tracks. In our own measurement, though, the local snapshot (both the marketplace copy and the install cache) sat unchanged 12 hours and 13 commits after the toggle went on, with the editor running and a fresh CLI session opened. To move a version for certain, re-index from your shell. What counts as a new version is still the `plugin.json` version bump described at the top of this section; Auto Refresh only automates the re-index.
+**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. The `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI, and Cursor's documentation says turning it on keeps plugins in step with the branch the marketplace tracks. In our own measurement, though, the local snapshot (both the marketplace clone and the install cache) sat unchanged 12 hours and 13 commits after the toggle went on, with the editor running and a fresh CLI session opened.
+
+`agent plugin marketplace update` sounds like the refresh, but it fetches nothing. It prints `✓ Updated marketplace apps-in-toss: 1 plugin indexed` while the clone's `.git/FETCH_HEAD` and `.git/HEAD` stay put and HEAD stays on the old commit (checked twice, on two different snapshots). All it does is re-index the snapshot already on disk.
+
+What moves the snapshot is `add`. Run it again even when the marketplace is already registered and it re-clones at the current HEAD of the tracked branch — the commit-hash directory is replaced wholesale, and you don't need `remove` first. Re-running the install script from the quick start does the same thing.
 
 ```
-agent plugin marketplace update apps-in-toss
+agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 ```
 
-If re-indexing still doesn't bring the new version, open a fresh `agent` session, run `/plugins`, uninstall ait, and install it again. The install cache is pinned to a commit, so a reinstall can silently bring back the old version. If that happens, delete `~/.cursor/plugins/cache/apps-in-toss`, re-register the marketplace (remove, then add), and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
+That refreshes the marketplace snapshot only. The plugin that actually loads lives under `~/.cursor/plugins/cache/<marketplace>/<plugin>/<commit>`, one directory per commit, so it moves to the new commit only when you reinstall. `agent plugin` has no install subcommand (`marketplace` is the only one), which makes this step interactive: in an `agent` session, run `/plugins`, uninstall ait, and install it again. If the old version still comes back, delete `~/.cursor/plugins/cache/apps-in-toss` and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
 
 This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
 

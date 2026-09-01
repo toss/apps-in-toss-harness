@@ -202,13 +202,17 @@ codex plugin list
 
 `codex plugin marketplace upgrade`는 버전을 출력하지 않으니 `codex plugin list`의 VERSION 열로 확인하세요. TUI 안에서는 `/plugins`를 열고 `Ctrl+U`를 눌러도 같습니다.
 
-**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있고(데스크톱 에디터와 `agent` CLI 양쪽), 공식 문서는 켜두면 마켓플레이스가 추적하는 브랜치의 변경을 따라 플러그인이 갱신된다고 안내합니다. 다만 실측에서는 토글을 켠 뒤 13커밋·12시간이 지나도 로컬 스냅샷(마켓플레이스·설치 캐시 양쪽)이 그대로였습니다. 에디터가 떠 있고 새 CLI 세션을 열어도 같았습니다. 확실하게 올리려면 셸에서 재색인하세요. 무엇이 새 버전인지는 이 절 첫 문장대로 `plugin.json`의 버전이 정합니다. Auto Refresh는 그 확인을 대신 돌려줄 뿐이라 기준 자체는 바뀌지 않습니다.
+**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있고(데스크톱 에디터와 `agent` CLI 양쪽), 공식 문서는 켜두면 마켓플레이스가 추적하는 브랜치의 변경을 따라 플러그인이 갱신된다고 안내합니다. 다만 실측에서는 토글을 켠 뒤 13커밋·12시간이 지나도 로컬 스냅샷(마켓플레이스 clone·설치 캐시 양쪽)이 그대로였습니다. 에디터가 떠 있고 새 CLI 세션을 열어도 같았습니다.
+
+이름이 갱신처럼 보이는 `agent plugin marketplace update`도 새 커밋을 가져오지 않습니다. `✓ Updated marketplace apps-in-toss: 1 plugin indexed`를 출력하지만 clone의 `.git/FETCH_HEAD`·`.git/HEAD`는 그대로고 HEAD도 옛 커밋에 머뭅니다(서로 다른 스냅샷에서 두 번 확인). 이미 받아둔 스냅샷을 다시 색인할 뿐입니다.
+
+스냅샷을 옮기는 건 `add`입니다. 이미 등록돼 있어도 다시 실행하면 추적 브랜치의 현재 HEAD로 새로 클론합니다 — 커밋 해시로 갈린 디렉터리가 통째로 교체되고, `remove`를 먼저 할 필요는 없습니다. 빠른 시작의 설치 스크립트를 다시 돌려도 같은 일이 일어납니다.
 
 ```
-agent plugin marketplace update apps-in-toss
+agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 ```
 
-재색인해도 새 버전이 오지 않으면 새 `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 설치 캐시가 이전 커밋에 고정돼 재설치가 구버전을 그대로 되살리는 경우가 있습니다. 그때는 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 마켓플레이스를 remove → add로 재등록한 뒤 다시 설치하면 됩니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
+여기까지는 마켓플레이스 스냅샷만 새것이 됩니다. 실제로 로드되는 플러그인은 `~/.cursor/plugins/cache/<마켓플레이스>/<플러그인>/<커밋>`에 커밋별로 따로 깔리기 때문에, 재설치를 해야 새 커밋 쪽으로 옮겨갑니다. `agent plugin`에는 설치 서브커맨드가 없어서(`marketplace` 하나뿐) 이 단계는 대화형입니다 — `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 그래도 구버전이 올라오면 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 다시 설치합니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
 
 이 절은 Claude Code `2.1.250`·codex-cli `0.149.1`·Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
 
