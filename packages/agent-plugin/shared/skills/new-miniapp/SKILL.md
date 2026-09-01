@@ -468,17 +468,22 @@ ls ./<package_name>/node_modules/.bin/ait
 모두에** 그대로 덧붙인다:
 
 ```bash
-G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"
+G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && { rm -f "./<package_name>/.ait-design-guide-failed"; echo "디자인 가이드 있음(보완됨)"; } || { touch "./<package_name>/.ait-design-guide-failed" 2>/dev/null; echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"; echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"; }
 ```
 
-마지막에 인쇄되는 한 줄이 곧 판정이고, 괄호 안이 원인을 함께 알려준다:
+`디자인 가이드`로 시작하는 줄이 곧 판정이고, 괄호 안이 원인을 함께 알려준다.
+실패하면 fence가 같은 호출 안에서 `완료 블록에 그대로 넣을 줄:` 한 줄을 더
+찍는다 — Step 6에서 쓸 문장을 그때 새로 짓지 말고 이 줄을 그대로 옮긴다.
+같은 실패는 프로젝트 안 `.ait-design-guide-failed` 흔적 파일로도 남고, 성공하면
+그 파일이 지워진다(Step 5가 이 흔적을 다시 읽는다):
 
-- `디자인 가이드 있음(보완됨)` — 닫힘 ①로 그대로 진행한다.
+- `디자인 가이드 있음(보완됨)` — 닫힘 ①로 그대로 진행한다(둘째 줄 없음).
 - `디자인 가이드 주입 실패(스크립트=<경로>)` — 스크립트는 찾았는데 두 번 다
-  실패했다. **더 반복하지 말고** 닫힘 ③으로 간다.
-- `디자인 가이드 주입 실패(스크립트=못찾음)` — 네 후보 어디에도 스크립트가
+  실패했다. **더 반복하지 말고** 닫힘 ③으로 간다 — 둘째 줄이 최종 문장이다.
+- `디자인 가이드 주입 실패(스크립트=못찾음)` — 다섯 후보 어디에도 스크립트가
   없다. 이때만 5-B 말미의 자산 폴백(`Read`→`Write`)을 쓰고, 그걸로 채웠으면
-  `grep` 한 줄로 재확인해 ①로 닫는다. 폴백도 못 하면 닫힘 ③이다.
+  이 fence를 그대로 다시 실행해 재확인한다 — 멱등이라 무해하고, `있음(보완됨)`으로
+  바뀌면 둘째 줄과 흔적 파일이 함께 사라진다. 폴백도 못 하면 닫힘 ③이다.
 
 `없음`을 확인하고도 이 fence 없이 다음 단계로 넘어가는 것은 금지다 — 탐지만 하고
 보완을 미루면 이 가드는 없는 것과 같다(실측: 한 run이 `없음`을 정확히 찍고도
@@ -491,8 +496,12 @@ G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh
 가지뿐이다: ① `있음` 확인, ② `--no-design-guide`의 의도된 `없음`, ③ 재시도
 소진 후 실패 — ③은 완료 보고에 `디자인 가이드: 주입 실패 — /ait:design으로
 나중에 넣을 수 있습니다` 줄을 반드시 포함해야 닫힌 것이다. **실패 항목을 완료
-보고에서 조용히 빼고 성공처럼 보고하는 것은 금지다**(실측: 실패 run이 완료 표에서
-그 항목만 누락시켰다).
+보고에서 조용히 빼고 성공처럼 보고하는 것도, 성공도 실패도 말하지 않고 항목 자체를
+통째로 빼는 것도 금지다**(실측: 한 run은 완료 표에서 그 항목만 누락시켰고, 다른
+run은 위 판정을 정확히 찍고도 13턴 뒤 완료 보고에서 "디자인 가이드"를 한 번도
+쓰지 않았다). 그래서 이 문장을 기억에 맡기지 않는다 — 위 fence가 실패 시 흔적
+파일을 남기고, Step 5의 `.gitignore` fence가 완료 블록 직전에 그 흔적을 다시 읽어
+같은 문장을 한 번 더 찍는다.
 
 ### 4. 후처리 B — devtools 배선 확인 (브라우저 dev 활성화)
 
@@ -592,11 +601,21 @@ create-ait-app 템플릿은 `.gitignore`를 **이미 포함**한다(create-vite
 빠져 있다. 없을 때만 한 줄을 append한다:
 
 ```bash
+test -f "./<package_name>/.ait-design-guide-failed" && echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
 test -f ./<package_name>/.gitignore && { \
   grep -qx '\*\.ait' ./<package_name>/.gitignore || \
     printf '\n# Apps in Toss bundle artifacts\n*.ait\n' >> ./<package_name>/.gitignore; \
 }
 ```
+
+첫 줄은 `.gitignore`와 무관한, 디자인 가이드 판정의 마지막 재확인이다 — Step 3
+(또는 5-B)의 보완 fence가 닫힘 ③으로 끝났을 때만 흔적 파일이 남아 있어 완료
+블록에 넣을 문장이 여기서 한 번 더 찍힌다. 이 fence는 완료 블록 직전의 마지막
+필수 셸 호출이라, Step 6은 13턴 전 판정을 되짚지 않고 방금 나온 이 출력만 보면
+된다. `--no-design-guide`(닫힘 ②)와 성공(닫힘 ①)은 흔적 파일이 없어 아무것도
+찍히지 않는다 — 그대로 기존 규칙(줄 생략 / 정상 나열)이다. 세그먼트를 빼고
+`.gitignore` 부분만 추려 실행하지 마라(실측 선례: 자체 조립한 run이 형상 fence
+끝의 `grep` 세그먼트만 빼먹었다).
 
 (`test -f` 가드가 반드시 앞에 있어야 한다 — 없으면 `grep -qx ... ./<package_name>/.gitignore`가
 파일 부재로 실패했을 때 `||`가 `printf ... >>`를 그대로 실행해 `*.ait` 두 줄짜리 불완전한
@@ -634,7 +653,7 @@ Step 3의 보완 fence(호출→확인→재시도→판정이 한 줄에 든 �
 스크립트를 Read로 열어 보거나 나눠 실행하지 않는다:
 
 ```bash
-G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음(보완됨)" || echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"
+G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && { rm -f "./<package_name>/.ait-design-guide-failed"; echo "디자인 가이드 있음(보완됨)"; } || { touch "./<package_name>/.ait-design-guide-failed" 2>/dev/null; echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"; echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"; }
 ```
 
 전 항목이 `test -f`/`grep` 멱등 가드를 인라인으로 갖고(이미 있으면 건드리지
@@ -719,10 +738,11 @@ entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry �
 첫 줄 뒤의 `디자인 가이드 포함:` 줄은 **5-B가 실제로 넣은 것만** 나열한다 —
 `--tds`면 CSS·아이콘이, `--no-tossface`면 서체 항목이 빠지고, `--no-design-guide`
 면 줄 자체를 인쇄하지 않는다. 5-B 요약에서 실패한 항목도 빼고 적는다. 단,
-**Step 3의 실재 판정이 "재시도 소진 후 실패"(닫힘 규칙 ③)로 닫혔으면 이 줄을
-생략하는 게 아니라 `디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수
-있습니다`로 바꿔 인쇄한다** — 항목을 조용히 빼면 사용자는 주입이 됐는지 안 됐는지
-알 수 없다.
+**바로 앞 Step 5의 fence가 `완료 블록에 그대로 넣을 줄:`을 찍었으면 이 줄을
+생략하는 게 아니라 그 콜론 뒤의 문장(`디자인 가이드: 주입 실패 — /ait:design으로
+나중에 넣을 수 있습니다`)으로 바꿔 인쇄한다** — 닫힘 규칙 ③이다. 몇 턴 전 판정을
+기억해내 문장을 새로 짓지 말고, 방금 그 출력을 그대로 옮긴다. 항목을 조용히 빼면
+사용자는 주입이 됐는지 안 됐는지 알 수 없다.
 
 이모지 서체(Tossface)는 **기본으로 배선된다**(5-B가 넣은 `src/styles/base.css`
 첫 줄의 CDN `@import`). 번들 용량은 늘지 않지만 CDN에 닿지 못하는 환경에서는
