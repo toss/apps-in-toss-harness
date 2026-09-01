@@ -474,8 +474,9 @@ G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh
 `디자인 가이드`로 시작하는 줄이 곧 판정이고, 괄호 안이 원인을 함께 알려준다.
 실패하면 fence가 같은 호출 안에서 `완료 블록에 그대로 넣을 줄:` 한 줄을 더
 찍는다 — Step 6에서 쓸 문장을 그때 새로 짓지 말고 이 줄을 그대로 옮긴다.
-같은 실패는 프로젝트 안 `.ait-design-guide-failed` 흔적 파일로도 남고, 성공하면
-그 파일이 지워진다(Step 5가 이 흔적을 다시 읽는다):
+같은 실패는 프로젝트 안 `.ait-design-guide-failed` 흔적 파일로도 남는다. 이 흔적은
+"한 번은 실패했다"는 뜻일 뿐 최종 상태가 아니다 — 이 fence로 회복하면 여기서 지워지고,
+fence 밖에서(자산 폴백 등) 회복하면 Step 5가 실재를 대조해 지운다:
 
 - `디자인 가이드 있음(보완됨)` — 닫힘 ①로 그대로 진행한다(둘째 줄 없음).
 - `디자인 가이드 주입 실패(스크립트=<경로>)` — 스크립트는 찾았는데 두 번 다
@@ -601,19 +602,23 @@ create-ait-app 템플릿은 `.gitignore`를 **이미 포함**한다(create-vite
 빠져 있다. 없을 때만 한 줄을 append한다:
 
 ```bash
-test -f "./<package_name>/.ait-design-guide-failed" && echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
+test -f "./<package_name>/.ait-design-guide-failed" && { grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && rm -f "./<package_name>/.ait-design-guide-failed" || echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"; }
 test -f ./<package_name>/.gitignore && { \
   grep -qx '\*\.ait' ./<package_name>/.gitignore || \
     printf '\n# Apps in Toss bundle artifacts\n*.ait\n' >> ./<package_name>/.gitignore; \
 }
 ```
 
-첫 줄은 `.gitignore`와 무관한, 디자인 가이드 판정의 마지막 재확인이다 — Step 3
-(또는 5-B)의 보완 fence가 닫힘 ③으로 끝났을 때만 흔적 파일이 남아 있어 완료
-블록에 넣을 문장이 여기서 한 번 더 찍힌다. 이 fence는 완료 블록 직전의 마지막
-필수 셸 호출이라, Step 6은 13턴 전 판정을 되짚지 않고 방금 나온 이 출력만 보면
-된다. `--no-design-guide`(닫힘 ②)와 성공(닫힘 ①)은 흔적 파일이 없어 아무것도
-찍히지 않는다 — 그대로 기존 규칙(줄 생략 / 정상 나열)이다. 세그먼트를 빼고
+첫 줄은 `.gitignore`와 무관한, 디자인 가이드 판정의 마지막 재확인이다. 흔적 파일이
+남아 있을 때만 동작하고, 그때도 흔적을 그대로 믿지 않고 `AGENTS.md`의 마커 실재를
+다시 확인한다 — 실재하면 그 사이 어떤 경로로든(자산 폴백, 수동 작성) 회복된 것이므로
+흔적을 지우고 아무것도 찍지 않고, 실재하지 않으면 완료 블록에 넣을 문장을 여기서 한 번
+더 찍는다. **실재 대조가 이 줄의 요점이다** — 흔적만 보고 판단하면 fence 밖에서 회복한
+경우에 없는 실패를 알리게 된다(실측: 폴백으로 채운 run에서 흔적이 안 지워져 이 줄이
+거짓 실패를 찍었고, 모델은 그 신호를 무시하고 성공으로 보고했다). 이 fence는 완료 블록
+직전의 마지막 필수 셸 호출이라, Step 6은 열몇 턴 전 판정을 되짚지 않고 방금 나온 이
+출력만 보면 된다. `--no-design-guide`(닫힘 ②)와 성공(닫힘 ①)은 흔적 파일이 없어
+아무것도 찍히지 않는다 — 그대로 기존 규칙(줄 생략 / 정상 나열)이다. 세그먼트를 빼고
 `.gitignore` 부분만 추려 실행하지 마라(실측 선례: 자체 조립한 run이 형상 fence
 끝의 `grep` 세그먼트만 빼먹었다).
 
