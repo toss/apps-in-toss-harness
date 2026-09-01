@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -79,6 +79,14 @@ after(() => {
 
 const env = (extra = {}) => ({ ...process.env, AIT_SETUP_ARCHIVE_BASE: base, ...extra })
 
+/** POSIX 전용 셸을 찾는다. 없으면 그 테스트는 건너뛴다. */
+function dash() {
+  for (const candidate of ['/bin/dash', '/usr/bin/dash']) {
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
 describe('install.sh', () => {
   test('아카이브에서 설치기를 뽑아 인자를 그대로 넘긴다', async () => {
     const { stdout } = await run('sh', [SCRIPT, 'claude', '--dry-run'], { env: env() })
@@ -125,6 +133,20 @@ describe('install.sh', () => {
         return true
       },
     )
+  })
+
+  // macOS의 `sh`는 bash라, POSIX 전용 셸에서만 나는 결함은 로컬에서 영영 안
+  // 잡힌다. 실제로 한 번 그렇게 통과했다: dash는 리다이렉션이 붙은 중괄호
+  // 그룹이 if 조건에서 실패할 때 `set -e`를 잘못 발동시켜, 스크립트가 출력
+  // 한 줄 없이 exit 2로 죽었다(서브셸에는 그 버그가 없다). CI(ubuntu, sh=dash)가
+  // 잡아줬지만 push하기 전에 잡히는 편이 낫다.
+  test('POSIX 전용 셸(dash)에서도 같게 동작한다', { skip: !dash() }, async () => {
+    const sh = dash()
+    const direct = await run(sh, [SCRIPT, 'claude'], { env: env() })
+    assert.match(direct.stdout, /FAKE-BIN claude/)
+    const piped = await run(sh, ['-c', `cat ${SCRIPT} | ${sh} -s -- codex`], { env: env() })
+    assert.match(piped.stdout, /FAKE-BIN codex/)
+    assert.equal(piped.stderr, '')
   })
 
   test('전송이 잘리면 반쪽 실행되지 않는다 (main() 감싸기 회귀)', async () => {
