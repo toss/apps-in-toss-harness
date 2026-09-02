@@ -212,7 +212,9 @@ What moves the snapshot is `add`. Run it again even when the marketplace is alre
 agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 ```
 
-That refreshes the marketplace snapshot only. The plugin that actually loads lives under `~/.cursor/plugins/cache/<marketplace>/<plugin>/<commit>`, one directory per commit, so it moves to the new commit only when you reinstall. `agent plugin` has no install subcommand (`marketplace` is the only one), which makes this step interactive: in an `agent` session, run `/plugins`, uninstall ait, and install it again. If the old version still comes back, delete `~/.cursor/plugins/cache/apps-in-toss` and install once more. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
+That refreshes the marketplace snapshot only. The plugin that actually loads lives under `~/.cursor/plugins/cache/<marketplace>/<plugin>/<commit>`, one directory per commit, so it moves to the new commit only when you reinstall. `agent plugin` has no install subcommand (`marketplace` is the only one), which makes this step interactive: in an `agent` session or the desktop editor, run `/plugins`, uninstall ait, and install it again.
+
+Clearing the cache is no substitute. Which commit an installed plugin sits on is account-side state, not a local file — the editor's state DB holds an install id and no commit — so deleting the cache directory makes the next session fetch **the same commit** again, and it drags the marketplace snapshot back to that commit too. Treat deleting `~/.cursor/plugins/cache/apps-in-toss` as cleanup for a botched reinstall, not as a way to update. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
 
 This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
 
