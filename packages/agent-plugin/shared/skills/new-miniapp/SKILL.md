@@ -210,8 +210,20 @@ scaffold는 **명령 하나**다 — CLI가 파일 생성 → `npm install` →
 반드시 주입까지 실행하도록 명령 레벨에서 결합했다:
 
 ```bash
-npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <template> | --tds) [--sample iap,iaa] && bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
+npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-ts && bash "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "./<package_name>"
 ```
+
+위 fence는 기본값 `--template react-ts`가 이미 채워진 **그대로 실행되는 명령**이다 —
+템플릿 요청이 없으면 한 글자도 바꾸지 않고 실행한다. 바꿔 넣는 자리는 셋뿐이다:
+사용자가 다른 템플릿을 지정했으면 `react-ts` 자리에 그 이름, `--tds`면
+`--template react-ts`를 통째로 `--tds`로 교체(둘을 같이 주면 CLI가 거부한다 —
+이때 주입 스크립트 인자에도 `--tds`를 붙인다), `--sample`을 요구했으면
+`--template react-ts` 뒤에 `--sample iap,iaa`를 덧붙인다. **"템플릿 얘기가 없었으니
+`--template`은 빼자"가 가장 흔한 낭비였다** — 이전 표기 `(--template <template> |
+--tds)`를 모델이 채우지 않고 지워 CLI의 `비대화형 실행에 필요한 값이 빠졌어요`를
+받고서야 다시 넣었다(실측: 25 run 중 19가 첫 호출에서 이 왕복을 했고, 그 재시도가
+백그라운드 전환·타임아웃 탈선의 출발점이 된 run이 셋이다). 기본값이 fence에 박혀
+있으니 이 왕복은 없어야 한다.
 
 > **핀을 쓰지 않는 이유와 남는 위험**: `create-ait-app`·`@apps-in-toss/*`는
 > 항상 최신을 쓰는 것이 정책이다(maintainer 결정 2026-08-10) — 명시 핀은
@@ -228,9 +240,10 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
 호출 규칙 (create-ait-app 0.2.3 소스 실측 근거 — 실행 버전은 `@latest` 해석에
 따른다):
 
-- **`<package_name>`(positional)·`--pm npm`·(`--template`|`--tds`)를 전부 명시**
-  — `--inline`이면 이 중 하나만 빠져도 CLI가 **에러로 즉시 중단**한다
-  (`assertNonInteractiveArgs`). 프롬프트로 빠지는 게 아니라 실패한다.
+- **`<package_name>`(positional)·`--pm npm`·`--template react-ts`(또는 `--tds`)를
+  전부 명시** — `--inline`이면 이 중 하나만 빠져도 CLI가 **에러로 즉시 중단**한다
+  (`assertNonInteractiveArgs`). 프롬프트로 빠지는 게 아니라 실패한다. fence에
+  `--template react-ts`가 이미 들어 있다 — 그것을 지우는 것이 곧 이 에러다.
 - **스캐폴더는 `create-ait-app` 하나다** — `npm create @apps-in-toss/app` 같은
   변형 명칭을 기억으로 지어내 시도하지 마라(존재하지 않는 패키지라 404가 난다 —
   실측). 위 fence의 `npx -y create-ait-app@latest` 형태 그대로 쓴다.
