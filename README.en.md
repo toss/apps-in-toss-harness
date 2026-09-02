@@ -289,6 +289,8 @@ Installing the plugin registers two MCP servers, in Claude Code, Codex, and Curs
 
 The harness's standard registration and upload flow uses only the console MCP's OAuth session. It doesn't use a Deploy Key (the workspace-scoped credential the console UI calls an "API key") path, since the related skill has already been removed. The Deploy Key term and its auth model are still an open question being tracked, not yet finalized.
 
+The docs are also readable without MCP. The developer center publishes the same documentation in a form agents can read directly: `https://developers-apps-in-toss.toss.im/llms.txt` is the full index, `https://developers-apps-in-toss.toss.im/llms-full.txt` is the complete text, and appending `?ask=<question>` to any docs page URL returns an answer grounded in that documentation, with source links. Use this path when the plugin isn't installed yet or MCP can't be attached.
+
 ## Packages
 
 Three packages managed as a pnpm workspace.
