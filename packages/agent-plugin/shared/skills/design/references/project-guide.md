@@ -5,9 +5,12 @@
 절차를 공유한다 — design skill의 "프로젝트 디자인 가이드 확인·주입" 단계와
 new-miniapp skill의 스캐폴드 후처리 단계. 둘 다 아래 절차를 그대로 따른다.
 
-실행형 정본은 `../scripts/inject-project-guide.sh`다 — new-miniapp skill의
-5-B가 이 스크립트를 호출 한 번으로 실행한다. 아래 절차 서술은 그 스크립트의
-동작을 설명하는 것이지, 별도로 손으로 재현해야 할 단계가 아니다.
+실행형 정본은 `../scripts/inject-project-guide.sh`다 — new-miniapp skill의 Step 3
+블록이 이 스크립트를 호출 한 번으로 실행한다. 아래 절차 서술은 그 스크립트의 동작을
+설명하는 것이지, 별도로 손으로 재현해야 할 단계가 아니다. 단 "자산 복사 폴백 순서"의
+3번은 예외다 — 스크립트 자신의 `SRC` 탐색은 1·2번까지이고, 프로젝트·사용자 scope까지
+훑는 것은 스크립트를 아예 못 찾았을 때를 위해 new-miniapp Step 3 블록이 따로 갖고 있는
+경로다.
 
 ## 마커 형식
 
@@ -84,8 +87,13 @@ append하고, 없으면 다이제스트만 담은 새 파일을 만든다.
    기준으로 `assets/project/`를 상대 경로로 찾아 복사한다. 가장 우선한다.
 2. **`$CLAUDE_PLUGIN_ROOT`** — 환경변수가 설정돼 있으면 그 경로 아래
    `shared/skills/design/assets/project/`를 시도한다.
-3. **`Read` → `Write`** — 위 둘 다 안 되면 각 파일을 `Read`로 읽어
-   프로젝트 경로에 `Write`한다(가장 느리지만 항상 동작하는 마지막 수단).
+3. **프로젝트 scope · 사용자 scope** — `.claude/skills/design/assets/project/`,
+   `$HOME/.claude/skills/design/assets/project/` 순으로 시도한다. 여기까지 훑어
+   온전한 자산 디렉터리를 못 찾으면 **실패로 닫는다** — 각 파일을 `Read`해 `Write`로
+   옮겨 적거나, 하물며 지어내는 것은 금지다(실측: 정본을 한 번도 읽지 않고 창작한 두
+   run이 팔레트·파일명·CDN URL을 전부 틀렸고, 완료 보고에는 그 팔레트를 "토스 공식
+   색상"이라고 적었다). 산출물은 `cp`/`cat`이 원본 바이트를 넘긴 결과로만 존재해야
+   한다.
 
 **symlink 주의**: 플러그인이 설치된 형상에서 skill 디렉터리가 실제 소스로
 향한 symlink일 수 있다. `cp -R`은 symlink를 따라가므로 문제없지만,
