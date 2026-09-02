@@ -289,6 +289,8 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 
 이 harness의 정규 등록·업로드 흐름은 콘솔 MCP의 OAuth 세션만 사용하며 Deploy Key(콘솔 UI가 "API 키"로 부르는 워크스페이스-scope 자격증명) 경로는 쓰지 않습니다. 관련 skill은 이미 제거되었습니다. Deploy Key 용어·인증 모델 자체는 아직 정합이 확정되지 않은 open question으로 추적 중입니다.
 
+MCP 없이 문서만 읽는 경로도 있습니다. 개발자센터가 같은 문서를 에이전트가 바로 읽는 형태로도 냅니다. `https://developers-apps-in-toss.toss.im/llms.txt`가 전체 색인, `https://developers-apps-in-toss.toss.im/llms-full.txt`가 본문 전문이고, 아무 문서 페이지 URL 뒤에 `?ask=<질문>`을 붙이면 그 문서를 근거로 한 답이 출처 링크와 함께 돌아옵니다. 플러그인을 아직 설치하지 않았거나 MCP를 붙일 수 없는 환경에서 쓰는 경로입니다.
+
 ## 구성
 
 pnpm 워크스페이스로 관리되는 패키지 3개입니다.
