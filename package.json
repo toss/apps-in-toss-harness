@@ -1,14 +1,6 @@
 {
   "name": "apps-in-toss-harness",
   "private": true,
-  "bin": {
-    "ait-setup": "./scripts/setup/bin.mjs"
-  },
-  "files": [
-    "scripts/setup",
-    ".claude-plugin/marketplace.json",
-    "packages/agent-plugin/.claude-plugin/plugin.json"
-  ],
   "packageManager": "pnpm@11.17.0",
   "engines": {
     "node": ">=24"
@@ -23,9 +15,7 @@
     "check:pack-manifests": "node scripts/check-pack-manifests.mjs",
     "check:dist-urls": "node scripts/check-dist-urls.mjs",
     "typecheck": "pnpm -r --if-present typecheck && pnpm typecheck:shared",
-    "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json",
-    "setup": "node scripts/setup/bin.mjs",
-    "check:installer-constants": "node scripts/check-installer-constants.mjs"
+    "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.1",
