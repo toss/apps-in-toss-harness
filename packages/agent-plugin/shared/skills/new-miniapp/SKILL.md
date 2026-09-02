@@ -149,11 +149,13 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
   `npm run dev`/`npm --prefix` 흐름과 통일하려고 항상 `--pm npm`으로 부른다
   (사용자가 명시적으로 요구하면 그 값에 맞춘다). Step 0이 실행 전 검사한다.
 - **인터넷 필요** — `npx -y`가 create-ait-app을 받아 파일 생성부터
-  install·`ait init`까지 한 번에 수행한다. `@apps-in-toss/web-framework`는
-  `initializeAitProject`가 `dependencies`에 `"latest"` 리터럴로 기록해두므로 실제
-  버전은 install 시점의 registry `latest`에 달렸다(harness#90 항목1 — 공개
-  `latest`가 3.x 출시 뒤에도 한동안 2.10.8을 가리키는 어긋남이 확인됨).
-  오프라인이면 `--local` 폴백.
+  install·`ait init`까지 한 번에 수행한다. `@apps-in-toss/web-framework`의
+  버전은 create-ait-app이 자기 빌드에 박아 둔 정확 버전이다(0.2.5·0.2.6 dist
+  실측: `.github/version-pins/package.json`의 `3.1.1`을 `dependencies`에 그대로
+  쓴다) — 공개 `latest`가 더 높아도 그 핀을 받고, 핀은 create-ait-app이 새로
+  발행될 때만 움직인다. 종전 CLI는 `"latest"` 리터럴을 써서 install 시점의
+  registry에 달렸었다(harness#90 항목1 — 공개 `latest`가 3.x 출시 뒤에도 한동안
+  2.10.8을 가리키는 어긋남이 그때 확인됨). 오프라인이면 `--local` 폴백.
 
 > 이 skill은 콘솔 인증을 **요구하지 않는다**. 로그인 없이 빈 프로젝트만
 > 만들고 끝낸다. 콘솔 등록은 사용자가 준비됐을 때 별도로.
@@ -225,16 +227,20 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
 백그라운드 전환·타임아웃 탈선의 출발점이 된 run이 셋이다). 기본값이 fence에 박혀
 있으니 이 왕복은 없어야 한다.
 
-> **핀을 쓰지 않는 이유와 남는 위험**: `create-ait-app`·`@apps-in-toss/*`는
-> 항상 최신을 쓰는 것이 정책이다(maintainer 결정 2026-08-10) — 명시 핀은
-> upstream 개선(이 skill이 우회하던 결함의 수정 포함)을 받지 못하게 막는
-> 쪽이 더 컸다. 대신 산출물 형상은 매 run 후처리 0(Step 3)이 검사하므로,
+> **핀을 쓰지 않는 이유와 남는 위험**: `create-ait-app`은 항상 `@latest`로
+> 부르는 것이 정책이다(maintainer 결정 2026-08-10) — 명시 핀은 upstream
+> 개선(이 skill이 우회하던 결함의 수정 포함)을 받지 못하게 막는 쪽이 더 컸다.
+> `@apps-in-toss/web-framework`의 버전은 이 skill이 정하지 않는다 —
+> create-ait-app이 자기 빌드에 박아 둔 정확 버전(0.2.5·0.2.6은 `3.1.1`)을
+> 쓰므로 "최신 create-ait-app이 고른 wf"를 받는 셈이고, 공개 `latest`보다 뒤일
+> 수 있다. 대신 산출물 형상은 매 run 후처리 0(Step 3)이 검사하므로,
 > 형상이 바뀌면 조용히 깨지는 대신 그 자리에서 멈춘다. **다만 형상 가드가
 > 잡지 못하는 축이 남는다** — CLI의 *동작* 변화(예: `ait init` 자동 호출이
 > 사라지거나 배선 대상이 바뀌는 것)는 산출물 파일 목록이 같으면 통과할 수
 > 있다. Step 4가 devtools 배선을 실물로 확인하는 이유가 이것이고, 그래도
 > 어긋나면 아래 "호출 규칙" 말미의 원칙(CLI 에러를 그대로 전하고 중단)을
-> 따른다. `latest` dist-tag 자체가 환경마다 다르게 해석될 수 있다는 위험은 아래
+> 따른다. `create-ait-app@latest`의 dist-tag 자체가 환경마다 다르게 해석될 수
+> 있다는 위험은 아래
 > "버전 해석이 실패하는 경우" 항목에서 다룬다.
 
 호출 규칙 (create-ait-app 0.2.3 소스 실측 근거 — 실행 버전은 `@latest` 해석에
@@ -319,14 +325,16 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   수단이 없다. 에러를 그대로 보고하고 중단한 뒤 선택지를 준다: (a) 같은 명령 1회
   재시도(주입 세그먼트가 붙은 전체 한 줄 그대로 — 스캐폴더 부분만 재실행하지
   않는다), (b) `--local` 폴백.
-- **`package.json`의 `"@apps-in-toss/web-framework": "latest"`는 semver
-  range가 아니라 dist-tag 리터럴**이다 — 설치 시점의 registry `latest`가
-  그대로 해석되므로 같은 명령이라도 시점마다 다른 버전이 설치될 수 있다
-  (실측: 공개 `latest`가 `3.0.1`인 시점에 `3.0.0`이 설치됨). 검증·측정
-  맥락에서는 실제로 해석된 버전을 `npm --prefix ./<package_name> ls
-  @apps-in-toss/web-framework`로 확인해 항상 함께 기록한다. 이 어긋남을
-  build 전에 잡는 게이트는 후처리 0(Step 3)의 major 확인이다 — 아래 그
-  절차를 반드시 거친다.
+- **`package.json`의 `@apps-in-toss/web-framework`는 create-ait-app이 박은
+  정확 버전이다**(0.2.5·0.2.6 실측 `"3.1.1"` — 자기 저장소
+  `.github/version-pins/package.json`의 핀을 빌드에 넣는다). 그래서 wf 버전은
+  실행된 create-ait-app 버전에 따라가고, `create-ait-app@latest` 해석이 환경마다
+  다르면 wf도 따라 달라진다. 종전 CLI는 `"latest"` 리터럴을 써서 install 시점마다
+  달랐다(실측: 공개 `latest`가 `3.0.1`인 시점에 `3.0.0`이 설치됨). 검증·측정
+  맥락에서는 실제로 설치된 버전을 `npm --prefix ./<package_name> ls
+  @apps-in-toss/web-framework`로 확인해 항상 함께 기록한다. 어느 경로든 build
+  전에 잡는 게이트는 후처리 0(Step 3)의 major 확인이다 — 아래 그 절차를 반드시
+  거친다.
 - **온라인인데 특정 transitive dep 설치만 실패하는 경우**(프록시/미러
   registry가 일부 버전을 못 주는 환경 — 실측)는 `--local`도 같은 vite
   툴체인을 설치하다 같은 문제를 밟을 수 있다. 디렉터리가 남아 있다면(=
@@ -512,10 +520,12 @@ fence는 두 줄을 찍는다. 첫 줄이 형상 판정, 둘째 줄이 디자인
   ```
 
 **설치된 `@apps-in-toss/web-framework`의 major도 함께 확인한다** — 형상 파일
-체크만으로는 부족하다. npm의 `latest` dist-tag가 3.x 출시 이후에도 한동안 2.10.8을
-계속 가리키는 어긋남이 있어(harness#90 항목1, 2026-08-07 실측 — harness가 직접
-고칠 수 없는 upstream 문제) `package.json`의 `"latest"` 리터럴이 조용히 2.x를
-해석할 수 있고, 아래 `ait` bin 확인은 이걸 못 잡는다(2.10.8도 `ait` bin을 준다):
+체크만으로는 부족하다. 현재 create-ait-app은 wf를 정확 버전(`3.1.1`)으로 박지만,
+`create-ait-app@latest`가 구버전으로 해석되는 환경(프록시가 최신을 숨기는 경우)이나
+`"latest"` 리터럴을 쓰던 종전 CLI가 내려온 경우에는 2.x가 조용히 들어올 수 있다(npm의
+`latest` dist-tag가 3.x 출시 이후에도 한동안 2.10.8을 가리킨 어긋남 — harness#90
+항목1, 2026-08-07 실측). 아래 `ait` bin 확인은 이걸 못 잡는다(2.10.8도 `ait` bin을
+준다):
 
 ```bash
 node -p "require('./<package_name>/node_modules/@apps-in-toss/web-framework/package.json').version"
@@ -526,8 +536,8 @@ node -p "require('./<package_name>/node_modules/@apps-in-toss/web-framework/pack
 
 major가 `3`이 아니면(예: `2.10.8`) **사용자 응답을 기다리지 않고 지금 바로**
 아래를 직접 수행한다 — 읽어주고 끝내는 안내문이 아니라 실행하는 복구 절차다.
-`./<package_name>/package.json`을 `Edit`으로 열어
-`"@apps-in-toss/web-framework": "latest"`를 `"^3.0.2"`로 고치고,
+`./<package_name>/package.json`을 `Edit`으로 열어 `"@apps-in-toss/web-framework"`의
+값(`"latest"` 리터럴이든 2.x 정확 버전이든)을 `"^3.0.2"`로 고치고,
 `npm --prefix ./<package_name> install`을 실행한 뒤, 위 major 확인 커맨드를 다시
 돌려 `3.`으로 시작하는지 본다. **3.x가 재확인되기 전에는 아래 `ait` bin 확인
 이하로 넘어가지 않는다** — 재확인 없이 진행하면 이 가드가 없는 것과 같다.
@@ -535,10 +545,10 @@ major가 `3`이 아니면(예: `2.10.8`) **사용자 응답을 기다리지 않�
 세 단계를 마친 뒤, 사용자에게는 결과만 한 블록으로 보고한다:
 
 ```
-설치된 @apps-in-toss/web-framework가 <원래 출력된 버전>(2.x)이었습니다 — npm의
-latest dist-tag가 3.x 출시 이후에도 한동안 2.10.8을 가리키는 알려진
-어긋남입니다(harness#90). package.json을 "^3.0.2"로 고치고 재설치해 3.x
-설치를 확인했습니다.
+설치된 @apps-in-toss/web-framework가 <원래 출력된 버전>(2.x)이었습니다 — 정본
+산출물은 3.x입니다(구버전 create-ait-app이나 registry 응답 어긋남으로 2.x가
+들어오는 알려진 사례가 있습니다, harness#90). package.json을 "^3.0.2"로 고치고
+재설치해 3.x 설치를 확인했습니다.
 ```
 
 재설치 후에도 major가 `3`이 아니면(예: 재설치가 여전히 2.x를 해석하는 등) 더
