@@ -212,7 +212,9 @@ codex plugin list
 agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 ```
 
-여기까지는 마켓플레이스 스냅샷만 새것이 됩니다. 실제로 로드되는 플러그인은 `~/.cursor/plugins/cache/<마켓플레이스>/<플러그인>/<커밋>`에 커밋별로 따로 깔리기 때문에, 재설치를 해야 새 커밋 쪽으로 옮겨갑니다. `agent plugin`에는 설치 서브커맨드가 없어서(`marketplace` 하나뿐) 이 단계는 대화형입니다 — `agent` 세션에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요. 그래도 구버전이 올라오면 `~/.cursor/plugins/cache/apps-in-toss`를 지우고 다시 설치합니다. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
+여기까지는 마켓플레이스 스냅샷만 새것이 됩니다. 실제로 로드되는 플러그인은 `~/.cursor/plugins/cache/<마켓플레이스>/<플러그인>/<커밋>`에 커밋별로 따로 깔리기 때문에, 재설치를 해야 새 커밋 쪽으로 옮겨갑니다. `agent plugin`에는 설치 서브커맨드가 없어서(`marketplace` 하나뿐) 이 단계는 대화형입니다 — `agent` 세션이나 데스크톱 에디터에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요.
+
+캐시를 지우는 걸로는 대신할 수 없습니다. 설치된 플러그인이 어느 커밋인지는 로컬 파일이 아니라 계정 쪽에 남아 있어서(에디터 state DB에는 설치 id만 있고 커밋은 없습니다), 캐시 디렉터리를 지우면 다음 세션이 **같은 커밋을** 그대로 다시 받아옵니다. 마켓플레이스 스냅샷까지 그 커밋으로 되돌아갑니다. 그러니 `~/.cursor/plugins/cache/apps-in-toss` 삭제는 갱신 수단이 아니라 재설치가 꼬였을 때의 청소로만 쓰세요. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
 
 이 절은 Claude Code `2.1.250`·codex-cli `0.149.1`·Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
 
