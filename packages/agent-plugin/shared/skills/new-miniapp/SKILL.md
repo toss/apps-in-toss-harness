@@ -275,8 +275,9 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm (--template <templ
   "보통 여기 있겠지" 하는 위치를 써 넣지도 마라 — 그렇게 만든 경로는 실측에서
   대부분 틀렸다(실측: 한 run은 `$HOME` 기반 경로를, 다른 run은 skill 이름
   세그먼트가 빠진 경로를 써서 스크립트를 아예 못 찾았다). "No such file"이 나도
-  거기서 포기하지 마라 — Step 3의 보완 fence는 **후보 여러 곳을 스스로 훑어
-  스크립트를 다시 찾으므로**, 이 자리에서 경로가 틀렸어도 그 fence가 복구한다.
+  거기서 포기하지 마라 — Step 3의 디자인 가이드 주입 블록이 **후보 다섯 곳을 스스로
+  훑어 스크립트를 다시 찾고, 그래도 없으면 자산 폴백으로 넘어가므로**, 이 자리에서
+  경로가 틀렸어도 그 블록이 복구한다.
   스크립트 파일을 Read로 열어 보지 마라 — 내용을 알 필요 없이 이 호출 하나면
   된다. 출력 해석·보고 규칙은 5-B 절.
 - **이 규칙과 실제 CLI가 어긋나면 CLI 에러가 최신 규칙이다** — `@latest`가
@@ -368,7 +369,7 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
 산출물 형상을 바꾸면 여기서 멈춰야, 어긋난 형상 위에서 후처리가 헛돌지 않는다:
 
 ```bash
-test -f ./<package_name>/apps-in-toss.config.ts && node -e "const p=require('./<package_name>/package.json'); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" && echo "형상 일치" || echo "형상 불일치"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 있음" || echo "디자인 가이드 없음"
+test -f ./<package_name>/apps-in-toss.config.ts && node -e "const p=require('./<package_name>/package.json'); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" && echo "형상 일치" || echo "형상 불일치"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && echo "디자인 가이드 마커: 있음" || echo "디자인 가이드 마커: 없음"
 ```
 
 **이 fence는 한 줄이다 — 그대로 복사해 한 번의 Bash 호출로 실행한다.** 검사
@@ -380,8 +381,10 @@ test -f ./<package_name>/apps-in-toss.config.ts && node -e "const p=require('./<
 만들고(create-ait-app 0.2.3 dist에는 이 설정 파일도 `build` 스크립트도 쓰는 코드가
 없다) 가운데 하나만 create-ait-app이 직접 쓴다 — 이 부분이 "CLI가 자기 몫과
 `ait init` 몫을 둘 다 끝냈는가"를 판정한다. `;` 뒤의 `grep` 세그먼트는 네 번째
-신호(디자인 가이드 실재)를 함께 찍는다. 판정 규칙은 아래 "디자인 가이드 실재"
-절이 정의하며, 바로 아래 "하나라도 실패하면 중단"의 대상이 **아니다**(fail-soft).
+신호(디자인 가이드 캐리어 마커 유무)를 함께 찍는다. **이 줄은 참고 신호이지 판정이
+아니다** — 판정과 보완은 아래 "디자인 가이드 주입" 절의 블록이 단독으로 하고, 이 줄이
+`있음`이어도 그 블록을 건너뛰지 않는다(마커만 있고 산출물이 빠진 형상이 실재한다).
+바로 아래 "하나라도 실패하면 중단"의 대상도 **아니다**(fail-soft).
 
 - **통과해도 아직 Step 4로 가지 않는다** — 바로 아래 **wf major 확인 → `ait` bin
   확인** 두 서브체크까지 이어서 하고, 셋을 다 통과한 뒤에 Step 4로 간다.
@@ -446,64 +449,184 @@ ls ./<package_name>/node_modules/.bin/ait
 명령은 어떤 형태로도 실행하지 않는다** — 정본 산출물은 3.x이고, 강등은 그걸
 되레 깨뜨린다.
 
-**디자인 가이드 실재** — 위 형상 fence 끝의 `grep` 세그먼트가 찍은 신호를 세
-서브체크를 마친 여기서 판정한다(따로 명령을 다시 돌릴 필요 없다 — 형상 fence를
-줄여 실행했다면 그 `grep` 한 줄만 지금 실행한다). `--no-design-guide`였으면
-`디자인 가이드 없음`이 정상이다 — 사용자가 명시적으로 뺀 것이라 보완하지 않는다.
-그 외에 `없음`이면 Step 2의 주입 세그먼트가 누락되거나 실패한 채 지나온 것이다 —
-위 형상 불일치와 달리 **중단하지 않고**, 아래 보완 fence를 **지금 이 자리에서**
-실행한다. 이 fence는 스크립트 경로 탐색→호출→확인→실패 시 1회 재시도→최종
-판정까지를 **한 호출에 전부 담고 있다** — 한 줄 그대로 복사해 실행하고,
-조각내거나 앞부분만 실행하지 마라(실측: 호출·재확인·재시도를 여러 턴에 걸쳐 직접
-조율하게 했더니 재시도 단계가 확률적으로 누락됐다 — 루프를 셸에 담으면 누락될
-단계 자체가 없다).
+**디자인 가이드 주입** — 위 세 서브체크를 마쳤으면 아래 블록을 **조건 없이 한 번**
+실행한다. 실행할지 말지 판단하지 마라 — 이미 들어가 있으면 블록이 스스로
+`있음(이미 있음)`을 찍고 아무것도 하지 않는다. 형상 fence가 찍은
+`디자인 가이드 마커:` 줄은 참고 신호일 뿐 이 블록의 실행 조건이 아니다.
 
-**Step 2에서 경로가 틀려 스크립트를 못 찾았더라도 이 fence는 반드시 실행한다.**
-앞의 `ls`가 base directory·`$CLAUDE_PLUGIN_ROOT`·프로젝트 scope·사용자 scope
-네 갈래를 한 번에 훑어 실재하는 경로를 스스로 고르기 때문에, Step 2의 틀린
-경로는 여기서 복구된다(실측: 경로가 깨진 run이 "같은 경로를 쓰는 fence는
-무의미하다"고 판단해 fence를 건너뛰고 수기 창작으로 빠졌다 — 그 전제가 틀렸다).
-첫 후보의 base directory 문자열만 Step 2와 같은 규칙으로 채우고 나머지 네 후보는
-그대로 둔다. 인자 규칙도 Step 2와 동일 — `--tds`/`--no-tossface`를 **두 호출
-모두에** 그대로 덧붙인다:
+이 블록 하나가 탐지·스크립트 경로 탐색·호출·재시도·자산 폴백·최종 판정을 전부
+담는다. **한 번의 Bash 호출로 통째로** 실행한다 — 앞을 자르든 뒤를 자르든 셸 문법
+오류로 죽는다(그게 안전장치다). 판정과 보완을 여러 턴에 걸쳐 직접 조율하게 하면
+확률적으로 누락된다: 종전에는 판정이 여기서 나고 자산 폴백은 5-B에 있어 그 사이를
+모델이 기억으로 건너야 했는데, 다섯 run 중 둘이 자산이 멀쩡히 있는데도 폴백을
+시도하지 않고 실패로 닫았다. 그 이동을 없애려고 폴백을 이 블록 안으로 들였다.
+
+**고칠 자리는 1행의 값 넷과 경로 문자열 하나뿐이다**: `D`(`--no-design-guide`면
+1)·`T`(`--tds`면 1)·`N`(`--no-tossface`면 1)·`P=`의 `<package_name>`, 그리고
+`<이 skill의 base directory>`(같은 문자열이 2군데 나오니 둘 다 Step 2와 같은 규칙으로
+채운다). 그 밖에는 한
+글자도 고치지 마라 — 특히 `bash "$G" "$P" "$@"` 두 자리에 플래그를 손으로 덧붙이지
+마라. 스크립트 인자는 1행의 `T`/`N`에서 셸이 파생한다.
 
 ```bash
-G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && { rm -f "./<package_name>/.ait-design-guide-failed"; echo "디자인 가이드 있음(보완됨)"; } || { touch "./<package_name>/.ait-design-guide-failed" 2>/dev/null; echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"; echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"; }
+{ D=0; T=0; N=0; P="./<package_name>"; MK='ait:design-guide'; R=""; OK=1; G=""; S=""; DG=""; TF=""; TE=""; MV=""; E=""; IF=0
+if [ "$D" = 1 ]; then echo "디자인 가이드 없음(--no-design-guide — 닫힘 ②)"
+elif [ ! -d "$P" ] || [ ! -f "$P/package.json" ]; then echo "디자인 가이드 주입 보류(프로젝트 경로 아님=$P) — 닫힘이 아니다: 경로 치환을 고쳐 이 블록을 다시 실행한다"
+else
+touch "$P/.ait-design-guide-failed" 2>/dev/null
+if [ "$T" = 1 ] && [ "$N" = 1 ]; then set -- --tds --no-tossface; elif [ "$T" = 1 ]; then set -- --tds; elif [ "$N" = 1 ]; then set -- --no-tossface; else set --; fi
+dgico() { if node -e "process.exit(require(require('node:path').resolve('$P','package.json')).dependencies?.react?0:1)" 2>/dev/null; then [ -s "$P/src/components/icons.tsx" ]; else [ -s "$P/src/assets/icons/close.svg" ]; fi; }
+dgent() { for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do grep -qs 'styles/base.css' "$P/$C" && return 0; done; for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -f "$P/$C" ] && return 1; done; return 0; }
+dgok() { grep -qs "<!-- $MK v" "$P/AGENTS.md" && grep -qs "<!-- $MK v" "$P/CLAUDE.md" && [ -s "$P/docs/design-guide.md" ] && { [ "$T" = 1 ] || { [ -s "$P/src/styles/tokens.css" ] && [ -s "$P/src/styles/base.css" ] && dgico && dgent; }; }; }
+if dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(이미 있음)"
+else
+for C in "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh"; do
+[ -f "$C" ] && { G="$C"; break; }
+done
+[ -n "$G" ] && { bash "$G" "$P" "$@"; dgok || bash "$G" "$P" "$@"; }
+if dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(스크립트로 보완됨 — 스크립트=$G)"
+else
+for C in "<이 skill의 base directory>/../design/assets/project" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/assets/project" "$CLAUDE_PLUGIN_ROOT/skills/design/assets/project" .claude/skills/design/assets/project "$HOME/.claude/skills/design/assets/project"; do
+[ -s "$C/memory-digest.md" ] && [ -s "$C/design-guide.md" ] && { [ "$T" = 1 ] || { [ -s "$C/tokens.css" ] && [ -s "$C/base.css" ] && [ -s "$C/icons.tsx" ] && [ -s "$C/icons/close.svg" ]; }; } && { S="$C"; break; }
+done
+if [ -z "$S" ]; then
+echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음} · 자산=못찾음)"
+echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
+else
+DG="$S/memory-digest.md"
+if [ "$T" = 1 ]; then
+TF="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX" 2>/dev/null)"
+if [ -n "$TF" ] && awk '/^아이콘: React/{print "이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{print "1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다."; next} {print}' "$S/memory-digest.md" > "$TF" 2>/dev/null && [ -s "$TF" ]; then DG="$TF"; else DG=""; OK=0; R="$R digest=FAIL"; fi
+fi
+mkdir -p "$P/docs" 2>/dev/null
+[ -f "$P/docs/design-guide.md" ] || cp "$S/design-guide.md" "$P/docs/design-guide.md" 2>/dev/null
+[ -f "$P/docs/design-guide.md" ] || { OK=0; R="$R guide=FAIL"; }
+if [ "$T" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
+mkdir -p "$P/src/styles" 2>/dev/null
+[ -f "$P/src/styles/tokens.css" ] || cp "$S/tokens.css" "$P/src/styles/tokens.css" 2>/dev/null
+[ -f "$P/src/styles/tokens.css" ] || { OK=0; R="$R tokens=FAIL"; }
+[ -f "$P/src/styles/base.css" ] || cp "$S/base.css" "$P/src/styles/base.css" 2>/dev/null
+[ -f "$P/src/styles/base.css" ] || { OK=0; R="$R base=FAIL"; }
+if [ "$N" = 1 ] && grep -q 'tossface\.css' "$P/src/styles/base.css" 2>/dev/null; then
+sed -i.aitbak -e '/tossface\.css/d' -e 's/"Tossface", -apple-system/-apple-system/' "$P/src/styles/base.css" 2>/dev/null; rm -f "$P/src/styles/base.css.aitbak"
+grep -q 'tossface\.css' "$P/src/styles/base.css" 2>/dev/null && R="$R tossface=FAIL" || R="$R tossface=off"
+fi
+if node -e "process.exit(require(require('node:path').resolve('$P','package.json')).dependencies?.react?0:1)" 2>/dev/null; then
+mkdir -p "$P/src/components" 2>/dev/null
+[ -f "$P/src/components/icons.tsx" ] || cp "$S/icons.tsx" "$P/src/components/icons.tsx" 2>/dev/null
+[ -f "$P/src/components/icons.tsx" ] || { OK=0; R="$R icons=FAIL"; }
+else
+mkdir -p "$P/src/assets/icons" 2>/dev/null; IF=0
+for I in chevron-down chevron-left chevron-right chevron-up close search; do
+[ -f "$P/src/assets/icons/$I.svg" ] || cp "$S/icons/$I.svg" "$P/src/assets/icons/$I.svg" 2>/dev/null
+[ -f "$P/src/assets/icons/$I.svg" ] || IF=1
+done
+[ "$IF" = 0 ] || { OK=0; R="$R icons=FAIL"; }
+fi
+E=""
+for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
+[ -f "$P/$C" ] && { E="$P/$C"; break; }
+done
+if [ ! -f "$P/src/styles/base.css" ]; then R="$R entry=skip"
+elif [ -n "$E" ] && grep -q 'styles/base.css' "$E" 2>/dev/null; then R="$R entry=skip"
+elif [ -n "$E" ] && [ "${E%index.css}" != "$E" ]; then
+TE="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$TE" && mv "$TE" "$E" && R="$R entry=index.css" || { OK=0; R="$R entry=FAIL"; }
+elif [ -n "$E" ] && { [ -f "$P/src/vite-env.d.ts" ] || [ -n "$(find "$P" -maxdepth 1 -name 'tsconfig*.json' -exec grep -l '"vite/client"' {} + 2>/dev/null)" ]; }; then
+TE="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "import './styles/base.css';" | cat - "$E" > "$TE" && mv "$TE" "$E" && R="$R entry=js" || { OK=0; R="$R entry=FAIL"; }
+elif [ -f "$P/index.html" ] && ! grep -q 'styles/base.css' "$P/index.html" 2>/dev/null; then
+TE="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/<\/head>/&&!d{print "    <link rel=\"stylesheet\" href=\"/src/styles/base.css\" />";d=1}{print}' "$P/index.html" > "$TE" && mv "$TE" "$P/index.html" && R="$R entry=index.html" || { OK=0; R="$R entry=FAIL"; }
+else R="$R entry=skip"; fi
+fi
+if [ "$OK" = 1 ] && [ -n "$DG" ]; then
+MV="$(grep -o "$MK v[0-9]*" "$P/AGENTS.md" 2>/dev/null | head -1)"
+if [ -n "$MV" ]; then R="$R agents=skip($MV)"
+elif { [ -s "$P/AGENTS.md" ] && printf '\n'; printf '<!-- %s v1 -->\n' "$MK"; cat "$DG"; printf '<!-- /%s -->\n' "$MK"; } >> "$P/AGENTS.md" 2>/dev/null; then R="$R agents=new"
+else OK=0; R="$R agents=FAIL"; fi
+[ "$OK" = 1 ] && { grep -qs "$MK v" "$P/CLAUDE.md" || { { [ -s "$P/CLAUDE.md" ] && printf '\n'; printf '<!-- %s v1 -->\n@AGENTS.md\n<!-- /%s -->\n' "$MK" "$MK"; } >> "$P/CLAUDE.md" 2>/dev/null || { OK=0; R="$R claude=FAIL"; }; }; }
+fi
+rm -f "$TF" 2>/dev/null
+if [ "$OK" = 1 ] && dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(자산 폴백으로 보완됨 —$R)"
+else
+echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음} · 자산 폴백 —$R)"
+echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
+fi
+fi
+fi
+fi
+fi; }
 ```
 
-`디자인 가이드`로 시작하는 줄이 곧 판정이고, 괄호 안이 원인을 함께 알려준다.
-실패하면 fence가 같은 호출 안에서 `완료 블록에 그대로 넣을 줄:` 한 줄을 더
-찍는다 — Step 6에서 쓸 문장을 그때 새로 짓지 말고 이 줄을 그대로 옮긴다.
-같은 실패는 프로젝트 안 `.ait-design-guide-failed` 흔적 파일로도 남는다. 이 흔적은
-"한 번은 실패했다"는 뜻일 뿐 최종 상태가 아니다 — 이 fence로 회복하면 여기서 지워지고,
-fence 밖에서(자산 폴백 등) 회복하면 Step 5가 실재를 대조해 지운다:
+이 블록은 어떤 경로로도 `디자인 가이드`로 시작하는 줄을 **정확히 하나** 찍는다. 그
+줄이 안 보이면 블록이 실행되지 않은 것이니 통째로 다시 실행한다. 괄호 안이 원인을
+함께 알려준다 — `스크립트=<경로>`는 스크립트를 찾아 돌렸다는 뜻이고
+`스크립트=못찾음`은 다섯 후보 어디에도 없었다는 뜻이다.
 
-- `디자인 가이드 있음(보완됨)` — 닫힘 ①로 그대로 진행한다(둘째 줄 없음).
-- `디자인 가이드 주입 실패(스크립트=<경로>)` — 스크립트는 찾았는데 두 번 다
-  실패했다. **더 반복하지 말고** 닫힘 ③으로 간다 — 둘째 줄이 최종 문장이다.
-- `디자인 가이드 주입 실패(스크립트=못찾음)` — 다섯 후보 어디에도 스크립트가
-  없다. 이때만 5-B 말미의 자산 폴백 fence(자산 경로 탐색부터 최종 판정까지 한
-  블록에 든 것)를 쓴다 — 그 fence가 자기 판정을 스스로 찍으므로 이 fence를 다시
-  돌릴 필요는 없다(다시 돌려도 멱등이라 무해하다). 자산까지 못 찾으면 그 fence가
-  그 자리에서 닫힘 ③으로 닫는다.
+- `디자인 가이드 있음(이미 있음 | 스크립트로 보완됨 — … | 자산 폴백으로 보완됨 — …)`
+  — 닫힘 ①로 진행한다.
+- `디자인 가이드 없음(--no-design-guide — 닫힘 ②)` — 닫힘 ②. 완료 블록에서 가이드
+  줄 자체를 인쇄하지 않는다.
+- `디자인 가이드 주입 실패(…)` — 닫힘 ③. **둘째 줄이 완료 블록에 그대로 넣을
+  문장이다** — 그때 새로 짓지 말고 그 줄을 옮긴다. 더 반복하지 말고, 손으로 파일을
+  만들지 마라.
+- `디자인 가이드 주입 보류(프로젝트 경로 아님=…)` — **닫힘이 아니다.** 아무것도 쓰지
+  않고 멈춘 것이니 경로 치환을 고쳐 블록을 다시 실행한다.
 
-`없음`을 확인하고도 이 fence 없이 다음 단계로 넘어가는 것은 금지다 — 탐지만 하고
-보완을 미루면 이 가드는 없는 것과 같다(실측: 한 run이 `없음`을 정확히 찍고도
-보완 없이 후처리를 이어가 "완료"를 선언했다). 스크립트는 멱등이라 이미 주입된
-프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다. 이 판정은 Step 2가
-백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력 줄(`5-B:`)을 놓쳤어도
-파일 실재가 최종 판정이다.
+`있음`은 **캐리어 마커와 산출물이 전부 자리에 있을 때만** 찍힌다 — `AGENTS.md`와
+`CLAUDE.md`의 마커, `docs/design-guide.md`, 그리고 비-TDS면 `tokens.css`·`base.css`·
+프로젝트 계열에 맞는 아이콘(React면 `icons.tsx`, vanilla면 svg)·entry 배선까지 실재를
+본다. 정본 스크립트는 개별 항목이 실패해도 마커를 붙이므로 마커만으로는 성공이
+아니고, 블록이 그걸 알고 산출물 실재로 다시 판정한다. 파일 몇 개만 들어갔는데 성공으로
+보고되는 경로는 없고, 그렇게 걸린 형상은 그 자리에서 폴백이 채워 복구한다 — entry
+배선만 빠진 프로젝트에 블록을 다시 돌리면 배선이 붙는다. 실패는 프로젝트 안 `.ait-design-guide-failed` 흔적
+파일로도 남아, 완료 블록 직전 Step 5의 `.gitignore` fence가 같은 문장을 한 번 더
+찍는다.
+
+**폴백이 산문 절차가 아니라 이 블록 안에 있는 이유** — 프로젝트로 옮겨지는 내용은
+`cp`/`cat`이 원본 바이트를 그대로 넘긴 것이다. 원본을 열어 옮겨 적는 절차를 산문으로
+맡기면 확률적으로 어긋난다(실측: 스크립트 파일만 지우고 `design/assets/project/`는
+멀쩡히 남겨 둔 조건에서 수동 폴백을 시도한 두 run이 **둘 다 원본을 한 번도 `Read`하지
+않고 지어냈다**. 한 run은 `find … -name "tokens.ts"`로 확장자를 잘못 짚어 빈손이 되자
+그대로 창작해 파일명·Tossface CDN URL·팔레트가 전부 원본과 달랐는데 완료 보고에는 그
+창작 팔레트를 "토스 공식 색상"이라고 적었고, 다른 run은 검색 시도 자체 없이 바로
+`mkdir`+`Write`로 지어내 `--space-1`~`--space-6`이 통째로 빠졌다).
+
+**어느 실패든 대체물을 지어내지 마라.** 토큰 값·하드 규칙·아이콘·다이제스트 본문의
+정본은 `design` skill의 `assets/project/` 파일이고, 그 바이트를 옮기지 못했으면 주입은
+실패한 것이다 — 그럴듯한 팔레트나 규칙을 창작해 채우지 말고 닫힘 ③으로 정직하게
+닫아라(실측: 한 run이 원본을 한 번도 읽지 않은 채 임의 팔레트로 파일 5종을 지어내고
+완료 보고에는 `디자인 가이드: 포함`으로 적었다 — 파일은 있지만 프로젝트가 따를 기준은
+없는 상태이므로, 이것은 성공이 아니라 위장이다). 지어낸 대체물을 정규 산출물처럼
+보고하는 것은 금지다. **이 블록 밖에서
+`tokens.css`·`base.css`·`icons.tsx`·아이콘 svg·`docs/design-guide.md`·`AGENTS.md`의
+`ait:design-guide` 블록을 손으로 `Write`하는 것도 같은 금지에 들어간다** — 이
+산출물들은 이 블록의 `cp`/`cat` 결과로만 존재해야 한다. 블록이 셸 오류로 죽었으면
+그대로 한 번 더 실행하고, 그래도 죽으면 손으로 만들지 말고 닫힘 ③으로 간다 — 1행의
+흔적 `touch`는 이미 실행됐으므로 블록이 통째로 죽어도 Step 5가 실패 문장을 완료
+블록으로 실어 나른다.
+
+캐리어 마커는 여는 줄 `<!-- ait:design-guide v1 -->`과 닫는 줄
+`<!-- /ait:design-guide -->`이고, grep 가드가 네 상황을 전부 처리한다 — 파일 없음(새로
+생성)·마커 없음(파일 끝에 append, 기존 내용 무손상)·`v1`(skip)·다른 버전(skip). 요약에
+v1이 아닌 버전이 찍히면(`agents=skip(ait:design-guide v0)`) 덮어쓰지 말고 "가이드
+버전이 다릅니다 — `/ait:design`으로 갱신할 수 있습니다"만 알린다. `AGENTS.md`에
+들어가는 본문은 `memory-digest.md` 원문 그대로다(한 글자도 고쳐 쓰지 않는다).
+`CLAUDE.md`에는 `@AGENTS.md` 한 줄만 넣는다 — 같은 본문을 두 파일에 넣으면 세션마다
+두 배로 실린다. entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry 첫
+import → `index.html`의 `<link>`이고, 첫 번째로 해당되는 하나만 쓴다.
+
+이 판정은 Step 2가 백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력
+줄(`5-B:`)을 놓쳤어도 파일 실재가 최종 판정이다. 스크립트는 멱등이라 이미 주입된
+프로젝트에 다시 돌아도 전 항목 skip으로 끝나 무해하다.
 
 **이 판정이 닫히기 전에는 Step 6의 완료 블록을 인쇄하지 않는다.** 닫힘은 세
-가지뿐이다: ① `있음` 확인, ② `--no-design-guide`의 의도된 `없음`, ③ 재시도
-소진 후 실패 — ③은 완료 보고에 `디자인 가이드: 주입 실패 — /ait:design으로
-나중에 넣을 수 있습니다` 줄을 반드시 포함해야 닫힌 것이다. **실패 항목을 완료
-보고에서 조용히 빼고 성공처럼 보고하는 것도, 성공도 실패도 말하지 않고 항목 자체를
-통째로 빼는 것도 금지다**(실측: 한 run은 완료 표에서 그 항목만 누락시켰고, 다른
-run은 위 판정을 정확히 찍고도 13턴 뒤 완료 보고에서 "디자인 가이드"를 한 번도
-쓰지 않았다). 그래서 이 문장을 기억에 맡기지 않는다 — 위 fence가 실패 시 흔적
-파일을 남기고, Step 5의 `.gitignore` fence가 완료 블록 직전에 그 흔적을 다시 읽어
-같은 문장을 한 번 더 찍는다.
+가지뿐이다: ① `있음` 확인, ② `--no-design-guide`의 의도된 `없음`, ③ 실패 —
+③은 완료 보고에 `디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다`
+줄을 반드시 포함해야 닫힌 것이다. **실패 항목을 완료 보고에서 조용히 빼고 성공처럼
+보고하는 것도, 성공도 실패도 말하지 않고 항목 자체를 통째로 빼는 것도 금지다**(실측:
+한 run은 완료 표에서 그 항목만 누락시켰고, 다른 run은 판정을 정확히 찍고도 13턴 뒤
+완료 보고에서 "디자인 가이드"를 한 번도 쓰지 않았다). 그래서 이 문장을 기억에 맡기지
+않는다 — 위 블록이 실패 시 흔적 파일을 남기고, Step 5의 `.gitignore` fence가 완료 블록
+직전에 그 흔적을 보고 같은 문장을 한 번 더 찍는다.
 
 ### 4. 후처리 B — devtools 배선 확인 (브라우저 dev 활성화)
 
@@ -603,20 +726,23 @@ create-ait-app 템플릿은 `.gitignore`를 **이미 포함**한다(create-vite
 빠져 있다. 없을 때만 한 줄을 append한다:
 
 ```bash
-test -f "./<package_name>/.ait-design-guide-failed" && { grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && rm -f "./<package_name>/.ait-design-guide-failed" || echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"; }
+test -f "./<package_name>/.ait-design-guide-failed" && echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
 test -f ./<package_name>/.gitignore && { \
   grep -qx '\*\.ait' ./<package_name>/.gitignore || \
-    printf '\n# Apps in Toss bundle artifacts\n*.ait\n' >> ./<package_name>/.gitignore; \
+    printf '\n# Apps in Toss bundle artifacts\n*.ait\n.ait-design-guide-failed\n' >> ./<package_name>/.gitignore; \
 }
 ```
 
-첫 줄은 `.gitignore`와 무관한, 디자인 가이드 판정의 마지막 재확인이다. 흔적 파일이
-남아 있을 때만 동작하고, 그때도 흔적을 그대로 믿지 않고 `AGENTS.md`의 마커 실재를
-다시 확인한다 — 실재하면 그 사이 어떤 경로로든(자산 폴백, 수동 작성) 회복된 것이므로
-흔적을 지우고 아무것도 찍지 않고, 실재하지 않으면 완료 블록에 넣을 문장을 여기서 한 번
-더 찍는다. **실재 대조가 이 줄의 요점이다** — 흔적만 보고 판단하면 fence 밖에서 회복한
-경우에 없는 실패를 알리게 된다(실측: 폴백으로 채운 run에서 흔적이 안 지워져 이 줄이
-거짓 실패를 찍었고, 모델은 그 신호를 무시하고 성공으로 보고했다). 이 fence는 완료 블록
+첫 줄은 `.gitignore`와 무관한, 디자인 가이드 실패의 마지막 재인쇄다. Step 3의 블록이
+실패로 닫았을 때만 흔적 파일이 남아 있고, 그때 완료 블록에 넣을 문장을 여기서 한 번 더
+찍는다. **여기서 재판정은 하지 않는다** — 판정 권한은 Step 3의 블록 하나에 있고, 그
+블록이 성공 분기에서 흔적을 지우고 실패 분기에서만 남긴다. 종전 이 자리에는 마커 실재
+재대조가 있었는데, 그것은 자산 폴백이 5-B(이 fence보다 뒤)에 있어 "fence 밖에서 회복"
+경로가 존재하던 시절의 장치다. 폴백이 Step 3 블록 안으로 들어와 그 경로가 사라졌고,
+여기서 마커만 보는 약한 재대조를 남기면 블록이 정직하게 남긴 흔적을 지워 거짓 성공을
+만든다 — 블록은 마커에 더해 산출물 실재까지 보는데 이 fence는 `--tds` 여부를 몰라 같은
+판정을 재현할 수 없기 때문이다. 흔적 파일 이름을 `.gitignore`에 함께 넣는 것은 실패한
+프로젝트에 상태 파일이 커밋되지 않게 하려는 것이다. 이 fence는 완료 블록
 직전의 마지막 필수 셸 호출이라, Step 6은 열몇 턴 전 판정을 되짚지 않고 방금 나온 이
 출력만 보면 된다. `--no-design-guide`(닫힘 ②)와 성공(닫힘 ①)은 흔적 파일이 없어
 아무것도 찍히지 않는다 — 그대로 기존 규칙(줄 생략 / 정상 나열)이다. 세그먼트를 빼고
@@ -642,8 +768,9 @@ test -f ./<package_name>/.gitignore && { \
 프로젝트에서 나중에 어떤 세션이 화면을 만들어도 같은 기준을 따른다. 절차의 정본은
 `design` skill의 `references/project-guide.md`다.
 
-`--no-design-guide`면 이 단계 전체가 없던 것이 된다(Step 2에서 주입 세그먼트를
-뺐다) — 사용자가 명시적으로 뺀 것이라 실패 보고도 하지 않고 바로 Step 6으로 간다.
+`--no-design-guide`면 이 단계 전체가 없던 것이 된다(Step 2에서 주입 세그먼트를 뺐고,
+Step 3의 블록은 1행 `D=1`로 그 사실을 받아 `없음(닫힘 ②)`으로 닫았다) — 사용자가
+명시적으로 뺀 것이라 실패 보고도 하지 않고 바로 Step 6으로 간다.
 
 **실행은 Step 2의 명령 체인에서 이미 일어났다.** 이 절은 그 출력 끝의 `5-B:`
 요약 한 줄을 해석해 보고하는 곳이다. 플래그 효과: `--tds`는 CSS·아이콘·entry
@@ -651,16 +778,9 @@ test -f ./<package_name>/.gitignore && { \
 `base.css`의 Tossface CDN `@import`와 폰트 스택 항목만 지운다(`.tf` 클래스는
 남긴다).
 
-Step 2 출력에 `5-B:` 줄이 없으면(세그먼트가 누락된 채 실행된 경우) 지금 여기서
-Step 3의 보완 fence(호출→확인→재시도→판정이 한 줄에 든 것)를 **한 번의 Bash
-호출로** 실행한다 — Step 3 말미의 실재 확인이 이 누락을 먼저 잡아 보완했다면 그
-실행의 요약 줄을 해석하면 되고, 다시 실행해도 멱등이라 무해하다.
-`--tds`/`--no-tossface`는 Step 2와 같은 규칙으로 두 호출 모두에 덧붙이고,
-스크립트를 Read로 열어 보거나 나눠 실행하지 않는다:
-
-```bash
-G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh" 2>/dev/null | head -1)"; bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md || bash "${G:-/dev/null}" "./<package_name>"; grep -qs 'ait:design-guide' ./<package_name>/AGENTS.md && { rm -f "./<package_name>/.ait-design-guide-failed"; echo "디자인 가이드 있음(보완됨)"; } || { touch "./<package_name>/.ait-design-guide-failed" 2>/dev/null; echo "디자인 가이드 주입 실패(스크립트=${G:-못찾음})"; echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"; }
-```
+Step 2 출력에 `5-B:` 줄이 없어도 여기서 새로 할 일은 없다 — Step 3의 블록이 파일
+실재로 이미 판정하고 필요하면 보완했다. 그 블록을 한 번도 실행하지 않았다면 여기서 새
+블록을 만들지 말고 Step 3의 그 블록을 그대로 실행한다.
 
 전 항목이 `test -f`/`grep` 멱등 가드를 인라인으로 갖고(이미 있으면 건드리지
 않는다), 개별 실패가 나머지를 죽이지 않으며(`set -e`를 쓰지 않는다), 마지막 줄이
@@ -670,139 +790,14 @@ G="$(ls "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh
 **이 단계는 scaffold를 중단시키지 않는다.** Step 3(형상 가드) 실패는 이후 후처리가
 딛고 설 산출물 자체가 없다는 뜻이라 즉시 멈추지만, 디자인 가이드는 나중에
 `/ait:design`으로 다시 넣을 수 있는 부가물이다 — 요약에 `FAIL`이 섞여도 Step 6까지
-간다. 결과는 산문 한 줄로만 알린다: 전부 성공이면 "디자인 가이드를 프로젝트에
-넣었습니다.", 실패 항목이 있으면 그 항목과 "`/ait:design`으로 나중에 다시 넣을 수
-있습니다."를 함께. 이미 있어서 skip된 항목은 나열하지 않는다.
+간다. 결과 보고는 여기서 따로 문장을 짓지 않는다 — Step 3 블록의 판정 줄이 정본이고,
+완료 블록에 무엇을 인쇄할지는 그 절의 닫힘 규칙과 Step 6의 인쇄 규칙이 정한다. 이미
+있어서 skip된 항목은 나열하지 않는다.
 
-요약이 `assets=UNRESOLVED`면 스크립트의 `SRC` 후보가 전부 빗나간 것이다 — 그때만
-아래 자산 폴백 fence를 쓴다. 스크립트 파일 자체를 찾지 못했을 때
-(`스크립트=못찾음`)도 같은 fence를 쓴다.
-
-**이 폴백도 산문 절차가 아니라 셸 블록 하나다** — 자산 위치 탐색·파일 복사·entry
-배선·캐리어 append·최종 판정이 전부 이 안에 있고, 프로젝트로 옮겨지는 내용은
-`cp`/`cat`이 원본 바이트를 그대로 넘긴 것이다. 원본을 열어 옮겨 적는 절차를
-산문으로 맡기면 확률적으로 어긋난다(실측: 스크립트 파일만 지우고
-`design/assets/project/`는 멀쩡히 남겨 둔 조건에서 수동 폴백을 시도한 두 run이
-**둘 다 원본을 한 번도 `Read`하지 않고 지어냈다**. 한 run은
-`find … -name "tokens.ts"`로 확장자를 잘못 짚어 빈손이 되자 그대로 창작해
-파일명·Tossface CDN URL·팔레트가 전부 원본과 달랐는데 완료 보고에는 그 창작
-팔레트를 "토스 공식 색상"이라고 적었고, 다른 run은 검색 시도 자체 없이 바로
-`mkdir`+`Write`로 지어내 `--space-1`~`--space-6`이 통째로 빠졌다).
-
-`--tds`로 스캐폴드했으면 첫 줄의 `T=0`을 `T=1`로, `--no-tossface`면 같은 줄의
-`N=0`을 `N=1`로 바꾸고, `<이 skill의 base directory>`와 `<package_name>`을 Step 2와
-같은 규칙으로 채운다. 그 넷 말고는 한 글자도 고치지 말고 **한 번의 Bash 호출로
-통째로** 실행한다 — 줄 단위로 잘라 실행하면 셸 문법 오류로 죽는다(그게
-안전장치다):
-
-```bash
-T=0; N=0; P="./<package_name>"; MK='ait:design-guide'; R=""; OK=1
-A="$(ls "<이 skill의 base directory>/../design/assets/project/memory-digest.md" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/assets/project/memory-digest.md" "$CLAUDE_PLUGIN_ROOT/skills/design/assets/project/memory-digest.md" .claude/skills/design/assets/project/memory-digest.md "$HOME/.claude/skills/design/assets/project/memory-digest.md" 2>/dev/null | head -1)"
-if [ -z "$A" ]; then
-  touch "$P/.ait-design-guide-failed" 2>/dev/null
-  echo "디자인 가이드 주입 실패(자산=못찾음)"
-  echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
-else
-  S="$(dirname "$A")"; DG="$A"; TF=""
-  if [ "$T" = 1 ]; then
-    TF="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX" 2>/dev/null)"
-    if [ -n "$TF" ] && awk '/^아이콘: React/{print "이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{print "1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다."; next} {print}' "$A" > "$TF" 2>/dev/null && [ -s "$TF" ]; then DG="$TF"; else DG=""; OK=0; R="$R digest=FAIL"; fi
-  fi
-  mkdir -p "$P/docs" 2>/dev/null
-  [ -f "$P/docs/design-guide.md" ] || cp "$S/design-guide.md" "$P/docs/design-guide.md" 2>/dev/null
-  [ -f "$P/docs/design-guide.md" ] || { OK=0; R="$R guide=FAIL"; }
-  if [ "$T" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
-    mkdir -p "$P/src/styles" 2>/dev/null
-    [ -f "$P/src/styles/tokens.css" ] || cp "$S/tokens.css" "$P/src/styles/tokens.css" 2>/dev/null
-    [ -f "$P/src/styles/tokens.css" ] || { OK=0; R="$R tokens=FAIL"; }
-    [ -f "$P/src/styles/base.css" ] || cp "$S/base.css" "$P/src/styles/base.css" 2>/dev/null
-    [ -f "$P/src/styles/base.css" ] || { OK=0; R="$R base=FAIL"; }
-    if [ "$N" = 1 ] && grep -q 'tossface' "$P/src/styles/base.css" 2>/dev/null; then
-      sed -i.aitbak -e '/tossface\.css/d' -e 's/"Tossface", -apple-system/-apple-system/' "$P/src/styles/base.css" 2>/dev/null && rm -f "$P/src/styles/base.css.aitbak" && R="$R tossface=off"
-    fi
-    if node -e "process.exit(require(require('node:path').resolve('$P','package.json')).dependencies?.react?0:1)" 2>/dev/null; then
-      mkdir -p "$P/src/components" 2>/dev/null
-      [ -f "$P/src/components/icons.tsx" ] || cp "$S/icons.tsx" "$P/src/components/icons.tsx" 2>/dev/null
-      [ -f "$P/src/components/icons.tsx" ] || { OK=0; R="$R icons=FAIL"; }
-    else
-      mkdir -p "$P/src/assets/icons" 2>/dev/null; IF=0
-      for I in chevron-down chevron-left chevron-right chevron-up close search; do
-        [ -f "$P/src/assets/icons/$I.svg" ] || cp "$S/icons/$I.svg" "$P/src/assets/icons/$I.svg" 2>/dev/null
-        [ -f "$P/src/assets/icons/$I.svg" ] || IF=1
-      done
-      [ "$IF" = 0 ] || { OK=0; R="$R icons=FAIL"; }
-    fi
-    E=""
-    for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
-      [ -f "$P/$C" ] && { E="$P/$C"; break; }
-    done
-    if [ ! -f "$P/src/styles/base.css" ]; then R="$R entry=skip"
-    elif [ -n "$E" ] && grep -q 'styles/base.css' "$E" 2>/dev/null; then R="$R entry=skip"
-    elif [ -n "$E" ] && [ "${E%index.css}" != "$E" ]; then
-      ET="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$ET" && mv "$ET" "$E" && R="$R entry=index.css" || { OK=0; R="$R entry=FAIL"; }
-    elif [ -n "$E" ] && [ -f "$P/src/vite-env.d.ts" ]; then
-      ET="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "import './styles/base.css';" | cat - "$E" > "$ET" && mv "$ET" "$E" && R="$R entry=js" || { OK=0; R="$R entry=FAIL"; }
-    elif [ -f "$P/index.html" ] && ! grep -q 'styles/base.css' "$P/index.html"; then
-      ET="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/<\/head>/&&!d{print "    <link rel=\"stylesheet\" href=\"/src/styles/base.css\" />";d=1}{print}' "$P/index.html" > "$ET" && mv "$ET" "$P/index.html" && R="$R entry=index.html" || { OK=0; R="$R entry=FAIL"; }
-    else OK=0; R="$R entry=FAIL"; fi
-  fi
-  if [ "$OK" = 1 ] && [ -n "$DG" ]; then
-    MV="$(grep -o "$MK v[0-9]*" "$P/AGENTS.md" 2>/dev/null | head -1)"
-    if [ -n "$MV" ]; then R="$R agents=skip($MV)"; else
-      { [ -s "$P/AGENTS.md" ] && printf '\n'; printf '<!-- %s v1 -->\n' "$MK"; cat "$DG"; printf '<!-- /%s -->\n' "$MK"; } >> "$P/AGENTS.md" 2>/dev/null
-    fi
-    grep -q "$MK v" "$P/CLAUDE.md" 2>/dev/null || { { [ -s "$P/CLAUDE.md" ] && printf '\n'; printf '<!-- %s v1 -->\n@AGENTS.md\n<!-- /%s -->\n' "$MK" "$MK"; } >> "$P/CLAUDE.md" 2>/dev/null; }
-  fi
-  rm -f "$TF" 2>/dev/null
-  if [ "$OK" = 1 ] && grep -qs "$MK" "$P/AGENTS.md"; then
-    rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(자산 폴백으로 보완됨 —$R)"
-  else
-    touch "$P/.ait-design-guide-failed" 2>/dev/null
-    echo "디자인 가이드 주입 실패(자산 폴백 —$R)"
-    echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
-  fi
-fi
-```
-
-판정 줄은 스크립트 경로 fence와 같은 규칙으로 읽는다. 괄호 안의 `항목=FAIL`이
-실패한 자리다. `있음`은 **산출물이 전부 자리에 있고 캐리어 마커까지 붙었을
-때만** 찍힌다 — 항목 하나라도 실패하면 fence가 마커를 아예 붙이지 않아 흔적
-파일이 남고, Step 5의 마지막 재확인이 그 사실을 완료 블록으로 실어 나른다. 파일
-몇 개만 들어갔는데 성공으로 보고되는 경로는 없다.
-
-- `디자인 가이드 있음(자산 폴백으로 보완됨 — <항목들>)` — 닫힘 ①로 진행한다.
-- `디자인 가이드 주입 실패(자산=못찾음)` — 다섯 후보 어디에도 자산이 없다. 이때
-  fence는 프로젝트에 파일을 **하나도 쓰지 않는다**. 닫힘 ③이다.
-- `디자인 가이드 주입 실패(자산 폴백 — <항목들>)` — 자산은 찾았는데 괄호 안
-  항목이 실패했다. 닫힘 ③이다.
-
-**어느 실패든 대체물을 지어내지 마라.** 토큰 값·하드 규칙·아이콘·다이제스트
-본문의 정본은 `design` skill의 `assets/project/` 파일이고, 그 바이트를 옮기지
-못했으면 폴백은 실패한 것이다 — 그럴듯한 팔레트나 규칙을 창작해 채우지 말고 닫힘
-③으로 정직하게 닫아라(실측: 한 run이 원본을 한 번도 읽지 않은 채 임의 팔레트로
-파일 5종을 지어내고 완료 보고에는 `디자인 가이드: 포함`으로 적었다 — 파일은
-있지만 프로젝트가 따를 기준은 없는 상태이므로, 이것은 성공이 아니라 위장이다).
-지어낸 대체물을 정규 산출물처럼 보고하는 것은 금지다. **이 fence 밖에서
-`tokens.css`·`base.css`·`icons.tsx`·아이콘 svg·`docs/design-guide.md`·`AGENTS.md`의
-`ait:design-guide` 블록을 손으로 `Write`하는 것도 같은 금지에 들어간다** — 이
-산출물들은 위 fence의 `cp`/`cat` 결과로만 존재해야 한다. fence가 셸 오류로 죽었으면
-블록을 그대로 한 번 더 실행하고, 그래도 죽으면 손으로 만들지 말고 닫힘 ③으로 간다 —
-여기까지 오는 모든 경로에서 Step 3의 fence가 이미 `.ait-design-guide-failed`를
-남겨 뒀으므로, 이 fence가 통째로 죽어도 Step 5의 재확인이 실패 문장을 완료 블록으로
-실어 나른다.
-
-캐리어 마커는 여는 줄 `<!-- ait:design-guide v1 -->`과 닫는 줄
-`<!-- /ait:design-guide -->`이고, 스크립트의 grep 가드가 네 상황을 전부 처리한다 —
-파일 없음(새로 생성)·마커 없음(파일 끝에 append, 기존 내용 무손상)·`v1`(skip)·다른
-버전(skip). 요약에 v1이 아닌 버전이 찍히면(`agents=skip(ait:design-guide v0)`)
-덮어쓰지 말고 "가이드 버전이 다릅니다 — `/ait:design`으로 갱신할 수 있습니다"만
-알린다. `AGENTS.md`에 들어가는 본문은 `memory-digest.md` 원문 그대로다(한 글자도
-고쳐 쓰지 않는다). `CLAUDE.md`에는 `@AGENTS.md` 한 줄만 넣는다 — 같은 본문을 두
-파일에 넣으면 세션마다 두 배로 실린다.
-
-entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry 첫 import →
-`index.html`의 `<link>`, 첫 번째로 해당되는 하나만 쓴다 — 판단(앰비언트 타입 확인
-등 세부 분기)은 스크립트 안에 있다.
+요약에 `assets=UNRESOLVED`나 `FAIL`이 섞였어도 여기서 폴백을 다시 돌릴 것은 없다 —
+자산 폴백은 Step 3 블록 안에 있고, 그 블록이 산출물 실재로 최종 판정을 이미 냈다.
+**여기서 새 블록을 만들 것도, 빠진 파일을 손으로 `Write`할 것도 없다** — 지어내기 금지와
+`Write` 금지, 마커 규약, entry 우선순위는 전부 Step 3 "디자인 가이드 주입" 절에 있다.
 
 ### 6. 다음 단계 안내 + dev 서버 기동
 
@@ -850,7 +845,10 @@ entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry �
 생략하는 게 아니라 그 콜론 뒤의 문장(`디자인 가이드: 주입 실패 — /ait:design으로
 나중에 넣을 수 있습니다`)으로 바꿔 인쇄한다** — 닫힘 규칙 ③이다. 몇 턴 전 판정을
 기억해내 문장을 새로 짓지 말고, 방금 그 출력을 그대로 옮긴다. 항목을 조용히 빼면
-사용자는 주입이 됐는지 안 됐는지 알 수 없다.
+사용자는 주입이 됐는지 안 됐는지 알 수 없다. 판정 줄이 여러 번 나왔으면 **가장 나중
+것이 이긴다** — 한 블록 안에서 스크립트가 실패한 뒤 자산 폴백으로 회복한 경우가 있다.
+`디자인 가이드 주입 보류(…)`는 닫힘이 아니다 — 완료 블록을 인쇄하지 말고 Step 3의
+경로 치환을 고쳐 그 블록을 다시 실행한다.
 
 이모지 서체(Tossface)는 **기본으로 배선된다**(5-B가 넣은 `src/styles/base.css`
 첫 줄의 CDN `@import`). 번들 용량은 늘지 않지만 CDN에 닿지 못하는 환경에서는
