@@ -8,27 +8,7 @@ A harness monorepo that lets you go from an empty directory to a published Apps 
 
 You'll need Node 24+ (npm ships with it), git (adding the plugin marketplace fetches this repository via git clone), and an Apps in Toss console account.
 
-### One command
-
-One line in a terminal sets up every host it finds. Name a host as an argument to narrow it.
-
-```bash
-# Every detected host (with no argument it shows what it found and lets you pick)
-npx -y -p github:toss/apps-in-toss-harness ait-setup
-
-# Pick a host — claude, codex, cursor, or all
-npx -y -p github:toss/apps-in-toss-harness ait-setup cursor
-```
-
-The installer registers the marketplace, installs the plugin, turns on auto-update for Claude Code, and checks whether the console MCP is actually connected. Running it again is safe: finished steps are skipped, and a re-run doubles as a refresh. Only the steps a person genuinely has to do are listed, numbered, at the end. Which ones those are depends on the host: the console MCP's browser OAuth applies everywhere, and Cursor adds the first `/plugins` pick plus turning on Enable Auto Refresh. Because Cursor enables plugins per project, a run without `--project` also leaves per-project activation to you.
-
-**You don't need a CLI on your PATH — the desktop apps are enough.** Claude and Codex each ship a CLI inside the app bundle, and the installer finds it and installs with it. That CLI reads and writes the same user state (`~/.claude`, `~/.codex`) as the terminal CLI, so nothing diverges. The Cursor app carries no such CLI, so that is the one case that stays an instruction.
-
-If the plugin is installed but does not show up, or shows up stale, `ait-setup --repair` tells you which of the known causes you hit. It only diagnoses; it deletes nothing.
-
-Common options: `--dry-run` (print the plan only), `--yes` (skip confirmation), `--project` (also wire the current project), `--lang ko|en`, `--help`.
-
-### Installing from inside an agent
+### Using it from Claude Code
 
 Paste the block below into Claude Code's chat input box (in the desktop app, that's the Code tab session — not a terminal), one line at a time, top to bottom. It takes you from entering the harness all the way to the entry map.
 
@@ -56,12 +36,12 @@ For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OA
 If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
 
 ```
-Install the Apps in Toss mini-app dev plugin. In the shell, run `npx -y -p github:toss/apps-in-toss-harness ait-setup claude --yes`, then tell me any manual steps its output still lists.
+Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`. Do not edit `~/.claude/settings.json` by hand. When done, tell me the two manual steps left (authorize apps-in-toss-console under `/mcp`, and turn on Enable auto-update for the apps-in-toss marketplace under `/plugin`), and tell me to open a new session and run /ait:welcome.
 ```
 
-That sentence calls the same installer as "One command" above. It registers the marketplace, installs the plugin, and turns auto-update on, then reports whatever is left. Don't ask an agent to edit `~/.claude/settings.json` by hand: the `source` under `extraKnownMarketplaces` belongs to the CLI (a sparse registration keeps `sparsePaths` in there), and overwriting it wholesale makes the declaration disagree with the on-disk clone, after which Claude Code stops finding that marketplace at all.
+That sentence hands only marketplace registration and plugin installation to the agent; console MCP authorization and auto-update stay with you. Don't ask an agent to edit `~/.claude/settings.json` by hand: the `source` under `extraKnownMarketplaces` belongs to the CLI (a sparse registration keeps `sparsePaths` in there), and overwriting it wholesale makes the declaration disagree with the on-disk clone, after which Claude Code stops finding that marketplace at all. Turn auto-update on from the `/plugin` screen instead.
 
-Installed plugins only load starting from a new session. Follow whatever steps the installer lists at the end, then open a new session and run `/ait:welcome`.
+Installed plugins only load starting from a new session. Finish the two remaining steps, then open a new session and run `/ait:welcome`.
 
 ### Using it from Codex
 
