@@ -4,7 +4,15 @@
 
 A harness monorepo that lets you go from an empty directory to a published Apps in Toss mini-app without ever leaving your AI coding agent (Claude Code, Codex, Cursor). The agent plugin `ait` acts as the orchestrator, weaving scaffolding, development, debugging, bundling, registration, and operations into a single flow. Scaffolding is built on `create-ait-app`; docs lookup and console integration are handled by two MCP servers enabled by default; and dev/debug tooling like devtools and debugger are wired in only when you opt in.
 
-## Quick start
+## What it does
+
+- **Scaffold** — Run `/ait:new <app-name>` to create the mini-app. Devtools wiring, a design guide (tokens, hard rules, icons), and the Tossface emoji font all land in the project with it.
+- **Develop** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can build without a Toss app.
+- **Debug** — When a problem only reproduces on a phone, run `/ait:setup-debugger` to wire up the debug MCP, then `/ait:debug` to analyze local and on-device state.
+- **Check it on a real device** — Run `/ait:test-on-device` to build the bundle, upload it to the console, confirm the compile, then open it in the real Toss app via the link the tools return.
+- **Register it** — Submit it for review from the console, then move on to release and promotion once it passes; check post-deploy status with `miniapp_get_status`/`bundle_list`.
+
+## Install
 
 You'll need Node 24+ (npm ships with it), git (adding the plugin marketplace fetches this repository via git clone), and an Apps in Toss console account.
 
@@ -29,6 +37,9 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 /ait:welcome
 ```
 
+<details>
+<summary>Step-by-step details · plain-language install if slash commands don't work</summary>
+
 For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OAuth authorization. For step 4, `/plugin` opens the plugin manager: choose Marketplaces, select `apps-in-toss`, and press Enable auto-update. Third-party marketplaces start with auto-update off, so you have to turn it on once. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app.
 
 **Don't search for `ait` in the desktop app's plugin browser.** Search results only surface plugins from the official marketplace, so `ait` won't show up there. Installation goes through pasting the commands above into the chat input, not through search.
@@ -42,6 +53,8 @@ Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin m
 That sentence hands only marketplace registration and plugin installation to the agent; console MCP authorization and auto-update stay with you. Don't ask an agent to edit `~/.claude/settings.json` by hand: the `source` under `extraKnownMarketplaces` belongs to the CLI (a sparse registration keeps `sparsePaths` in there), and overwriting it wholesale makes the declaration disagree with the on-disk clone, after which Claude Code stops finding that marketplace at all. Turn auto-update on from the `/plugin` screen instead.
 
 Installed plugins only load starting from a new session. Finish the two remaining steps, then open a new session and run `/ait:welcome`.
+
+</details>
 
 ### Using it from Codex
 
@@ -60,6 +73,9 @@ codex mcp login apps-in-toss-console
 # 4) See the harness entry map
 /ait:welcome
 ```
+
+<details>
+<summary>Right after install · differences from Claude Code · non-interactive notes · MCP-servers-only path</summary>
 
 Right after installing, both MCP servers show up in `codex mcp list` (the docs MCP shows `Auth` as `Unsupported` since it needs none; the console MCP shows `Not logged in` until you authorize).
 
@@ -89,6 +105,8 @@ On that path, don't drop `--oauth-client-id mcp-gateway`: the auth server doesn'
 
 The commands in this section were verified against codex-cli `0.146.0`; the non-interactive notes were additionally verified against `0.146.1`.
 
+</details>
+
 ### Using it from Cursor
 
 Cursor reads its own plugin format, so this repo ships a Cursor manifest (`.cursor-plugin/`) alongside the Claude Code one. Register the marketplace from the CLI, then install inside an interactive session (there is no non-interactive install command yet).
@@ -107,6 +125,9 @@ agent
 # 4) See the harness entry map (skills use flat names, no namespace)
 /welcome
 ```
+
+<details>
+<summary>Activation scope · authorizing the console MCP · differences from Claude Code · non-interactive notes · MCP-servers-only path</summary>
 
 The install is **activated per project.** Installing from `/plugins` records it in the current project's `.cursor/settings.json`, and other projects need their own activation. Sessions in an activated project expose all nine skills and the four docs-MCP tools right away. Plugin-provided MCP servers do not appear in `agent mcp list`; that command only covers servers registered in `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global).
 
@@ -154,65 +175,11 @@ Once authorized, `agent mcp list` shows both servers as `ready` (the docs MCP ne
 
 The commands in this section were verified against Cursor CLI `2026.08.25-3e8eec8`.
 
-## Updating
+</details>
 
-A new plugin version only registers when `plugin.json` gets a version bump.
+## Authentication
 
-**Claude Code.** With auto-update turned on in step 4 of the quick start, Claude Code refreshes the marketplace and updates the plugin in the background within ten minutes of a session start. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
-
-```
-claude plugin marketplace update apps-in-toss
-claude plugin update ait@apps-in-toss
-```
-
-`claude plugin update` defaults to the `user` scope. If you installed at a different scope, pass it (for example `--scope project`). Afterwards, run `/reload-plugins` in your session or start a new one.
-
-If you would rather not open a terminal, paste this into the chat input:
-
-```
-Update the ait plugin to the latest version. In the shell, run `claude plugin list --json` to find the scope of `ait@apps-in-toss`, then run `claude plugin marketplace update apps-in-toss` and `claude plugin update ait@apps-in-toss --scope <that scope>`, and when done tell me to run /reload-plugins.
-```
-
-**Codex.** Codex re-checks every registered git marketplace when a session starts and pulls new commits on its own. There is nothing to turn on. To update right now, run the commands below; the new version loads from the next session.
-
-```
-codex plugin marketplace upgrade apps-in-toss
-codex plugin list
-```
-
-`codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
-
-**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. The `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI, and Cursor's documentation says turning it on keeps plugins in step with the branch the marketplace tracks. In our own measurement, though, the local snapshot (both the marketplace clone and the install cache) sat unchanged 12 hours and 13 commits after the toggle went on, with the editor running and a fresh CLI session opened.
-
-`agent plugin marketplace update` sounds like the refresh, but it fetches nothing. It prints `✓ Updated marketplace apps-in-toss: 1 plugin indexed` while the clone's `.git/FETCH_HEAD` and `.git/HEAD` stay put and HEAD stays on the old commit (checked twice, on two different snapshots). All it does is re-index the snapshot already on disk.
-
-What moves the snapshot is `add`. Run it again even when the marketplace is already registered and it re-clones at the current HEAD of the tracked branch — the commit-hash directory is replaced wholesale, and you don't need `remove` first. Re-running the install script from the quick start does the same thing.
-
-```
-agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
-```
-
-That refreshes the marketplace snapshot only. The plugin that actually loads lives under `~/.cursor/plugins/cache/<marketplace>/<plugin>/<commit>`, one directory per commit, so it moves to the new commit only when you reinstall. `agent plugin` has no install subcommand (`marketplace` is the only one), which makes this step interactive: in an `agent` session or the desktop editor, run `/plugins`, uninstall ait, and install it again.
-
-Clearing the cache is no substitute. Which commit an installed plugin sits on is account-side state, not a local file — the editor's state DB holds an install id and no commit — so deleting the cache directory makes the next session fetch **the same commit** again, and it drags the marketplace snapshot back to that commit too. Treat deleting `~/.cursor/plugins/cache/apps-in-toss` as cleanup for a botched reinstall, not as a way to update. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
-
-This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
-
-## Development journey
-
-1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `apps-in-toss-console` from `/mcp`, then turn on auto-update from `/plugin`.
-2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
-3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
-4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.
-   - At a desktop browser's default width, the mini-app layout looks different from the real thing. Check it at mobile width from the AIT panel's Viewport tab (or your browser's responsive mode).
-   - The real Toss app's WebView runs on WebKit (Safari's engine) on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari too before shipping, or verify it on a real device with step 5's `/ait:test-on-device`.
-5. **on-device check** — Run `/ait:test-on-device` to upload the bundle to the console and check it **in the real Toss app**. This is the standard path for "I want to run it on my phone": build the bundle, upload it, confirm the compile, then open the entry link the tools returned. It is not a React Native-only path: every project that produces an `.ait` bundle follows the same procedure. (`ait build` requires `brand.icon`, so run step 7's `/ait:design` first if you don't have the assets yet.)
-6. **debug (optional)** — When a problem only reproduces on the phone, run `/ait:setup-debugger` to wire up the debug MCP, then `/ait:debug` to inspect local and on-device state.
-7. **design** — Run `/ait:design [screen or request]` to create and fix screens: from scratch when the project has none, or by diagnosing existing ones and editing the code to clear hard-rule violations (body text size floor, 44px touch targets, bottom CTA safe area). The same command maps a Figma design and produces the registration assets — logo, thumbnail, screenshots. Also needed to fill in the `brand.icon` field required by `ait build`.
-8. **ship** — The bundle build and upload already happened in step 5 (on-device check). When you're ready to release, submit it for review from the console (`review_*` / `bundle_submit_review`, an irreversible transition, so the harness skill never calls it automatically), then move on to release and promotion once it passes.
-9. **operate** — Check post-deploy status with the console MCP's `miniapp_get_status` and `bundle_list`.
-
-Station 4 (auth) only covers the client-side `appLogin()` mock. The server side of mini-app user login (backend token verification) is deliberately out of scope for the harness. The focus is on getting a working mini-app (client) done first; server-related knowledge and skills will be added in later stages. That's why there's no dedicated login-wiring step in this flow.
+`apps-in-toss-docs` needs no auth and connects as soon as it's installed. `apps-in-toss-console` needs a one-time OAuth authorization; the per-host steps are in the collapsed details inside the [Install](#install) section above.
 
 ## Just ask for it — five kinds of plain-language examples
 
@@ -256,7 +223,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:ux-writing [screen or files]` | Checks screen copy against UX writing principles and proposes before/after rewrites — the rewrite counterpart to design's G6 (copy) grading (never applies without user confirmation) | 8. design counterpart |
 | `ait build` (terminal command) | Generates a `.ait` native bundle from `granite.config.ts`. Fails if `brand.icon` is empty | 5. register+ship |
 
-Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands; the agent calls the console MCP tools below directly. Station 4 (auth) has no dedicated login-wiring command because the server side is deliberately out of scope for the harness (see above). The client side already works via the `appLogin()` mock.
+Stations 5 (register/upload) and 6 (status) don't have dedicated slash commands; the agent calls the console MCP tools below directly. Station 4 (auth) has no dedicated login-wiring command because the server side is deliberately out of scope for the harness (see [Limitations](#limitations) below). The client side already works via the `appLogin()` mock.
 
 ## MCP servers
 
@@ -267,13 +234,77 @@ Installing the plugin registers two MCP servers, in Claude Code, Codex, and Curs
 | `apps-in-toss-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | None — connected as soon as it's installed | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
 | `apps-in-toss-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — one-time authorization from `/mcp`; needs-auth until then | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
 
-The harness's standard registration and upload flow uses only the console MCP's OAuth session. It doesn't use a Deploy Key (the workspace-scoped credential the console UI calls an "API key") path, since the related skill has already been removed. The Deploy Key term and its auth model are still an open question being tracked, not yet finalized.
-
 The docs are also readable without MCP. The developer center publishes the same documentation in a form agents can read directly: `https://developers-apps-in-toss.toss.im/llms.txt` is the full index, `https://developers-apps-in-toss.toss.im/llms-full.txt` is the complete text, and appending `?ask=<question>` to any docs page URL returns an answer grounded in that documentation, with source links. Use this path when the plugin isn't installed yet or MCP can't be attached.
+
+## Development journey
+
+1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `apps-in-toss-console` from `/mcp`, then turn on auto-update from `/plugin`.
+2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
+3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
+4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.
+5. **on-device check** — Run `/ait:test-on-device` to upload the bundle to the console and check it **in the real Toss app**. This is the standard path for "I want to run it on my phone": build the bundle, upload it, confirm the compile, then open the entry link the tools returned. It is not a React Native-only path: every project that produces an `.ait` bundle follows the same procedure. (`ait build` requires `brand.icon`, so run step 7's `/ait:design` first if you don't have the assets yet.)
+6. **debug (optional)** — When a problem only reproduces on the phone, run `/ait:setup-debugger` to wire up the debug MCP, then `/ait:debug` to inspect local and on-device state.
+7. **design** — Run `/ait:design [screen or request]` to create and fix screens: from scratch when the project has none, or by diagnosing existing ones and editing the code to clear hard-rule violations (body text size floor, 44px touch targets, bottom CTA safe area). The same command maps a Figma design and produces the registration assets — logo, thumbnail, screenshots. Also needed to fill in the `brand.icon` field required by `ait build`.
+8. **ship** — The bundle build and upload already happened in step 5 (on-device check). When you're ready to release, submit it for review from the console, then move on to release and promotion once it passes (for what the harness doesn't do here, see [Limitations](#limitations) below).
+9. **operate** — Check post-deploy status with the console MCP's `miniapp_get_status` and `bundle_list`.
+
+## Limitations
+
+- Submitting for review (`review_*` / `bundle_submit_review`), releasing, and promoting are not things the harness does — it's an irreversible transition, so the harness skill never calls it automatically; you handle it directly from the console.
+- Station 4 (auth) only covers the client-side `appLogin()` mock. The server side of mini-app user login (backend token verification) is deliberately out of scope for the harness. The focus is on getting a working mini-app (client) done first; server-related knowledge and skills will be added in later stages. That's why the development journey has no dedicated login-wiring step.
+- The harness's standard registration and upload flow uses only the console MCP's OAuth session. It doesn't use a Deploy Key (the workspace-scoped credential the console UI calls an "API key") path, since the related skill has already been removed. The Deploy Key term and its auth model are still an open question being tracked, not yet finalized.
+- At a desktop browser's default width, the mini-app layout looks different from the real thing. Check it at mobile width from the AIT panel's Viewport tab (or your browser's responsive mode). The real Toss app's WebView runs on WebKit (Safari's engine) on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari too before shipping, or verify it with `/ait:test-on-device` on a real device.
+
+## Updating
+
+A new plugin version only registers when `plugin.json` gets a version bump.
+
+**Claude Code.** With auto-update turned on in step 4 of Install, Claude Code refreshes the marketplace and updates the plugin in the background within ten minutes of a session start. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
+
+```
+claude plugin marketplace update apps-in-toss
+claude plugin update ait@apps-in-toss
+```
+
+`claude plugin update` defaults to the `user` scope. If you installed at a different scope, pass it (for example `--scope project`). Afterwards, run `/reload-plugins` in your session or start a new one.
+
+If you would rather not open a terminal, paste this into the chat input:
+
+```
+Update the ait plugin to the latest version. In the shell, run `claude plugin list --json` to find the scope of `ait@apps-in-toss`, then run `claude plugin marketplace update apps-in-toss` and `claude plugin update ait@apps-in-toss --scope <that scope>`, and when done tell me to run /reload-plugins.
+```
+
+**Codex.** Codex re-checks every registered git marketplace when a session starts and pulls new commits on its own. There is nothing to turn on. To update right now, run the commands below; the new version loads from the next session.
+
+```
+codex plugin marketplace upgrade apps-in-toss
+codex plugin list
+```
+
+`codex plugin marketplace upgrade` prints no version, so confirm with the VERSION column of `codex plugin list`. Inside the TUI, `/plugins` followed by `Ctrl+U` does the same thing.
+
+**Cursor.** Cursor handles updates per marketplace rather than per plugin. The installed-plugin screen only offers Uninstall, with no update button. The `apps-in-toss` marketplace entry in `/plugins` carries an Enable Auto Refresh toggle, in both the desktop editor and the `agent` CLI, and Cursor's documentation says turning it on keeps plugins in step with the branch the marketplace tracks. In our own measurement, though, the local snapshot (both the marketplace clone and the install cache) sat unchanged 12 hours and 13 commits after the toggle went on, with the editor running and a fresh CLI session opened.
+
+`agent plugin marketplace update` sounds like the refresh, but it fetches nothing. It prints `✓ Updated marketplace apps-in-toss: 1 plugin indexed` while the clone's `.git/FETCH_HEAD` and `.git/HEAD` stay put and HEAD stays on the old commit (checked twice, on two different snapshots). All it does is re-index the snapshot already on disk.
+
+What moves the snapshot is `add`. Run it again even when the marketplace is already registered and it re-clones at the current HEAD of the tracked branch — the commit-hash directory is replaced wholesale, and you don't need `remove` first.
+
+```
+agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
+```
+
+That refreshes the marketplace snapshot only. The plugin that actually loads lives under `~/.cursor/plugins/cache/<marketplace>/<plugin>/<commit>`, one directory per commit, so it moves to the new commit only when you reinstall. `agent plugin` has no install subcommand (`marketplace` is the only one), which makes this step interactive: in an `agent` session or the desktop editor, run `/plugins`, uninstall ait, and install it again.
+
+Clearing the cache is no substitute. Which commit an installed plugin sits on is account-side state, not a local file — the editor's state DB holds an install id and no commit — so deleting the cache directory makes the next session fetch **the same commit** again, and it drags the marketplace snapshot back to that commit too. Treat deleting `~/.cursor/plugins/cache/apps-in-toss` as cleanup for a botched reinstall, not as a way to update. Reinstalling keeps your console MCP authorization and `.cursor/mcp.json` entries, which live separately from the plugin install.
+
+This section was verified against Claude Code `2.1.250`, codex-cli `0.149.1`, and Cursor CLI `2026.08.25-3e8eec8`.
 
 ## Packages
 
 Three packages managed as a pnpm workspace.
+
+<details>
+<summary>See package breakdown</summary>
 
 | Package | Directory | Role | Published |
 |---|---|---|---|
@@ -284,6 +315,8 @@ Three packages managed as a pnpm workspace.
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
 `debugger` and `debug-console` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.2.2`, `debug-console-v0.1.5`), and downloads don't require authentication.
+
+</details>
 
 ## If you run into a problem
 

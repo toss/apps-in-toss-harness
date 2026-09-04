@@ -4,7 +4,15 @@
 
 AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주할 수 있게 하는 harness monorepo입니다. 에이전트 플러그인 `ait`가 오케스트레이터가 되어 scaffold·개발·디버그·번들·등록·운영을 하나의 흐름으로 엮습니다. scaffolding은 `create-ait-app` 기반입니다. 문서 조회와 콘솔 연동은 기본으로 켜지는 MCP 서버 두 개가 담당하며 devtools·debugger 같은 개발/디버깅 도구는 필요할 때만 opt-in으로 배선됩니다.
 
-## 빠른 시작
+## 무엇을 하는가
+
+- **스캐폴드하기** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘)와 이모지 서체 Tossface가 프로젝트에 들어갑니다.
+- **개발하기** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
+- **디버그하기** — 폰에서만 재현되는 문제는 `/ait:setup-debugger`로 디버그 MCP를 배선한 뒤 `/ait:debug`로 로컬·실기기 상태를 분석합니다.
+- **실기기에서 확인하기** — `/ait:test-on-device`로 번들을 빌드해 콘솔에 올리고 컴파일까지 확인한 뒤, 도구가 돌려준 링크로 실제 토스 앱에서 엽니다.
+- **등록하기** — 검수를 제출해 통과하면 릴리즈·프로모션으로 넘기고, 배포 후 상태는 `miniapp_get_status`·`bundle_list`로 조회합니다.
+
+## 설치
 
 준비물은 Node 24 이상(npm이 동봉됩니다), git(플러그인 마켓플레이스 추가가 이 저장소를 git clone으로 받아옵니다), 앱인토스 콘솔 계정입니다.
 
@@ -29,6 +37,9 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 /ait:welcome
 ```
 
+<details>
+<summary>단계별 설명 · 슬래시 명령이 안 먹히면 자연어로 설치하기</summary>
+
 3번에서는 `/mcp` 목록에 뜬 `apps-in-toss-console`을 선택해 OAuth 인가를 완료하세요. 4번에서는 `/plugin` 화면에서 Marketplaces를 고르고 `apps-in-toss`를 선택한 뒤 Enable auto-update를 누르세요. 서드파티 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하기 때문에 한 번은 직접 켜야 합니다. `/ait:welcome` 대신 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수도 있습니다.
 
 **데스크톱 앱의 플러그인 브라우저에서 `ait`를 검색하지 마세요.** 검색 결과에는 공식 마켓플레이스 플러그인만 나오고 `ait`는 뜨지 않습니다. 설치 경로는 검색이 아니라 위 블록의 명령을 입력창에 붙여넣는 것입니다.
@@ -42,6 +53,8 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 이 문장은 마켓플레이스 등록과 플러그인 설치까지만 에이전트에게 맡기고, 콘솔 MCP 인가와 자동 업데이트는 사람 몫으로 남깁니다. `~/.claude/settings.json`을 직접 고치라고 시키지 마세요. `extraKnownMarketplaces`의 `source`는 CLI가 소유하는 값이고(sparse 등록이면 `sparsePaths`가 들어 있습니다), 그걸 통째로 덮어쓰면 선언과 clone이 어긋나 Claude Code가 그 마켓플레이스를 아예 못 찾게 됩니다. 자동 업데이트는 `/plugin` 화면의 토글로 켜세요.
 
 설치된 플러그인은 새 세션부터 로드됩니다. 남은 두 단계를 마치고 새 세션에서 `/ait:welcome`을 실행하세요.
+
+</details>
 
 ### Codex에서 쓰기
 
@@ -60,6 +73,9 @@ codex mcp login apps-in-toss-console
 # 4) harness 진입 지도 확인
 /ait:welcome
 ```
+
+<details>
+<summary>설치 직후 확인 · Claude Code와 다른 점 · 비대화형 참고 · MCP 서버만 등록하기</summary>
 
 설치 직후 `codex mcp list`에 MCP 서버 2개가 바로 나타납니다(문서 MCP는 인증 불필요라 `Auth`가 `Unsupported`, 콘솔 MCP는 인가 전까지 `Not logged in`으로 표시).
 
@@ -89,6 +105,8 @@ codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-to
 
 이 절의 명령은 codex-cli `0.146.0`에서 확인했고 비대화형 단서는 `0.146.1`에서 추가 확인했습니다.
 
+</details>
+
 ### Cursor에서 쓰기
 
 Cursor는 자체 플러그인 포맷을 읽으므로 이 repo에는 Claude Code manifest 옆에 Cursor manifest(`.cursor-plugin/`)가 함께 들어 있습니다. 마켓플레이스 등록은 CLI에서 하고 설치는 대화형 세션에서 합니다(비대화형 설치 명령은 아직 없습니다).
@@ -107,6 +125,9 @@ agent
 # 4) harness 진입 지도 확인 (skill은 네임스페이스 없이 플랫 이름)
 /welcome
 ```
+
+<details>
+<summary>활성화 범위 · 콘솔 MCP 인가 · Claude Code와 다른 점 · 비대화형 참고 · MCP 서버만 등록하기</summary>
 
 설치는 **프로젝트 단위로 활성화**됩니다. `/plugins`에서 설치하면 현재 프로젝트의 `.cursor/settings.json`에 기록됩니다. 다른 프로젝트에서 쓰려면 거기서도 활성화해야 합니다. 활성화된 프로젝트의 세션에는 skill 9종과 문서 MCP 도구 4종이 바로 노출됩니다. 플러그인이 제공하는 MCP 서버는 `agent mcp list`에는 나오지 않습니다 — 그 명령은 `.cursor/mcp.json`(프로젝트)·`~/.cursor/mcp.json`(전역)에 등록된 서버 전용입니다.
 
@@ -154,65 +175,11 @@ agent mcp login apps-in-toss-console
 
 이 절의 명령은 Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
 
-## 업데이트
+</details>
 
-플러그인은 `plugin.json`의 버전이 올라간 릴리즈만 새 버전으로 인식합니다.
+## 인증
 
-**Claude Code.** 빠른 시작 4번에서 자동 업데이트를 켜뒀다면 세션이 시작되고 10분 안에 백그라운드에서 마켓플레이스를 다시 읽고 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
-
-```
-claude plugin marketplace update apps-in-toss
-claude plugin update ait@apps-in-toss
-```
-
-`claude plugin update`의 기본 scope는 `user`입니다. 설치할 때 다른 scope를 골랐다면 `--scope project`처럼 붙이세요. 실행한 뒤에는 세션에서 `/reload-plugins`를 입력하거나 새 세션을 여세요.
-
-터미널을 열기 번거로우면 입력창에 이렇게 붙여넣어도 됩니다.
-
-```
-ait 플러그인을 최신으로 올려줘. 쉘에서 `claude plugin list --json`으로 `ait@apps-in-toss`의 scope를 확인한 뒤 `claude plugin marketplace update apps-in-toss`와 `claude plugin update ait@apps-in-toss --scope <확인한 scope>`를 실행하고, 끝나면 /reload-plugins 를 입력하라고 안내해줘.
-```
-
-**Codex.** Codex는 세션을 시작할 때 등록된 git 마켓플레이스를 스스로 다시 확인하고 새 커밋이 있으면 받아옵니다. 따로 켤 설정은 없습니다. 지금 바로 올리려면 아래를 실행하세요. 새 버전은 새 세션부터 로드됩니다.
-
-```
-codex plugin marketplace upgrade apps-in-toss
-codex plugin list
-```
-
-`codex plugin marketplace upgrade`는 버전을 출력하지 않으니 `codex plugin list`의 VERSION 열로 확인하세요. TUI 안에서는 `/plugins`를 열고 `Ctrl+U`를 눌러도 같습니다.
-
-**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있고(데스크톱 에디터와 `agent` CLI 양쪽), 공식 문서는 켜두면 마켓플레이스가 추적하는 브랜치의 변경을 따라 플러그인이 갱신된다고 안내합니다. 다만 실측에서는 토글을 켠 뒤 13커밋·12시간이 지나도 로컬 스냅샷(마켓플레이스 clone·설치 캐시 양쪽)이 그대로였습니다. 에디터가 떠 있고 새 CLI 세션을 열어도 같았습니다.
-
-이름이 갱신처럼 보이는 `agent plugin marketplace update`도 새 커밋을 가져오지 않습니다. `✓ Updated marketplace apps-in-toss: 1 plugin indexed`를 출력하지만 clone의 `.git/FETCH_HEAD`·`.git/HEAD`는 그대로고 HEAD도 옛 커밋에 머뭅니다(서로 다른 스냅샷에서 두 번 확인). 이미 받아둔 스냅샷을 다시 색인할 뿐입니다.
-
-스냅샷을 옮기는 건 `add`입니다. 이미 등록돼 있어도 다시 실행하면 추적 브랜치의 현재 HEAD로 새로 클론합니다 — 커밋 해시로 갈린 디렉터리가 통째로 교체되고, `remove`를 먼저 할 필요는 없습니다. 빠른 시작의 설치 스크립트를 다시 돌려도 같은 일이 일어납니다.
-
-```
-agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
-```
-
-여기까지는 마켓플레이스 스냅샷만 새것이 됩니다. 실제로 로드되는 플러그인은 `~/.cursor/plugins/cache/<마켓플레이스>/<플러그인>/<커밋>`에 커밋별로 따로 깔리기 때문에, 재설치를 해야 새 커밋 쪽으로 옮겨갑니다. `agent plugin`에는 설치 서브커맨드가 없어서(`marketplace` 하나뿐) 이 단계는 대화형입니다 — `agent` 세션이나 데스크톱 에디터에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요.
-
-캐시를 지우는 걸로는 대신할 수 없습니다. 설치된 플러그인이 어느 커밋인지는 로컬 파일이 아니라 계정 쪽에 남아 있어서(에디터 state DB에는 설치 id만 있고 커밋은 없습니다), 캐시 디렉터리를 지우면 다음 세션이 **같은 커밋을** 그대로 다시 받아옵니다. 마켓플레이스 스냅샷까지 그 커밋으로 되돌아갑니다. 그러니 `~/.cursor/plugins/cache/apps-in-toss` 삭제는 갱신 수단이 아니라 재설치가 꼬였을 때의 청소로만 쓰세요. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
-
-이 절은 Claude Code `2.1.250`·codex-cli `0.149.1`·Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
-
-## 개발 여정
-
-1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `apps-in-toss-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
-2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
-3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘 6종·`docs/design-guide.md`)와 이모지 서체 Tossface가 프로젝트에 들어갑니다. 에이전트가 자동으로 읽는 `AGENTS.md`에 규칙 요약이 남아, 이후 어떤 세션에서 화면을 만들어도 같은 기준이 적용됩니다 (`--no-design-guide`로 통째로, `--no-tossface`로 서체만 뺄 수 있습니다).
-4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
-   - 데스크탑 브라우저 기본 폭에서는 미니앱 레이아웃이 실제와 다르게 보입니다. AIT 패널의 Viewport 탭(또는 브라우저 반응형 모드)에서 모바일 폭으로 확인하세요.
-   - 실기기 토스 앱 WebView는 iOS에서 WebKit(Safari) 엔진을 씁니다. Chromium 기반 로컬 브라우저와 렌더링이 다를 수 있으니 출시 전 Safari로도 열어보거나 5의 `/ait:test-on-device`로 실기기에서 확인하세요.
-5. **실기기 확인** — `/ait:test-on-device`로 번들을 콘솔에 올려 **실제 토스 앱에서** 확인합니다. "폰에서 돌려보고 싶다"의 정규 경로가 이것입니다 — 번들 빌드 → 콘솔 업로드 → 컴파일 확인 → 도구가 돌려준 링크로 열기. React Native 전용 경로가 아니라 `.ait` 번들을 만드는 모든 프로젝트가 같은 절차를 씁니다. (`ait build`가 `brand.icon`을 요구하므로 자산이 없으면 7의 `/ait:design`을 먼저 돌립니다.)
-6. **debug (선택)** — 폰에서만 재현되는 문제를 코드 레벨로 파고들 때 `/ait:setup-debugger`로 디버그 MCP를 배선한 뒤 `/ait:debug`로 로컬·실기기 상태를 분석합니다.
-7. **design** — `/ait:design [화면 또는 요청]`으로 화면을 만들고 고칩니다. 화면이 하나도 없는 프로젝트에서 처음부터 그려 내는 것, 이미 있는 화면을 진단하고 코드를 고치는 것, Figma 디자인을 반영하는 것, 등록용 로고·썸네일·스크린샷을 산출하는 것이 전부 한 명령에 있습니다. 본문 글자 크기 하한·터치 44px·하단 CTA safe-area 같은 하드 규칙에 걸리면 지적으로 끝내지 않고 코드를 직접 고칩니다. `ait build`가 요구하는 `brand.icon`을 채우는 데도 이 단계가 필요합니다.
-8. **ship** — 번들 빌드·업로드는 5(실기기 확인)에서 이미 끝나 있습니다. 배포 준비가 되면 콘솔에서 검수를 제출하고(`review_*`·`bundle_submit_review` — 비가역 전환이라 harness skill은 자동 호출하지 않습니다), 통과 후 릴리즈·프로모션으로 넘깁니다.
-9. **operate** — 콘솔 MCP의 `miniapp_get_status`, `bundle_list`로 배포 후 상태를 조회합니다.
-
-station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미니앱 사용자 로그인의 서버 측(백엔드 토큰 검증 연동)은 의도적으로 harness 범위 밖입니다. 작동하는 미니앱(클라이언트)을 완성하는 데 먼저 집중하고 서버 관련 knowledge·skill은 이후 단계적으로 추가할 예정입니다. 그래서 이 흐름에는 별도 로그인 배선 단계가 없습니다.
+`apps-in-toss-docs`는 인증이 필요 없어 설치 즉시 연결됩니다. `apps-in-toss-console`은 OAuth로 최초 1회만 인가하면 되고, 호스트별 인가 절차는 위 [설치](#설치) 섹션의 펼침 안내에 있습니다.
 
 ## 말로 시키기 — 자연어 예시 5종
 
@@ -256,7 +223,7 @@ station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미�
 | `/ait:ux-writing [화면 또는 파일]` | 화면 카피를 문구 원칙으로 점검해 before/after를 제안 — design skill의 G6(카피) 판정 재작성 조력 (사용자 확인 없이는 적용하지 않음) | 8. design 짝 |
 | `ait build` (터미널 명령) | `granite.config.ts` 기반으로 `.ait` 네이티브 번들을 생성. `brand.icon`이 비어 있으면 실패합니다 | 5. register+ship |
 
-station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령이 없습니다. 에이전트가 아래 콘솔 MCP 도구를 직접 호출합니다. station 4(auth)는 서버 구현이 의도적으로 harness 범위 밖이라(위 참고) 별도 로그인 배선 명령이 없습니다. 클라이언트 쪽은 `appLogin()` mock으로 이미 동작합니다.
+station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령이 없습니다. 에이전트가 아래 콘솔 MCP 도구를 직접 호출합니다. station 4(auth)는 서버 구현이 의도적으로 harness 범위 밖이라(아래 [제약사항](#제약사항) 참고) 별도 로그인 배선 명령이 없습니다. 클라이언트 쪽은 `appLogin()` mock으로 이미 동작합니다.
 
 ## MCP 서버
 
@@ -267,13 +234,77 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 | `apps-in-toss-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | 없음 — 설치 즉시 connected | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
 | `apps-in-toss-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — `/mcp`에서 1회 인가, 인가 전에는 needs-auth | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
 
-이 harness의 정규 등록·업로드 흐름은 콘솔 MCP의 OAuth 세션만 사용하며 Deploy Key(콘솔 UI가 "API 키"로 부르는 워크스페이스-scope 자격증명) 경로는 쓰지 않습니다. 관련 skill은 이미 제거되었습니다. Deploy Key 용어·인증 모델 자체는 아직 정합이 확정되지 않은 open question으로 추적 중입니다.
-
 MCP 없이 문서만 읽는 경로도 있습니다. 개발자센터가 같은 문서를 에이전트가 바로 읽는 형태로도 냅니다. `https://developers-apps-in-toss.toss.im/llms.txt`가 전체 색인, `https://developers-apps-in-toss.toss.im/llms-full.txt`가 본문 전문이고, 아무 문서 페이지 URL 뒤에 `?ask=<질문>`을 붙이면 그 문서를 근거로 한 답이 출처 링크와 함께 돌아옵니다. 플러그인을 아직 설치하지 않았거나 MCP를 붙일 수 없는 환경에서 쓰는 경로입니다.
+
+## 개발 여정
+
+1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `apps-in-toss-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
+2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
+3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘 6종·`docs/design-guide.md`)와 이모지 서체 Tossface가 프로젝트에 들어갑니다. 에이전트가 자동으로 읽는 `AGENTS.md`에 규칙 요약이 남아, 이후 어떤 세션에서 화면을 만들어도 같은 기준이 적용됩니다 (`--no-design-guide`로 통째로, `--no-tossface`로 서체만 뺄 수 있습니다).
+4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
+5. **실기기 확인** — `/ait:test-on-device`로 번들을 콘솔에 올려 **실제 토스 앱에서** 확인합니다. "폰에서 돌려보고 싶다"의 정규 경로가 이것입니다 — 번들 빌드 → 콘솔 업로드 → 컴파일 확인 → 도구가 돌려준 링크로 열기. React Native 전용 경로가 아니라 `.ait` 번들을 만드는 모든 프로젝트가 같은 절차를 씁니다. (`ait build`가 `brand.icon`을 요구하므로 자산이 없으면 7의 `/ait:design`을 먼저 돌립니다.)
+6. **debug (선택)** — 폰에서만 재현되는 문제를 코드 레벨로 파고들 때 `/ait:setup-debugger`로 디버그 MCP를 배선한 뒤 `/ait:debug`로 로컬·실기기 상태를 분석합니다.
+7. **design** — `/ait:design [화면 또는 요청]`으로 화면을 만들고 고칩니다. 화면이 하나도 없는 프로젝트에서 처음부터 그려 내는 것, 이미 있는 화면을 진단하고 코드를 고치는 것, Figma 디자인을 반영하는 것, 등록용 로고·썸네일·스크린샷을 산출하는 것이 전부 한 명령에 있습니다. 본문 글자 크기 하한·터치 44px·하단 CTA safe-area 같은 하드 규칙에 걸리면 지적으로 끝내지 않고 코드를 직접 고칩니다. `ait build`가 요구하는 `brand.icon`을 채우는 데도 이 단계가 필요합니다.
+8. **ship** — 번들 빌드·업로드는 5(실기기 확인)에서 이미 끝나 있습니다. 배포 준비가 되면 콘솔에서 검수를 제출하고 통과 후 릴리즈·프로모션으로 넘깁니다(harness가 다루지 않는 범위는 아래 [제약사항](#제약사항) 참고).
+9. **operate** — 콘솔 MCP의 `miniapp_get_status`, `bundle_list`로 배포 후 상태를 조회합니다.
+
+## 제약사항
+
+- 검수 제출(`review_*`·`bundle_submit_review`)·릴리즈·프로모션은 harness가 하지 않습니다 — 비가역 전환이라 harness skill은 자동 호출하지 않으며, 콘솔에서 직접 진행해야 합니다.
+- station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미니앱 사용자 로그인의 서버 측(백엔드 토큰 검증 연동)은 의도적으로 harness 범위 밖입니다. 작동하는 미니앱(클라이언트)을 완성하는 데 먼저 집중하고 서버 관련 knowledge·skill은 이후 단계적으로 추가할 예정입니다. 그래서 개발 여정에는 별도 로그인 배선 단계가 없습니다.
+- 이 harness의 정규 등록·업로드 흐름은 콘솔 MCP의 OAuth 세션만 사용하며 Deploy Key(콘솔 UI가 "API 키"로 부르는 워크스페이스-scope 자격증명) 경로는 쓰지 않습니다. 관련 skill은 이미 제거되었습니다. Deploy Key 용어·인증 모델 자체는 아직 정합이 확정되지 않은 open question으로 추적 중입니다.
+- 데스크탑 브라우저 기본 폭에서는 미니앱 레이아웃이 실제와 다르게 보입니다. AIT 패널의 Viewport 탭(또는 브라우저 반응형 모드)에서 모바일 폭으로 확인하세요. 실기기 토스 앱 WebView는 iOS에서 WebKit(Safari) 엔진을 씁니다. Chromium 기반 로컬 브라우저와 렌더링이 다를 수 있으니 출시 전 Safari로도 열어보거나 `/ait:test-on-device`로 실기기에서 확인하세요.
+
+## 업데이트
+
+플러그인은 `plugin.json`의 버전이 올라간 릴리즈만 새 버전으로 인식합니다.
+
+**Claude Code.** 설치 4번에서 자동 업데이트를 켜뒀다면 세션이 시작되고 10분 안에 백그라운드에서 마켓플레이스를 다시 읽고 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
+
+```
+claude plugin marketplace update apps-in-toss
+claude plugin update ait@apps-in-toss
+```
+
+`claude plugin update`의 기본 scope는 `user`입니다. 설치할 때 다른 scope를 골랐다면 `--scope project`처럼 붙이세요. 실행한 뒤에는 세션에서 `/reload-plugins`를 입력하거나 새 세션을 여세요.
+
+터미널을 열기 번거로우면 입력창에 이렇게 붙여넣어도 됩니다.
+
+```
+ait 플러그인을 최신으로 올려줘. 쉘에서 `claude plugin list --json`으로 `ait@apps-in-toss`의 scope를 확인한 뒤 `claude plugin marketplace update apps-in-toss`와 `claude plugin update ait@apps-in-toss --scope <확인한 scope>`를 실행하고, 끝나면 /reload-plugins 를 입력하라고 안내해줘.
+```
+
+**Codex.** Codex는 세션을 시작할 때 등록된 git 마켓플레이스를 스스로 다시 확인하고 새 커밋이 있으면 받아옵니다. 따로 켤 설정은 없습니다. 지금 바로 올리려면 아래를 실행하세요. 새 버전은 새 세션부터 로드됩니다.
+
+```
+codex plugin marketplace upgrade apps-in-toss
+codex plugin list
+```
+
+`codex plugin marketplace upgrade`는 버전을 출력하지 않으니 `codex plugin list`의 VERSION 열로 확인하세요. TUI 안에서는 `/plugins`를 열고 `Ctrl+U`를 눌러도 같습니다.
+
+**Cursor.** Cursor는 갱신을 플러그인이 아니라 마켓플레이스 단위로 다룹니다. 설치된 플러그인 화면에는 Uninstall만 있고 업데이트 버튼이 없습니다. `/plugins`의 `apps-in-toss` 마켓플레이스 항목에 Enable Auto Refresh 토글이 있고(데스크톱 에디터와 `agent` CLI 양쪽), 공식 문서는 켜두면 마켓플레이스가 추적하는 브랜치의 변경을 따라 플러그인이 갱신된다고 안내합니다. 다만 실측에서는 토글을 켠 뒤 13커밋·12시간이 지나도 로컬 스냅샷(마켓플레이스 clone·설치 캐시 양쪽)이 그대로였습니다. 에디터가 떠 있고 새 CLI 세션을 열어도 같았습니다.
+
+이름이 갱신처럼 보이는 `agent plugin marketplace update`도 새 커밋을 가져오지 않습니다. `✓ Updated marketplace apps-in-toss: 1 plugin indexed`를 출력하지만 clone의 `.git/FETCH_HEAD`·`.git/HEAD`는 그대로고 HEAD도 옛 커밋에 머뭅니다(서로 다른 스냅샷에서 두 번 확인). 이미 받아둔 스냅샷을 다시 색인할 뿐입니다.
+
+스냅샷을 옮기는 건 `add`입니다. 이미 등록돼 있어도 다시 실행하면 추적 브랜치의 현재 HEAD로 새로 클론합니다 — 커밋 해시로 갈린 디렉터리가 통째로 교체되고, `remove`를 먼저 할 필요는 없습니다.
+
+```
+agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
+```
+
+여기까지는 마켓플레이스 스냅샷만 새것이 됩니다. 실제로 로드되는 플러그인은 `~/.cursor/plugins/cache/<마켓플레이스>/<플러그인>/<커밋>`에 커밋별로 따로 깔리기 때문에, 재설치를 해야 새 커밋 쪽으로 옮겨갑니다. `agent plugin`에는 설치 서브커맨드가 없어서(`marketplace` 하나뿐) 이 단계는 대화형입니다 — `agent` 세션이나 데스크톱 에디터에서 `/plugins`를 열어 ait를 Uninstall하고 다시 설치하세요.
+
+캐시를 지우는 걸로는 대신할 수 없습니다. 설치된 플러그인이 어느 커밋인지는 로컬 파일이 아니라 계정 쪽에 남아 있어서(에디터 state DB에는 설치 id만 있고 커밋은 없습니다), 캐시 디렉터리를 지우면 다음 세션이 **같은 커밋을** 그대로 다시 받아옵니다. 마켓플레이스 스냅샷까지 그 커밋으로 되돌아갑니다. 그러니 `~/.cursor/plugins/cache/apps-in-toss` 삭제는 갱신 수단이 아니라 재설치가 꼬였을 때의 청소로만 쓰세요. 재설치해도 콘솔 MCP 인가와 `.cursor/mcp.json` 등록분은 플러그인 설치와 별개 상태라 유지됩니다.
+
+이 절은 Claude Code `2.1.250`·codex-cli `0.149.1`·Cursor CLI `2026.08.25-3e8eec8`에서 확인했습니다.
 
 ## 구성
 
 pnpm 워크스페이스로 관리되는 패키지 3개입니다.
+
+<details>
+<summary>패키지 구성 보기</summary>
 
 | 패키지 | 디렉터리 | 역할 | 배포 |
 |---|---|---|---|
@@ -284,6 +315,8 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 `shared/internal-protocol`은 `debugger`·`debug-console`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계). `packages/`가 아닌 `shared/`에 살며 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.
 
 `debugger`·`debug-console`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.2.2`·`debug-console-v0.1.5`). 다운로드에 별도 인증이 필요하지 않습니다.
+
+</details>
 
 ## 문제가 생기면
 
