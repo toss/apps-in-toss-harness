@@ -41,7 +41,9 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 - **`@apps-in-toss/devtools` 배선과 번들 설정은 CLI가 한다** — create-ait-app이
   scaffold 직후 `ait init`을 호출해 devtools를 devDependency로 넣고 번들러 설정에
   unplugin을 주입하며, `apps-in-toss.config.ts`와 `build`/`build:vite`/`deploy`
-  스크립트도 같은 실행이 만든다(실측 2026-08-07, `create-ait-app@0.2.3`). 순정
+  스크립트도, `.gitignore`의 `*.ait` 줄도 같은 실행이 만든다(실측 2026-08-07,
+  `create-ait-app@0.2.3` — `*.ait` 줄은 `@apps-in-toss/cli` 3.1.1 dist 실측
+  2026-09-07). 순정
   create-vite 템플릿에는 SDK mock이 없어 브라우저에서 SDK 호출이 실패하지만(샘플
   코드가 "샌드박스앱/토스앱에서 실행해주세요" alert를 띄운다) 이 배선 덕에 토스 앱
   없이 `npm run dev`로 바로 개발할 수 있다. `ait init`은 실패해도 CLI가 "완료"로
@@ -59,8 +61,8 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   등록·업로드)가 명확히 안내된다.
 
 이 skill은 **scaffold 호출 + 후처리(설치 상태 확인 · 형상 가드 · devtools 배선
-확인/폴백 · `.gitignore`에 `*.ait` 추가 · 디자인 가이드 주입)**만 담당한다. 콘솔
-등록·번들 업로드는 console MCP 도구(`miniapp_create`/`bundle_upload`/
+확인/폴백 · `.gitignore` 보강(`*.ait`·실패 흔적 파일) · 디자인 가이드 주입)**만
+담당한다. 콘솔 등록·번들 업로드는 console MCP 도구(`miniapp_create`/`bundle_upload`/
 `bundle_upload_complete`)의 책임 — 여기서 자동 호출하지 않는다. 생성되는
 README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
 
@@ -750,14 +752,20 @@ directory>/../inject/references/devtools.md**.
 ### 5. 후처리 C — .gitignore
 
 create-ait-app 템플릿은 `.gitignore`를 **이미 포함**한다(create-vite
-경로·TDS 경로 모두 — TDS는 `_gitignore`를 rename해서 만든다). 단 `*.ait`는
-빠져 있다. 없을 때만 한 줄을 append한다:
+경로·TDS 경로 모두 — TDS는 `_gitignore`를 rename해서 만든다). `*.ait`도 대개
+이미 들어 있다 — `ait init`이 devtools 배선과 같은 실행에서 `.gitignore` 끝에
+`*.ait`를 조건 없이 append한다(`@apps-in-toss/cli` 3.1.1 dist 실측 2026-09-07:
+`appendFile(".gitignore", "\n*.ait\n")`). 그래서 이 fence가 실제로 더하는 줄은 보통
+Step 3의 실패 흔적 파일 이름 하나이고, `*.ait`는 `ait init`이 넣지 않은 산출물(그
+줄을 쓰지 않는 다른 버전의 CLI)에만 보충한다. 두 줄은 **각각** 없을 때만 append한다 —
+종전에는 `*.ait` 부재를 조건으로 두 줄을 한 번에 넣어서, `ait init`이 `*.ait`를 먼저
+넣은 현재 산출물에서는 흔적 파일 줄이 한 번도 들어가지 않았다(0.1.32 실측):
 
 ```bash
 { D=0; P="./<package_name>"
 if [ -f "$P/.ait-design-guide-failed" ]; then echo "완료 블록에 그대로 넣을 줄: 디자인 가이드: 주입 실패 — /ait:design으로 나중에 넣을 수 있습니다"
 elif [ "$D" = 0 ] && ! grep -qs '<!-- ait:design-guide v' "$P/AGENTS.md"; then echo "디자인 가이드 fence 미실행 — Step 3의 fence를 지금 그대로 실행하고 그 판정 줄을 쓴다"
-fi; test -f "$P/.gitignore" && { grep -qx '\*\.ait' "$P/.gitignore" || printf '\n# Apps in Toss bundle artifacts\n*.ait\n.ait-design-guide-failed\n' >> "$P/.gitignore"; }; }
+fi; test -f "$P/.gitignore" && { grep -qx '\.ait-design-guide-failed' "$P/.gitignore" || { if grep -qx '\*\.ait' "$P/.gitignore"; then printf '\n# Apps in Toss design-guide failure trace\n.ait-design-guide-failed\n'; else printf '\n# Apps in Toss bundle artifacts\n*.ait\n.ait-design-guide-failed\n'; fi >> "$P/.gitignore"; }; }; }
 ```
 
 `.gitignore`와 무관한 세그먼트가 앞에 하나 붙어 있다 — 디자인 가이드 상태의 마지막
@@ -780,7 +788,7 @@ fi; test -f "$P/.gitignore" && { grep -qx '\*\.ait' "$P/.gitignore" || printf '\
 자체 조립한 run이 형상 fence 끝의 세그먼트만 빼먹었다).
 
 (`test -f` 가드가 반드시 앞에 있어야 한다 — 없으면 `grep -qx ... "$P/.gitignore"`가
-파일 부재로 실패했을 때 `||`가 `printf ... >>`를 그대로 실행해 `*.ait` 두 줄짜리 불완전한
+파일 부재로 실패했을 때 `||`가 `printf ... >>`를 그대로 실행해 `*.ait`·흔적 줄만 든 불완전한
 `.gitignore`를 **새로 만들어 버린다**(실측 확인) — 아래 문단이 말하는 "없으면 만들지 않고
 중단"이 명령 레벨에서 무력화된다.)
 
@@ -970,8 +978,9 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   프롬프트로 빠지므로 비대화형 호출에는 항상 명시한다. 이 skill은 greenfield
   전용이라 자동 호출하지 않는다.
 - ❌ Workspace 등록 / 멤버 초대 / billing — 콘솔 UI의 책임.
-- ❌ Git 초기화 — 사용자가 결정 (`.gitignore`에 `*.ait` 한 줄만 덧붙인다 — 파일
-  생성은 하지 않는다. 템플릿이 이미 `.gitignore`를 포함하고 있어서다).
+- ❌ Git 초기화 — 사용자가 결정 (`.gitignore`에는 빠진 줄(`*.ait`·실패 흔적 파일
+  이름)만 덧붙인다 — 파일 생성은 하지 않는다. 템플릿이 이미 `.gitignore`를
+  포함하고 `ait init`이 `*.ait`까지 넣어서다).
 - ❌ create-ait-app 자체의 버그 수정 — upstream(toss/create-ait-app) 이슈로.
   이 skill의 후처리는 관측된 CLI 동작에 대한 우회일 뿐, upstream이 그 동작을
   고치면 해당 후처리는 제거한다.
