@@ -59,7 +59,7 @@
     "jsdom": "^29.0.2",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.11"
   },
   "keywords": [
     "apps-in-toss",
