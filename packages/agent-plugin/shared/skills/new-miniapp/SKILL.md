@@ -384,6 +384,24 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
 
    그래도 실패하면 stderr를 그대로 보고하고, 아래 Step 3(형상 가드)에서
    중단된다.
+3. **devtools가 devDependencies 문자열이 아니라 실물로 설치됐는지 확인한다.**
+   `ait init`은 `@apps-in-toss/devtools`를 CLI 자기 버전에 맞춘
+   `^<version>`으로 devDependencies에 **먼저 쓰고 나서** `npm install`을 부르는
+   순서라, 그 버전이 공개 npm에 아직 없으면 install이 `ETARGET`으로 실패해도
+   문자열은 파일에 그대로 남는다(cli가 "changesets fixed 그룹" 전제로 자기
+   버전을 그대로 쓰는데, devtools만 별도 changeset 그룹에도 걸려 있어 발행이
+   지연되면 이 전제가 깨진다 — 문자열 검사만으로는 이 어긋남을 못 잡는다).
+   그래서 1번의 install이 exit 0이어도 실물 로드까지 확인한다:
+
+   ```bash
+   node -e "require.resolve('@apps-in-toss/devtools/unplugin', { paths: ['./<package_name>'] })"
+   ```
+
+   exit 0이면 실물이 있는 것이니 넘어간다. `Cannot find module`로 실패하면
+   `npm --prefix ./<package_name> ls @apps-in-toss/devtools`로 원인을 먼저 눈으로
+   확인한 뒤, 아래 Step 4의 "devtools 재핀 폴백"으로 간다 — 여기서 바로 재핀하지
+   않는 이유는 Step 4가 devDep 문자열·번들러 배선까지 한 번에 보고 판단하기
+   때문이다.
 
 ### 3. 후처리 0 — 형상 가드 + 디자인 가이드 주입
 
@@ -661,11 +679,12 @@ import → `index.html`의 `<link>`이고, 첫 번째로 해당되는 하나만 
 ### 4. 후처리 B — devtools 배선 확인 (브라우저 dev 활성화)
 
 배선은 **CLI(`ait init`)가 이미 한다** — 이 단계는 그 결과를 확인하고, 안 돼
-있을 때만 직접 배선한다. 먼저 두 가지를 본다:
+있을 때만 직접 배선한다. 먼저 세 가지를 본다:
 
 ```bash
 node -e "const p=require('./<package_name>/package.json'); console.log('devDep:', p.devDependencies?.['@apps-in-toss/devtools'] ?? '(없음)')"
 ls ./<package_name>/vite.config.*
+node -e "require.resolve('@apps-in-toss/devtools/unplugin', { paths: ['./<package_name>'] })" && echo "실물: 있음" || echo "실물: 없음"
 ```
 
 두 번째로 나온 그 설정 파일을 `Read`해 `@apps-in-toss/devtools/unplugin` import와
@@ -674,12 +693,62 @@ ls ./<package_name>/vite.config.*
 `import aitDevtools from "@apps-in-toss/devtools/unplugin";` +
 `plugins: [aitDevtools.vite(), react()]`).
 
-- **devDep과 unplugin이 둘 다 있으면 이 단계는 끝이다** — 아무것도 바꾸지 않고
+- **devDep·unplugin·실물이 셋 다 있으면 이 단계는 끝이다** — 아무것도 바꾸지 않고
   Step 5로 넘어간다. CLI가 만든 형태(`aitDevtools.vite()` 인자 없음 등)를 취향으로
   고쳐 쓰지 않는다.
-- **하나라도 없으면** 아래 폴백을 순서대로 수행한다.
+- **devDep 문자열은 있는데 실물이 없으면** — `ait init`이 package.json에
+  `@apps-in-toss/devtools`를 쓰고 나서 `npm install`을 부르는 순서라 그
+  install만 실패해도 문자열은 남는다(cli가 자기 버전에 맞춰 쓴 `^<version>`이
+  공개 npm에 아직 없는 경우가 실제 원인 — 배경은 아래 "devtools 재핀 폴백"
+  참고). 이땐 vite.config 확인으로 넘어가지 말고 먼저 아래 "devtools 재핀
+  폴백"부터 수행한다.
+- **devDep·unplugin 중 하나라도 없으면(재핀 이후에도)** 아래 4-a 폴백을 순서대로
+  수행한다.
 - **`--no-devtools`가 지정됐으면** 확인 결과와 무관하게 아래 "배선 해제" 절로
   간다.
+
+#### devtools 재핀 폴백 — devDep 문자열은 있는데 실물이 없을 때
+
+`@apps-in-toss/cli`(`ait init`을 수행하는 실체)는 devtools를 **자기 자신의
+버전**에 맞춰 `^<cli 버전>`으로 devDependencies에 적는다 — cli·web-framework·
+devtools가 changesets fixed 그룹으로 함께 발행된다는 전제다. 이 전제는 devtools가
+그 fixed 그룹과 별도의 ignore 설정에도 동시에 걸려 발행이 지연되면 깨진다 — cli는
+이미 새 버전을 냈는데 그 버전의 devtools가 공개 npm에 없으면, `npm install`이
+`ETARGET`(`No matching version found for @apps-in-toss/devtools@^<cli 버전>`)으로
+죽고 나머지 install은 진행되지 않는다. package.json의 devDependencies 문자열은
+CLI가 install 실행 전에 이미 써 둔 것이라 이 실패 이후에도 그대로 남는다 — 위 세
+확인 중 devDep·vite.config만 보면 "배선됨"으로 오판하는 이유다. **되돌리지
+마라**: 이 재핀 단계를 지우면 그 오판이 다시 살아난다.
+
+복구는 실패한 정확 버전 고정을 버리고 공개 npm의 최신으로 다시 잡는 것이다 —
+아래 4-a가 하는 "devDep이 아예 없을 때"의 신규 설치와 같은 명령이지만, 이미 있는
+(깨진) 지정을 덮어쓰는 것이므로 먼저 실행한다:
+
+```bash
+npm --prefix ./<package_name> install -D @apps-in-toss/devtools@latest
+```
+
+일부 환경은 registry 프록시가 최신 버전을 숨기거나 낡은 dist-tag만 내려줄 수 있다
+(루트 CLAUDE.md "dist-tag quirk" 참고) — 위 명령이 같은 이유로 또 실패하면
+공개 미러를 강제한 뒤 재시도한다:
+
+```bash
+npm_config_registry=https://registry.npmmirror.com/ npm --prefix ./<package_name> install -D @apps-in-toss/devtools@latest
+```
+
+**해석된 정확 버전을 인용해 사용자에게 보고한다** — "latest를 넣었다"고만 말하지
+않는다:
+
+```bash
+npm --prefix ./<package_name> pkg get devDependencies.@apps-in-toss/devtools
+```
+
+`npm install -D <pkg>@latest`는 이 skill의 다른 자리(`web-framework` major
+복구, 위 Step 3)처럼 caret 범위(`^3.2.0` 형태)로 기록한다 — 정확 버전 고정으로
+바꿔 쓰지 않는다. 위 세 확인(devDep·vite.config·실물)을 다시 실행해 실물까지
+확인되면 그대로 아래 vite.config 확인으로 진행하고, 재설치 후에도 실물이 안
+잡히면 더 자동 재시도하지 않고 `npm --prefix ./<package_name> ls
+@apps-in-toss/devtools` 출력을 그대로 사용자에게 보고한 뒤 중단한다.
 
 #### 4-a. 폴백 — CLI가 배선하지 않았을 때
 
