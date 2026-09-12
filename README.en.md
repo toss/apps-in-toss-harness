@@ -42,7 +42,7 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 
 For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OAuth authorization. For step 4, `/plugin` opens the plugin manager: choose Marketplaces, select `apps-in-toss`, and press Enable auto-update. Third-party marketplaces start with auto-update off, so you have to turn it on once. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app.
 
-**Don't search for `ait` in the desktop app's plugin browser.** Search results only surface plugins from the official marketplace, so `ait` won't show up there. Installation goes through pasting the commands above into the chat input, not through search.
+**Don't search for `ait` in the desktop app's plugin browser.** Search results only surface plugins from the official marketplace, so `ait` won't show up there. Installation goes through pasting the commands above into the chat input, not through search. If pasting the commands still doesn't work, see [install troubleshooting](./.github/install-troubleshooting.en.md).
 
 If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
 
@@ -321,6 +321,8 @@ Three packages managed as a pnpm workspace.
 ## If you run into a problem
 
 If you run into a problem, check the [bug report guide](./.github/bug-report-guide.md) first, then [file an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). Never paste secrets like Deploy Keys or TOTP values, or internal identifiers, into the issue body or logs.
+
+If the plugin never shows up in your installed list, or an update never takes effect, see [install troubleshooting](./.github/install-troubleshooting.en.md).
 
 ## Contributing / development
 

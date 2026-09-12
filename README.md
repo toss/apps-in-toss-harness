@@ -42,7 +42,7 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 
 3번에서는 `/mcp` 목록에 뜬 `apps-in-toss-console`을 선택해 OAuth 인가를 완료하세요. 4번에서는 `/plugin` 화면에서 Marketplaces를 고르고 `apps-in-toss`를 선택한 뒤 Enable auto-update를 누르세요. 서드파티 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하기 때문에 한 번은 직접 켜야 합니다. `/ait:welcome` 대신 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수도 있습니다.
 
-**데스크톱 앱의 플러그인 브라우저에서 `ait`를 검색하지 마세요.** 검색 결과에는 공식 마켓플레이스 플러그인만 나오고 `ait`는 뜨지 않습니다. 설치 경로는 검색이 아니라 위 블록의 명령을 입력창에 붙여넣는 것입니다.
+**데스크톱 앱의 플러그인 브라우저에서 `ait`를 검색하지 마세요.** 검색 결과에는 공식 마켓플레이스 플러그인만 나오고 `ait`는 뜨지 않습니다. 설치 경로는 검색이 아니라 위 블록의 명령을 입력창에 붙여넣는 것입니다. 붙여넣었는데도 안 되면 [설치 문제 해결](./.github/install-troubleshooting.md)을 보세요.
 
 위 슬래시 명령이 동작하지 않는 환경이라면, 아래 문장을 통째로 입력창에 붙여넣으세요. 터미널을 열 필요 없이 Claude가 자기 셸에서 설치를 대신 진행합니다.
 
@@ -321,6 +321,8 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 ## 문제가 생기면
 
 문제를 발견하면 [버그리포트 가이드](./.github/bug-report-guide.md)를 먼저 참고한 뒤 [이슈를 등록](https://github.com/toss/apps-in-toss-harness/issues/new/choose)해 주세요. Deploy Key·TOTP 등 시크릿이나 사내 식별자는 이슈 본문·로그에 붙여넣지 마세요.
+
+플러그인이 설치 목록에 안 보이거나 갱신이 반영되지 않는다면 [설치 문제 해결](./.github/install-troubleshooting.md)을 보세요.
 
 ## 기여·개발
 

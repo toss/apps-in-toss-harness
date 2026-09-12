@@ -7,7 +7,7 @@ description: |
   install` itself prints no next step. Station-0→1 hand-off. Triggered by
   `/ait:welcome`, no args.
 argument-hint: ''
-adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface.'
+adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface. Step 1-d is Claude Code-only — it reads the Claude Code plugin state directory (CLAUDE_CONFIG_DIR or ~/.claude); other targets skip it entirely.'
 ---
 
 # welcome skill
@@ -42,6 +42,9 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
   echo "package.json: $(test -f package.json && echo 있음 || echo 없음)"; \
   echo ".git: $(test -d .git && echo 있음 || echo 없음)"; \
   echo "cwd entries: $(ls -A | wc -l | tr -d ' ')"; \
+  echo "config: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; \
+  echo "plugin cache: $(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/apps-in-toss/ait" 2>/dev/null | tr '\n' ' ')"; \
+  echo "marketplace clone: $(test -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/apps-in-toss" && echo 있음 || echo 없음)"; \
 } 2>&1
 ```
 
@@ -106,6 +109,18 @@ Cursor:
 가능한 것만 확인하고 나머지는 조용히 건너뛴다(graceful degrade, `debug`
 skill §5 adapter-note와 동일 패턴).
 
+**d. 설치 상태** (Claude Code 전용 — 그 밖의 호스트에서는 이 단계를 통째로
+건너뛴다, 1-c 꼬리와 같은 graceful-degrade 관례):
+
+위 1-a 출력의 `config`·`plugin cache`·`marketplace clone` 세 줄로 판단한다
+(오프라인·읽기 전용 — `git fetch`·`claude plugin marketplace update`는 타지
+않고, 이 확인 자체가 파일을 쓰지도 않는다. `claude plugin list`도 부르지
+않는다 — 이 세션 자신이 이미 플러그인으로 떠 있어 자식 CLI 세션을 새로
+띄우는 비용에 비해 값이 작다). 판정은 세 갈래다 — 캐시 디렉터리와
+마켓플레이스 clone이 둘 다 있으면 정상, 하나만 있으면 부분, 둘 다 없으면
+없음이다. 정상이면 아무것도 인쇄하지 않는다. 부분·없음일 때만 설치 문제
+해결 런북을 가리킨다.
+
 ### 2. 결과 인쇄
 
 점검 결과 블록을 **먼저** 인쇄한다. 항목별로 상태와 권장 조치를 한 줄로 담는다
@@ -124,6 +139,8 @@ skill §5 adapter-note와 동일 패턴).
      필요하면:
      /ait:setup-debugger
      말로: "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘"
+  ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
+     .github/install-troubleshooting.md
 ```
 
 (위는 예시 조합이다 — 실제로는 점검에서 관측된 항목만 인쇄한다. 전부 ✅면
