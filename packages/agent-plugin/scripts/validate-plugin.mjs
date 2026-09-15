@@ -14,7 +14,7 @@
  *   A7 — mcpServers npx args 해석 가능성 (hard-fail)
  *   A8 — seam /ait:verb 형태·해석 가능성 (hard-fail)
  *   A9 — skill 본문 실제 주입 여부 (opt-in, VALIDATE_SKILL_LOAD=1 일 때만 —
- *        skill 8개 각각에 대해 `claude -p` 세션을 하나씩 띄워 `Skill(ait:<v>)`
+ *        skill 개수만큼 `claude -p` 세션을 하나씩 띄워 `Skill(ait:<v>)`
  *        호출 후 세션에 실제로 주입된 텍스트를 디스크 SKILL.md 와 글자 단위로
  *        비교한다. harness#134(6/8 skill 이 3주간 본문 미주입 — 이름이 같은
  *        command stub 이 skill 을 가려서 불활성 문자열만 주입됨. 라우팅
@@ -22,8 +22,14 @@
  *        무관하게 직접 잡는 회귀 가드. 정적 검사(A1/cmd-name-shadows-skill)는
  *        harness#134 가 실제로 겪은 원인(이름 충돌)만 잡지만, 이건 "호출된
  *        skill 의 본문이 세션에 실제로 들어왔는가"라는 결과 자체를 잰다.
- *        CLI 세션 8회가 필요해 느리고 인증된 구독 세션이 전제라 CI 에는 못
- *        올린다 — §A9 상세 주석 참조)
+ *        CLI 세션이 여러 번 필요해 느리고 인증된 구독 세션이 전제라 CI 에는
+ *        못 올린다 — §A9 상세 주석 참조. skill 세션을 띄우기 전에 같은 argv
+ *        로 "pong" 사전 점검(preflight) 세션을 1회 돌려 로그인·플러그인
+ *        로드·skill 등록 문제를 전역 1건으로 잡고(harness#136-후속 실측 —
+ *        미로그인/401 환경에서 skill 전체가 동일한 "종료 코드 1"/"타임아웃"
+ *        으로 fan-out 됐다), `cli-error`/`no-route` 는 일시 장애일 수 있어
+ *        1회 재시도하며, match 가 아닌 시도의 stdout/stderr/진단은 디스크에
+ *        transcript 로 남는다)
  *   A10 — CHANGELOG.md 버전 섹션 존재 (hard-fail — 0.1.22/0.1.23 드리프트:
  *        버전만 올라가고 CHANGELOG 미기록으로 재발 방지. changesets 워크플로상
  *        "changeset 누적 중 + 버전 미변경"은 정상 상태라 예외를 두는 대신,
@@ -57,6 +63,11 @@ import {
   SKILL_LOAD_DEFAULT_JOBS,
   SKILL_LOAD_DEFAULT_MODEL,
 } from './skill-load-probe.mjs';
+
+// diagnoseSession·preflight·runClaudeSession 은 여기서 직접 쓰지 않는다 — 이
+// 파일은 probeAllSkills 가 이미 종합한 결과(preflightError/preflightReason/
+// results)만 소비하고, 진단·재시도·transcript 는 skill-load-probe.mjs 쪽
+// 책임이다(파일 상단 A9 설명 참고).
 
 // ---------------------------------------------------------------------------
 // 유틸: YAML frontmatter 파서 (의존성 없는 최소 구현)
@@ -3141,11 +3152,23 @@ async function checkA6(root) {
 // — CLI 세션 spawn·stream-json 파싱·동시 실행까지 얽혀 있어 이 파일에 두면
 // checkA1~A8 과 같은 "파일 읽고 정규식 대조" 패턴에서 너무 벗어난다.
 //
-// CI 미등록 사유(#136 명시): skill 8개 × 세션 1개 = CLI 세션 8회, 병렬로도
+// CI 미등록 사유(#136 명시): skill 개수 × 세션 1개 = CLI 세션 여러 회, 병렬로도
 // 수 분이 걸려 PR `check` job 예산에 안 맞고, `claude` CLI 는 구독 세션 인증이
 // 필요해 CI 러너에는 애초에 인증 수단이 없다. `.github/workflows/*` 는 건드리지
 // 않는다 — 이 검사는 메인테이너가 로컬에서 수동으로(`VALIDATE_SKILL_LOAD=1`)
 // 돌린다, eval 슈트 B 가 "메인테이너 수동·오프라인" harness 인 것과 같은 계약.
+//
+// harness#136-후속(2026-09 실측, claude 2.1.272): 미로그인 프로필로 돌리면
+// skill 전체가 `claude CLI 종료 코드 1`로만, 401 API 키로 돌리면 skill 전체가
+// `180000ms 초과로 강제 종료`로만 찍혔다 — 진짜 원인 문장은 항상 stdout
+// (stream-json) 안에 있는데 실패 시 그걸 버려서, 환경 문제 하나가 skill
+// 개수만큼의 동일 오류로 fan-out 됐다. 그래서 `probeAllSkills` 는 이제 (1)
+// skill 세션을 하나라도 띄우기 전에 같은 argv 로 "pong" 사전 점검을 1회 돌려
+// 로그인·플러그인 로드·skill 등록 문제를 전역 1건(`preflightError`)으로
+// 잡고, (2) `cli-error`/`no-route` 는 1회 재시도하며, (3) match 가 아닌 시도의
+// stdout/stderr/진단을 `debugDir`에 transcript 로 남긴다. 진단·재시도·
+// transcript 로직 자체는 전부 `skill-load-probe.mjs`(`diagnoseSession`·
+// `preflight`)에 있고, 이 파일은 그 결과를 메시지로 옮기기만 한다.
 
 /**
  * @param {string} root
@@ -3166,44 +3189,119 @@ async function checkA9(root) {
 
   const jobs = Number.parseInt(process.env.SKILL_LOAD_JOBS ?? '', 10) || SKILL_LOAD_DEFAULT_JOBS;
   const model = process.env.SKILL_LOAD_MODEL || SKILL_LOAD_DEFAULT_MODEL;
-  const { preflightError, results } = await probeAllSkills(root, { jobs, model });
+  const {
+    preflightError,
+    preflightReason,
+    preflightWarnings,
+    preflightInfo,
+    results,
+    debugDir,
+    retried,
+  } = await probeAllSkills(root, { jobs, model });
 
-  if (preflightError) {
+  // cli-not-found 는 종전과 같은 코드로 유지한다(A9 opt-in 사용자가 이미 이
+  // 문자열로 원인을 알아본다). 그 외 사전 점검 실패(session/plugin-not-loaded/
+  // skills-not-registered)는 전부 신규 A9/preflight-failed 하나로 묶는다 —
+  // 어느 쪽이든 skill 세션은 하나도 안 띄웠으므로 per-skill 라인이 0개인
+  // 것이 핵심이지, 실패 사유별로 코드를 더 쪼갤 실익이 없다.
+  if (preflightReason === 'cli-not-found') {
     return [mkv('', 0, 'A9/cli-not-found', preflightError)];
+  }
+  if (preflightError) {
+    // debugDir 는 사전 점검이 'session'(세션 자체 실패, E1/E2) 사유로 죽었을
+    // 때만 채워진다 — preflight 가 그 경우에만 transcript 를 저장한다. 저장된
+    // stdout stream-json 이 원인 진단의 유일한 근거인데, 경로를 여기서 안
+    // 실으면 A9/info(정상 경로에서만 찍힌다) 가 없는 이 실패 경로에서는
+    // 아무 데도 안 남는다.
+    return [
+      mkv(
+        '',
+        0,
+        'A9/preflight-failed',
+        `${preflightError} — skill 별 세션은 띄우지 않음${debugDir ? ` · transcript: ${debugDir}` : ''}`,
+      ),
+    ];
   }
 
   /** @type {Violation[]} */
   const violations = [];
+
+  for (const warning of preflightWarnings) {
+    violations.push(mkv('', 0, 'A9/preflight-warning', warning, 'warn'));
+  }
+
+  // 결과 라인들보다 먼저 실어서, 사람이 A9 출력을 읽을 때 "이번 probe 가 어떤
+  // 모델·플러그인 버전·재시도 조건으로 돌았는가"를 개별 skill 판정보다 먼저
+  // 보게 한다 — cli-error 가 반복될 때 이 한 줄이 "skill 회귀가 아니라
+  // 실행 환경 문제"라는 결론으로 가장 빨리 이어지는 단서다.
+  violations.push(
+    mkv(
+      '',
+      0,
+      'A9/info',
+      `probe 조건: model=${preflightInfo.model} (요청 ${preflightInfo.requestedModel}) · claude ${preflightInfo.claudeCodeVersion} · plugin ait@${preflightInfo.pluginVersion} · jobs=${jobs} · 재시도 ${retried}건` +
+        (debugDir ? ` · transcript: ${debugDir}` : ''),
+      'warn',
+    ),
+  );
+
+  // transcript 저장은 진단용 부가 채널이라 디스크 문제로 실패해도 probe 는
+  // 계속 간다(skill-load-probe.mjs persistTranscript) — 그 경우 경로 대신
+  // 저장 실패 사실을 적어 "undefined" 가 메시지에 찍히지 않게 한다.
+  const transcriptOf = (r) => r.transcriptPath ?? '(저장 실패 — SKILL_LOAD_DEBUG_DIR 확인)';
+
   for (const r of results) {
     const relFile = path.join('shared', 'skills', r.skill, 'SKILL.md');
     switch (r.outcome) {
-      case 'match':
+      case 'match': {
+        // 재시도 끝에 통과했다는 건 1차 실패가 shadow 가 아니라 일시 장애
+        // (동시 실행·순간 네트워크 흔들림 등)였을 가능성이 크다는 뜻이라,
+        // 그 사실을 문구에 남겨 둔다 — 조용히 A9/ok 로만 찍으면 1차 실패가
+        // 기록에서 사라진다.
+        const retryNote =
+          r.attempts > 1
+            ? ` — 1차 시도는 ${r.firstAttempt.outcome}(${
+                r.firstAttempt.detail ?? ''
+              }) 로 실패했고 재시도에서 통과 (일시 장애 가능성, transcript 참조)`
+            : '';
         violations.push(
           mkv(
             relFile,
             1,
             'A9/ok',
-            `skill '${r.skill}' 본문 주입 확인 (주입 ${r.injectedChars}자 == 기대 ${r.expectedChars}자, 완전 일치)`,
+            `skill '${r.skill}' 본문 주입 확인 (주입 ${r.injectedChars}자 == 기대 ${r.expectedChars}자, 완전 일치)${retryNote}`,
             'warn',
           ),
         );
         break;
+      }
 
-      case 'no-route':
+      case 'no-route': {
         // Skill 도구 자체가 안 불렸다 — probe 발화("Invoke the ait:<v> skill
         // now.")에 모델이 이번 실행에서 라우팅하지 않은 것으로, shadow 판정과
         // 독립적인 probe 실패다(#136 요구사항: "the Skill tool was never
         // called → probe 실패이지 shadow 단정 아님"). A9/skill-load-shadowed
-        // 와 코드를 분리해 혼동하지 않게 한다.
+        // 와 코드를 분리해 혼동하지 않게 한다. attempts 는 이 분기에 도달하면
+        // 항상 2다(1차 no-route 는 무조건 재시도하므로) — 그런데 1차가
+        // cli-error 였다가 재시도에서 no-route 로 끝난 경우도 같은 분기로
+        // 들어오므로, "모두 라우팅 안 됨"이라 단정하지 않고 firstAttempt 가
+        // 다르면 그 사실을 그대로 적는다. 또한 이미 한 번 재시도까지 끝난
+        // 상태라 "재실행해 재현 확인"은 이미 한 걸 다시 하라는 셈이라 빼고,
+        // 대신 이미 저장된 transcript 를 보라고 안내한다.
+        const firstAttemptNote =
+          r.attempts > 1 && r.firstAttempt.outcome !== 'no-route'
+            ? `1차는 ${r.firstAttempt.outcome}(${r.firstAttempt.detail ?? ''}), 이후 시도에서도 라우팅 안 됨`
+            : `${r.attempts}회 시도 모두 라우팅 안 됨`;
         violations.push(
           mkv(
             relFile,
             1,
             'A9/probe-no-route',
-            `probe 세션에서 Skill 도구가 'ait:${r.skill}' 로 호출되지 않음 — shadow 단정 불가, 라우팅 자체가 이번 실행에서 안 됐을 뿐일 수 있다 (fix: 재실행해 재현되는지 먼저 확인)`,
+            `probe 세션에서 Skill 도구가 'ait:${r.skill}' 로 호출되지 않음 — shadow 단정 불가 (${firstAttemptNote}) — 일시적 라우팅 실패가 아니라 발화/description 문제일 수 있으니 transcript 의 assistant 이벤트를 먼저 보라: ${transcriptOf(r)}`,
           ),
         );
         break;
+      }
 
       case 'no-body':
         violations.push(
@@ -3211,7 +3309,7 @@ async function checkA9(root) {
             relFile,
             1,
             'A9/skill-load-shadowed',
-            `skill '${r.skill}' — Skill 호출은 됐지만 이후 본문 주입 이벤트가 세션 종료까지 없었음 (기대 ${r.expectedChars}자). SKILL.md 가 이 세션에 한 번도 로드되지 않았다는 뜻 — 같은 이름의 command stub 이 없는지 shared/commands/ 를 확인하라(fix 예시는 A1/cmd-name-shadows-skill)`,
+            `skill '${r.skill}' — Skill 호출은 됐지만 이후 본문 주입 이벤트가 세션 종료까지 없었음 (기대 ${r.expectedChars}자). SKILL.md 가 이 세션에 한 번도 로드되지 않았다는 뜻 — 같은 이름의 command stub 이 없는지 shared/commands/ 를 확인하라(fix 예시는 A1/cmd-name-shadows-skill). transcript: ${transcriptOf(r)}`,
           ),
         );
         break;
@@ -3226,7 +3324,7 @@ async function checkA9(root) {
             relFile,
             1,
             'A9/skill-load-shadowed',
-            `skill '${r.skill}' — 주입된 본문이 디스크 SKILL.md 와 다름 (주입 ${r.injectedChars}자 vs 기대 ${r.expectedChars}자). ${ctx}. 대개 같은 이름의 command stub 이 이겨서 그 stub 의 불활성 본문이 대신 주입된 경우다(harness#134)`,
+            `skill '${r.skill}' — 주입된 본문이 디스크 SKILL.md 와 다름 (주입 ${r.injectedChars}자 vs 기대 ${r.expectedChars}자). ${ctx}. 대개 같은 이름의 command stub 이 이겨서 그 stub 의 불활성 본문이 대신 주입된 경우다(harness#134). transcript: ${transcriptOf(r)}`,
           ),
         );
         break;
@@ -3235,13 +3333,14 @@ async function checkA9(root) {
       case 'cli-error':
         // shadow 발견과 절대 같은 코드를 쓰면 안 된다 — CLI 가 죽거나
         // 타임아웃난 건 "본문이 안 실렸다"는 관측이 아니라 "관측을 못 했다"
-        // 는 뜻이다(#136 요구사항 4번째 항목).
+        // 는 뜻이다(#136 요구사항 4번째 항목). detail 은 이미 1차/2차 시도
+        // 요약을 이어붙인 문자열이다(skill-load-probe.mjs 의 probeOneSkill).
         violations.push(
           mkv(
             relFile,
             1,
             'A9/probe-cli-error',
-            `skill '${r.skill}' probe 세션 실행 실패 — 관측 자체를 못 함: ${r.detail}`,
+            `skill '${r.skill}' probe 세션 ${r.attempts}회 모두 실패 — 관측 자체를 못 함: ${r.detail}. transcript: ${transcriptOf(r)}. 같은 문구가 skill 전체에 반복되면 skill 회귀가 아니라 실행 환경(인증·네트워크·요금 한도·동시 실행·절전) 문제다`,
           ),
         );
         break;

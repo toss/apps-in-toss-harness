@@ -13,5 +13,5 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": ["shared/__tests__/**/*.ts"]
+  "include": ["shared/__tests__/**/*.ts", "scripts/__tests__/**/*.ts"]
 }
