@@ -81,6 +81,14 @@ const SESSION_TIMEOUT_MS = 180_000;
 // 순간 부하로 인한 수백 ms 지연은 걸리지 않게 5초로 둔다.
 const TIMEOUT_OVERRUN_NOTE_MS = 5_000;
 
+// SIGKILL 을 보낸 뒤 'close' 를 기다리는 상한. SIGKILL 은 그 프로세스만 죽이므로,
+// 자식이 stdout 파이프를 물려준 손자 프로세스를 남겼으면 파이프가 안 닫혀 'close'
+// 가 손자 수명만큼 안 온다(실측 2026-09-16: 가짜 claude 가 자손을 남기는 형태로
+// 재현 — kill 이후에도 promise 가 안 끝나 동시 실행 pool 슬롯이 안 풀렸다).
+// 이 상한을 넘기면 스트림을 직접 destroy 하고 `closeTimedOut` 으로 표시해,
+// 그 지연이 "절전"으로 오진되지 않게 한다.
+const KILL_CLOSE_GRACE_MS = 5_000;
+
 const DISALLOWED_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite';
 
 // 재시도 사이 대기(초 단위 안내 그대로) — cli-error/no-route 가 동시 실행·순간
@@ -212,6 +220,20 @@ function findInjectedBodyText(events, afterIndex) {
   return null;
 }
 
+/**
+ * `runClaudeSession` 의 `stopWhen` 으로 넘길 판정 함수를 만든다. probeOneSkill
+ * 이 실 spawn 경로에서 쓰는 것과 동일한 헬퍼이고, 테스트도 이 함수를 직접
+ * import 해 주입 runSession 과 실 spawn 양쪽에서 같은 계약을 검증한다.
+ * @param {string} skillId
+ * @returns {(events: any[]) => string | null}
+ */
+export function bodyObservedStopWhen(skillId) {
+  return (events) => {
+    const i = findSkillToolUseIndex(events, skillId);
+    return i !== -1 && findInjectedBodyText(events, i) !== null ? 'observed' : null;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // claude CLI 세션 실행 — 원시 결과만 돌려준다 (진단은 diagnoseSession 이 담당)
 // ---------------------------------------------------------------------------
@@ -274,31 +296,68 @@ function buildSessionArgv({ prompt, model, pluginDir }) {
  * (E3 — 네트워크 불가) 은 일시 장애일 수 있어 CLI 자체 재시도에 맡기고
  * 타임아웃까지 그대로 기다린다.
  *
- * @param {{ argv: string[], cwd: string, timeoutMs?: number }} opts
+ * 관측 즉시 종료(`stopWhen`): 호출부가 "이 세션에서 보려던 것을 다 봤다"를
+ * 판정하는 함수를 넘기면, 누적된 이벤트 배열로 매 이벤트마다 그걸 물어보고
+ * 문자열이 오면 그 값을 `abortedFor` 에 담아 SIGKILL 한다. 실측 2026-09-15:
+ * skill 본문이 이미 주입된 뒤에도 모델이 그 본문 지시를 따라 도구를 계속
+ * 돌려 세션이 180초 타임아웃으로 죽었다 — 관측은 끝났는데 타임아웃 값만
+ * 남아 멀쩡한 skill 이 cli-error 로 찍혔다.
+ *
+ * @param {{
+ *   argv: string[],
+ *   cwd: string,
+ *   timeoutMs?: number,
+ *   stopWhen?: (events: any[]) => string | null,
+ *   killGraceMs?: number,
+ * }} opts
  * @returns {Promise<{
  *   code: number | null,
  *   signal: string | null,
  *   timedOut: boolean,
- *   abortedFor: null | 'auth',
+ *   abortedFor: null | 'auth' | string,
  *   stdout: string,
  *   stderr: string,
  *   durationMs: number,
  *   timeoutMs: number,
  *   argv: string[],
+ *   startedAt?: string,
+ *   endedAt?: string,
+ *   timerLateMs?: number | null,
+ *   closeLatencyMs?: number | null,
+ *   closeTimedOut?: boolean,
  *   spawnError?: string,
  * }>}
+ *   타이밍 5종(startedAt·endedAt·timerLateMs·closeLatencyMs·closeTimedOut)은
+ *   이 함수가 항상 채우지만 타입상 optional 이다 — 이 반환 타입이 곧 주입
+ *   `runSession`(테스트가 손으로 만드는 세션 객체)의 계약이기도 해서, 타이밍
+ *   없이도 세션 하나를 표현할 수 있어야 한다. 소비자(diagnoseSession·
+ *   persistTranscript)는 이 필드들이 없는 입력에서도 그대로 동작한다.
  */
-export function runClaudeSession({ argv, cwd, timeoutMs = SESSION_TIMEOUT_MS }) {
+export function runClaudeSession({
+  argv,
+  cwd,
+  timeoutMs = SESSION_TIMEOUT_MS,
+  stopWhen,
+  killGraceMs = KILL_CLOSE_GRACE_MS,
+}) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
+    const startedAtIso = new Date(startedAt).toISOString();
     let settled = false;
     let timer;
+    let graceTimer;
+    // kill 시각과 타이머 지각분 — 진단이 "절전으로 타이머가 늦게 발화"와
+    // "kill 은 제때 했는데 종료가 늦음"을 구분하는 근거다(diagnoseSession).
+    let killedAt = null;
+    let timerLateMs = null;
 
     /** @param {Record<string, unknown>} patch */
     const finish = (patch) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(graceTimer);
+      const endedAt = Date.now();
       resolve({
         code: null,
         signal: null,
@@ -306,9 +365,14 @@ export function runClaudeSession({ argv, cwd, timeoutMs = SESSION_TIMEOUT_MS }) 
         abortedFor,
         stdout,
         stderr,
-        durationMs: Date.now() - startedAt,
+        durationMs: endedAt - startedAt,
         timeoutMs,
         argv,
+        startedAt: startedAtIso,
+        endedAt: new Date(endedAt).toISOString(),
+        timerLateMs,
+        closeLatencyMs: killedAt === null ? null : endedAt - killedAt,
+        closeTimedOut: false,
         ...patch,
       });
     };
@@ -327,6 +391,11 @@ export function runClaudeSession({ argv, cwd, timeoutMs = SESSION_TIMEOUT_MS }) 
         durationMs: Date.now() - startedAt,
         timeoutMs,
         argv,
+        startedAt: startedAtIso,
+        endedAt: new Date().toISOString(),
+        timerLateMs: null,
+        closeLatencyMs: null,
+        closeTimedOut: false,
         spawnError: err.message,
       });
       return;
@@ -337,6 +406,24 @@ export function runClaudeSession({ argv, cwd, timeoutMs = SESSION_TIMEOUT_MS }) 
     let pendingLine = '';
     let timedOut = false;
     let abortedFor = null;
+    /** @type {any[]} 지금까지 stdout 에서 파싱된 stream-json 이벤트(stopWhen 입력) */
+    const liveEvents = [];
+
+    /**
+     * SIGKILL + 'close' 대기 상한. SIGKILL 은 파이프를 물려받은 손자까지
+     * 죽이지 못해 'close' 가 영영 안 올 수 있으므로(상수 주석), grace 안에
+     * 안 오면 스트림을 직접 끊고 그 사실을 남긴 채 끝낸다.
+     */
+    const killWithGrace = () => {
+      if (killedAt !== null) return; // 이미 kill 했으면 타이머를 다시 걸지 않는다.
+      killedAt = Date.now();
+      child.kill('SIGKILL');
+      graceTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        finish({ code: child.exitCode, signal: child.signalCode, closeTimedOut: true });
+      }, killGraceMs);
+    };
 
     // 청크 단위로 Buffer.toString('utf8') 을 각각 호출하면, 멀티바이트(한글)
     // 문자가 파이프 읽기 경계에서 잘렸을 때 양쪽 조각이 독립적으로 U+FFFD 로
@@ -349,7 +436,11 @@ export function runClaudeSession({ argv, cwd, timeoutMs = SESSION_TIMEOUT_MS }) 
 
     timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      // 타이머는 단조 시계 기준이라 절전 중 만료되면 깨어난 직후에 발화한다 —
+      // 그 지각분을 여기서 재 두면, 진단이 "절전"을 "kill 뒤 종료 지연"과
+      // 섞지 않고 따로 말할 수 있다(실측 2026-09-15 덮개 닫힘 건).
+      timerLateMs = Date.now() - startedAt - timeoutMs;
+      killWithGrace();
     }, timeoutMs);
 
     child.stdout.on('data', (text) => {
@@ -367,14 +458,30 @@ export function runClaudeSession({ argv, cwd, timeoutMs = SESSION_TIMEOUT_MS }) 
         } catch {
           continue;
         }
+        liveEvents.push(ev);
         if (
           ev?.type === 'system' &&
           ev?.subtype === 'api_retry' &&
           (ev?.error_status === 401 || ev?.error_status === 403)
         ) {
           abortedFor = 'auth';
-          child.kill('SIGKILL');
+          killWithGrace();
           break;
+        }
+        if (stopWhen) {
+          let reason = null;
+          try {
+            reason = stopWhen(liveEvents);
+          } catch {
+            // 판정 함수가 던져도 세션 관측 자체는 계속 간다 — 여기서 새어
+            // 나가면 'data' 핸들러의 미처리 예외로 검증기 전체가 죽는다.
+            reason = null;
+          }
+          if (reason) {
+            abortedFor = reason;
+            killWithGrace();
+            break;
+          }
         }
       }
     });
@@ -439,6 +546,41 @@ function findAssistantError(events) {
   return null;
 }
 
+/**
+ * CLI 가 요청 모델을 인식하지 못해 다른 모델로 갈아탄 이벤트. 실측
+ * 2026-09-16(claude 2.1.273): `--model claude-bogus-9` 로 맨 `claude -p` 를
+ * 돌리면 `init.model` 은 **요청 문자열 그대로**이고, 대체 사실은 별도
+ * `{type:'system', subtype:'model_fallback', trigger:'model_not_found',
+ * original_model, fallback_model}` 이벤트로만 온다 — init 만 보면 "X 를
+ * 인식하지 못해 X 로 대체됨" 이라는 자기참조 문장이 나온다.
+ * @param {any[]} events
+ * @returns {{ original_model: string | null, fallback_model: string | null, trigger: string | null } | null}
+ */
+function findModelFallback(events) {
+  const ev = events.find((e) => e?.type === 'system' && e?.subtype === 'model_fallback');
+  if (!ev) return null;
+  return {
+    original_model: ev.original_model ?? null,
+    fallback_model: ev.fallback_model ?? null,
+    trigger: ev.trigger ?? null,
+  };
+}
+
+/**
+ * 첫 assistant 이벤트의 `message.model` — 세션이 **실제로** 쓴 모델이다.
+ * `<synthetic>`(CLI 가 자체 생성한 오류 메시지)은 모델이 아니므로 건너뛴다.
+ * @param {any[]} events
+ * @returns {string | null}
+ */
+function findAssistantModel(events) {
+  for (const ev of events) {
+    if (ev?.type !== 'assistant') continue;
+    const model = ev.message?.model;
+    if (typeof model === 'string' && model && model !== '<synthetic>') return model;
+  }
+  return null;
+}
+
 /** @param {any[]} events @returns {any | null} */
 function findLastRateLimitEvent(events) {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -464,6 +606,38 @@ function lastEventLabelOf(events) {
 }
 
 /**
+ * timeout 진단의 벽시계 초과분 문구를 만든다. 초과분 원인은 둘로 갈린다
+ * (실측 2026-09-16): 타이머가 늦게 발화한 것(절전·일시정지)과, 타이머는
+ * 제때 발화했는데 kill 뒤 'close' 가 늦게(혹은 영영) 안 온 것(파이프를 물고
+ * 있던 손자 프로세스). 두 값을 따로 재므로 각각 다른 문장으로 적는다. 두
+ * 값이 없는 입력(구형 세션 객체)은 종전처럼 벽시계 − 타임아웃으로 계산하되
+ * 원인을 단정하지 않는다.
+ * @param {Awaited<ReturnType<typeof runClaudeSession>>} session
+ * @param {number} timeoutMsUsed
+ * @returns {string} 덧붙일 문구(없으면 '')
+ */
+function overrunNotes(session, timeoutMsUsed) {
+  const { timerLateMs, closeLatencyMs, closeTimedOut } = session;
+  let notes = '';
+  if (timerLateMs == null && closeLatencyMs == null) {
+    const overrunMs = session.durationMs - timeoutMsUsed;
+    if (Number.isFinite(overrunMs) && overrunMs > TIMEOUT_OVERRUN_NOTE_MS) {
+      notes += ` — 벽시계로는 ${session.durationMs}ms 경과(타임아웃보다 ${overrunMs}ms 초과): 절전·일시정지 또는 프로세스 종료 지연`;
+    }
+    return notes;
+  }
+  if (Number.isFinite(timerLateMs) && timerLateMs > TIMEOUT_OVERRUN_NOTE_MS) {
+    notes += ` — 타이머가 ${timerLateMs}ms 늦게 발화: 세션 도중 시스템 절전·일시정지가 있었을 가능성`;
+  }
+  if (closeTimedOut === true) {
+    notes += ` — kill 뒤 ${closeLatencyMs}ms 안에 종료를 관측하지 못해 스트림을 강제로 끊음: 파이프를 물고 있던 자식 프로세스 가능성(자식이 아직 살아 있을 수 있음)`;
+  } else if (Number.isFinite(closeLatencyMs) && closeLatencyMs > TIMEOUT_OVERRUN_NOTE_MS) {
+    notes += ` — kill 뒤 종료까지 ${closeLatencyMs}ms: 파이프를 물고 있던 자식 프로세스 가능성`;
+  }
+  return notes;
+}
+
+/**
  * @typedef {{
  *   kind: 'spawn' | 'auth' | 'timeout' | 'exit' | 'result-error' | 'ok',
  *   summary: string,
@@ -478,6 +652,8 @@ function lastEventLabelOf(events) {
  *   lastEventLabel: string,
  *   unrecognizedModel: boolean,
  *   rateLimitEvent: any | null,
+ *   modelFallback: ReturnType<typeof findModelFallback>,
+ *   assistantModel: string | null,
  * }} SessionDiagnosis
  */
 
@@ -505,6 +681,8 @@ export function diagnoseSession(session) {
       lastEventLabel: '(이벤트 없음)',
       unrecognizedModel: false,
       rateLimitEvent: null,
+      modelFallback: null,
+      assistantModel: null,
     };
   }
 
@@ -543,11 +721,33 @@ export function diagnoseSession(session) {
   const lastEventLabel = lastEventLabelOf(events);
   const unrecognizedModel = session.stderr.includes('[claude-code:unrecognized_model]');
   const rateLimitEvent = findLastRateLimitEvent(events);
+  const modelFallback = findModelFallback(events);
+  const assistantModel = findAssistantModel(events);
 
   let kind;
   let summary;
 
-  if (session.abortedFor === 'auth') {
+  if (session.abortedFor === 'observed') {
+    // 호출부의 stopWhen 이 "볼 것을 다 봤다"고 판정해 우리가 죽인 세션이다 —
+    // code null/signal SIGKILL 이라 아래 exit 분기로 새면 멀쩡한 관측이
+    // cli-error 로 뒤집힌다. 그래서 timedOut/exit 보다 먼저 검사한다.
+    // kind 는 'ok' 로 유지하되 summary 는 비우지 않는다 — stopWhen 이후 통과한
+    // 세션은 전부 이 분기라, 여기서 summary 를 비우면 kill 대기 상한 초과나
+    // 타이머 지각(절전) 같은 사실이 어디에도 안 남는다(2차 리뷰).
+    kind = 'ok';
+    const timeoutMsUsed =
+      typeof session.timeoutMs === 'number' ? session.timeoutMs : SESSION_TIMEOUT_MS;
+    const notes = overrunNotes(session, timeoutMsUsed);
+    // timedOut 과 observed 가 함께 참인 순서는 둘 다 가능하다 — 타이머가 먼저
+    // 발화한 뒤 버퍼에 남아 있던 본문 이벤트가 관측되거나, 관측 뒤 kill 대기
+    // 중에 타이머가 만료되거나(타이머는 finish 에서만 해제된다). 어느 쪽이든
+    // 세션이 시한 끝에서야 본문을 냈다는 뜻이라, 순서를 단정하지 않고 적는다.
+    summary = session.timedOut
+      ? `관측 즉시 종료 판정과 ${timeoutMsUsed}ms 타임아웃이 같은 세션에 겹침(본문 이벤트 관측과 타이머 만료가 kill 대기 안에서 함께 일어남 — 세션이 시한 끝에서야 본문을 냈다는 뜻)${notes}`
+      : notes
+        ? `관측 즉시 종료${notes}`
+        : '';
+  } else if (session.abortedFor === 'auth') {
     kind = 'auth';
     summary =
       `인증 실패로 조기 종료 — API 재시도 ${apiRetryCount}회 관측` +
@@ -556,6 +756,10 @@ export function diagnoseSession(session) {
       '`claude` 로그인 상태(프로필/CLAUDE_CONFIG_DIR)와 ANTHROPIC_API_KEY 를 확인';
   } else if (session.timedOut) {
     kind = 'timeout';
+    // timeoutMs 가 없는 입력(직접 만든 세션 객체)에서 "undefinedms" 가 찍히지
+    // 않게 기본값으로 메운다.
+    const timeoutMsUsed =
+      typeof session.timeoutMs === 'number' ? session.timeoutMs : SESSION_TIMEOUT_MS;
     // E3(네트워크 불가)은 error_status 가 null 로 온다 — HTTP 응답 자체가 없었다는
     // 뜻이라 상태 코드 대신 그 사실을 적는다.
     const lastRetryLabel =
@@ -564,21 +768,24 @@ export function diagnoseSession(session) {
         : `HTTP 상태 없음 — 네트워크 계층 오류(${lastApiRetry?.error ?? '?'})`;
     summary =
       apiRetryCount > 0
-        ? `${session.timeoutMs}ms 내 미종료 — API 재시도 ${apiRetryCount}회 관측(마지막 ${lastRetryLabel}); 요금 한도·과부하·네트워크 문제일 가능성이 큼`
-        : `${session.timeoutMs}ms 내 미종료 — API 재시도 관측 없음, 마지막 이벤트: ${lastEventLabel}`;
-    // 벽시계가 타임아웃을 크게 넘겼으면 절전·일시정지 흔적이다(상수 주석 참고).
-    // 절전이 세션 안에서 끝나 벽시계가 정확히 타임아웃과 같은 경우는 잡지
-    // 못한다 — 이 문구가 없다고 절전이 없었다는 뜻은 아니다.
-    const overrunMs = session.durationMs - session.timeoutMs;
-    if (Number.isFinite(overrunMs) && overrunMs > TIMEOUT_OVERRUN_NOTE_MS) {
-      summary += ` — 벽시계로는 ${session.durationMs}ms 경과(타임아웃보다 ${overrunMs}ms 초과): 세션 도중 시스템 절전·일시정지가 있었을 가능성`;
-    }
+        ? `${timeoutMsUsed}ms 내 미종료 — API 재시도 ${apiRetryCount}회 관측(마지막 ${lastRetryLabel}); 요금 한도·과부하·네트워크 문제일 가능성이 큼`
+        : `${timeoutMsUsed}ms 내 미종료 — API 재시도 관측 없음, 마지막 이벤트: ${lastEventLabel}`;
+    // 벽시계 초과분은 원인이 둘로 갈린다(실측 2026-09-16): 타이머가 늦게
+    // 발화한 것(절전·일시정지)과, 타이머는 제때 발화했는데 kill 뒤 'close' 가
+    // 늦게 온 것(파이프를 물고 있던 손자 프로세스). 두 값을 따로 재므로 둘을
+    // 각각 다른 문장으로 적는다 — 종전엔 후자까지 "절전"으로 단정했다.
+    summary += overrunNotes(session, timeoutMsUsed);
   } else if (session.code !== 0) {
     kind = 'exit';
     let bodyMsg;
     if (result) {
       const text = result.result || result.errors.join('; ') || assistantError?.text || '';
-      bodyMsg = ` — result ${result.subtype}, terminal_reason=${result.terminal_reason}: "${text}"`;
+      // 실측(미로그인, claude 2.1.273)의 result 는 `subtype:'success'` 인데
+      // `is_error:true` 다 — subtype 만 인용하면 "종료 코드 1 — result
+      // success" 라는 모순된 문장이 된다. is_error 를 먼저 말한다.
+      bodyMsg = result.is_error
+        ? ` — result 오류(subtype ${result.subtype}, terminal_reason=${result.terminal_reason}): "${text}"`
+        : ` — result ${result.subtype}, terminal_reason=${result.terminal_reason}: "${text}"`;
     } else {
       bodyMsg = ` — result 이벤트 없음, 마지막 이벤트: ${lastEventLabel}`;
     }
@@ -592,7 +799,11 @@ export function diagnoseSession(session) {
     summary = `${exitLabel}${bodyMsg}${stderrTail ? ` — stderr: ${stderrTail}` : ''}`;
   } else if (session.code === 0 && result?.is_error) {
     kind = 'result-error';
-    summary = `result is_error=true (${result.subtype}, terminal_reason=${result.terminal_reason}): "${result.result}"`;
+    // 사유는 exit 분기와 같은 규칙으로 고른다 — `result.result` 가 비어 있고
+    // 사유가 `errors`/assistant 오류에만 있는 실측 형태(E4 예산 초과)에서
+    // 빈 따옴표만 남던 것을 정정.
+    const text = result.result || result.errors.join('; ') || assistantError?.text || '';
+    summary = `result is_error=true (${result.subtype}, terminal_reason=${result.terminal_reason}): "${text}"`;
   } else {
     kind = 'ok';
     summary = '';
@@ -612,6 +823,8 @@ export function diagnoseSession(session) {
     lastEventLabel,
     unrecognizedModel,
     rateLimitEvent,
+    modelFallback,
+    assistantModel,
   };
 }
 
@@ -689,6 +902,15 @@ function persistTranscript(state, prefix, attempt, session, diagnosis, cwd) {
           timedOut: session.timedOut,
           abortedFor: session.abortedFor,
           durationMs: session.durationMs,
+          // 타임아웃·kill 지연을 사후에 다시 따질 수 있게 세션 타이밍을 그대로
+          // 남긴다 — summary 한 줄만으로는 "절전"과 "종료 지연"을 구분해
+          // 재검토할 수 없다.
+          timeoutMs: session.timeoutMs,
+          startedAt: session.startedAt,
+          endedAt: session.endedAt,
+          timerLateMs: session.timerLateMs,
+          closeLatencyMs: session.closeLatencyMs,
+          closeTimedOut: session.closeTimedOut,
           diagnosis,
         },
         null,
@@ -716,14 +938,42 @@ function safeRealpath(p) {
   }
 }
 
-/** @param {string} pluginDir @returns {string[]} */
+/**
+ * probe 대상 skill 이름 — `SKILL.md` 가 실제로 있는 디렉터리만 센다. 파일이
+ * 없는 디렉터리를 포함하면 오라클의 기대 본문을 읽는 `readFileSync` 가 던져
+ * A9 전체(그리고 A1~A8 결과까지)가 날아간다. 그 상태 자체는 정적 검사
+ * A1/skill-no-file 이 이미 따로 보고하므로 여기서 또 말할 필요도 없다.
+ * @param {string} pluginDir
+ * @returns {string[]}
+ */
 function listSkillNamesOnDisk(pluginDir) {
   const skillsDir = path.join(pluginDir, 'shared', 'skills');
   return fs
     .readdirSync(skillsDir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
+    .filter((e) => fs.existsSync(path.join(skillsDir, e.name, 'SKILL.md')))
     .map((e) => e.name)
     .sort();
+}
+
+/**
+ * 사전 점검 실패를 "다시 해 보면 달라질 수 있는 것"과 "결정적인 것"으로
+ * 가른다. 재시도하는 것만:
+ *   - `timeout` 인데 API 재시도가 한 번도 없었던 경우 — 네트워크가 아니라
+ *     절전·일시정지·순간 정지로 세션이 멈춘 모양이다(실측 2026-09-15 덮개
+ *     닫힘 건). api_retry 가 있으면 E3(네트워크 불가) 계열이라 재시도해 봐야
+ *     180초를 한 번 더 태울 뿐이다.
+ *   - `exit` 인데 result 이벤트조차 없는 경우 — 세션이 진단 가능한 상태에
+ *     닿기 전에 죽었다.
+ * 나머지(auth, result 가 있는 exit — 미로그인·model_not_found·예산 초과 —,
+ * result-error, spawn)는 다시 해도 같은 결과라 재시도하지 않는다.
+ * @param {SessionDiagnosis} diagnosis
+ * @returns {boolean}
+ */
+function isTransientPreflightFailure(diagnosis) {
+  if (diagnosis.kind === 'timeout') return diagnosis.apiRetryCount === 0;
+  if (diagnosis.kind === 'exit') return diagnosis.result === null;
+  return false;
 }
 
 /**
@@ -733,24 +983,30 @@ function listSkillNamesOnDisk(pluginDir) {
  * 전부가 세션에 등록됐는지를 확인한다. 여기서 걸리면 skill 세션은 하나도
  * 띄우지 않는다 — 실측(E1/E2)상 환경 문제 하나가 skill 개수만큼의 동일한
  * "종료 코드 1"/"타임아웃"으로 fan-out 됐던 것이 이번 리팩터의 발단이다.
+ *
+ * 사전 점검은 **전체를 막는 관문**이라, 여기서 일시 장애 한 번에 걸리면 skill
+ * probe 가 한 개도 안 돈다 — 그래서 실패가 일시 장애형일 때만 정확히 1회
+ * 재시도한다(`isTransientPreflightFailure`).
  * @param {string} pluginDir
  * @param {{
  *   model?: string,
  *   runSession?: (opts: { argv: string[], cwd: string }) => Promise<Awaited<ReturnType<typeof runClaudeSession>>>,
  *   transcriptState?: { dir: string | null, explicit: string | null },
+ *   retryDelayMs?: number,
  * }} [opts]
  * @returns {Promise<
  *   | { ok: false, reason: 'cli-not-found', error: string }
- *   | { ok: false, reason: 'session', error: string, transcriptPath: string }
- *   | { ok: false, reason: 'plugin-not-loaded', error: string }
- *   | { ok: false, reason: 'skills-not-registered', error: string }
- *   | { ok: true, warnings: string[], info: { requestedModel: string, model: string, claudeCodeVersion: string, apiKeySource: string, pluginVersion: string | undefined, pluginSource: string | undefined } }
+ *   | { ok: false, reason: 'session', error: string, transcriptPath: string | null, attempts: number }
+ *   | { ok: false, reason: 'plugin-not-loaded', error: string, attempts: number, warnings: string[] }
+ *   | { ok: false, reason: 'skills-not-registered', error: string, attempts: number, warnings: string[] }
+ *   | { ok: true, warnings: string[], attempts: number, info: { requestedModel: string, model: string, claudeCodeVersion: string, apiKeySource: string, pluginVersion: string | undefined, pluginSource: string | undefined } }
  * >}
  */
 export async function preflight(pluginDir, opts = {}) {
   const model = opts.model ?? SKILL_LOAD_DEFAULT_MODEL;
   const runSession = opts.runSession;
   const transcriptState = opts.transcriptState ?? { dir: null, explicit: null };
+  const retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
 
   // runSession 이 주입되면(단위 테스트) 실제 claude 바이너리 유무를 보지 않는다
   // — "CLI 없이 사전 점검·재시도 경로를 돌릴 수 있게 한다"는 계약(2-6)의
@@ -767,31 +1023,73 @@ export async function preflight(pluginDir, opts = {}) {
   }
   const effectiveRunSession = runSession ?? runClaudeSession;
 
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ait-skill-load-preflight-'));
   const argv = buildSessionArgv({ prompt: 'Reply with exactly one word: pong', model, pluginDir });
-  let session;
-  try {
-    session = await effectiveRunSession({ argv, cwd });
-  } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+  /** @type {Array<{ attempt: number, session: any, diagnosis: SessionDiagnosis, cwd: string }>} */
+  const records = [];
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ait-skill-load-preflight-'));
+    let session;
+    try {
+      session = await effectiveRunSession({ argv, cwd });
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+    records.push({ attempt, session, diagnosis: diagnoseSession(session), cwd });
+    const canRetry =
+      attempt === 1 &&
+      isTransientPreflightFailure(records[0].diagnosis) &&
+      records[0].diagnosis.failed;
+    if (!canRetry) break;
+    await delay(retryDelayMs);
   }
 
-  const diagnosis = diagnoseSession(session);
+  const attempts = records.length;
+  const { diagnosis } = records[records.length - 1];
   if (diagnosis.failed) {
-    const transcriptPath = persistTranscript(
-      transcriptState,
-      'preflight',
-      1,
-      session,
-      diagnosis,
-      cwd,
-    );
+    // 최종 실패면 모든 시도를 남긴다 — 1차와 2차의 사유가 다를 수 있고(예:
+    // 1차 타임아웃 → 2차 미로그인), 그 대조가 원인 판단의 근거다. 그래서
+    // 경로는 파일 하나가 아니라 디렉터리를 가리킨다.
+    let lastPath = null;
+    for (const rec of records) {
+      lastPath = persistTranscript(
+        transcriptState,
+        'preflight',
+        rec.attempt,
+        rec.session,
+        rec.diagnosis,
+        rec.cwd,
+      );
+    }
+    const detail =
+      attempts > 1
+        ? `${records[0].diagnosis.summary} / 재시도: ${diagnosis.summary}`
+        : diagnosis.summary;
     return {
       ok: false,
       reason: 'session',
-      error: `사전 점검 세션 실패 — ${diagnosis.summary}`,
-      transcriptPath,
+      error: `사전 점검 세션 실패${attempts > 1 ? `(${attempts}회 시도)` : ''} — ${detail}`,
+      transcriptPath: lastPath ? path.dirname(lastPath) : null,
+      attempts,
     };
+  }
+
+  const warnings = [];
+  if (attempts > 1) {
+    // 재시도로 통과했으면 1차 실패는 일시 장애였다는 뜻이지만, 조용히 넘기면
+    // 그 흔들림이 기록에서 사라진다 — 1차 transcript 만 남기고 경고로 알린다.
+    const firstPath = persistTranscript(
+      transcriptState,
+      'preflight',
+      records[0].attempt,
+      records[0].session,
+      records[0].diagnosis,
+      records[0].cwd,
+    );
+    warnings.push(
+      `사전 점검 1차 시도 실패(${records[0].diagnosis.summary}) 후 재시도에서 통과 — 일시 장애 가능성, transcript: ${
+        firstPath ?? '(저장 실패 — SKILL_LOAD_DEBUG_DIR 확인)'
+      }`,
+    );
   }
 
   const init = diagnosis.init ?? {
@@ -811,6 +1109,10 @@ export async function preflight(pluginDir, opts = {}) {
       error: `--plugin-dir 가 세션에 로드되지 않음 (init.plugins: ${
         names.length ? names.join(', ') : '없음'
       })`,
+      attempts,
+      // 재시도로 통과한 뒤 등록 검사에서 실패해도 1차 실패 경고(warnings)가
+      // 사라지지 않게 여기서도 함께 반환한다.
+      warnings,
     };
   }
 
@@ -823,13 +1125,31 @@ export async function preflight(pluginDir, opts = {}) {
       error: `플러그인 skill 이 세션에 등록되지 않음: ${missing
         .map((n) => `ait:${n}`)
         .join(', ')} — shadow 이전 단계(플러그인 로드) 문제`,
+      attempts,
+      warnings,
     };
   }
 
-  const warnings = [];
-  if (diagnosis.unrecognizedModel) {
+  // 세션이 실제로 쓴 모델. `init.model` 은 요청 문자열을 그대로 되돌려주므로
+  // (실측 2026-09-16, claude 2.1.273) 대체가 일어나도 init 만으로는 알 수 없다
+  // — model_fallback 이벤트 > 첫 assistant 이벤트의 message.model > init 순으로
+  // 신뢰한다.
+  const effectiveModel =
+    diagnosis.modelFallback?.fallback_model ?? diagnosis.assistantModel ?? init.model;
+  if (diagnosis.modelFallback) {
     warnings.push(
-      `요청 모델 '${model}' 를 CLI 가 인식하지 못해 '${init.model}' 로 대체됨 (SKILL_LOAD_MODEL 확인)`,
+      `요청 모델 '${model}' 를 CLI 가 인식하지 못해 '${diagnosis.modelFallback.fallback_model}' 로 대체됨(model_fallback, trigger ${diagnosis.modelFallback.trigger}) (SKILL_LOAD_MODEL 확인)`,
+    );
+  } else if (diagnosis.unrecognizedModel && effectiveModel !== model) {
+    warnings.push(
+      `요청 모델 '${model}' 를 CLI 가 인식하지 못해 '${effectiveModel}' 로 대체됨 (SKILL_LOAD_MODEL 확인)`,
+    );
+  } else if (diagnosis.unrecognizedModel) {
+    // stderr 마커는 떴는데 대체 흔적이 stdout 에 없다 — 종전엔 이 경우에도
+    // init.model 을 인용해 "X 를 인식하지 못해 X 로 대체됨" 이라는 자기참조
+    // 문장이 나왔다.
+    warnings.push(
+      `요청 모델 '${model}' 를 CLI 가 인식하지 못함(stderr unrecognized_model) — 실제 사용 모델을 stdout 에서 특정할 수 없음 (SKILL_LOAD_MODEL 확인)`,
     );
   }
   const rateLimitInfo = diagnosis.rateLimitEvent?.rate_limit_info;
@@ -852,9 +1172,10 @@ export async function preflight(pluginDir, opts = {}) {
   return {
     ok: true,
     warnings,
+    attempts,
     info: {
       requestedModel: model,
-      model: init.model,
+      model: effectiveModel,
       claudeCodeVersion: init.claude_code_version,
       apiKeySource: init.apiKeySource,
       pluginVersion: pluginEntry.version,
@@ -869,7 +1190,7 @@ export async function preflight(pluginDir, opts = {}) {
 
 /**
  * @typedef {
- *   | { skill: string, outcome: 'match', injectedChars: number, expectedChars: number, attempts: number, firstAttempt: { outcome: string, detail?: string } | null, transcriptPath?: string }
+ *   | { skill: string, outcome: 'match', injectedChars: number, expectedChars: number, attempts: number, firstAttempt: { outcome: string, detail?: string } | null, transcriptPath?: string, sessionNote?: string }
  *   | { skill: string, outcome: 'no-route', attempts: number, firstAttempt: { outcome: string, detail?: string } | null, transcriptPath?: string }
  *   | { skill: string, outcome: 'no-body', expectedChars: number, attempts: number, firstAttempt: { outcome: string, detail?: string } | null, transcriptPath?: string }
  *   | { skill: string, outcome: 'mismatch', injectedChars: number, expectedChars: number, divergenceOffset: number, expectedContext: string, injectedContext: string, attempts: number, firstAttempt: { outcome: string, detail?: string } | null, transcriptPath?: string }
@@ -926,60 +1247,71 @@ async function probeOneSkill(pluginDir, skillName, opts) {
     });
     let session;
     try {
-      session = await effectiveRunSession({ argv, cwd });
+      // 본문 주입 이벤트까지 보면 이 세션에서 잴 것은 다 잰 것이다 — 그
+      // 뒤는 모델이 주입된 본문의 지시를 따라 도구를 계속 돌 뿐이다(실측
+      // 2026-09-15: design/welcome 세션이 그 상태로 180초 타임아웃까지 가서,
+      // 관측이 끝난 skill 이 cli-error 로 찍히고 180초를 한 번 더 태웠다).
+      // 주입된 runSession(테스트)은 이 옵션을 무시해도 된다.
+      session = await effectiveRunSession({
+        argv,
+        cwd,
+        stopWhen: bodyObservedStopWhen(skillId),
+      });
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
 
     const diagnosis = diagnoseSession(session);
+    // 판정 순서: **관측이 먼저다**. 세션이 어떻게 끝났든 stdout 에 Skill
+    // tool_use 와 본문 주입 이벤트가 둘 다 있으면 잴 것은 다 잰 것이므로
+    // match/mismatch 로 확정한다 — 실측 2026-09-15: 본문이 이미 주입된 뒤
+    // 모델이 그 본문 지시를 따라 도구를 계속 돌아 180초 타임아웃으로 죽은
+    // 세션 3개가, 세션 상태만 보고 stdout 을 읽지도 않은 채 cli-error 로
+    // 찍혔다(멀쩡한 skill 을 A9 실패로 만들고 180초를 한 번 더 태웠다).
+    const events = parseStreamJson(session.stdout);
+    const callIdx = findSkillToolUseIndex(events, skillId);
+    const bodyText = callIdx === -1 ? null : findInjectedBodyText(events, callIdx);
     /** @type {(typeof records)[number]} */
     let record;
-    if (diagnosis.failed && diagnosis.kind !== 'result-error') {
-      // CLI 가 죽거나 타임아웃난 건 "본문이 안 실렸다"는 관측이 아니라 "관측을
-      // 못 했다"는 뜻이다 — shadow 판정(no-body/mismatch)과 절대 같은 코드를
-      // 쓰지 않는다(#136 요구사항 4번째 항목). 단 result-error(종료 코드 0,
-      // is_error:true)는 스트림이 result 이벤트까지 도달했다는 뜻이라 이미
-      // 관측 자체는 끝난 상태다 — 여기서 걸러버리면 완전히 관측된 shadow
-      // match/no-body/mismatch 를 cli-error 로 잘못 분류해 재시도하게 된다.
-      record = { attempt, outcome: 'cli-error', session, diagnosis, cwd };
-    } else {
-      const events = parseStreamJson(session.stdout);
-      const callIdx = findSkillToolUseIndex(events, skillId);
-      if (callIdx === -1) {
-        // Skill 도구 자체가 안 불렸다 — 이번 실행에서 모델이 라우팅하지
-        // 않은 것으로, shadow 판정과 독립적인 probe 실패다.
-        record = { attempt, outcome: 'no-route', session, diagnosis, cwd };
+    if (bodyText !== null) {
+      const injected = stripInjectedPrefix(bodyText);
+      if (injected === expected) {
+        record = {
+          attempt,
+          outcome: 'match',
+          session,
+          diagnosis,
+          cwd,
+          injectedChars: injected.length,
+        };
       } else {
-        const bodyText = findInjectedBodyText(events, callIdx);
-        if (bodyText === null) {
-          record = { attempt, outcome: 'no-body', session, diagnosis, cwd };
-        } else {
-          const injected = stripInjectedPrefix(bodyText);
-          if (injected === expected) {
-            record = {
-              attempt,
-              outcome: 'match',
-              session,
-              diagnosis,
-              cwd,
-              injectedChars: injected.length,
-            };
-          } else {
-            const offset = firstDivergence(expected, injected);
-            record = {
-              attempt,
-              outcome: 'mismatch',
-              session,
-              diagnosis,
-              cwd,
-              injectedChars: injected.length,
-              divergenceOffset: offset,
-              expectedContext: offset >= 0 ? contextWindow(expected, offset) : '',
-              injectedContext: offset >= 0 ? contextWindow(injected, offset) : '',
-            };
-          }
-        }
+        const offset = firstDivergence(expected, injected);
+        record = {
+          attempt,
+          outcome: 'mismatch',
+          session,
+          diagnosis,
+          cwd,
+          injectedChars: injected.length,
+          divergenceOffset: offset,
+          expectedContext: offset >= 0 ? contextWindow(expected, offset) : '',
+          injectedContext: offset >= 0 ? contextWindow(injected, offset) : '',
+        };
       }
+    } else if (diagnosis.failed && diagnosis.kind !== 'result-error') {
+      // 본문을 못 봤는데 세션까지 실패했다 — "본문이 안 실렸다"는 관측이
+      // 아니라 "관측을 못 했다"는 뜻이라, shadow 판정(no-body/mismatch)과
+      // 절대 같은 코드를 쓰지 않는다(#136 요구사항 4번째 항목). 단
+      // result-error(종료 코드 0, is_error:true)는 스트림이 result 이벤트까지
+      // 도달했다는 뜻이라 관측 자체는 끝난 상태다 — 여기서 걸러버리면 완전히
+      // 관측된 no-body 를 cli-error 로 잘못 분류해 재시도하게 된다.
+      record = { attempt, outcome: 'cli-error', session, diagnosis, cwd };
+    } else if (callIdx === -1) {
+      // Skill 도구 자체가 안 불렸다 — 이번 실행에서 모델이 라우팅하지
+      // 않은 것으로, shadow 판정과 독립적인 probe 실패다.
+      record = { attempt, outcome: 'no-route', session, diagnosis, cwd };
+    } else {
+      record = { attempt, outcome: 'no-body', session, diagnosis, cwd };
     }
     records.push(record);
 
@@ -1009,6 +1341,13 @@ async function probeOneSkill(pluginDir, skillName, opts) {
         attempts,
         firstAttempt,
       };
+      // 관측 즉시 종료 세션이라도 kill 대기 상한 초과·타이머 지각 같은 사실이
+      // 있으면 diagnoseSession 이 summary 에 남긴다 — match 는 attempts 1 이면
+      // transcript 를 저장하지 않으므로(2-5), 이 문구가 그 사실이 남는 유일한
+      // 자리다(2차 리뷰).
+      if (last.diagnosis.kind === 'ok' && last.diagnosis.summary) {
+        result.sessionNote = last.diagnosis.summary;
+      }
       break;
     case 'no-route':
       result = { skill: skillName, outcome: 'no-route', attempts, firstAttempt };
@@ -1131,6 +1470,7 @@ async function mapWithConcurrency(items, limit, fn) {
  *   preflightReason: 'cli-not-found' | 'session' | 'plugin-not-loaded' | 'skills-not-registered' | null,
  *   preflightWarnings: string[],
  *   preflightInfo: { requestedModel: string, model: string, claudeCodeVersion: string, apiKeySource: string, pluginVersion: string | undefined, pluginSource: string | undefined } | null,
+ *   preflightAttempts: number,
  *   results: SkillLoadResult[],
  *   debugDir: string | null,
  *   retried: number,
@@ -1143,13 +1483,14 @@ export async function probeAllSkills(pluginDir, opts = {}) {
   const retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   const transcriptState = { dir: null, explicit: opts.debugDir ?? null };
 
-  const pre = await preflight(pluginDir, { model, runSession, transcriptState });
+  const pre = await preflight(pluginDir, { model, runSession, transcriptState, retryDelayMs });
   if (!pre.ok) {
     return {
       preflightError: pre.error,
       preflightReason: pre.reason,
-      preflightWarnings: [],
+      preflightWarnings: pre.warnings ?? [],
       preflightInfo: null,
+      preflightAttempts: pre.attempts ?? 1,
       results: [],
       debugDir: transcriptState.dir,
       retried: 0,
@@ -1175,6 +1516,7 @@ export async function probeAllSkills(pluginDir, opts = {}) {
     preflightReason: null,
     preflightWarnings: pre.warnings,
     preflightInfo: pre.info,
+    preflightAttempts: pre.attempts,
     results,
     debugDir: transcriptState.dir,
     retried,

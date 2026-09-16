@@ -3172,9 +3172,12 @@ async function checkA6(root) {
 
 /**
  * @param {string} root
+ * @param {{ probe?: typeof probeAllSkills }} [opts] `opts.probe` 는 테스트
+ *   주입용 — `probeAllSkills` 와 같은 시그니처(`(root, { jobs, model }) =>
+ *   Promise<...>`)를 만족해야 한다. 생략하면 실제 `probeAllSkills` 를 쓴다.
  * @returns {Promise<Violation[]>}
  */
-async function checkA9(root) {
+export async function checkA9(root, opts = {}) {
   if (process.env.VALIDATE_SKILL_LOAD !== '1') {
     return [
       mkv(
@@ -3189,15 +3192,29 @@ async function checkA9(root) {
 
   const jobs = Number.parseInt(process.env.SKILL_LOAD_JOBS ?? '', 10) || SKILL_LOAD_DEFAULT_JOBS;
   const model = process.env.SKILL_LOAD_MODEL || SKILL_LOAD_DEFAULT_MODEL;
+  const probeFn = opts.probe ?? probeAllSkills;
+  let probe;
+  try {
+    probe = await probeFn(root, { jobs, model });
+  } catch (err) {
+    // A9 는 A1~A8 뒤에 도는 마지막 검사라, 여기서 예외가 새면 이미 끝난
+    // 정적 검사 결과까지 스택트레이스 하나로 통째로 날아간다 — probe 는
+    // CLI spawn·파일시스템·네트워크가 얽힌 유일한 검사이므로 그 위험을
+    // 여기서 막고 한 줄 위반으로 바꾼다.
+    return [
+      mkv('', 0, 'A9/probe-crashed', `skill 본문 주입 실측이 예외로 중단됨 — ${err?.stack ?? err}`),
+    ];
+  }
   const {
     preflightError,
     preflightReason,
     preflightWarnings,
     preflightInfo,
+    preflightAttempts,
     results,
     debugDir,
     retried,
-  } = await probeAllSkills(root, { jobs, model });
+  } = probe;
 
   // cli-not-found 는 종전과 같은 코드로 유지한다(A9 opt-in 사용자가 이미 이
   // 문자열로 원인을 알아본다). 그 외 사전 점검 실패(session/plugin-not-loaded/
@@ -3208,19 +3225,35 @@ async function checkA9(root) {
     return [mkv('', 0, 'A9/cli-not-found', preflightError)];
   }
   if (preflightError) {
-    // debugDir 는 사전 점검이 'session'(세션 자체 실패, E1/E2) 사유로 죽었을
-    // 때만 채워진다 — preflight 가 그 경우에만 transcript 를 저장한다. 저장된
-    // stdout stream-json 이 원인 진단의 유일한 근거인데, 경로를 여기서 안
-    // 실으면 A9/info(정상 경로에서만 찍힌다) 가 없는 이 실패 경로에서는
-    // 아무 데도 안 남는다.
-    return [
+    // preflightWarnings 를 먼저 싣는다 — 재시도로 통과했다가(1차 실패) 이후
+    // 등록 검사(plugin-not-loaded/skills-not-registered)에서 실패해도 그 1차
+    // 실패 경고가 A9/preflight-failed 한 줄에 묻혀 사라지지 않게 한다.
+    /** @type {Violation[]} */
+    const failViolations = preflightWarnings.map((w) =>
+      mkv('', 0, 'A9/preflight-warning', w, 'warn'),
+    );
+    // debugDir 안내는 preflightReason 이 'session'(세션 자체 실패, E1/E2)일
+    // 때만 붙인다 — 그 사유에서만 preflight 가 최종 시도의 transcript 를
+    // 저장한다(저장된 stdout stream-json 이 원인 진단의 유일한 근거). 다른
+    // 사유(plugin-not-loaded/skills-not-registered)에서 debugDir 에 있는
+    // 것은 재시도로 통과한 1차 시도의 transcript 뿐이고, 그 경로는 위
+    // preflightWarnings 줄이 이미 싣고 있어 여기서 또 붙이면 중복이거나
+    // (통과한 시도를 가리키는) 오해를 준다.
+    const transcriptNote =
+      preflightReason === 'session'
+        ? debugDir !== null
+          ? ` · transcript: ${debugDir}`
+          : ' · transcript: (저장 실패 — SKILL_LOAD_DEBUG_DIR 확인)'
+        : '';
+    failViolations.push(
       mkv(
         '',
         0,
         'A9/preflight-failed',
-        `${preflightError} — skill 별 세션은 띄우지 않음${debugDir ? ` · transcript: ${debugDir}` : ''}`,
+        `${preflightError} — skill 별 세션은 띄우지 않음${transcriptNote}`,
       ),
-    ];
+    );
+    return failViolations;
   }
 
   /** @type {Violation[]} */
@@ -3240,6 +3273,9 @@ async function checkA9(root) {
       0,
       'A9/info',
       `probe 조건: model=${preflightInfo.model} (요청 ${preflightInfo.requestedModel}) · claude ${preflightInfo.claudeCodeVersion} · plugin ait@${preflightInfo.pluginVersion} · jobs=${jobs} · 재시도 ${retried}건` +
+        // 사전 점검이 1차에 실패하고 재시도로 통과했으면 그 흔들림도 조건의
+        // 일부다 — 뒤따르는 skill 결과를 읽을 때 같이 봐야 한다.
+        (preflightAttempts > 1 ? ' · 사전 점검 재시도 1회' : '') +
         (debugDir ? ` · transcript: ${debugDir}` : ''),
       'warn',
     ),
@@ -3262,14 +3298,18 @@ async function checkA9(root) {
           r.attempts > 1
             ? ` — 1차 시도는 ${r.firstAttempt.outcome}(${
                 r.firstAttempt.detail ?? ''
-              }) 로 실패했고 재시도에서 통과 (일시 장애 가능성, transcript 참조)`
+              }) 로 실패했고 재시도에서 통과 (일시 장애 가능성, transcript: ${transcriptOf(r)})`
             : '';
+        // kill 대기 상한 초과·타이머 지각 같은 세션 이상은 match 여도 남을 수
+        // 있다(diagnoseSession 의 observed 분기) — attempts 1 이면 transcript
+        // 를 저장하지 않으므로, 이 메모가 그 사실이 남는 유일한 자리다.
+        const sessionNoteText = r.sessionNote ? ` — 세션 메모: ${r.sessionNote}` : '';
         violations.push(
           mkv(
             relFile,
             1,
             'A9/ok',
-            `skill '${r.skill}' 본문 주입 확인 (주입 ${r.injectedChars}자 == 기대 ${r.expectedChars}자, 완전 일치)${retryNote}`,
+            `skill '${r.skill}' 본문 주입 확인 (주입 ${r.injectedChars}자 == 기대 ${r.expectedChars}자, 완전 일치)${retryNote}${sessionNoteText}`,
             'warn',
           ),
         );
@@ -3330,20 +3370,27 @@ async function checkA9(root) {
         break;
       }
 
-      case 'cli-error':
+      case 'cli-error': {
         // shadow 발견과 절대 같은 코드를 쓰면 안 된다 — CLI 가 죽거나
         // 타임아웃난 건 "본문이 안 실렸다"는 관측이 아니라 "관측을 못 했다"
         // 는 뜻이다(#136 요구사항 4번째 항목). detail 은 이미 1차/2차 시도
         // 요약을 이어붙인 문자열이다(skill-load-probe.mjs 의 probeOneSkill).
+        // 1차가 no-route 였다면 "모두 실패"는 부정확하다 — 1차는 세션이 정상
+        // 종료했고 라우팅만 안 된 것이라, 두 시도의 성격이 서로 다르다.
+        const head =
+          r.firstAttempt?.outcome === 'no-route'
+            ? `skill '${r.skill}' probe 세션 ${r.attempts}회 실패 — 1차는 Skill 도구가 호출되지 않음(no-route), 2차는 관측 자체를 못 함: ${r.detail}`
+            : `skill '${r.skill}' probe 세션 ${r.attempts}회 모두 실패 — 관측 자체를 못 함: ${r.detail}`;
         violations.push(
           mkv(
             relFile,
             1,
             'A9/probe-cli-error',
-            `skill '${r.skill}' probe 세션 ${r.attempts}회 모두 실패 — 관측 자체를 못 함: ${r.detail}. transcript: ${transcriptOf(r)}. 같은 문구가 skill 전체에 반복되면 skill 회귀가 아니라 실행 환경(인증·네트워크·요금 한도·동시 실행·절전) 문제다`,
+            `${head}. transcript: ${transcriptOf(r)}. 같은 문구가 skill 전체에 반복되면 skill 회귀가 아니라 실행 환경(인증·네트워크·요금 한도·동시 실행·절전) 문제다`,
           ),
         );
         break;
+      }
 
       default:
         violations.push(
