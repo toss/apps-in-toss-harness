@@ -112,11 +112,12 @@ skill §5 adapter-note와 동일 패턴).
 **d. 설치 상태** (Claude Code 전용 — 그 밖의 호스트에서는 이 단계를 통째로
 건너뛴다, 1-c 꼬리와 같은 graceful-degrade 관례):
 
-위 1-a 출력의 `config`·`plugin cache`·`marketplace clone` 세 줄로 판단한다
-(오프라인·읽기 전용 — `git fetch`·`claude plugin marketplace update`는 타지
+위 1-a 출력의 `plugin cache`·`marketplace clone` 두 줄로 판단한다(`config`
+줄은 `CLAUDE_CONFIG_DIR` 해석 결과를 보여주는 참고다 — 판정에는 안 쓴다).
+오프라인·읽기 전용이다 — `git fetch`·`claude plugin marketplace update`는 타지
 않고, 이 확인 자체가 파일을 쓰지도 않는다. `claude plugin list`도 부르지
 않는다 — 이 세션 자신이 이미 플러그인으로 떠 있어 자식 CLI 세션을 새로
-띄우는 비용에 비해 값이 작다). 판정은 세 갈래다 — 캐시 디렉터리와
+띄우는 비용에 비해 값이 작다. 판정은 세 갈래다 — 캐시 디렉터리와
 마켓플레이스 clone이 둘 다 있으면 정상, 하나만 있으면 부분, 둘 다 없으면
 없음이다. 정상이면 아무것도 인쇄하지 않는다. 부분·없음일 때만 설치 문제
 해결 런북을 가리킨다.
@@ -140,7 +141,7 @@ skill §5 adapter-note와 동일 패턴).
      /ait:setup-debugger
      말로: "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘"
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
-     .github/install-troubleshooting.md
+     https://github.com/toss/apps-in-toss-harness/blob/main/.github/install-troubleshooting.md
 ```
 
 (위는 예시 조합이다 — 실제로는 점검에서 관측된 항목만 인쇄한다. 전부 ✅면
