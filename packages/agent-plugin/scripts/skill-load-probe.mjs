@@ -1298,13 +1298,17 @@ async function probeOneSkill(pluginDir, skillName, opts) {
           injectedContext: offset >= 0 ? contextWindow(injected, offset) : '',
         };
       }
-    } else if (diagnosis.failed && diagnosis.kind !== 'result-error') {
+    } else if (diagnosis.failed && !(diagnosis.kind === 'result-error' && callIdx !== -1)) {
       // 본문을 못 봤는데 세션까지 실패했다 — "본문이 안 실렸다"는 관측이
       // 아니라 "관측을 못 했다"는 뜻이라, shadow 판정(no-body/mismatch)과
-      // 절대 같은 코드를 쓰지 않는다(#136 요구사항 4번째 항목). 단
-      // result-error(종료 코드 0, is_error:true)는 스트림이 result 이벤트까지
-      // 도달했다는 뜻이라 관측 자체는 끝난 상태다 — 여기서 걸러버리면 완전히
-      // 관측된 no-body 를 cli-error 로 잘못 분류해 재시도하게 된다.
+      // 절대 같은 코드를 쓰지 않는다(#136 요구사항 4번째 항목). 예외는
+      // result-error(종료 코드 0, is_error:true)이면서 **Skill 도구가 실제로
+      // 불린** 세션뿐이다 — 그 경우 스트림이 result 이벤트까지 갔고 호출도
+      // 관측됐으니 "본문만 안 왔다"는 no-body 관측이 성립한다. 같은
+      // result-error 라도 Skill 호출이 아예 없으면(callIdx === -1) 라우팅이
+      // 안 된 건지 세션이 그 전에 깨진 건지 가릴 수 없어, no-route 로
+      // 단정하지 않고 cli-error 로 둔다 — no-route 문구는 발화·description
+      // 문제를 먼저 보라고 안내하는데 그 방향이 반대가 된다.
       record = { attempt, outcome: 'cli-error', session, diagnosis, cwd };
     } else if (callIdx === -1) {
       // Skill 도구 자체가 안 불렸다 — 이번 실행에서 모델이 라우팅하지

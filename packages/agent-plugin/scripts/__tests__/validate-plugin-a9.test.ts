@@ -214,6 +214,177 @@ describe('checkA9 (opts.probe 주입)', () => {
     expect(cliError[0].message).toContain('모두 실패');
   });
 
+  it('results 에 mismatch → A9/skill-load-shadowed, 글자수 비교와 offset·문맥이 문구에 남는다', async () => {
+    const probe = async () =>
+      probeResult({
+        results: [
+          {
+            skill: 'alpha',
+            outcome: 'mismatch',
+            injectedChars: 24,
+            expectedChars: 8123,
+            divergenceOffset: 17,
+            expectedContext: '# alpha skill\\n\\nFixture',
+            injectedContext: 'Load the `alpha` skill.',
+            attempts: 1,
+            firstAttempt: null,
+            transcriptPath: '/tmp/x/alpha.attempt1.stdout.jsonl',
+          },
+        ],
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const shadowed = findByRule(violations, 'A9/skill-load-shadowed');
+    expect(shadowed).toHaveLength(1);
+    expect(shadowed[0].level).toBe('error');
+    expect(shadowed[0].message).toContain('주입 24자 vs 기대 8123자');
+    expect(shadowed[0].message).toContain('첫 불일치 offset 17');
+    expect(shadowed[0].message).toContain('# alpha skill\\n\\nFixture');
+    expect(shadowed[0].message).toContain('Load the `alpha` skill.');
+    expect(shadowed[0].message).toContain('/tmp/x/alpha.attempt1.stdout.jsonl');
+  });
+
+  it('mismatch 인데 divergenceOffset -1 이면 offset 대신 경계 케이스 문구를 쓴다', async () => {
+    const probe = async () =>
+      probeResult({
+        results: [
+          {
+            skill: 'alpha',
+            outcome: 'mismatch',
+            injectedChars: 0,
+            expectedChars: 0,
+            divergenceOffset: -1,
+            expectedContext: '',
+            injectedContext: '',
+            attempts: 1,
+            firstAttempt: null,
+          },
+        ],
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const shadowed = findByRule(violations, 'A9/skill-load-shadowed');
+    expect(shadowed).toHaveLength(1);
+    expect(shadowed[0].message).toContain('길이 비교로는 불일치를 못 찾음');
+    expect(shadowed[0].message).not.toContain('첫 불일치 offset');
+  });
+
+  it('results 에 no-route(2회 모두) → A9/probe-no-route, 시도 횟수를 그대로 적는다', async () => {
+    const probe = async () =>
+      probeResult({
+        results: [
+          {
+            skill: 'alpha',
+            outcome: 'no-route',
+            attempts: 2,
+            firstAttempt: { outcome: 'no-route', detail: 'Skill 도구가 호출되지 않음(no-route)' },
+            transcriptPath: '/tmp/x/alpha.attempt2.stdout.jsonl',
+          },
+        ],
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const noRoute = findByRule(violations, 'A9/probe-no-route');
+    expect(noRoute).toHaveLength(1);
+    expect(noRoute[0].level).toBe('error');
+    expect(noRoute[0].message).toContain("Skill 도구가 'ait:alpha' 로 호출되지 않음");
+    expect(noRoute[0].message).toContain('2회 시도 모두 라우팅 안 됨');
+    expect(noRoute[0].message).toContain('/tmp/x/alpha.attempt2.stdout.jsonl');
+    expect(findByRule(violations, 'A9/skill-load-shadowed')).toHaveLength(0);
+  });
+
+  it('no-route 인데 1차가 cli-error 였으면 "모두 라우팅 안 됨"이라 하지 않는다', async () => {
+    const probe = async () =>
+      probeResult({
+        results: [
+          {
+            skill: 'alpha',
+            outcome: 'no-route',
+            attempts: 2,
+            firstAttempt: { outcome: 'cli-error', detail: '180000ms 내 미종료' },
+          },
+        ],
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const noRoute = findByRule(violations, 'A9/probe-no-route');
+    expect(noRoute).toHaveLength(1);
+    expect(noRoute[0].message).toContain('1차는 cli-error(180000ms 내 미종료)');
+    expect(noRoute[0].message).not.toContain('모두 라우팅 안 됨');
+  });
+
+  it('results 에 no-body → A9/skill-load-shadowed, 기대 글자수와 stub 확인 안내가 남는다', async () => {
+    const probe = async () =>
+      probeResult({
+        results: [
+          {
+            skill: 'alpha',
+            outcome: 'no-body',
+            expectedChars: 8123,
+            attempts: 1,
+            firstAttempt: null,
+            transcriptPath: '/tmp/x/alpha.attempt1.stdout.jsonl',
+          },
+        ],
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const shadowed = findByRule(violations, 'A9/skill-load-shadowed');
+    expect(shadowed).toHaveLength(1);
+    expect(shadowed[0].level).toBe('error');
+    expect(shadowed[0].message).toContain('본문 주입 이벤트가 세션 종료까지 없었음');
+    expect(shadowed[0].message).toContain('기대 8123자');
+    expect(shadowed[0].message).toContain('shared/commands/');
+    expect(findByRule(violations, 'A9/probe-no-route')).toHaveLength(0);
+  });
+
+  it('transcriptPath 가 없으면 저장 실패 문구로 대체한다 (undefined 가 찍히지 않는다)', async () => {
+    const probe = async () =>
+      probeResult({
+        results: [
+          {
+            skill: 'alpha',
+            outcome: 'no-body',
+            expectedChars: 10,
+            attempts: 1,
+            firstAttempt: null,
+          },
+        ],
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const shadowed = findByRule(violations, 'A9/skill-load-shadowed');
+    expect(shadowed[0].message).toContain('(저장 실패 — SKILL_LOAD_DEBUG_DIR 확인)');
+    expect(shadowed[0].message).not.toContain('undefined');
+  });
+
+  it('A9/info 에 API 키 출처와 플러그인 출처가 남는다', async () => {
+    const probe = async () =>
+      probeResult({
+        preflightInfo: {
+          requestedModel: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-5',
+          claudeCodeVersion: '2.1.273',
+          apiKeySource: 'ANTHROPIC_API_KEY',
+          pluginVersion: '0.1.33',
+          pluginSource: 'ait@apps-in-toss',
+        },
+      });
+
+    const violations = await checkA9(root, { probe });
+
+    const info = findByRule(violations, 'A9/info');
+    expect(info).toHaveLength(1);
+    expect(info[0].message).toContain('API 키 출처 ANTHROPIC_API_KEY');
+    expect(info[0].message).toContain('ait@0.1.33 (출처 ait@apps-in-toss)');
+  });
+
   it('preflightAttempts 2 → A9/info 에 "사전 점검 재시도 1회" 포함', async () => {
     const probe = async () => probeResult({ preflightAttempts: 2 });
 

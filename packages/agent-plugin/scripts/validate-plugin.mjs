@@ -3272,7 +3272,10 @@ export async function checkA9(root, opts = {}) {
       '',
       0,
       'A9/info',
-      `probe 조건: model=${preflightInfo.model} (요청 ${preflightInfo.requestedModel}) · claude ${preflightInfo.claudeCodeVersion} · plugin ait@${preflightInfo.pluginVersion} · jobs=${jobs} · 재시도 ${retried}건` +
+      // API 키 출처·플러그인 출처는 "어느 자격증명으로, 어느 설치 형상에서
+      // 쟀는가"를 가르는 값이다 — 로그인 세션 대신 env 키로 돌거나 설치본
+      // 대신 다른 경로가 로드되면 결과 해석이 통째로 달라진다.
+      `probe 조건: model=${preflightInfo.model} (요청 ${preflightInfo.requestedModel}) · claude ${preflightInfo.claudeCodeVersion} · API 키 출처 ${preflightInfo.apiKeySource} · plugin ait@${preflightInfo.pluginVersion} (출처 ${preflightInfo.pluginSource}) · jobs=${jobs} · 재시도 ${retried}건` +
         // 사전 점검이 1차에 실패하고 재시도로 통과했으면 그 흔들림도 조건의
         // 일부다 — 뒤따르는 skill 결과를 읽을 때 같이 봐야 한다.
         (preflightAttempts > 1 ? ' · 사전 점검 재시도 1회' : '') +

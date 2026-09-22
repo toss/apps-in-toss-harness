@@ -26,11 +26,13 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   bodyObservedStopWhen,
+  contextWindow,
   diagnoseSession,
   expectedBodyFromDisk,
+  firstDivergence,
   preflight,
   probeAllSkills,
   runClaudeSession,
@@ -221,6 +223,31 @@ describe('오라클 (expectedBodyFromDisk · stripInjectedPrefix)', () => {
     // shadow 된 command stub 본문에는 접두어가 없다 — 오류로 다루지 않고 그대로
     // 비교 단계로 넘긴다.
     expect(stripInjectedPrefix('Load the `plan` skill.')).toBe('Load the `plan` skill.');
+  });
+
+  it('firstDivergence — 첫 불일치 offset, prefix 관계면 짧은 쪽 길이, 완전 일치면 -1', () => {
+    expect(firstDivergence('abcdef', 'abXdef')).toBe(2);
+    // prefix 관계는 공통 구간에 불일치가 없으므로 짧은 쪽 길이가 답이다 —
+    // A9/skill-load-shadowed 문구의 offset 이 잘린 지점을 가리킨다.
+    expect(firstDivergence('abc', 'abcdef')).toBe(3);
+    expect(firstDivergence('abcdef', 'abc')).toBe(3);
+    expect(firstDivergence('', 'abc')).toBe(0);
+    expect(firstDivergence('같은 본문', '같은 본문')).toBe(-1);
+    expect(firstDivergence('', '')).toBe(-1);
+  });
+
+  it('contextWindow — offset 앞뒤 span 만큼 자르고 개행은 \\n 리터럴로 이스케이프한다', () => {
+    const s = 'abcdefghij';
+    // 기본 span(40)이 문자열보다 크면 전체가 그대로 나온다.
+    expect(contextWindow(s, 5)).toBe('abcdefghij');
+    // span 2 → offset 앞 2자 + offset 부터 2자.
+    expect(contextWindow(s, 5, 2)).toBe('defg');
+    // 창이 경계를 넘으면 문자열 범위로 잘린다.
+    expect(contextWindow(s, 0, 3)).toBe('abc');
+    expect(contextWindow(s, 10, 3)).toBe('hij');
+    // 개행이 그대로 나가면 위반 한 줄이 여러 줄로 깨진다.
+    expect(contextWindow('a\nb\nc', 2)).toBe('a\\nb\\nc');
+    expect(contextWindow('a\nb\nc', 3, 2)).toBe('\\nb\\nc');
   });
 });
 
@@ -1309,6 +1336,38 @@ describe('probeAllSkills / preflight (runSession 주입)', () => {
     expect(skillCalls).toBe(1);
   });
 
+  it('result-error 인데 Skill 호출 자체가 없으면 no-route 가 아니라 cli-error — 라우팅 실패로 단정하지 않는다', async () => {
+    const pluginDir = mkFixturePluginDir(['alpha']);
+    const debugDir = mkDebugDir();
+    let skillCalls = 0;
+
+    const runSession = async (call: Argv) => {
+      if (isPreflightCall(call)) return okPreflightSession(pluginDir, ['alpha']);
+      skillCalls += 1;
+      // 종료 코드 0 + is_error — Skill tool_use 이벤트는 하나도 없다. 세션이
+      // 라우팅 전에 깨진 건지 모델이 안 불렀는지 가릴 수 없는 상태다.
+      return baseSession({
+        code: 0,
+        stdout: stdoutOf([
+          initEvent(),
+          resultEvent({
+            subtype: 'error_max_budget_usd',
+            is_error: true,
+            terminal_reason: 'budget_exhausted',
+            result: '',
+            errors: ['Reached maximum budget ($0.000001)'],
+          }),
+        ]),
+      });
+    };
+
+    const res = await probeAllSkills(pluginDir, { runSession, retryDelayMs: 1, debugDir });
+
+    expect(res.results[0].outcome).toBe('cli-error');
+    expect(res.results[0].attempts).toBe(2);
+    expect(skillCalls).toBe(2);
+  });
+
   it('180초 타임아웃으로 죽었어도 stdout 에 본문이 있으면 match (관측이 판정보다 먼저다)', async () => {
     const pluginDir = mkFixturePluginDir(['alpha']);
     const debugDir = mkDebugDir();
@@ -1462,6 +1521,62 @@ describe('probeAllSkills / preflight (runSession 주입)', () => {
     expect(res.results.every((r) => r.outcome === 'match')).toBe(true);
     expect(maxInFlight).toBeLessThanOrEqual(3);
     expect(maxInFlight).toBeGreaterThanOrEqual(2); // 실제로 병렬로 돌았다
+  });
+
+  it.each([0, -3])('jobs %i 이어도 동시 실행 1개로 내려 전 skill 을 돈다', async (jobs) => {
+    const names = ['alpha', 'beta', 'gamma'];
+    const pluginDir = mkFixturePluginDir(names);
+    let maxInFlight = 0;
+    let inFlight = 0;
+
+    const runSession = async (call: Argv) => {
+      if (isPreflightCall(call)) return okPreflightSession(pluginDir, names);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return matchSessionFor(pluginDir, call);
+    };
+
+    const res = await probeAllSkills(pluginDir, { runSession, jobs });
+
+    // 하한이 없으면 워커가 0개라 결과 배열이 구멍으로 돌아온다 — `every` 는
+    // 구멍을 건너뛰어 통과해 버리므로 Array.from 으로 구멍을 드러낸다.
+    expect(res.results).toHaveLength(3);
+    expect(Array.from(res.results, (r) => r?.outcome)).toEqual(['match', 'match', 'match']);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('디스크 디렉터리 순서와 무관하게 skill 이름을 사전순으로 돈다', async () => {
+    // 비사전순으로 만든 픽스처 — 다만 readdir 순서는 파일시스템이 정하고
+    // APFS 는 이미 사전순으로 돌려주므로, 정렬이 실제로 일어나는지 보려면
+    // skills 디렉터리 한 곳의 응답만 역순으로 뒤집어야 한다.
+    const names = ['zeta', 'alpha', 'mid'];
+    const pluginDir = mkFixturePluginDir(names);
+    const skillsDir = path.resolve(path.join(pluginDir, 'shared', 'skills'));
+    const realReaddirSync = fs.readdirSync;
+    const readdirSpy = vi.spyOn(fs, 'readdirSync').mockImplementation(((
+      target: fs.PathLike,
+      options: never,
+    ) => {
+      const entries = realReaddirSync(target, options);
+      return path.resolve(String(target)) === skillsDir
+        ? [...(entries as unknown[])].reverse()
+        : entries;
+    }) as unknown as typeof fs.readdirSync);
+
+    try {
+      const runSession = async (call: Argv) => {
+        if (isPreflightCall(call)) return okPreflightSession(pluginDir, names);
+        return matchSessionFor(pluginDir, call);
+      };
+
+      const res = await probeAllSkills(pluginDir, { runSession, jobs: 1 });
+
+      expect(res.results.map((r) => r.skill)).toEqual(['alpha', 'mid', 'zeta']);
+    } finally {
+      readdirSpy.mockRestore();
+    }
   });
 
   it('probeOneSkill 이 넘기는 stopWhen 은 본문 주입을 본 뒤에만 observed 를 돌려주고 그 세션은 match 다', async () => {
