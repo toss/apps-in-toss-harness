@@ -25,9 +25,11 @@ overrides:
   # Dependabot #26·#25 (GHSA-5p4m-2wfm-xmqj, !!omap 리졸브 O(n²) DoS) 대응. js-yaml은 어떤 workspace
   # 패키지의 직접 dep도 아니고 @changesets/cli devDependency 체인(read-yaml-file→3.x 라인,
   # @changesets/parse→4.x 라인)으로만 들어온다 — 전부 dev 전용, 발행물 미포함. 두 메이저 라인이
-  # 동시에 해석되므로 소비자 range별로 각각 최신 패치 버전에 고정.
-  "js-yaml@^3.6.1": 3.15.1
-  "js-yaml@^4.1.1": 4.3.1
+  # 동시에 해석되므로 소비자 range별로 각각 최신 패치 버전에 고정. 이후 신규 advisory #43·#42
+  # (GHSA-2883-xcg3-v3hh, maxTotalMergeKeys가 빈 merge 소스에서 CPU 사용을 제한하지 못함)가 추가돼
+  # 재상향(2026-09-22) — #43은 >=3.0.0 <3.15.2(patched 3.15.2), #42는 >=4.0.0 <4.3.2(patched 4.3.2).
+  "js-yaml@^3.6.1": 3.15.2
+  "js-yaml@^4.1.1": 4.3.2
   # Dependabot #29·#28·#27·#24 (hono 4.12.32, 각각 medium/low/medium/medium) 대응. hono는 어떤
   # workspace 패키지의 직접 dep도 아니고 @modelcontextprotocol/sdk(^4.11.4 range)를 통해서만
   # 들어온다 — debugger의 "dependencies"(devDependencies 아님) 체인이라 debugger 자체 실행 시에는
