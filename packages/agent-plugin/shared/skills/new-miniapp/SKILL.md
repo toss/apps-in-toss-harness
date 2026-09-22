@@ -374,6 +374,9 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
    npm --prefix ./<package_name> install
    ```
 
+   이 명령이 `ETARGET`(`No matching version found for
+   @apps-in-toss/devtools@…`)으로 죽으면 아래 3번으로 간다 — 원인도 복구도
+   거기 있다.
 2. install이 정상화된 뒤 `./<package_name>/apps-in-toss.config.ts`가 없으면
    `ait init`이 중간에 죽은 것이므로, CLI가 안내하는 그대로 한 번 재실행한다
    (이제 install이 정상이라 성공할 가능성이 높다):
@@ -385,6 +388,8 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
    그래도 실패하면 stderr를 그대로 보고하고, 아래 Step 3(형상 가드)에서
    중단된다.
 3. **devtools가 devDependencies 문자열이 아니라 실물로 설치됐는지 확인한다.**
+   `--no-devtools`가 지정됐으면 이 확인도 재핀도 하지 않는다 — 배선을 떼어낼
+   것이므로 Step 4의 4-b(배선 해제)가 받는다.
    `ait init`은 `@apps-in-toss/devtools`를 CLI 자기 버전에 맞춘
    `^<version>`으로 devDependencies에 **먼저 쓰고 나서** `npm install`을 부르는
    순서라, 그 버전이 공개 npm에 아직 없으면 install이 `ETARGET`으로 실패해도
@@ -398,10 +403,12 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
    ```
 
    exit 0이면 실물이 있는 것이니 넘어간다. `Cannot find module`로 실패하면
-   `npm --prefix ./<package_name> ls @apps-in-toss/devtools`로 원인을 먼저 눈으로
-   확인한 뒤, 아래 Step 4의 "devtools 재핀 폴백"으로 간다 — 여기서 바로 재핀하지
+   `npm --prefix ./<package_name> ls @apps-in-toss/devtools`로 원인을 눈으로 확인만
+   해 두고, 순서는 건너뛰지 않는다 — Step 3(형상 가드)을 먼저 통과한 뒤 Step 4에
+   들어가 거기서 "devtools 재핀 폴백"을 맨 먼저 수행한다. 여기서 바로 재핀하지
    않는 이유는 Step 4가 devDep 문자열·번들러 배선까지 한 번에 보고 판단하기
-   때문이다.
+   때문이고, Step 3을 건너뛰지 않는 이유는 그 형상 가드가 후처리 전체의 전제라
+   어긋난 형상 위에서는 재핀도 헛돌기 때문이다.
 
 ### 3. 후처리 0 — 형상 가드 + 디자인 가이드 주입
 
@@ -701,7 +708,7 @@ node -e "require.resolve('@apps-in-toss/devtools/unplugin', { paths: ['./<packag
   install만 실패해도 문자열은 남는다(cli가 자기 버전에 맞춰 쓴 `^<version>`이
   공개 npm에 아직 없는 경우가 실제 원인 — 배경은 아래 "devtools 재핀 폴백"
   참고). 이땐 vite.config 확인으로 넘어가지 말고 먼저 아래 "devtools 재핀
-  폴백"부터 수행한다.
+  폴백"부터 수행한다 — `--no-devtools`면 해당 없이 아래 "배선 해제"로 간다.
 - **devDep·unplugin 중 하나라도 없으면(재핀 이후에도)** 아래 4-a 폴백을 순서대로
   수행한다.
 - **`--no-devtools`가 지정됐으면** 확인 결과와 무관하게 아래 "배선 해제" 절로
@@ -717,7 +724,7 @@ devtools가 changesets fixed 그룹으로 함께 발행된다는 전제다. 이 
 `ETARGET`(`No matching version found for @apps-in-toss/devtools@^<cli 버전>`)으로
 죽고 나머지 install은 진행되지 않는다. package.json의 devDependencies 문자열은
 CLI가 install 실행 전에 이미 써 둔 것이라 이 실패 이후에도 그대로 남는다 — 위 세
-확인 중 devDep·vite.config만 보면 "배선됨"으로 오판하는 이유다. **되돌리지
+확인 중 devDep·unplugin만 보면 "배선됨"으로 오판하는 이유다. **되돌리지
 마라**: 이 재핀 단계를 지우면 그 오판이 다시 살아난다.
 
 복구는 실패한 정확 버전 고정을 버리고 공개 npm의 최신으로 다시 잡는 것이다 —
@@ -745,9 +752,9 @@ npm --prefix ./<package_name> pkg get devDependencies.@apps-in-toss/devtools
 
 `npm install -D <pkg>@latest`는 이 skill의 다른 자리(`web-framework` major
 복구, 위 Step 3)처럼 caret 범위(`^3.2.0` 형태)로 기록한다 — 정확 버전 고정으로
-바꿔 쓰지 않는다. 위 세 확인(devDep·vite.config·실물)을 다시 실행해 실물까지
-확인되면 그대로 아래 vite.config 확인으로 진행하고, 재설치 후에도 실물이 안
-잡히면 더 자동 재시도하지 않고 `npm --prefix ./<package_name> ls
+바꿔 쓰지 않는다. 위 세 확인(devDep·unplugin·실물)을 다시 수행해 셋 다 통과하면
+Step 5로 넘어가고, unplugin 배선만 빠져 있으면 아래 4-a로 간다. 재설치 후에도
+실물이 안 잡히면 더 자동 재시도하지 않고 `npm --prefix ./<package_name> ls
 @apps-in-toss/devtools` 출력을 그대로 사용자에게 보고한 뒤 중단한다.
 
 #### 4-a. 폴백 — CLI가 배선하지 않았을 때
