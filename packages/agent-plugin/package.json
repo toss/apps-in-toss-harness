@@ -46,11 +46,5 @@
   "bugs": {
     "url": "https://github.com/toss/apps-in-toss-harness/issues"
   },
-  "homepage": "https://github.com/toss/apps-in-toss-harness",
-  "vitest": {
-    "include": [
-      "shared/**/*.test.ts"
-    ],
-    "environment": "node"
-  }
+  "homepage": "https://github.com/toss/apps-in-toss-harness"
 }
