@@ -1,7 +1,7 @@
 {
   "name": "apps-in-toss-harness",
   "private": true,
-  "packageManager": "pnpm@11.17.0",
+  "packageManager": "pnpm@12.10.1",
   "engines": {
     "node": ">=24"
   },
@@ -20,7 +20,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/node": "^25.6.2",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.11"
   }
 }
