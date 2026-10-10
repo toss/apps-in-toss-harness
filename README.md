@@ -334,6 +334,8 @@ pnpm build      # build 스크립트가 있는 패키지만
 pnpm typecheck  # typecheck 스크립트가 있는 패키지만
 ```
 
+`package.json`의 `packageManager`가 pnpm 12.10.1로 고정돼 있습니다. pnpm 11.x로 `pnpm install`을 하면 12.10.1로 자동 전환을 시도하는데, npm registry 응답을 바꿔 내려주는 프록시 뒤에서는 이 전환이 `must use a registry package path` 오류로 실패하고 `pnpm-lock.yaml`에 tarball URL이 섞여 들어갈 수 있습니다. 그런 환경이면 `npm install -g pnpm@12.10.1`로 12.10.1을 직접 설치하고, install 뒤에 `git diff pnpm-lock.yaml`로 lockfile이 바뀌지 않았는지 확인하세요.
+
 ## 라이선스
 
 [BSD-3-Clause](./LICENSE)

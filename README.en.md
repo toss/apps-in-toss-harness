@@ -334,6 +334,8 @@ pnpm build      # only packages with a build script
 pnpm typecheck  # only packages with a typecheck script
 ```
 
+`packageManager` in `package.json` pins pnpm 12.10.1. Running `pnpm install` with pnpm 11.x tries to switch to 12.10.1 automatically. Behind a proxy that rewrites npm registry responses, that switch can fail with `must use a registry package path` and leave tarball URLs in `pnpm-lock.yaml`. In that case, install 12.10.1 directly with `npm install -g pnpm@12.10.1`, and check that `git diff pnpm-lock.yaml` is empty after installing.
+
 ## License
 
 [BSD-3-Clause](./LICENSE)
