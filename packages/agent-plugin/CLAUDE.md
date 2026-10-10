@@ -112,7 +112,7 @@ Codex·Cursor는 이미 출하됐다. Gemini CLI·Windsurf 어댑터만 harness 
 4. **Cursor** — `.cursor-plugin/plugin.json` 무빌드 어댑터로 출하됐다(Cursor 2.5+ 1급 plugin 포맷). `commands`는 담지 않는다 — Cursor에는 `$ARGUMENTS` 치환이 없고 Commands 표면 자체가 Skills로 deprecated되는 중이며, 스텁을 얹으면 플랫 `/new`가 다른 플러그인과 충돌할 위험이 있다.
 5. **Windsurf** — 공식 번들 포맷 부재. M3 이후 `install/windsurf.sh`로 `.windsurf/workflows/`에 파일을 꽂는 방식만 남았다(자동 업데이트 불가라 후순위).
 
-당장은 main branch + latest only, 태그/버전 없음. Changesets는 도입되어 있지만 npm publish는 skip (Git repo 자체가 배포 산출물).
+당장은 main branch + latest only, 릴리스 태그 없음. 버전은 Changesets가 올리며 `package.json`이 정본이다(릴리스 태그는 debugger·debug-console 것만 있다, 실측 2026-10-11). npm publish는 skip (Git repo 자체가 배포 산출물).
 
 ## adapter 계약 (multi-target)
 
