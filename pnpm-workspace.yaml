@@ -51,6 +51,13 @@ overrides:
   # 이후 신규 advisory #34·#33(GHSA-x5fp-wj9c-mxmx·GHSA-4mjr-xmp4-gh2g)이 추가돼 6.15.2 ->
   # 6.16.0으로 재상향(2026-09-13). first_patched_version은 두 건 다 6.16.0으로 동일.
   "@cypress/request>qs": 6.16.0
+  # `pnpm audit --prod --audit-level high` 신규 advisory 대응(2026-10-11, CI audit 스텝 적발).
+  # handlebars: GHSA-8r5x-fm3f-whwj·GHSA-p8wg-vrv2-v86f(critical, <=4.7.9, patched 4.7.10).
+  # chii → handlebars 체인(debugger의 dependencies)이라 hono·qs와 같은 성격 — 레포 자체
+  # 실행 안전에는 유효하되 발행 tarball 다운스트림에는 미전파.
+  handlebars: 4.7.10
+  # fast-uri: high(<3.1.7, patched 3.1.7). @modelcontextprotocol/sdk → ajv → fast-uri 체인.
+  fast-uri: 3.1.8
 
 # 각 패키지의 단독 repo 시절 pnpm-workspace.yaml(allowBuilds 설정)을 병합한 것.
 allowBuilds:

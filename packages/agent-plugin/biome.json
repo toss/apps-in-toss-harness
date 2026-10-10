@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "root": false,
   "vcs": {
     "enabled": true,
@@ -14,7 +14,8 @@
       "!coverage",
       "!node_modules",
       "!.changeset",
-      "!shared/templates"
+      "!shared/templates",
+      "!shared/skills/design/assets/project/icons"
     ]
   },
   "formatter": {
@@ -26,7 +27,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "style": {
         "noNonNullAssertion": "off"
       },

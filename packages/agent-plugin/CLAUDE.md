@@ -219,6 +219,6 @@ Scaffold 완료. `shared/{skills,commands,templates}/` + `.claude-plugin/plugin.
 
 ## 공통 스택
 
-Node 24 LTS, pnpm 11.17.0, TypeScript strict, Biome (lint+format, ESLint/Prettier 사용 안 함). pre-commit hook은 source-controlled (`.githooks/pre-commit`), contributor가 수동 활성화: `git config core.hooksPath .githooks`. Commit message는 Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
+Node 24 LTS, pnpm 12.10.1, TypeScript strict, Biome (lint+format, ESLint/Prettier 사용 안 함). pre-commit hook은 source-controlled (`.githooks/pre-commit`), contributor가 수동 활성화: `git config core.hooksPath .githooks`. Commit message는 Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
 
 이슈/제안은 GitHub Issues로.

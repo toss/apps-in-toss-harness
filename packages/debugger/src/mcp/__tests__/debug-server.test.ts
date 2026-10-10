@@ -991,7 +991,7 @@ describe('createDebugServer — listChanged capability', () => {
     // The MCP Client.getServerCapabilities() returns the negotiated capabilities.
     const caps = client.getServerCapabilities();
     expect(caps?.tools).toBeDefined();
-    expect((caps?.tools as Record<string, unknown>).listChanged).toBe(true);
+    expect((caps?.tools as Record<string, unknown> | undefined)?.listChanged).toBe(true);
   });
 });
 
