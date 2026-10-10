@@ -293,20 +293,18 @@ describe('maybeAttach', () => {
     warnSpy.mockRestore();
   });
 
-  it.each([
-    'opt-in',
-    'invalid-relay',
-    'host',
-    'entry',
-  ] as const)('%s block — does NOT warn (false-positive guard on ordinary pageviews)', (reason) => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it.each(['opt-in', 'invalid-relay', 'host', 'entry'] as const)(
+    '%s block — does NOT warn (false-positive guard on ordinary pageviews)',
+    (reason) => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    maybeAttach(blockResult(reason));
+      maybeAttach(blockResult(reason));
 
-    expect(warnSpy).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
 
-    warnSpy.mockRestore();
-  });
+      warnSpy.mockRestore();
+    },
+  );
 
   it('auth block — never posts to window.parent (launcher shell path is gone)', () => {
     const postMessageSpy = vi.fn();

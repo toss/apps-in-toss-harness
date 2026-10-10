@@ -2894,7 +2894,7 @@ function checkA7(root) {
 
   const servers = plugin.mcpServers ?? {};
   for (const [name, server] of Object.entries(servers)) {
-    if (!server || server.command !== 'npx') continue;
+    if (server?.command !== 'npx') continue;
     const args = Array.isArray(server.args) ? server.args : [];
 
     // -p/--package 가 이미 있으면 bin 추론 모호성이 없다 — 통과.
