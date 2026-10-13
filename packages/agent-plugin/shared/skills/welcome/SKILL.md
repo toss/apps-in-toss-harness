@@ -84,6 +84,13 @@ Claude Code:
   `mcpServers.ait-devtools` 항목이 있는지 확인한다(파일이 없으면 "미배선"으로
   본다). 없으면 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에
   넣는다 — 강제하지 않는다(디버깅 계획이 없는 세션도 많다).
+- 항목이 **있으면** 버전만 가볍게 본다. 이미 읽은 `.mcp.json`에서 `args`의
+  debugger Release URL 버전을 `../setup-debugger/references/upgrade-check.md`
+  1단계 규칙대로 판별하고, 이 플러그인의 기준(`setup-debugger/SKILL.md` 4단계
+  URL)보다 낮을 때만 제안 목록에 "`/ait:setup-debugger`로 debugger 업그레이드
+  점검"을 넣는다. 같거나 높거나, 그 URL 형태가 아닌 항목(커스텀 런처 등)은
+  말없이 지나간다. 비교·동의·적용 절차는 그 reference가 정본이라 여기서 되풀이하지
+  않으며, 이 skill은 파일을 고치지 않는다.
 
 Cursor:
 
@@ -103,6 +110,9 @@ Cursor:
 - cwd에 `package.json`이 있으면 `.cursor/mcp.json`을 `Read`해
   `mcpServers.ait-devtools` 항목이 있는지 확인한다. 없으면 Claude Code와
   동일하게 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에 넣는다.
+- 항목이 있으면 Claude Code와 같은 방식으로 `args`의 debugger Release URL 버전만
+  upgrade-check reference 1단계 규칙대로 비교하고, 낮을 때만 업그레이드 점검을
+  제안한다.
 
 그 밖의 에이전트(Codex 등)에서는 `/mcp`·`.mcp.json`·`.cursor/mcp.json`·
 `mcp__` 네이밍이 그대로 오지 않는다 — 그런 환경에서는 이 c 단계 중 확인
@@ -140,6 +150,9 @@ skill §5 adapter-note와 동일 패턴).
      필요하면:
      /ait:setup-debugger
      말로: "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘"
+  ⚠️ .mcp.json의 ait-devtools가 옛 debugger 버전에 고정돼 있습니다 — 업그레이드
+     여부를 확인하려면:
+     /ait:setup-debugger
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
      https://github.com/toss/apps-in-toss-harness/blob/main/.github/install-troubleshooting.md
 ```
@@ -224,6 +237,8 @@ Apps in Toss 플러그인이 설치됐습니다.
 - 빈 디렉토리 + scaffold 동의 → `/ait:new`(`new-miniapp` skill)를 그대로 부른다.
 - 기존 프로젝트 + devtools 배선 동의 → `/ait:inject-devtools`(`inject` skill).
 - 디버깅 계획 + `.mcp.json` 미배선 동의 → `/ait:setup-debugger`.
+- `ait-devtools`가 옛 버전이라는 안내에 동의 → `/ait:setup-debugger`(3단계가
+  `references/upgrade-check.md`로 old→new를 보여 주고 URL 한 줄을 바꾼다).
 - 콘솔 MCP 인가 동의 → `/mcp` 안내(직접 실행은 사용자 몫 — 브라우저 OAuth).
 
 동의 없이 임의로 실행하지 않는다 — 2단계 인쇄까지가 이 skill의 기본 종료
