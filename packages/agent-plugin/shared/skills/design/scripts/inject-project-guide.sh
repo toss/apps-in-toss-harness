@@ -13,7 +13,9 @@
 #   1-2·1-3·1-9 계열 줄을 권장으로 내린다. 이름은 보고용이다(요약에 ds=<이름>).
 #   둘 다 없으면 package.json 의존성(@toss/tds*·@mui/*·@chakra-ui/*·antd·
 #   @mantine/*·tailwindcss·@radix-ui/*)·components.json·tailwind.config.*로
-#   직접 감지해 같은 경로를 탄다(요약에 ds=<이름>(auto)).
+#   직접 감지해 같은 경로를 탄다(요약에 ds=<이름>(auto)). 라이브러리가 없어도
+#   src/ 아래 .css/.scss의 `:root` 커스텀 프로퍼티가 서로 다른 이름으로 8개
+#   이상이면 자체 토큰 체계로 보고 ds=자체 토큰(auto)로 같은 경로를 탄다.
 #
 # fail-soft 계약: set -e 없음 — 항목마다 test -f/grep로 멱등 가드를 걸고
 # 개별 실패가 나머지를 죽이지 않는다. 항상 exit 0으로 끝나고, 마지막 줄
@@ -60,12 +62,38 @@ if [ ! -d "$PROJ" ]; then
   exit 0
 fi
 
+# 자산 디렉터리(SRC)는 자동 감지가 정본 tokens.css와 대조하므로 먼저 푼다.
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+MKR='ait:design-guide'
+for C in "$SRC" "$SELF_DIR/../assets/project" "${CLAUDE_PLUGIN_ROOT:-}/shared/skills/design/assets/project" "${CLAUDE_PLUGIN_ROOT:-}/skills/design/assets/project"; do
+  if [ -n "$C" ] && [ -f "$C/memory-digest.md" ]; then SRC="$C"; break; fi
+  SRC=""
+done
+
 # 플래그가 없으면 기성 디자인 시스템을 직접 감지한다 — 호출자가 --existing-ds를
 # 빠뜨려도 기본 토큰·전역 CSS가 기성 시스템 위에 얹히지 않게 하는 것이 목적이다.
+# 감지 순서: 의존성 → components.json → tailwind → radix → 자체 :root 토큰.
+#
+# 자체 :root 토큰 규칙(라이브러리 없이 CSS 변수로 만든 체계):
+# - src/ 아래(node_modules·dist·점 디렉터리 제외) .css/.scss의 `:root { }` 블록에서
+#   서로 다른 `--이름`을 합쳐 센다. 임계값은 8개 — 평범한 프로젝트가 `--vh`,
+#   `--primary` 같은 변수를 두세 개 쓰는 수준은 넘기고, 색·간격·글자 스케일을
+#   변수로 정의한 체계(보통 십수 개 이상)는 잡는 보수적 경계다. 오탐보다 미탐이
+#   낫다: 미탐이면 기존 일반 경로로 가이드가 들어갈 뿐이고, 오탐이면 기본 토큰을
+#   못 받는다.
+# - 우리가 넣은 src/styles/tokens.css·base.css는 세지 않는다. 정본과 바이트가
+#   같거나, AGENTS.md에 ait:design-guide 마커가 이미 있으면 사용자가 고쳐 쓴
+#   사본도 제외한다. 한 번 가이드가 들어간 프로젝트가 다음 실행에서 존중 모드로
+#   뒤집히면 안 된다.
+# - 반대로 이전 실행이 존중 모드였으면(AGENTS.md에 존중 모드 다이제스트 변형본이
+#   있으면) 플래그 없이 다시 불러도 존중 모드를 유지한다 — 마커 때문에 사용자
+#   tokens.css가 집계에서 빠져 일반 경로로 떨어지는 것을 막는다.
+# - 탐색 비용 상한: 깊이 4, 방문 디렉터리 200, css/scss 파일 100개, 파일당 512KB.
 AUTO=""
 if [ "$TDS" = 0 ] && [ "$EXDS" = 0 ]; then
-  AUTO="$(node -e "
-const fs=require('node:fs'),path=require('node:path');const d='$PROJ';
+  read -r -d '' DETECT_JS <<'AITJS'
+const fs=require('node:fs'),path=require('node:path');
+const d=process.argv[1],canon=process.argv[2]||'';
 let p={};try{p=JSON.parse(fs.readFileSync(path.join(d,'package.json'),'utf8'))}catch{}
 const n=Object.keys({...p.dependencies,...p.devDependencies});
 const has=(f)=>n.some(f);
@@ -75,16 +103,50 @@ if(fs.existsSync(path.join(d,'components.json'))){console.log('shadcn/ui');proce
 const tw=fs.readdirSync(d).some(f=>/^tailwind\.config\./.test(f));
 if(tw||has(x=>x==='tailwindcss')){console.log('Tailwind');process.exit(0)}
 if(has(x=>x.startsWith('@radix-ui/'))){console.log('Radix');process.exit(0)}
-" 2>/dev/null)"
+const MIN=8,MAXDEPTH=4,MAXDIRS=200,MAXFILES=100,MAXBYTES=512*1024;
+const read=(f)=>{try{return fs.readFileSync(f,'utf8')}catch{return null}};
+let marked=false,ag='';
+try{ag=fs.readFileSync(path.join(d,'AGENTS.md'),'utf8');marked=/ait:design-guide v\d/.test(ag)}catch{}
+if(marked&&ag.includes('토큰 사용: 프로젝트 디자인 시스템의 토큰')){console.log('기존 디자인 시스템');process.exit(0)}
+const ours=(file)=>{
+  const rel=path.relative(d,file).split(path.sep).join('/');
+  if(rel!=='src/styles/tokens.css'&&rel!=='src/styles/base.css')return false;
+  if(marked)return true;
+  const c=canon&&read(path.join(canon,path.basename(file)));
+  return c!==null&&c!==''&&c===read(file);
+};
+const names=new Set();
+let dirs=0,files=0;
+const walk=(dir,depth)=>{
+  if(depth>MAXDEPTH||dirs>=MAXDIRS||files>=MAXFILES)return;
+  dirs++;
+  let ents=[];try{ents=fs.readdirSync(dir,{withFileTypes:true})}catch{return}
+  for(const e of ents){
+    if(files>=MAXFILES)return;
+    const f=path.join(dir,e.name);
+    if(e.isDirectory()){
+      if(e.name==='node_modules'||e.name==='dist'||e.name.startsWith('.'))continue;
+      walk(f,depth+1);
+    }else if(e.isFile()&&/\.(css|scss)$/.test(e.name)){
+      files++;
+      try{if(fs.statSync(f).size>MAXBYTES)continue}catch{continue}
+      if(ours(f))continue;
+      const src=read(f);if(src===null)continue;
+      const css=src.replace(/\/\*[\s\S]*?\*\//g,'');
+      for(const m of css.matchAll(/:root\b[^{}]*\{([^{}]*)\}/g)){
+        for(const q of m[1].matchAll(/(?:^|[;\s])(--[\w-]+)\s*:/g))names.add(q[1]);
+      }
+    }
+  }
+};
+walk(path.join(d,'src'),0);
+if(names.size>=MIN){console.log('자체 토큰');process.exit(0)}
+AITJS
+  AUTO="$(node -e "$DETECT_JS" -- "$PROJ" "$SRC" 2>/dev/null)"
   if [ -n "$AUTO" ]; then EXDS=1; DSNAME="$AUTO"; fi
 fi
 
-SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
-R=""; T=""; T2=""; MKR='ait:design-guide'
-for C in "$SRC" "$SELF_DIR/../assets/project" "${CLAUDE_PLUGIN_ROOT:-}/shared/skills/design/assets/project" "${CLAUDE_PLUGIN_ROOT:-}/skills/design/assets/project"; do
-  if [ -n "$C" ] && [ -f "$C/memory-digest.md" ]; then SRC="$C"; break; fi
-  SRC=""
-done
+R=""; T=""; T2=""
 if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
   DG="$SRC/memory-digest.md"
   if [ "$EXDS" = 1 ]; then

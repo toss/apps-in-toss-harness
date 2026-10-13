@@ -264,8 +264,11 @@ argument-hint: '[screen or request]'
 
 우리가 넣은 가이드(`ait:design-guide` 마커와 그 `tokens.css`)는 기성 디자인으로
 세지 않는다. 감지한 시스템 이름은 7단계 한 줄에 쓴다. 의존성·`components.json`·
-`tailwind.config.*` 신호는 1-B 스크립트도 직접 감지하므로, 여기서 놓쳐도 주입
-결과는 같다 — 스크립트 요약의 `ds=<이름>`이 보이면 존중 모드로 진행한다.
+`tailwind.config.*` 신호와 `src/` 아래 `.css`·`.scss`의 `:root` 커스텀 프로퍼티(서로
+다른 이름 8개 이상)는 1-B 스크립트도 직접 감지하므로, 여기서 놓쳐도 주입 결과는
+같다 — 스크립트 요약의 `ds=<이름>`이 보이면 존중 모드로 진행한다. `theme.*`·
+`tokens.*` 파일, 변수가 8개 미만인 체계, 사용자가 말로 알려 준 시스템은 스크립트가
+못 보니 `--existing-ds`로 알린다.
 
 **Figma는 선택 입력이다 (detect-and-degrade).** tool 이름에 `figma`가 들어가는
 MCP tool(`get_code`·`get_image`·`get_variable_defs`·`get_metadata` 류)이
@@ -284,7 +287,7 @@ MCP tool(`get_code`·`get_image`·`get_variable_defs`·`get_metadata` 류)이
 있는 것은 skip한다). 아래 1~3·5번을 손으로 하지 않는다:
 `bash "<이 skill의 base directory>/scripts/inject-project-guide.sh" .`
 (사용자가 말로만 알려 준 디자인 시스템이면 `--existing-ds <이름>`을 붙인다).
-스크립트가 기성 디자인을 직접 감지해 존중 모드면 digest 변형본만 넣고
+스크립트가 기성 디자인을 직접 감지해(의존성·설정 파일·자체 `:root` 토큰) 존중 모드면 digest 변형본만 넣고
 tokens·base·아이콘·entry를 `ds-skip`으로 찍는다(`references/project-guide.md`의
 존중 모드 절). 마지막 줄 `5-B:` 요약에 `agents=`·`claude=`가 없으면 주입이 안 된
 것이니 한 번 다시 돌린다. `agents=skip(<다른 버전>)`이면 아래 4번만 직접 한다.
