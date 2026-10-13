@@ -65,7 +65,7 @@ const alias = {
 };
 
 const common = {
-  dts: true,
+  dts: { tsconfig: '../../tsconfig.dts-debugger.json' },
   sourcemap: true,
   clean: true,
   target: 'es2022',

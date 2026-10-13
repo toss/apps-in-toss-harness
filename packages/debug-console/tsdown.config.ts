@@ -52,7 +52,7 @@ const common = {
   // outcome anyway: internal-protocol isn't a package at all (not a pnpm
   // workspace member, no package.json entry to resolve), so nothing we ship
   // may name it.
-  dts: { eager: true },
+  dts: { eager: true, tsconfig: '../../tsconfig.dts-debug-console.json' },
   sourcemap: true,
   clean: true,
   target: 'es2022',

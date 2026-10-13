@@ -1,0 +1,6 @@
+{
+  "extends": "./packages/debug-console/tsconfig.json",
+  "compilerOptions": { "rootDir": "." },
+  "include": ["packages/debug-console/src/**/*"],
+  "exclude": ["**/__tests__/**", "**/*.test.ts"]
+}
