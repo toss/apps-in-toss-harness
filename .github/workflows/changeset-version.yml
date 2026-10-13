@@ -48,71 +48,21 @@ jobs:
             echo "미소비 changeset ${count}건 발견 — 버전을 올린다"
           fi
 
-      # @changesets/cli 는 @manypkg/find-root 경유로 cwd 와 무관하게 항상
-      # **실제 pnpm workspace root**(pnpm-workspace.yaml 이 있는 이 저장소
-      # 루트)의 .changeset 만 읽고 쓴다. packages/agent-plugin 안에서
-      # `changeset version` 을 돌려도 packages/agent-plugin/.changeset 은
-      # 조용히 무시된다 — 미소비 changeset 이 하나도 소비되지 않는 채로
-      # exit 0 하는 **silent no-op** 이라 이 워크플로가 매주 "성공"하면서
-      # 실제로는 아무 일도 안 하는 상태가 될 수 있다. 이 monorepo의 구조적
-      # 제약이고, 2026-08-02 커밋 7c2f1c8(devtools/debugger/debug-console)·
-      # PR #11(agent-plugin 0.1.24)에서 동일하게 겪고 우회한 선례가 있다:
-      # agent-plugin 의 config.json + pending .md 를 저장소 루트 .changeset
-      # 에 임시로 복사해두고 그 자리에서 version 을 태운 뒤 정리한다. 이
-      # 시퀀스는 로컬 dry-run(더미 changeset 1건으로 version 실제 bump +
-      # CHANGELOG 섹션 생성 + plugin.json 동기화까지 확인 후 git 상태 복원)
-      # 으로 검증했다.
-      - name: Run changeset version (workspace-root .changeset quirk workaround)
+      # @changesets/cli 는 설정(config.json)을 pnpm workspace root 의 .changeset 에서만
+      # 읽는다. 이 monorepo 는 패키지별 .changeset 을 쓰므로 scripts/changeset-version.mjs
+      # 가 config.json + 미소비 changeset 을 루트 .changeset 에 임시 복사하고, cwd 를
+      # 저장소 루트로 둔 채 `changeset version` 을 돌린 뒤 지운다. 3.x 는 changeset 을
+      # cwd/.changeset 에서 읽고(2.x 는 root) 0건이면 exit 1 하므로 cwd 가 루트여야
+      # 한다 — 패키지 디렉터리에서 돌리면 "No unreleased changesets found." 로 실패한다.
+      # 스크립트가 버전 상승·CHANGELOG 섹션 생성을 확인하고 패키지 쪽 원본 changeset 을
+      # 지운다. plugin.json 동기화는 `release:version` 이 이어서 한다.
+      - name: Run changeset version
         if: steps.check.outputs.count != '0'
         id: version
         run: |
           set -euo pipefail
-
-          before="$(node -p "require('./packages/agent-plugin/package.json').version")"
-
-          # 1) config.json + pending .md 를 저장소 루트 .changeset 에 임시 복사.
-          #    저장소 루트에는 원래 .changeset 디렉터리가 없다 — 그대로 새로
-          #    만들고 아래에서 통째로 지운다(agent-plugin 자체의
-          #    .changeset/config.json·README.md 는 건드리지 않는다).
-          mkdir -p .changeset
-          cp packages/agent-plugin/.changeset/config.json .changeset/config.json
-          find packages/agent-plugin/.changeset -maxdepth 1 -name '*.md' ! -name 'README.md' \
-            -exec cp {} .changeset/ \;
-
-          # 2) changeset version 실행. `release:version` 스크립트(`changeset
-          #    version && pnpm sync:plugin-version`)를 그대로 써서 버전 상승
-          #    + CHANGELOG.md 갱신 + plugin.json 동기화를 한 번에 끝낸다 —
-          #    바이너리는 packages/agent-plugin 의 devDependency 에서
-          #    resolve 되지만, 위 quirk 때문에 실제로 읽고 쓰는 .changeset
-          #    은 방금 채워 넣은 저장소 루트 사본이다.
           (cd packages/agent-plugin && pnpm run release:version)
-
           after="$(node -p "require('./packages/agent-plugin/package.json').version")"
-
-          # 3) 저장소 루트 임시 .changeset 을 지운다 — 검증에 실패해도(exit 1)
-          #    임시 디렉터리를 저장소에 남기지 않도록 결과 확인 전에 먼저 지운다.
-          rm -rf .changeset
-
-          # 4) 산출 확인: 버전이 실제로 올랐는지, CHANGELOG.md 에 새 섹션이
-          #    생겼는지 — 이 확인이 없으면 quirk 우회가 조용히 깨져도(예:
-          #    changeset 바이너리 경로가 바뀌어 이 스텝이 다시 no-op 이 되는
-          #    경우) 아무 신호 없이 넘어간다.
-          if [ "$before" = "$after" ]; then
-            echo "::error::changeset version 이후에도 package.json 버전이 '${before}' 그대로 — 소비가 안 됐다. workspace-root .changeset quirk 우회가 깨졌을 수 있으니 이 스텝 구현을 점검하라"
-            exit 1
-          fi
-          if ! grep -qF "## ${after}" packages/agent-plugin/CHANGELOG.md; then
-            echo "::error::CHANGELOG.md 에 '## ${after}' 섹션이 생성되지 않음 — 중단"
-            exit 1
-          fi
-          echo "changeset version: ${before} → ${after}"
-
-          # 5) changeset version 이 소비(삭제)한 건 위 1)에서 저장소 루트에
-          #    복사해둔 사본뿐이다 — packages/agent-plugin/.changeset 의
-          #    원본 pending .md 는 그대로 남아 있으므로 여기서 직접 지운다
-          #    (config.json·README.md 는 유지).
-          find packages/agent-plugin/.changeset -maxdepth 1 -name '*.md' ! -name 'README.md' -delete
-
           echo "version=${after}" >> "$GITHUB_OUTPUT"
 
       - name: Create branch and commit

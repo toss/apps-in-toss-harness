@@ -36,6 +36,7 @@
     "check:debug-surface-absent": "bash scripts/check-debug-surface-absent.sh",
     "check:dashboard-html-fresh": "pnpm build:dashboard-html && git diff --exit-code src/mcp/dashboard.generated.ts",
     "dev": "tsdown --watch",
+    "release:version": "node ../../scripts/changeset-version.mjs debugger",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p scripts/tsconfig.json",
     "test": "vitest run",
     "lint": "biome check .",
@@ -54,7 +55,7 @@
   "devDependencies": {
     "@apps-in-toss/debug-console": "workspace:*",
     "@biomejs/biome": "2.5.15",
-    "@changesets/cli": "^2.31.1",
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^25.6.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
