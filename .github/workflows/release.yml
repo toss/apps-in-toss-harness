@@ -166,6 +166,9 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # 소비자 Vitest 호환 게이트(사유는 ci.yml 주석 참고) — 발행되는 pool이
+      # Vitest 4.1·5.x 소비자에서 깨지지 않는지 pack한 tarball로 확인한다.
+      - run: pnpm -r check:relay-pool-compat
       - run: pnpm check:pack-manifests
       - run: pnpm check:dist-urls
       - run: pnpm typecheck

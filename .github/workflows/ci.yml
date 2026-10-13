@@ -44,6 +44,16 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # 소비자 Vitest 호환 게이트. relay pool은 Vitest 내부 API(`_testRun`)로
+      # 결과를 보고하는데, repo의 devDependency(vitest 5)로 도는 단위 테스트는
+      # 소비자 쪽 4.1을 보지 못한다(debugger 0.2.4가 4.1에서 요약이 깨지고 10초 뒤
+      # 종료되는 결함을 그대로 발행한 선례). 방금 빌드한 debugger를 `pnpm pack`해
+      # 임시 소비자에 vitest 4.1.11과 5.x로 각각 설치하고 가짜 CDP 타깃으로 돌려
+      # 1 failed | 1 passed | 1 skipped와 제때 종료를 단언한다. dist가 필요해서
+      # build 뒤에 있고, 공개 registry를 쓰므로 npm 설치가 몇십 초 든다. 별도 job이
+      # 아니라 이 job의 step인 것은 의도다 — main ruleset은 `check`만 필수로 보고,
+      # release.yml 게이트와 같은 목록을 공유해야 발행 경로도 같이 막힌다.
+      - run: pnpm -r check:relay-pool-compat
       # 발행 manifest phantom 의존 게이트(#18, PR #37). npm 버전은 불변이라
       # 첫 배포 전이 유일한 차단 시점 — baseline에 없는 새 위반이 나오면 실패한다.
       - run: pnpm check:pack-manifests

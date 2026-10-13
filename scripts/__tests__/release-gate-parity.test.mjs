@@ -46,6 +46,17 @@ describe('release.yml gate parity with ci.yml', () => {
     assert.deepEqual(gateCommands(read('release.yml')), ci);
   });
 
+  // 소비자 Vitest 호환 게이트가 ci.yml·release.yml 양쪽에서 같이 사라지면 위 동등성
+  // 비교는 통과해 버린다. 존재 자체와 위치(build 뒤 — pack할 dist가 있어야 한다)를 고정한다.
+  test('relay pool compat gate exists in both workflows, after build', () => {
+    for (const name of ['ci.yml', 'release.yml']) {
+      const cmds = gateCommands(read(name));
+      const gate = cmds.indexOf('pnpm -r check:relay-pool-compat');
+      assert.ok(gate >= 0, `${name} lacks pnpm -r check:relay-pool-compat`);
+      assert.ok(gate > cmds.indexOf('pnpm build'), `${name}: relay pool gate must follow build`);
+    }
+  });
+
   test('named guard steps in ci.yml appear in release.yml at the same position', () => {
     const ci = gateSteps(read('ci.yml'));
     const names = new Set(ci.filter((s) => s.startsWith('name: ')).map((s) => s.slice(6)));
