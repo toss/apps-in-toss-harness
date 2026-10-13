@@ -179,6 +179,14 @@ CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
 이 skill은 새 서버를 띄우지 않고 attach 경로만 발급한다. bootstrap 도구
 (`start_attach` 등)가 세션에 없으면 먼저 `/ait:setup-debugger`로 배선한다.
 
+**환경 3에 들어가기 전에 `ait-devtools` 버전을 한 번 점검한다.** 예전에 배선한
+프로젝트는 옛 debugger Release URL에 고정돼 있고, 0.2.2·0.2.3은 `start_attach`가
+항상 "프로토콜 버전 불일치"로 실패한다. **Read `setup-debugger` skill의
+`references/upgrade-check.md`** (이 skill의 base directory와 형제인
+`../setup-debugger/references/upgrade-check.md`)의 1~3단계로 설정 파일의 URL
+버전을 읽고, 플러그인 기준보다 낮으면 사용자에게 알려 동의를 받은 뒤 그 항목만
+갱신한다. Release URL이 아닌 커스텀 런처는 건드리지 않는다.
+
 ### 5-A. 대상 환경
 
 폰 디버깅 대상은 **환경 3 (intoss-private candidate)** 하나다 —
@@ -231,6 +239,11 @@ URL을 복사·재입력하게 하지 않는다.**
 (5-B에서 받은 scheme URL을 그대로 전달 — 사용자 복사 없음. `?debug=1&relay=<wss://...>`을 splice해
 deep-link 합성 + QR 발급, attach까지 최대 60s 폴링) → 사용자가 폰 카메라로 QR 스캔 → 토스 앱
 WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
+
+`start_attach`가 "device↔host 프로토콜 버전 불일치"를 반환하면 에러 문구의 조치를
+따르기 전에 `../setup-debugger/references/upgrade-check.md` 4단계로 설정된 debugger
+버전부터 확인한다. 0.2.2·0.2.3이면 그 버전의 알려진 버그(0.2.4에서 수정)이므로
+debug-console을 바꾸라고 하지 말고 debugger 항목 업그레이드를 제안한다.
 
 TOTP 코드가 만료되면 `start_attach`가 자동으로 재발행해 QR/대시보드를 갱신하므로
 타임아웃마다 재호출할 필요가 없다.
@@ -356,6 +369,8 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 
 ## 다음 단계 (관찰 결과에 따라 분기)
 
+- **`start_attach`가 프로토콜 버전 불일치를 반환** → 설정된 debugger가 0.2.2·0.2.3이면 알려진 버그다.
+  `../setup-debugger/references/upgrade-check.md`로 0.2.4 이상 URL로 올린 뒤 MCP를 재연결한다.
 - **bootstrap 도구(`start_attach` 등 4종)가 세션에 안 보임** → `ait-devtools` MCP 미배선.
   `/ait:setup-debugger`로 프로젝트 `.mcp.json`에 등록하고 서버 연결 후 다시 `/ait:debug`.
 - **환경 1에서 재현·진단 끝** → §6 루프로 관측→최소 수정→재검증을 돌린다. 브라우저에서
