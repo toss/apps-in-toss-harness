@@ -140,9 +140,12 @@ export async function injectAndRunBundle(
   // EVALUATE_TIMEOUT_MARKER = 'rpc: evaluate timed out after' and uses
   // `.includes()` to recognise this exact prefix.
   const TIMEOUT_SENTINEL = Symbol('timeout');
-  const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
-    setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs),
-  );
+  // Cleared once the race settles: a pending timer would otherwise hold the
+  // consumer's `vitest run` open after the last file.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+    timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs);
+  });
 
   // devtools#747: thread our own timeout budget down to the connection's
   // per-command watchdog (ChiiCdpConnection's default is 30s and used to fire
@@ -164,7 +167,7 @@ export async function injectAndRunBundle(
   const raceResult = await Promise.race([
     evalPromise.then((v) => ({ tag: 'eval' as const, v })),
     timeoutPromise.then(() => ({ tag: 'timeout' as const })),
-  ]);
+  ]).finally(() => clearTimeout(timer));
 
   if (raceResult.tag === 'timeout') {
     return { ok: false, error: `rpc: evaluate timed out after ${timeoutMs}ms` };
