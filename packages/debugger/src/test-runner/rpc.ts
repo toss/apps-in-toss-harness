@@ -10,6 +10,7 @@
 
 import type { CdpConnection } from '../mcp/cdp-connection.js';
 import type { RunReport } from './runtime.js';
+import { unrefTimer } from './timers.js';
 
 /** Maximum milliseconds to wait for a single evaluate round-trip. */
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -141,7 +142,7 @@ export async function injectAndRunBundle(
   // `.includes()` to recognise this exact prefix.
   const TIMEOUT_SENTINEL = Symbol('timeout');
   const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
-    setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs),
+    unrefTimer(setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs)),
   );
 
   // devtools#747: thread our own timeout budget down to the connection's

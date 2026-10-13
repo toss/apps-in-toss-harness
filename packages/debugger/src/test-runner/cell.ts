@@ -20,6 +20,7 @@
  */
 
 import { THROTTLED_ERROR_CODE, THROTTLED_MESSAGE_SUBSTRING } from './throttle.js';
+import { unrefTimer } from './timers.js';
 
 /**
  * `__AIT_PERMS__` key → SDK function name whose `.getPermission()` is probed
@@ -236,7 +237,7 @@ export async function runPermissionPreflight(
 ): Promise<Record<string, string> | undefined> {
   const TIMEOUT_SENTINEL = Symbol('permission-preflight-timeout');
   const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
-    setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs),
+    unrefTimer(setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs)),
   );
 
   try {

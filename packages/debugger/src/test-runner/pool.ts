@@ -1,5 +1,5 @@
 /**
- * Vitest 4.x custom pool: runs mini-app tests on a real device WebView over a
+ * Vitest 4.1/5.x custom pool: runs mini-app tests on a real device WebView over a
  * CDP relay instead of in a Node child process.
  *
  * Vitest's pool abstraction lets a `PoolRunnerInitializer` create a `PoolWorker`
@@ -9,7 +9,7 @@
  * `TypecheckPoolWorker` shape: a single long-lived "worker" that, on a `run`
  * request, bundles + injects + collects each file over the relay (#644's
  * `runTestFilesOverRelay`), synthesises a Vitest task graph (`task-graph.ts`),
- * and reports it through `vitest.state` so reporters/watch/UI/snapshot all work.
+ * and reports it through `vitest._testRun` so reporters/watch/UI/snapshot all work.
  *
  * Single-attach constraint: the relay supports one active page, so we keep one
  * worker for the whole run (`isolate: false`) rather than starting/stopping per
@@ -19,11 +19,25 @@
  * factory and never logged here; bundle code and result values are not logged.
  */
 
-import type { PoolOptions, PoolWorker, TestProject, WorkerRequest } from 'vitest/node';
+import type { RunnerTaskEventPack } from 'vitest';
+import type {
+  PoolOptions,
+  PoolWorker,
+  RunnerTaskResultPack,
+  RunnerTestFile,
+  TestProject,
+  WorkerRequest,
+} from 'vitest/node';
 import type { CdpConnection } from '../mcp/cdp-connection.js';
 import type { RelayRunOptions } from './relay-worker.js';
 import { runTestFilesOverRelay } from './relay-worker.js';
-import { synthesizeFileTask, toTaskEventPacks, toTaskResultPacks } from './task-graph.js';
+import {
+  createQueuedFileTask,
+  synthesizeFailedFileTask,
+  synthesizeFileTask,
+  toTaskEventPacks,
+  toTaskResultPacks,
+} from './task-graph.js';
 
 /** The pool name Vitest matches against `getFilePoolName(project)`. */
 export const RELAY_POOL_NAME = 'ait-relay';
@@ -78,6 +92,53 @@ type EmittedResponse =
   | { __vitest_worker_response__: true; type: 'started'; error?: unknown }
   | { __vitest_worker_response__: true; type: 'stopped'; error?: unknown }
   | { __vitest_worker_response__: true; type: 'testfileFinished'; error?: unknown };
+
+/* -------------------------------------------------------------------------- */
+/* Reporting into the consumer's Vitest                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The slice of Vitest's internal `TestRun` the pool reports through. Vitest 4.1
+ * and 5.x share it: every built-in pool (forks, threads, typecheck) reports via
+ * `vitest._testRun.{enqueued,collected,updated}`, which also fires the reporter
+ * callbacks (`onTestModuleQueued/Collected/Start/End`, `onTestCaseResult`, ...).
+ * Writing to `vitest.state` directly only stores the data and never notifies
+ * reporters, so a run looked empty ("No test files found") on Vitest 5.
+ */
+interface TestRunSink {
+  enqueued(project: TestProject, file: RunnerTestFile): Promise<void>;
+  collected(project: TestProject, files: RunnerTestFile[]): Promise<void>;
+  updated(packs: RunnerTaskResultPack[], events: RunnerTaskEventPack[]): Promise<void>;
+}
+
+/** `Vitest` plus the `@internal` `_testRun` member the public types hide. */
+type VitestWithTestRun = TestProject['vitest'] & { _testRun?: Partial<TestRunSink> };
+
+/**
+ * Resolves the reporting sink. Feature-detected so a Vitest that renames the
+ * internal fails with a clear message instead of a silent empty run.
+ */
+function getTestRunSink(vitest: TestProject['vitest']): TestRunSink {
+  const testRun = (vitest as VitestWithTestRun)._testRun;
+  if (
+    !testRun ||
+    typeof testRun.enqueued !== 'function' ||
+    typeof testRun.collected !== 'function' ||
+    typeof testRun.updated !== 'function'
+  ) {
+    throw new Error(
+      'relay pool: this Vitest version does not expose the internal TestRun reporting API ' +
+        '(vitest._testRun.enqueued/collected/updated). Supported: Vitest 4.1 and 5.x.',
+    );
+  }
+  // Bind: the methods read `this.vitest`.
+  return {
+    enqueued: (project, file) => testRun.enqueued?.call(testRun, project, file) as Promise<void>,
+    collected: (project, files) =>
+      testRun.collected?.call(testRun, project, files) as Promise<void>,
+    updated: (packs, events) => testRun.updated?.call(testRun, packs, events) as Promise<void>,
+  };
+}
 
 /* -------------------------------------------------------------------------- */
 /* The in-process relay PoolWorker                                              */
@@ -167,7 +228,7 @@ class RelayPoolWorker implements PoolWorker {
 
   /**
    * Bundles + injects + collects the given files over the relay, synthesises a
-   * Vitest task graph per file, and reports it through `vitest.state` so the
+   * Vitest task graph per file, and reports it through `vitest._testRun` so the
    * reporter/watch/UI ecosystem sees real results.
    *
    * Returns nothing on success; a thrown error is surfaced as the
@@ -179,35 +240,41 @@ class RelayPoolWorker implements PoolWorker {
 
     const root = this.project.config.root;
     const projectName = this.project.name || undefined;
-    const state = this.project.vitest.state;
+    const sink = getTestRunSink(this.project.vitest);
 
     for (const fileResult of report.files) {
-      const perFile =
+      // The id Vitest itself derived for this file (differs between 4.x and 5).
+      const fileId = this.project.createSpecification(fileResult.file).taskId;
+      const fileTask =
         'error' in fileResult.result
-          ? // Whole-file bundle/inject error → synthesise a failed file with no tests.
-            {
-              startedAt: report.startedAt,
-              duration: 0,
-              passed: 0,
-              failed: 1,
-              skipped: 0,
-              tests: [],
-            }
-          : fileResult.result;
+          ? // Whole-file bundle/inject error: a failed file carrying the real message.
+            synthesizeFailedFileTask(
+              fileResult.file,
+              root,
+              projectName,
+              RELAY_POOL_NAME,
+              fileResult.result.error,
+              report.startedAt,
+              fileId,
+            )
+          : synthesizeFileTask(
+              fileResult.file,
+              root,
+              projectName,
+              RELAY_POOL_NAME,
+              fileResult.result,
+              fileId,
+            );
 
-      const fileTask = synthesizeFileTask(
-        fileResult.file,
-        root,
-        projectName,
-        RELAY_POOL_NAME,
-        perFile,
+      // Same sequence Vitest's own pools drive: queue the file, publish the
+      // collected task tree, then push results + events (which fire the
+      // reporter callbacks).
+      await sink.enqueued(
+        this.project,
+        createQueuedFileTask(fileResult.file, root, projectName, RELAY_POOL_NAME, fileId),
       );
-
-      state.collectFiles(this.project, [fileTask]);
-      state.updateTasks(toTaskResultPacks(fileTask));
-      // Event packs drive reporter progress; updateTasks already recorded
-      // results, so events are advisory but keep watch/UI output coherent.
-      void toTaskEventPacks(fileTask);
+      await sink.collected(this.project, [fileTask]);
+      await sink.updated(toTaskResultPacks(fileTask), toTaskEventPacks(fileTask));
     }
   }
 
