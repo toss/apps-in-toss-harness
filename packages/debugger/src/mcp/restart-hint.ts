@@ -14,7 +14,7 @@
  * publishing is out of scope for this package (npm-less distribution).
  */
 export const RESTART_CMD =
-  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.3/apps-in-toss-debugger-0.2.3.tgz debugger';
+  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.4/apps-in-toss-debugger-0.2.4.tgz debugger';
 
 /** {@link RESTART_CMD} with `--force`, for the server-lock recovery hint. */
 export const RESTART_CMD_FORCE = `${RESTART_CMD} --force`;
