@@ -29,11 +29,11 @@
 설정 파일 경로, 현재 버전, 기준 버전을 그대로 보여 준다. 예(현재 0.2.3):
 
 ```
-.mcp.json의 ait-devtools가 debugger 0.2.3에 고정돼 있습니다. 이 플러그인이 쓰는 버전은 0.2.4입니다.
+.mcp.json의 ait-devtools가 debugger 0.2.3에 고정돼 있습니다. 이 플러그인이 쓰는 버전은 0.2.5입니다.
 0.2.2와 0.2.3에는 start_attach가 항상 "프로토콜 버전 불일치"로 실패하는 알려진 버그가 있고, 0.2.4에서 고쳐졌습니다.
 바꿀 항목은 args의 URL 하나입니다.
   - .../debugger-v0.2.3/apps-in-toss-debugger-0.2.3.tgz
-  + .../debugger-v0.2.4/apps-in-toss-debugger-0.2.4.tgz
+  + .../debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz
 다른 서버 항목은 건드리지 않습니다. 업데이트할까요?
 ```
 
