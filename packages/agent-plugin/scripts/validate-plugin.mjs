@@ -2229,9 +2229,128 @@ function* walkFiles(dir) {
   }
 }
 
+// A3/design-guide-template-drift — shared/templates/<name>/ 안의 디자인 가이드
+// 사본 6종이 design skill 정본(assets/project/)과 같은 바이트인지 확인한다.
+// 사본은 손으로 고치지 않고 정본을 고친 뒤 다시 복사하는 것이 규약이다
+// (new-miniapp/references/local-template.md 유지보수 노트). 정본 경로(5-B 주입)와
+// --local 경로가 서로 다른 가이드를 내놓는 것을 커밋 시점에 막는다.
+//   - docs/design-guide.md · src/styles/{tokens,base}.css · src/components/icons.tsx:
+//     정본과 바이트 동일
+//   - AGENTS.md: `<!-- ait:design-guide vN -->` + memory-digest.md + 닫는 마커
+//   - CLAUDE.md: 같은 여는 마커 + `@AGENTS.md` + 닫는 마커
+//   - 마커 버전 N: inject-project-guide.sh 의 `MV=` 값과 같아야 한다
+// 정본 디렉터리가 없거나 템플릿에 가이드 사본이 하나도 없으면 검사하지 않는다.
+const DESIGN_GUIDE_COPY_MAP = [
+  ['design-guide.md', path.join('docs', 'design-guide.md')],
+  ['tokens.css', path.join('src', 'styles', 'tokens.css')],
+  ['base.css', path.join('src', 'styles', 'base.css')],
+  ['icons.tsx', path.join('src', 'components', 'icons.tsx')],
+];
+
+/** @param {string} root @returns {Violation[]} */
+function checkDesignGuideTemplateDrift(root) {
+  const violations = [];
+  const canonDir = path.join(root, 'shared', 'skills', 'design', 'assets', 'project');
+  const digestPath = path.join(canonDir, 'memory-digest.md');
+  if (!fs.existsSync(digestPath)) return violations;
+  const RULE = 'A3/design-guide-template-drift';
+
+  const scriptPath = path.join(
+    root,
+    'shared',
+    'skills',
+    'design',
+    'scripts',
+    'inject-project-guide.sh',
+  );
+  const mvMatch = fs.existsSync(scriptPath) ? readFile(scriptPath).match(/^MV=(\d+)\s*$/m) : null;
+
+  const templatesDir = path.join(root, 'shared', 'templates');
+  for (const tplName of listDirs(templatesDir)) {
+    const tplDir = path.join(templatesDir, tplName);
+    const hasAny = [...DESIGN_GUIDE_COPY_MAP.map(([, rel]) => rel), 'AGENTS.md', 'CLAUDE.md'].some(
+      (rel) => fs.existsSync(path.join(tplDir, rel)),
+    );
+    if (!hasAny) continue;
+
+    for (const [canonName, rel] of DESIGN_GUIDE_COPY_MAP) {
+      const canonPath = path.join(canonDir, canonName);
+      const copyPath = path.join(tplDir, rel);
+      const relCopy = path.relative(root, copyPath);
+      if (!fs.existsSync(canonPath)) continue;
+      if (!fs.existsSync(copyPath)) {
+        violations.push(
+          mkv(
+            relCopy,
+            1,
+            RULE,
+            `템플릿에 디자인 가이드 사본 '${rel}' 이 없음 — --local 경로가 정본 경로와 다른 산출을 낸다 (fix: assets/project/${canonName} 을 이 경로로 복사하라)`,
+          ),
+        );
+      } else if (!fs.readFileSync(canonPath).equals(fs.readFileSync(copyPath))) {
+        violations.push(
+          mkv(
+            relCopy,
+            1,
+            RULE,
+            `템플릿 사본이 정본 assets/project/${canonName} 과 바이트가 다름 — 사본을 손으로 고치지 말고 정본을 고친 뒤 다시 복사하라 (fix: cp assets/project/${canonName} ${relCopy})`,
+          ),
+        );
+      }
+    }
+
+    // 마커 버전 — 주입 스크립트가 쓰는 값이 기준이다.
+    if (!mvMatch) {
+      violations.push(
+        mkv(
+          path.relative(root, scriptPath),
+          1,
+          RULE,
+          `inject-project-guide.sh 에서 마커 버전 'MV=<n>' 줄을 찾지 못함 — 템플릿 AGENTS.md·CLAUDE.md 의 마커 버전과 대조할 기준이 없다 (fix: 스크립트 상단에 MV=<n> 줄을 복원하라)`,
+        ),
+      );
+      continue;
+    }
+    const mv = mvMatch[1];
+    const open = `<!-- ait:design-guide v${mv} -->`;
+    const close = '<!-- /ait:design-guide -->';
+    const digest = readFile(digestPath);
+    const agentsPath = path.join(tplDir, 'AGENTS.md');
+    const claudePath = path.join(tplDir, 'CLAUDE.md');
+    const expectedAgents = `${open}\n${digest}${digest.endsWith('\n') ? '' : '\n'}${close}\n`;
+    const expectedClaude = `${open}\n@AGENTS.md\n${close}\n`;
+    for (const [fp, expected, label] of [
+      [agentsPath, expectedAgents, 'AGENTS.md = 여는 마커 + memory-digest.md + 닫는 마커'],
+      [claudePath, expectedClaude, 'CLAUDE.md = 여는 마커 + @AGENTS.md + 닫는 마커'],
+    ]) {
+      const relFp = path.relative(root, fp);
+      if (!fs.existsSync(fp)) {
+        violations.push(
+          mkv(
+            relFp,
+            1,
+            RULE,
+            `템플릿에 ${path.basename(fp)} 가 없음 (fix: ${label} 형태로 복원하라)`,
+          ),
+        );
+      } else if (readFile(fp) !== expected) {
+        violations.push(
+          mkv(
+            relFp,
+            1,
+            RULE,
+            `${path.basename(fp)} 가 기대 형태와 다름(마커 버전 v${mv} 은 inject-project-guide.sh 의 MV 와 같아야 한다) — ${label} (fix: 정본 memory-digest.md 로 다시 만들어라)`,
+          ),
+        );
+      }
+    }
+  }
+  return violations;
+}
+
 /** @param {string} root @returns {Violation[]} */
 function checkA3(root) {
-  const violations = [];
+  const violations = [...checkDesignGuideTemplateDrift(root)];
 
   // 1. 템플릿 검증
   const templatesDir = path.join(root, 'shared', 'templates');

@@ -243,7 +243,7 @@ SDK 도메인 (필요)
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   /ait:new <app-name>     # 이 계획대로 빈 프로젝트 생성 (scaffold — 번들 설정 포함)
                           # 말로: "이 계획대로 미니앱 프로젝트 만들어줘. 이름은 <app-name> 으로."
-                          # 이후: npm run dev → /ait:design (등록 이미지 자산) →
+                          # 이후: npm run dev → /ait:design (화면·등록 이미지 자산) →
                           #       ait build → console MCP로 등록·업로드
 ```
 
@@ -267,7 +267,7 @@ SDK 도메인 (필요)
   (console MCP `miniapp_create`)에서 이뤄진다.
 - ❌ 권한 상수·메서드 이름 지어내기 — 불확실하면 docs MCP로 확인하거나
   명시적으로 "확인 필요"로 남긴다.
-- ❌ 이미지·디자인 자산 산출 — 디자인 station(`/ait:design`)의 책임.
+- ❌ 화면 디자인·이미지 자산 산출 — 디자인 station(`/ait:design`)의 책임.
 
 ## 하지 말아야 할 것
 

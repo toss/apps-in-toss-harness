@@ -4,7 +4,13 @@
 # 절차 정본은 ../references/project-guide.md, 호출자는 new-miniapp skill
 # 5-B(스캐폴드 후처리) — SKILL.md는 이 스크립트를 한 줄로 호출만 한다.
 #
-# 사용: inject-project-guide.sh <proj-dir> [--tds] [--no-tossface] [--src <assets-dir>]
+# 사용: inject-project-guide.sh <proj-dir> [--tds | --existing-ds <이름>] [--no-tossface] [--src <assets-dir>]
+#
+# --tds: 스캐폴드가 TDS 변형일 때 — CSS·아이콘·entry를 건너뛰고 다이제스트의
+#   `아이콘:` 두 줄만 TDS 문구로 바꾼다.
+# --existing-ds <이름>: 기성 디자인 시스템(존중 모드) 프로젝트 — 같은 건너뜀에 더해
+#   다이제스트의 토큰 줄을 "프로젝트 디자인 시스템의 토큰·컴포넌트를 쓴다"로 바꾸고
+#   1-2·1-3·1-9 계열 줄을 권장으로 내린다. 이름은 보고용이다(요약에 ds=<이름>).
 #
 # fail-soft 계약: set -e 없음 — 항목마다 test -f/grep로 멱등 가드를 걸고
 # 개별 실패가 나머지를 죽이지 않는다. 항상 exit 0으로 끝나고, 마지막 줄
@@ -13,13 +19,21 @@
 PROJ=""
 SRC=""
 TDS=0
+EXDS=0
+DSNAME=""
 NO_TOSSFACE=0
+MV=2
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --tds)
       TDS=1
       shift
+      ;;
+    --existing-ds)
+      EXDS=1
+      DSNAME="${2:-}"
+      shift 2
       ;;
     --no-tossface)
       NO_TOSSFACE=1
@@ -49,14 +63,17 @@ for C in "$SRC" "$SELF_DIR/../assets/project" "${CLAUDE_PLUGIN_ROOT:-}/shared/sk
 done
 if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
   DG="$SRC/memory-digest.md"
-  if [ "$TDS" = 1 ]; then
+  if [ "$EXDS" = 1 ]; then
+    T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^토큰 사용:/{print "토큰 사용: 프로젝트 디자인 시스템의 토큰·컴포넌트를 쓴다."; skip=1; next} skip&&/^$/{skip=0} skip{next} /^- 모든 이모지는 Tossface/{print $0 " (권장 — 기성 디자인 시스템이 정한 서체를 우선)"; next} /^- 한글은 `word-break: keep-all`/{print $0 " (권장)"; next} /^- 꺾쇠·화살표는 텍스트 글리프/{print $0 " (권장 — 프로젝트의 아이콘 체계를 쓴다)"; next} /^아이콘: React/{print "아이콘은 프로젝트 디자인 시스템이 주는 것을 쓴다(이 가이드의 아이콘 파일은 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{next} {print}' "$DG" > "$T" && DG="$T"
+  elif [ "$TDS" = 1 ]; then
     T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^아이콘: React/{print "이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{print "1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다."; next} {print}' "$DG" > "$T" && DG="$T"
   fi
   mkdir -p "$PROJ/docs" 2>/dev/null
   if [ -f "$PROJ/docs/design-guide.md" ]; then R="$R guide=skip"
   elif cp "$SRC/design-guide.md" "$PROJ/docs/design-guide.md" 2>/dev/null; then R="$R guide=new"
   else R="$R guide=FAIL"; fi
-  if [ "$TDS" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
+  if [ "$EXDS" = 1 ]; then R="$R ds=${DSNAME:-existing} css=ds-skip icons=ds-skip entry=ds-skip"
+  elif [ "$TDS" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
     mkdir -p "$PROJ/src/styles" 2>/dev/null
     if [ -f "$PROJ/src/styles/tokens.css" ]; then R="$R tokens=skip"
     elif cp "$SRC/tokens.css" "$PROJ/src/styles/tokens.css" 2>/dev/null; then R="$R tokens=new"
@@ -93,11 +110,11 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
   fi
   AG="$PROJ/AGENTS.md"; MK="$(grep -o "$MKR v[0-9]*" "$AG" 2>/dev/null | head -1)"
   if [ -n "$MK" ]; then R="$R agents=skip($MK)"
-  elif { [ -s "$AG" ] && printf '\n'; printf '<!-- %s v1 -->\n' "$MKR"; cat "$DG"; printf '<!-- /%s -->\n' "$MKR"; } >> "$AG" 2>/dev/null; then R="$R agents=new"
+  elif { [ -s "$AG" ] && printf '\n'; printf '<!-- %s v%s -->\n' "$MKR" "$MV"; cat "$DG"; printf '<!-- /%s -->\n' "$MKR"; } >> "$AG" 2>/dev/null; then R="$R agents=new"
   else R="$R agents=FAIL"; fi
   CL="$PROJ/CLAUDE.md"
   if grep -q "$MKR v" "$CL" 2>/dev/null; then R="$R claude=skip"
-  elif { [ -s "$CL" ] && printf '\n'; printf '<!-- %s v1 -->\n@AGENTS.md\n<!-- /%s -->\n' "$MKR" "$MKR"; } >> "$CL" 2>/dev/null; then R="$R claude=new"
+  elif { [ -s "$CL" ] && printf '\n'; printf '<!-- %s v%s -->\n@AGENTS.md\n<!-- /%s -->\n' "$MKR" "$MV" "$MKR"; } >> "$CL" 2>/dev/null; then R="$R claude=new"
   else R="$R claude=FAIL"; fi
   rm -f "$T" "$T2" 2>/dev/null
 fi

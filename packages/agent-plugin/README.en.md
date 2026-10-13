@@ -11,7 +11,7 @@ Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a
 - `/ait:welcome` — confirm installation + check environment/integration state (git, Node/npm/npx, MCP exposure, etc.) + suggest/hand off the next step
 - `/ait:new` — scaffold a new mini-app
 - `/ait:plan` — ideate, draft a lightweight PRD, and plan SDK domains/permissions/terms before scaffolding
-- `/ait:design` — turn Figma designs into registration image assets
+- `/ait:design` — Build and fix screens — fixes hard-rule violations in code, grades quality, produces registration image assets (Figma optional)
 - `/ait:inject-devtools` / `/ait:inject-debug-console` — inject config into an existing project
 - `/ait:setup-debugger` — wire the on-device debug MCP server into the project's `.mcp.json`
 - `/ait:debug` — live-state debugging guidance (browser devtools panel · `window.__ait` · on-device CDP relay)
