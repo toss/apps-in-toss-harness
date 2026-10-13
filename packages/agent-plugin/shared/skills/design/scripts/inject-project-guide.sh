@@ -11,6 +11,9 @@
 # --existing-ds <이름>: 기성 디자인 시스템(존중 모드) 프로젝트 — 같은 건너뜀에 더해
 #   다이제스트의 토큰 줄을 "프로젝트 디자인 시스템의 토큰·컴포넌트를 쓴다"로 바꾸고
 #   1-2·1-3·1-9 계열 줄을 권장으로 내린다. 이름은 보고용이다(요약에 ds=<이름>).
+#   둘 다 없으면 package.json 의존성(@toss/tds*·@mui/*·@chakra-ui/*·antd·
+#   @mantine/*·tailwindcss·@radix-ui/*)·components.json·tailwind.config.*로
+#   직접 감지해 같은 경로를 탄다(요약에 ds=<이름>(auto)).
 #
 # fail-soft 계약: set -e 없음 — 항목마다 test -f/grep로 멱등 가드를 걸고
 # 개별 실패가 나머지를 죽이지 않는다. 항상 exit 0으로 끝나고, 마지막 줄
@@ -50,9 +53,30 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -z "$PROJ" ]; then
-  echo "5-B:proj=missing"
+# 경로를 빠뜨린 호출(`--existing-ds <이름>`만 준 경우)도 현재 디렉터리로 처리한다.
+[ -n "$PROJ" ] || PROJ="."
+if [ ! -d "$PROJ" ]; then
+  echo "5-B:proj=missing($PROJ)"
   exit 0
+fi
+
+# 플래그가 없으면 기성 디자인 시스템을 직접 감지한다 — 호출자가 --existing-ds를
+# 빠뜨려도 기본 토큰·전역 CSS가 기성 시스템 위에 얹히지 않게 하는 것이 목적이다.
+AUTO=""
+if [ "$TDS" = 0 ] && [ "$EXDS" = 0 ]; then
+  AUTO="$(node -e "
+const fs=require('node:fs'),path=require('node:path');const d='$PROJ';
+let p={};try{p=JSON.parse(fs.readFileSync(path.join(d,'package.json'),'utf8'))}catch{}
+const n=Object.keys({...p.dependencies,...p.devDependencies});
+const has=(f)=>n.some(f);
+const t=[[x=>x.startsWith('@toss/tds'),'TDS'],[x=>x.startsWith('@mui/'),'MUI'],[x=>x.startsWith('@chakra-ui/'),'Chakra UI'],[x=>x==='antd','Ant Design'],[x=>x.startsWith('@mantine/'),'Mantine']];
+for(const [f,name] of t){if(has(f)){console.log(name);process.exit(0)}}
+if(fs.existsSync(path.join(d,'components.json'))){console.log('shadcn/ui');process.exit(0)}
+const tw=fs.readdirSync(d).some(f=>/^tailwind\.config\./.test(f));
+if(tw||has(x=>x==='tailwindcss')){console.log('Tailwind');process.exit(0)}
+if(has(x=>x.startsWith('@radix-ui/'))){console.log('Radix');process.exit(0)}
+" 2>/dev/null)"
+  if [ -n "$AUTO" ]; then EXDS=1; DSNAME="$AUTO"; fi
 fi
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -72,7 +96,7 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
   if [ -f "$PROJ/docs/design-guide.md" ]; then R="$R guide=skip"
   elif cp "$SRC/design-guide.md" "$PROJ/docs/design-guide.md" 2>/dev/null; then R="$R guide=new"
   else R="$R guide=FAIL"; fi
-  if [ "$EXDS" = 1 ]; then R="$R ds=${DSNAME:-existing} css=ds-skip icons=ds-skip entry=ds-skip"
+  if [ "$EXDS" = 1 ]; then R="$R ds=${DSNAME:-existing}${AUTO:+(auto)} css=ds-skip icons=ds-skip entry=ds-skip"
   elif [ "$TDS" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
     mkdir -p "$PROJ/src/styles" 2>/dev/null
     if [ -f "$PROJ/src/styles/tokens.css" ]; then R="$R tokens=skip"
@@ -99,7 +123,7 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
     for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
       if [ -f "$PROJ/$C" ]; then E="$PROJ/$C"; break; fi
     done
-    if [ -n "$E" ] && grep -q 'styles/base.css' "$E"; then R="$R entry=skip"
+    if { [ -n "$E" ] && grep -q 'styles/base.css' "$E"; } || grep -qs 'styles/base.css' "$PROJ/index.html"; then R="$R entry=skip"
     elif [ -n "$E" ] && [ "${E%index.css}" != "$E" ]; then
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=index.css" || R="$R entry=FAIL"
     elif [ -n "$E" ] && { [ -f "$PROJ/src/vite-env.d.ts" ] || grep -q '"vite/client"' "$PROJ"/tsconfig*.json 2>/dev/null; }; then

@@ -321,15 +321,17 @@ Product Ethics가 상위다. 관련성 없는 강매, 기만, 사행성 과장�
 
 ## 부록: CSS entry 배선 절차
 
-화면을 그릴 때 `../assets/project/base.css`(및 `tokens.css`)가 프로젝트
-진입점에 배선돼 있는지 먼저 확인한다. 이미 배선돼 있으면 다시 넣지 않는다
+이 절차는 `scripts/inject-project-guide.sh`가 실행한다 — 기록용 정본이고,
+화면을 그리는 쪽이 손으로 따라 하지 않는다. 화면 코드에서 `base.css`·`tokens.css`를
+다시 import하지 않는다. 스크립트는 이미 배선돼 있으면 다시 넣지 않는다
 (idempotent).
 
 1. **탐지 순서** — 아래 순서로 첫 번째로 존재하는 파일을 진입점으로 본다:
    `src/main.tsx` → `src/main.ts` → `src/index.tsx` → `src/index.ts` →
    `index.tsx` → `index.ts`.
-2. **idempotency 확인** — 그 파일에서 `styles/base.css`를 grep한다. 이미
-   잡히면 skip.
+2. **idempotency 확인** — 그 파일과 `index.html` 양쪽에서 `styles/base.css`를
+   grep한다. 어느 한쪽에라도 잡히면 skip(`index.html`의 `<link>`로 이미 걸려
+   있는데 진입점에 import를 더하면 두 번 로드된다).
 3. **vite/client 가드** — `src/vite-env.d.ts` 존재 또는 tsconfig `types`에
    `vite/client` 포함 여부를 확인한다. 있으면 진입점 첫 import 줄에
    `import './styles/base.css';`를 추가한다.

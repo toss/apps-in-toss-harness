@@ -46,7 +46,11 @@ append하고, 없으면 다이제스트만 담은 새 파일을 만든다.
 
 1단계가 기성 디자인을 감지하면(`SKILL.md` 1단계 목록) 정적 자산과 entry 배선을
 넣지 않는다. 스크립트에는 `--existing-ds <이름>`을 준다(`--tds`와 같은 건너뜀을
-일반화한 것이고, `--tds`는 그대로 동작한다).
+일반화한 것이고, `--tds`는 그대로 동작한다). 두 플래그가 다 없으면 스크립트가
+`package.json` 의존성·`components.json`·`tailwind.config.*`로 직접 감지해 같은
+경로를 탄다(요약에 `ds=<이름>(auto)`) — 호출자가 플래그를 빠뜨려도 기성 시스템
+위에 기본 토큰·전역 CSS가 얹히지 않는다. 자체 `:root` 토큰처럼 파일 신호만으로
+가리기 어려운 경우는 호출자가 `--existing-ds`를 준다.
 
 - 건너뛰는 것: `src/styles/tokens.css`·`base.css`, 아이콘, entry 배선. 요약에는
   `css=ds-skip icons=ds-skip entry=ds-skip`로 찍힌다.
