@@ -85,6 +85,9 @@ done
 #   같거나, AGENTS.md에 ait:design-guide 마커가 이미 있으면 사용자가 고쳐 쓴
 #   사본도 제외한다. 한 번 가이드가 들어간 프로젝트가 다음 실행에서 존중 모드로
 #   뒤집히면 안 된다.
+# - 반대로 이전 실행이 존중 모드였으면(AGENTS.md에 존중 모드 다이제스트 변형본이
+#   있으면) 플래그 없이 다시 불러도 존중 모드를 유지한다 — 마커 때문에 사용자
+#   tokens.css가 집계에서 빠져 일반 경로로 떨어지는 것을 막는다.
 # - 탐색 비용 상한: 깊이 4, 방문 디렉터리 200, css/scss 파일 100개, 파일당 512KB.
 AUTO=""
 if [ "$TDS" = 0 ] && [ "$EXDS" = 0 ]; then
@@ -102,8 +105,9 @@ if(tw||has(x=>x==='tailwindcss')){console.log('Tailwind');process.exit(0)}
 if(has(x=>x.startsWith('@radix-ui/'))){console.log('Radix');process.exit(0)}
 const MIN=8,MAXDEPTH=4,MAXDIRS=200,MAXFILES=100,MAXBYTES=512*1024;
 const read=(f)=>{try{return fs.readFileSync(f,'utf8')}catch{return null}};
-let marked=false;
-try{marked=/ait:design-guide v\d/.test(fs.readFileSync(path.join(d,'AGENTS.md'),'utf8'))}catch{}
+let marked=false,ag='';
+try{ag=fs.readFileSync(path.join(d,'AGENTS.md'),'utf8');marked=/ait:design-guide v\d/.test(ag)}catch{}
+if(marked&&ag.includes('토큰 사용: 프로젝트 디자인 시스템의 토큰')){console.log('기존 디자인 시스템');process.exit(0)}
 const ours=(file)=>{
   const rel=path.relative(d,file).split(path.sep).join('/');
   if(rel!=='src/styles/tokens.css'&&rel!=='src/styles/base.css')return false;
