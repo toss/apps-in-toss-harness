@@ -141,7 +141,6 @@ import {
   listNetworkRequests,
   listPages,
   measureSafeArea,
-  readDevtoolsVersion,
   type TunnelStatus,
   takeScreenshot,
   takeSnapshot,
@@ -671,7 +670,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           // and nothing else.
           const skew = deps.getProtocolVersionSkew?.() ?? null;
           if (skew !== null) {
-            return protocolVersionMismatchError(skew.device, skew.host);
+            return protocolVersionMismatchError(skew);
           }
           // Debugger attached — show the on-phone "Debugger Connected" indicator.
           await injectDebugIndicator(attachConn);
@@ -2072,10 +2071,10 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // Diagnostics collector — records server-side errors and attach/detach events
   // so `get_debug_status` can surface them in a single call.
   const diagnosticsCollector = new InMemoryDiagnosticsCollector();
-  // Host half of the attach version handshake. `readDevtoolsVersion()` returns
-  // the build-time `__VERSION__` define, or `null` in an unbuilt context — in
-  // which case every comparison reports a match (nothing to contradict).
-  const protocolVersionMonitor = createProtocolVersionMonitor(readDevtoolsVersion());
+  // Host half of the attach protocol handshake. Compares the device's
+  // `PROTOCOL_VERSION` with this daemon's; package versions are never compared
+  // (the two packages are versioned independently).
+  const protocolVersionMonitor = createProtocolVersionMonitor();
 
   // FIX (issue #572 review): track the live cloudflared child PID in memory so
   // get_debug_status can pass it to getDiagnostics as source (a). Updated by
@@ -2114,7 +2113,11 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
             // Attach version handshake: record what the device says it is so
             // `start_attach` can name a device↔host skew instead of letting
             // the value-duplicated contract misbehave silently.
-            onAttachHandshake: (event) => protocolVersionMonitor.record(event.deviceVersion),
+            onAttachHandshake: (event) =>
+              protocolVersionMonitor.record({
+                protocol: event.deviceProtocol,
+                version: event.deviceVersion,
+              }),
             // Issue #631: on permanent tunnel drop, immediately push the
             // new state so the dashboard swaps the dead QR for the error
             // state (mirror of onWssUrl's notifyStateChange).
@@ -2482,10 +2485,10 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   // removed (#665), `relay-sandbox` removed (#103).
   const devtoolsOpener = new AutoDevtoolsOpener();
   const diagnosticsCollector = new InMemoryDiagnosticsCollector();
-  // Host half of the attach version handshake. `readDevtoolsVersion()` returns
-  // the build-time `__VERSION__` define, or `null` in an unbuilt context — in
-  // which case every comparison reports a match (nothing to contradict).
-  const protocolVersionMonitor = createProtocolVersionMonitor(readDevtoolsVersion());
+  // Host half of the attach protocol handshake. Compares the device's
+  // `PROTOCOL_VERSION` with this daemon's; package versions are never compared
+  // (the two packages are versioned independently).
+  const protocolVersionMonitor = createProtocolVersionMonitor();
 
   // FIX (issue #572 review): track the live cloudflared child PID in memory so
   // get_debug_status can pass it to getDiagnostics as source (a). Updated by
@@ -2517,7 +2520,11 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
             // Attach version handshake: record what the device says it is so
             // `start_attach` can name a device↔host skew instead of letting
             // the value-duplicated contract misbehave silently.
-            onAttachHandshake: (event) => protocolVersionMonitor.record(event.deviceVersion),
+            onAttachHandshake: (event) =>
+              protocolVersionMonitor.record({
+                protocol: event.deviceProtocol,
+                version: event.deviceVersion,
+              }),
             // Issue #631: on permanent tunnel drop, immediately push the
             // new state so the dashboard swaps the dead QR for the error
             // state (mirror of onWssUrl's notifyStateChange).

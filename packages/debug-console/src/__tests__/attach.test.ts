@@ -21,6 +21,7 @@
  * module fresh via vitest's `vi.resetModules()` in beforeEach.
  */
 
+import { PROTOCOL_VERSION } from '@apps-in-toss/internal-protocol/attach-handshake';
 import {
   RELAY_AUTH_REJECT_CLOSE_CODE,
   RELAY_AUTH_REJECT_REASON,
@@ -72,6 +73,16 @@ function blockResult(
 // ---------------------------------------------------------------------------
 // deriveTargetScriptUrl
 // ---------------------------------------------------------------------------
+
+describe('deriveHandshakeUrl', () => {
+  it('reports the wire protocol (p) and the package version label (v)', async () => {
+    const { deriveHandshakeUrl } = await import('../attach.js');
+    const url = new URL(deriveHandshakeUrl('wss://abc.trycloudflare.com', '123456'));
+    expect(url.pathname).toBe('/at/123456/ait-attach');
+    expect(url.searchParams.get('p')).toBe(String(PROTOCOL_VERSION));
+    expect(url.searchParams.get('v')).toBe('0.0.0-test');
+  });
+});
 
 describe('deriveTargetScriptUrl', () => {
   // Import once — this function is pure and stateless, no need to reset.

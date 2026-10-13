@@ -2,7 +2,7 @@
  * Daemon half of the attach version handshake.
  *
  * The device (`@apps-in-toss/debug-console`) pings the relay's handshake path with
- * its build-time `__VERSION__` immediately before it injects `target.js`. This
+ * its protocol version (and package version label) immediately before it injects `target.js`. This
  * module records what came back and answers one question: are the two halves of
  * the device↔host protocol a mutually tested pair?
  *
@@ -16,23 +16,25 @@
  * crashes: the indicator just renders empty, a field just reads `undefined`, a
  * close frame just goes unrecognised.
  *
- * SECRET-HANDLING: this module handles version strings only. It never sees, and
+ * SECRET-HANDLING: this module handles version values only. It never sees, and
  * must never be given, a relay URL, tunnel host, or TOTP value.
  */
 
 import {
   compareProtocolVersions,
+  PROTOCOL_VERSION,
   type ProtocolVersionCheck,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
 
 /** Records device version reports and reports any skew against the host. */
 export interface ProtocolVersionMonitor {
   /**
-   * Records the version a device reported on the handshake path.
+   * Records what a device reported on the handshake path.
    *
-   * @param deviceVersion - Reported version, or `''` when the device sent none.
+   * @param report - `protocol` is the raw `p` value and `version` the package
+   *   version label (`''` when the device sent none).
    */
-  record(deviceVersion: string): void;
+  record(report: { protocol?: string; version?: string }): void;
   /**
    * The most recent comparison, or `null` when no device has reported yet.
    *
@@ -52,19 +54,18 @@ export interface ProtocolVersionMonitor {
 }
 
 /**
- * Creates a monitor bound to this daemon's own build version.
+ * Creates a monitor bound to this daemon's own protocol version.
  *
- * @param hostVersion - The daemon's `__VERSION__`. Pass `null`/`undefined` (or
- *   an empty string) when it is unknown; every comparison then reports a match,
- *   because there is nothing to contradict.
+ * @param hostProtocol - The daemon's protocol version; defaults to
+ *   {@link PROTOCOL_VERSION}. Package versions are never compared.
  */
 export function createProtocolVersionMonitor(
-  hostVersion: string | null | undefined,
+  hostProtocol: number = PROTOCOL_VERSION,
 ): ProtocolVersionMonitor {
   let lastCheck: ProtocolVersionCheck | null = null;
   return {
-    record(deviceVersion: string): void {
-      lastCheck = compareProtocolVersions(deviceVersion, hostVersion);
+    record(report): void {
+      lastCheck = compareProtocolVersions(report, hostProtocol);
     },
     getLastCheck(): ProtocolVersionCheck | null {
       return lastCheck;
