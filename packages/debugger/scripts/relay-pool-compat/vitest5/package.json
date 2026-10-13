@@ -1,0 +1,14 @@
+{
+  "name": "relay-pool-compat-consumer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "chii": "^1.15.5",
+    "cloudflared": "^0.7.3",
+    "esbuild": "^0.28.2",
+    "qrcode": "^1.5.4",
+    "ws": "^8.22.0",
+    "vitest": "5.0.4"
+  }
+}

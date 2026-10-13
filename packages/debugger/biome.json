@@ -17,7 +17,8 @@
       "!test-results",
       "!.changeset",
       "!.claude",
-      "!src/mcp/dashboard.generated.ts"
+      "!src/mcp/dashboard.generated.ts",
+      "!scripts/relay-pool-compat/*/package-lock.json"
     ]
   },
   "formatter": {

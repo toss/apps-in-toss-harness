@@ -34,6 +34,7 @@
     "check:mcp-react-free": "bash scripts/check-mcp-react-free.sh",
     "check:test-runner-dist": "bash scripts/check-test-runner-dist.sh",
     "check:debug-surface-absent": "bash scripts/check-debug-surface-absent.sh",
+    "check:relay-pool-compat": "node scripts/check-relay-pool-compat.mjs",
     "check:dashboard-html-fresh": "pnpm build:dashboard-html && git diff --exit-code src/mcp/dashboard.generated.ts",
     "dev": "tsdown --watch",
     "release:version": "node ../../scripts/changeset-version.mjs debugger",
