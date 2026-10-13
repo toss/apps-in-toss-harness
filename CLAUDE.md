@@ -75,7 +75,7 @@ Deploy Key·TOTP 등 자격증명 값은 어떤 파일·로그·커밋에도 넣
 
 ## public flip 전 점검
 
-**flip은 2026-08-26 재생성과 동시에 이미 발생했음이 실측(2026-08-27)으로 확인됐고, maintainer가 public 유지를 결정했다(2026-08-27)** — 아래 항목 중 (3) README 상태 note는 본 PR로 이행했고, 잔여는 요청 5(release environment required reviewers 지정)와 docs/ 비공개 여부 재결정뿐이다.
+**flip은 2026-08-26 재생성과 동시에 이미 발생했음이 실측(2026-08-27)으로 확인됐고, maintainer가 public 유지를 결정했다(2026-08-27)** — 아래 항목 중 (3) README 상태 note는 본 PR로 이행했고, 요청 5(release environment required reviewers 지정)는 완료됐다(실측 2026-10-14, REST `environments/release` — required reviewers 4인(DaveDev42·jingjing2222·dohyungp·SunYoungKwon), `prevent_self_review: true`, `can_admins_bypass: true`). 잔여는 docs/ 비공개 여부 재결정뿐이다.
 
 Dave 결정 후 착수. **이력 노출 점검은 재생성(2026-08-26)으로 대체 완료** — 현재 이력은 단일 `Initial commit`이고 그 트리는 사내 식별자 4클래스 전수 스캔 0건이 확인됐다(재생성 직전 실측). 남은 점검: (1) 내부 식별자 공개 적정성 — 새 커밋이 쌓일수록 재검증 필요(flip 직전 HEAD 트리 재스캔), (2) npm trusted publishing — **해당 없음**(npm-less 유통, npmjs 발행 없음), (3) README 상태 note — **본 PR로 이행 완료**(재생성 시점부터 public이므로 private 서술을 public 사실로 갱신), (4) launcher 기본값 전환 — **항목 소멸(2026-08-10)**: 환경 2(PWA Sandbox launcher) 전면 제거로 flip 점검 대상 아님(로컬 `docs/public-flip-runbook.md`(repo 미포함 — maintainer-local) §4).
 

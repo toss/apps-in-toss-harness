@@ -58,7 +58,7 @@ const common = {
   target: 'es2022',
   outExtensions,
   define,
-  external,
+  deps: { neverBundle: external },
   alias,
 } as const;
 

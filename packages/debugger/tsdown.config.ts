@@ -73,7 +73,7 @@ const common = {
   format: ['esm'],
   outExtensions,
   define,
-  external,
+  deps: { neverBundle: external },
   alias,
 } as const;
 
