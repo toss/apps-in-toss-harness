@@ -86,7 +86,10 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
 
 - `mcpServers."ait-devtools"`가 **4단계와 동일한 항목**으로 이미 있으면 —
   변경 없이 "이미 배선됨"으로 보고하고 5단계로 간다.
-- 같은 키가 **다른 내용**으로 있으면 — 조용히 덮어쓰지 않는다. 현재 값을 보여주고
+- 같은 키가 **이 skill의 옛 Release URL 버전**으로 있으면 — 업그레이드 경로다.
+  **Read <이 skill의 base directory>/references/upgrade-check.md** 의 절차대로
+  old→new를 보여주고 동의를 받은 뒤 그 URL 하나만 바꾼다.
+- 같은 키가 **그 밖의 다른 내용**으로 있으면 — 조용히 덮어쓰지 않는다. 현재 값을 보여주고
   사용자 결정을 받는다(커스텀 런처를 쓰고 있을 수 있다).
 - 파일이 없으면 4단계에서 새로 만든다.
 
