@@ -3,21 +3,20 @@ name: design
 description: |
   Build and fix mini-app screens. Run it for "화면 만들어줘", "출석 체크 화면
   그려줘", "화면이 구린데 예쁘게 해줘", "디자인 좀 봐줘" — it writes and edits
-  the project's actual screen files, it is not a review-only pass and not a
-  chat answer about design. Works from nothing: with no screen, no CSS file and
-  no design assets in the project, it still produces the screens. Carries a
-  written render standard — default text/background colors, a type scale, and
-  hard rules the skill fixes itself when a screen breaks them (text under 11px,
-  touch targets, bottom safe area, chevrons drawn as text glyphs, ads that
-  cover content, dark patterns). Then grades what it produced against the
-  quality bar, with the Apps in Toss container constraints (safe-area,
-  swipe-back, PageHeader) checked against official docs looked up through the
-  docs MCP. Also produces registration image assets at the console MCP
-  `miniapp_create` tool's exact specs (logo, thumbnail, screenshots). Reads a
-  Figma file as well if a Figma MCP is configured — optional input, never
-  required. Not a code refactor pass: it changes how screens look and behave,
-  not component APIs, props shape, or state management. Never registers or
-  uploads. Triggered by `/ait:design [screen or request]`.
+  the project's actual screen files, not a chat answer about design. Works from
+  nothing: with no screen, no CSS file and no design assets in the project, it
+  still produces the screens. On projects built with TDS, MUI, Tailwind, shadcn
+  or their own tokens it keeps that system, so "어색한데 기존 스타일 유지하면서
+  다듬어줘" is this skill too. Fixes hard-rule breaks itself (text under 11px,
+  touch targets, bottom safe area, text-glyph chevrons, ads covering content,
+  dark patterns) and checks Apps in Toss container constraints against the docs
+  MCP. Also produces registration image assets at the console MCP
+  `miniapp_create` specs (logo, thumbnail, screenshots). Figma MCP is optional
+  input. Not a refactor pass (no component API, props or state changes). Never
+  registers or uploads. Skip it only when the user wants feature code and no
+  visual change at all ("스타일은 기존이랑 똑같이", "디자인은 손대지 말고",
+  "Figma 시안 그대로").
+  Triggered by `/ait:design [screen or request]`.
 argument-hint: '[screen or request]'
 ---
 
@@ -28,6 +27,10 @@ argument-hint: '[screen or request]'
 `/ait:design` 한 번으로 미니앱 화면을 **만들고 고친다.** 화면이 하나도 없는
 프로젝트에서 처음부터 그려 내고, 이미 있는 화면은 진단에서 멈추지 않고 하드
 규칙 위반을 직접 해소한다. 등록용 이미지 자산 산출도 같은 명령이 맡는다.
+
+화면 만들기·고치기 — 하드 규칙 위반 직접 수정, 품질 채점, 등록용 이미지 자산(Figma는 선택)
+
+(이 skill을 한 줄로 소개할 때의 정본 문구다. README·hand-off는 이 문장을 그대로 쓰고, 영어판은 `packages/agent-plugin/README.en.md`에 있다.)
 
 이 skill이 하는 일은 넷이다:
 
@@ -51,8 +54,9 @@ argument-hint: '[screen or request]'
 자유도를 묶고, 실제 값을 모른 채 "TDS 호환"을 추측하게 만들기 때문이다.
 
 이 skill은 harness의 디자인 station(station 8)이다. 완료되면 요청한 화면이 실제
-파일로 있고, 1층 하드 규칙 위반이 0이며, 화면별 판정(G0~G8)이 등급과 함께 고정
-형식으로 남는다. 자산을 요청했으면 `./assets/`의 PNG도 등록 규격에 맞아 곧바로
+파일로 있고 1층 하드 규칙 위반이 0이다. 화면별 판정(G0~G8)은 점검을 요청받았거나
+사용자가 물었을 때 고정 형식으로 낸다. 규칙은 화면 코드를 쓸 때 조용히 적용하고,
+사용자에게는 결과와 결정할 것만 말한다. 자산을 요청했으면 `./assets/`의 PNG도 등록 규격에 맞아 곧바로
 실기기 확인(`/ait:test-on-device`)이나 콘솔 등록으로 넘어갈 수 있다. 산출물과
 안내에 과장·홍보성 문구를 넣지 않는다.
 
@@ -160,6 +164,19 @@ argument-hint: '[screen or request]'
 | C. 본다 | 판정만 원한다("디자인 좀 봐줘") | 0→1→2-B→4→7 (**1-B skip**) | 손대지 않는다 |
 | D. 등록 자산 | 콘솔 등록용 PNG가 필요하다 | 0→1→5→6→7 (**1-B skip**) | 무관 |
 
+**존중 모드는 독립 모드가 아니라 A·B 위에 얹는 수식어다.** 1단계가 기성 디자인
+시스템을 감지하면 묻지 않고 켠다. 켜지면 다음처럼 움직인다.
+
+- 1-B에서 정적 자산(`tokens.css`·`base.css`·아이콘)과 entry 배선을 건너뛴다.
+  캐리어 digest는 기성 디자인용 변형으로 넣는다.
+- 3단계는 프로젝트의 컴포넌트와 토큰으로만 그린다. 기본 토큰 값은 쓰지 않는다.
+- 1층은 1-1·1-4·1-5·1-6·1-7·1-8·1-10만 강제하고, 프로젝트의 값과 유틸리티로
+  고친다. 1-2·1-3·1-9는 권장으로 내려가며 사용자가 묻기 전에는 목록에도 내지
+  않는다.
+- G3는 프로젝트 자체 토큰을 기준으로 채점한다.
+- 완료 블록에는 "프로젝트 디자인 시스템(<이름>)을 따랐습니다" 한 줄만 남긴다.
+  어떤 규칙을 내렸는지는 설명하지 않는다.
+
 ## 의존
 
 - **Figma MCP server (선택)**: 사용자가 Figma MCP(예: Figma Dev Mode MCP,
@@ -216,12 +233,10 @@ argument-hint: '[screen or request]'
 "괜찮은 선에서" 변형해 조용히 진행하지 않는다:
 
 ```
-요청하신 내용 중 아래가 브랜드 가드에 걸립니다:
+브랜드 가드에 걸리는 항목이 있습니다:
   - <금지 목록 항목> ← <요청의 어느 부분인지>
 
-미니앱은 토스와 명확히 구분되는 브랜드 경험이어야 해서, 이 부분은 그대로
-만들지 않고 먼저 여쭙습니다. 대안: <중립 색 / 자체 로고 자리 / 구별되는 구성>.
-이 방향으로 진행할까요, 아니면 다른 브랜드 색·구성이 있을까요?
+대안: <중립 색 / 자체 로고 자리 / 구별되는 구성>. 이 방향으로 진행할까요?
 ```
 
 전부 통과하면 그 사실을 한 줄로 남기고(예: `브랜드 체크포인트: 통과`)
@@ -238,6 +253,20 @@ argument-hint: '[screen or request]'
 `react`가 있는지(아이콘 계열 분기), 이미 쓰는 토큰·아이콘 세트가 있는지.
 프로젝트가 이미 정한 값이 있으면 언제나 그쪽이 우선한다.
 
+**기성 디자인 감지.** 아래 중 가벼운 grep 하나라도 걸리면 존중 모드다(A·B에
+얹는다. 묻지 않는다).
+
+- `package.json` 의존성: `@toss/tds*`·`@mui/*`·`tailwindcss`·`@chakra-ui/*`·
+  `antd`·`@mantine/*`·`@radix-ui/*`
+- `components.json`(shadcn), `tailwind.config.*`, `theme.*`·`tokens.*` 파일
+- 여러 개의 `:root` 커스텀 프로퍼티
+- 사용자가 "우리 디자인 시스템", "Figma 그대로"라고 말한 경우
+
+우리가 넣은 가이드(`ait:design-guide` 마커와 그 `tokens.css`)는 기성 디자인으로
+세지 않는다. 감지한 시스템 이름은 7단계 한 줄에 쓴다. 의존성·`components.json`·
+`tailwind.config.*` 신호는 1-B 스크립트도 직접 감지하므로, 여기서 놓쳐도 주입
+결과는 같다 — 스크립트 요약의 `ds=<이름>`이 보이면 존중 모드로 진행한다.
+
 **Figma는 선택 입력이다 (detect-and-degrade).** tool 이름에 `figma`가 들어가는
 MCP tool(`get_code`·`get_image`·`get_variable_defs`·`get_metadata` 류)이
 노출돼 있으면 Figma MCP가 설정된 것이다. **MCP 설치를 강요하지 않는다** —
@@ -250,6 +279,15 @@ MCP tool(`get_code`·`get_image`·`get_variable_defs`·`get_metadata` 류)이
 | MCP 없음 + URL 있음 | "Figma MCP가 없어 이 URL은 직접 읽지 못합니다 — 화면을 설명해 주시면 그대로 반영하고, 아니면 기본 토큰으로 진행합니다"를 **한 번만** 안내하고 계속 진행한다 |
 
 ### 1-B. 프로젝트 디자인 가이드 확인·주입 (모드 A·B)
+
+이 단계는 스크립트 한 줄로 돈다. 마커가 이미 있어도 **매번 돌린다**(멱등이라
+있는 것은 skip한다). 아래 1~3·5번을 손으로 하지 않는다:
+`bash "<이 skill의 base directory>/scripts/inject-project-guide.sh" .`
+(사용자가 말로만 알려 준 디자인 시스템이면 `--existing-ds <이름>`을 붙인다).
+스크립트가 기성 디자인을 직접 감지해 존중 모드면 digest 변형본만 넣고
+tokens·base·아이콘·entry를 `ds-skip`으로 찍는다(`references/project-guide.md`의
+존중 모드 절). 마지막 줄 `5-B:` 요약에 `agents=`·`claude=`가 없으면 주입이 안 된
+것이니 한 번 다시 돌린다. `agents=skip(<다른 버전>)`이면 아래 4번만 직접 한다.
 
 프로젝트에 디자인 가이드(토큰·하드 규칙 요약·아이콘)를 심어, 이후 어떤
 세션에서 화면을 손대도 같은 기준이 적용되게 한다. 절차의 정본은
@@ -278,8 +316,8 @@ MCP tool(`get_code`·`get_image`·`get_variable_defs`·`get_metadata` 류)이
 
 - **리스크 점검** — 검수 반려 소지·핵심 가치 매몰·다크패턴·광고 정직성 4축을
   가볍게 훑는다. **걸리는 게 없으면 조용히 통과한다.** 없는 문제를 지어내지
-  않고, 짚을 때도 "이대로면 검수에서 걸릴 수 있어요" 톤으로 제작자가 판단할
-  여지를 남긴다.
+  않는다. 검수 반려처럼 실제 결과가 따르는 것만 "이대로면 검수에서 걸릴 수
+  있어요" 한 줄로 말하고, 그 밖의 것은 조용히 반영하거나 넘긴다.
 - **화면 명세** — 화면별로 컴포넌트 타입 + 담기는 콘텐츠를 위에서 아래
   순서(그리는 순서 = 읽는 순서)로 적는다. 치수(px)·색값·CSS·아이콘 파일명은
   3단계의 몫이라 여기서 정하지 않는다. 예시 데이터("오늘 방문 3명")는 오히려
@@ -311,18 +349,23 @@ directory>/references/docs-lookup.md**. 문서에서 확인한 항목만 "공식
 **Read <이 skill의 base directory>/references/render-rules.md**를 먼저 읽는다.
 색·크기·간격 값의 정본은 그 파일이 가리키는 `assets/project/tokens.css`다 —
 기억에서 꺼내 쓰지 말고 읽어서 쓴다. 가이드는 1-B에서 확정됐다 — 프로젝트에
-있으면 그것이 정본이고 기본 토큰은 그 아래다.
+있으면 그것이 정본이고 기본 토큰은 그 아래다. 존중 모드면 기본 토큰 값은 쓰지
+않고 프로젝트의 컴포넌트와 토큰으로만 그린다.
 
-**CSS 배선**: `src/styles/base.css`가 진입점에 이미 걸려 있는지 grep으로 먼저
-확인한다. 걸려 있으면 다시 넣지 않는다(중복 `@import`는 낭비다). 탐지 순서·
-`vite/client` 가드·`index.html` 폴백까지 포함한 절차는 `render-rules.md` 부록
-"CSS entry 배선 절차"가 정본이다. `base.css`는 진입점에서 한 번만 로드되고
-토큰은 그 안에서 `@import './tokens.css';` 한 줄로 딸려 온다.
+**CSS는 손으로 배선하지 않는다.** `base.css`·`tokens.css` 연결은 1-B 스크립트가
+끝냈다(요약의 `entry=`). 진입점·`App.tsx`·화면 파일·`index.html` 어디에도
+`base.css`·`tokens.css`의 `import`·`@import`·`<link>`를 더하지 않는다 — 이미
+`index.html`이나 진입점에 걸려 있어 두 번 로드된다. 화면별 CSS 파일을 그 화면에서
+import하는 것은 괜찮다. `entry=FAIL`이면 직접 고치지 말고 그 사실만 7단계에 적는다.
 
-**1층 위반은 자동으로 해소한다.** 렌더가 끝나면 1층 10항목(글자 크기·이모지
+**1층 위반은 직접 해소한다 — 단, 이번에 손댈 파일에서만.** 자동 수정 범위는
+모드 A에서 새로 만든 파일, 모드 B에서 사용자가 고치라고 한 화면이다. 모드 A에서
+기존 화면·`App.tsx`의 스타일·클래스·마크업은 1층 위반이 보여도 고치지 않고
+언급하지도 않는다(새 화면 연결 한 줄만 예외). 렌더가 끝나면 1층 10항목(글자 크기·이모지
 Tossface·한글 줄바꿈·대비와 어포던스·터치와 safe area·광고 배치·레이아웃
 무결성·다크패턴·꺾쇠와 화살표·상단 네비 미포함)을 전수로 훑고, 걸리는 항목은
-지적으로 끝내지 않고 코드를 고친다. 2층 권장은 목록으로만 남기고 3층은
+지적으로 끝내지 않고 코드를 고친다. 존중 모드에서는 1-1·1-4·1-5·1-6·1-7·1-8·1-10만
+강제하고 프로젝트의 값으로 고친다. 2층 권장은 사용자에게 먼저 내밀지 않고 3층은
 판정하지 않는다 — 브랜드색·폰트·톤·레이아웃은 제작자의 것이다.
 
 **승인 규칙**
@@ -337,6 +380,12 @@ Tossface·한글 줄바꿈·대비와 어포던스·터치와 safe area·광고 
 
 승인 없이 기존 파일을 대량으로 고치지 않는다. 요청이 한 화면이면 그 화면만
 손대고, 옆 화면까지 "김에 정리"하지 않는다.
+
+**새 화면은 기존 화면을 대체하지 않는다.** 모드 A에서 새 화면을 앱에 연결할
+때(`App.tsx`·라우터) 기존 화면 코드를 지우거나 새 화면으로 바꿔 끼우지 않는다.
+라우트 한 줄·진입 버튼 하나처럼 **더하는** 연결만 승인 없이 하고 완료 블록에
+적는다. 연결 방법이 기존 화면을 지우거나 바꾸는 것뿐이면 새 파일만 만들고
+연결은 하지 않은 채, 어떻게 연결할지 한 줄로 묻는다.
 
 **문구는 design이 다시 쓰지 않는다.** 화면 카피의 재작성은
 `/ait:ux-writing`이 맡는다 — design은 4단계에서 G6로 판정만 하고 넘긴다.
@@ -353,7 +402,7 @@ directory>/references/quality-bar.md**. 축만 요약하면:
 | **G0 브랜드·IP 안전** | 위 "토스 브랜드·UI 모방 금지" 금지 목록 위반 여부 | 차단 — 중단하고 확인 |
 | **G1 컨테이너 적합성** | safe-area / swipe-back / 헤더 / 하단 CTA 여백 / 웹 레이아웃 전제 | 차단 |
 | **G2 등록 자산 규격** | 6단계 실측 치수 검증 결과를 그대로 인용 | 차단 (5단계로 복귀) |
-| **G3 토큰 일관성** | 이름 있는 토큰·역할별 일관성·타입 스케일·weight·이모지 서체 | 차단 + 권장 혼재 |
+| **G3 토큰 일관성** | 이름 있는 토큰·역할별 일관성·타입 스케일·weight·이모지 서체(존중 모드는 프로젝트 토큰 기준) | 차단 + 권장 혼재 |
 | **G4 화면 구조·조작성** | 주요 액션 위계·도달성·터치 타깃·명도 대비·버튼 어포던스 | 차단 + 권장 혼재 |
 | **G5 상태 완전성** | 로딩·빈 상태·실패·권한 거부 화면이 설계에 있는가 | 권장 |
 | **G6 카피** | 어투 일관·에러 문구·과장 금지·손실 프레이밍·감정 단정·반복 | 권장 — 재작성은 `/ait:ux-writing` |
@@ -363,10 +412,15 @@ directory>/references/quality-bar.md**. 축만 요약하면:
 판정 단위는 화면이다. 각 항목은 **통과 / 조정 필요(사유 1줄) / 해당 없음** 중
 하나로 적고, 판정할 수단이 없으면 통과시키지 말고 `(확인 필요)`로 남긴다.
 
+**판정은 내부 작업이다.** 모드 A·B에서는 이 단계의 판정 결과(G 번호·항목별
+통과·기준 수치)를 사용자 출력에 옮기지 않는다. 단계 이름("4단계", "7단계: 완료
+안내")을 제목으로 찍지도 않는다. 사용자에게 가는 것은 7단계 블록 하나다. 판정표는
+모드 C이거나 사용자가 점검 결과를 물었을 때만 낸다.
+
 **차단 등급 항목에 조정 필요가 남으면 여기서 끝내지 않는다.** 3단계로 돌아가
 고친 뒤 같은 항목을 재판정한다. 기존 파일을 고칠 때는 3단계의 승인 규칙을
-그대로 적용한다. 권장 등급은 목록으로 남기고 진행할 수 있다 — 다만 화면당
-3건 이상이면 완료로 선언하지 않고 우선순위를 사용자에게 묻는다.
+그대로 적용한다. 권장 등급은 완료를 막지 않는다 — A·B 모드에서는 목록을 먼저
+내밀지 않고, 있으면 "다듬을 여지 M건 더 있어요" 정도로만 말한다.
 
 루프는 **같은 항목에 대해 최대 2회**까지 돈다. 2회로 안 풀리면 계속 고치지 말고
 무엇이 걸렸는지 적어 넘기고, 그 항목은 `(확인 필요)`로 남겨 7단계 완료 안내에
@@ -486,7 +540,11 @@ sips -g pixelWidth -g pixelHeight assets/logo.png
 ### 7. 완료 안내
 
 한 블록으로 마무리한다. 해당 없는 절(자산을 만들지 않았으면 자산 절)은 빼고
-인쇄한다.
+인쇄한다. **기본 출력은 바뀐 파일과 변경 사실, 남은 차단 항목뿐이다.** 1층
+자동 수정은 사실만 나열하고 왜 중요한지는 설명하지 않는다. 자동 수정이 0건이면
+그 줄을 통째로 뺀다 — "규칙을 모두 충족했다"며 규칙과 수치(16px·44px·34px 등)를
+늘어놓지 않는다. 문서 조회·판정 과정도 서술하지 않는다. 존중 모드였으면 수정
+건수와 무관하게 `프로젝트 디자인 시스템(<이름>)을 따랐습니다` 줄은 반드시 넣는다.
 
 ```
 design 완료
@@ -495,14 +553,9 @@ design 완료
   - src/pages/Home.tsx        새로 만듦
   - src/pages/Detail.tsx      고침 — 본문 13px → 15px, 하단 CTA safe-area 여백
 
-1층 하드 규칙: 위반 0
-  - 자동 수정 3건 (11px 이하 텍스트 / 터치 타깃 44px / 텍스트 꺾쇠 → SVG 아이콘)
-  - 못 고친 항목이 있으면 무엇이 왜 남았는지 여기에 함께 적습니다
-
-품질 점검 (quality bar G0~G8):
-  - 화면별 항목 판정 (references/quality-bar.md "자기 점검 출력 형식" 그대로)
-  - 요약: 차단 N건 / 권장 M건 / 확인 필요 K건 / 문서 확인 필요 J건
-  - 차단 등급 미해소가 있으면 "완료 보류"로 표기
+자동 수정 3건 (11px 이하 텍스트 / 터치 타깃 44px / 텍스트 꺾쇠 → SVG 아이콘)
+못 고친 항목이 있으면 무엇이 왜 남았는지 여기에 함께 적습니다
+프로젝트 디자인 시스템(<이름>)을 따랐습니다      # 존중 모드일 때만, 이 한 줄
 
 생성된 자산 (./assets/):
   - logo.png             600×600        (필수)
@@ -526,6 +579,12 @@ design 완료
                          # 말로: "이 자산으로 콘솔에 등록하고 번들 올려줘"
 ```
 
+**요청 시에만 붙이는 절.** 모드 C(사용자가 점검을 요청한 경우)이거나 사용자가
+물었을 때는 위 블록에 품질 점검(G0~G8)을 더한다. 화면별 항목 판정은
+`references/quality-bar.md` "자기 점검 출력 형식" 그대로, 요약은 차단 N건 / 권장
+M건 / 확인 필요 K건 / 문서 확인 필요 J건이고, 차단 미해소가 있으면 "완료 보류"로
+표기한다. 화면별 판정표와 요약 줄은 점검 요청이 없으면 내지 않는다.
+
 ## Out of scope (이 skill이 하지 않는 것)
 
 - ❌ MCP server 추가·제공 — 이 플러그인은 순수 skills 패키지(idle context 비용 0).
@@ -540,6 +599,10 @@ design 완료
 - ❌ 컴포넌트 API·상태관리 리팩터 — design이 바꾸는 것은 화면이 보이고 동작하는
   방식이지 코드 구조가 아니다. props 형태·상태 라이브러리·폴더 구조 재설계는
   이 skill의 일이 아니다.
+- ❌ 기성 디자인 시스템 프로젝트에 기본 토큰·전역 CSS·서체를 주입 — 존중 모드는
+  프로젝트의 시스템을 따른다.
+- ❌ 묻지 않은 규칙 설명·사용자 코드 지적·디자인 훈수 — 규칙은 조용히 적용하고
+  사용자에게는 결과와 결정할 것만 말한다.
 - ❌ 카피 재작성 — G6로 판정만 하고 재작성은 `/ait:ux-writing`에 넘긴다.
 - ❌ 종횡비 왜곡 — 규격에 안 맞는 소스를 임의로 늘려 채우지 않는다. 크롭/패딩
   의도를 사용자에게 확인한다.

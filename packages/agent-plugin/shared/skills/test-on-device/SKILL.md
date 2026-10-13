@@ -271,7 +271,7 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 
 ## 참고
 
-- 짝 skill: `new-miniapp`(scaffold), `design`(등록용 이미지 자산),
+- 짝 skill: `new-miniapp`(scaffold), `design`(화면·등록용 이미지 자산),
   `setup-debugger`·`debug`(실기기 CDP attach — 이 skill 다음 단계),
   `inject`의 debug-console facet(candidate 빌드에 attach 표면 설치).
 - 콘솔 MCP(`apps-in-toss-console`) 인가는 `/mcp` 1회. 세션이 보는 워크스페이스는

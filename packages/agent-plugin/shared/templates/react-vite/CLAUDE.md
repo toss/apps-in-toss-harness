@@ -1,3 +1,3 @@
-<!-- ait:design-guide v1 -->
+<!-- ait:design-guide v2 -->
 @AGENTS.md
 <!-- /ait:design-guide -->

@@ -500,9 +500,9 @@ fi
 if [ "$OK" = 1 ] && [ -n "$DG" ]; then
 MV="$(grep -o "$MK v[0-9]*" "$P/AGENTS.md" 2>/dev/null | head -1)"
 if [ -n "$MV" ]; then R="$R agents=skip($MV)"
-elif { [ -s "$P/AGENTS.md" ] && printf '\n'; printf '<!-- %s v1 -->\n' "$MK"; cat "$DG"; printf '<!-- /%s -->\n' "$MK"; } >> "$P/AGENTS.md" 2>/dev/null; then R="$R agents=new"
+elif { [ -s "$P/AGENTS.md" ] && printf '\n'; printf '<!-- %s v2 -->\n' "$MK"; cat "$DG"; printf '<!-- /%s -->\n' "$MK"; } >> "$P/AGENTS.md" 2>/dev/null; then R="$R agents=new"
 else OK=0; R="$R agents=FAIL"; fi
-[ "$OK" = 1 ] && { grep -qs "$MK v" "$P/CLAUDE.md" || { { [ -s "$P/CLAUDE.md" ] && printf '\n'; printf '<!-- %s v1 -->\n@AGENTS.md\n<!-- /%s -->\n' "$MK" "$MK"; } >> "$P/CLAUDE.md" 2>/dev/null || { OK=0; R="$R claude=FAIL"; }; }; }
+[ "$OK" = 1 ] && { grep -qs "$MK v" "$P/CLAUDE.md" || { { [ -s "$P/CLAUDE.md" ] && printf '\n'; printf '<!-- %s v2 -->\n@AGENTS.md\n<!-- /%s -->\n' "$MK" "$MK"; } >> "$P/CLAUDE.md" 2>/dev/null || { OK=0; R="$R claude=FAIL"; }; }; }
 fi
 rm -f "$TF" 2>/dev/null
 if [ "$OK" = 1 ] && dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(자산 폴백으로 보완됨 —$R)"
@@ -659,10 +659,10 @@ ls ./<package_name>/node_modules/.bin/ait
 흔적 `touch`는 이미 실행됐으므로 fence가 통째로 죽어도 Step 5가 실패 문장을 완료
 블록으로 실어 나른다.
 
-캐리어 마커는 여는 줄 `<!-- ait:design-guide v1 -->`과 닫는 줄
+캐리어 마커는 여는 줄 `<!-- ait:design-guide v2 -->`과 닫는 줄
 `<!-- /ait:design-guide -->`이고, grep 가드가 네 상황을 전부 처리한다 — 파일 없음(새로
-생성)·마커 없음(파일 끝에 append, 기존 내용 무손상)·`v1`(skip)·다른 버전(skip). 요약에
-v1이 아닌 버전이 찍히면(`agents=skip(ait:design-guide v0)`) 덮어쓰지 말고 "가이드
+생성)·마커 없음(파일 끝에 append, 기존 내용 무손상)·`v2`(skip)·다른 버전(skip). 요약에
+v2가 아닌 버전이 찍히면(`agents=skip(ait:design-guide v0)`) 덮어쓰지 말고 "가이드
 버전이 다릅니다 — `/ait:design`으로 갱신할 수 있습니다"만 알린다. `AGENTS.md`에
 들어가는 본문은 `memory-digest.md` 원문 그대로다(한 글자도 고쳐 쓰지 않는다).
 `CLAUDE.md`에는 `@AGENTS.md` 한 줄만 넣는다 — 같은 본문을 두 파일에 넣으면 세션마다

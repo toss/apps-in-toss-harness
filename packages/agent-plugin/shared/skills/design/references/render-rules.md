@@ -92,6 +92,9 @@ design skill이 화면을 실제로 그릴 때 따르는 규칙의 정본이다.
 
 ### 1-2 이모지 — 전부 Tossface (예외 없음)
 
+> 존중 모드에서 권장으로 강등 — 기성 디자인 시스템 프로젝트에는 전역 서체를
+> 주입하지 않는다(아래 "존중 모드" 절).
+
 **모든 이모지가 Tossface로 렌더된다** — 진입 CSS 폰트 스택 맨 앞에 배선되거나
 (`base.css`가 이미 이렇게 배선한다), 개별 요소에 `.tf`가 붙어 있다.
 `--no-tossface`로 스캐폴딩된 프로젝트는 이 항목이 해당 없음이다.
@@ -117,6 +120,8 @@ const wrapEmoji = s => esc(s).replace(EMOJI_RE, '<span class="tf">$1</span>');
 직접 붙인다.
 
 ### 1-3 한글 줄바꿈 — 강제
+
+> 존중 모드에서 권장으로 강등 — 프로젝트의 전역 CSS를 건드리지 않는다.
 
 한국어 텍스트가 **어절 중간에서 끊기지 않게** 한다. `word-break: keep-all` +
 긴 URL·영문 토큰 대비 `overflow-wrap: break-word`를 건다(`base.css`의 `body`가
@@ -189,6 +194,9 @@ const wrapEmoji = s => esc(s).replace(EMOJI_RE, '<span class="tf">$1</span>');
 
 ### 1-9 꺾쇠·화살표 — UI 품질을 가장 크게 가르는 요소
 
+> 존중 모드에서 권장으로 강등 — 아이콘 세트를 바꾸지 않고 프로젝트의 아이콘
+> 체계를 쓴다(아래 "존중 모드" 절).
+
 방향 화살표·꺾쇠(chevron)를 잘못 쓰는 게 UI 품질을 가장 크게 떨어뜨린다.
 여기는 특히 엄격하게 지킨다.
 
@@ -227,6 +235,19 @@ const wrapEmoji = s => esc(s).replace(EMOJI_RE, '<span class="tf">$1</span>');
   **플랫폼 네비(타이틀·right 버튼)**로 넣는다.
 - 예외: 네비 위에 겹치는 **투명·커스텀 히어로**가 정말 필요한 특수 화면
   정도. 기본은 "상단 네비 없음".
+
+## 존중 모드 — 기성 디자인 시스템이 있는 프로젝트
+
+`SKILL.md` 1단계가 기성 디자인(TDS·MUI·Tailwind·shadcn·자체 토큰 등)을 감지하면
+모드 A·B 위에 존중 모드가 얹힌다. 생김새는 프로젝트가 이미 정했으므로 이 문서의
+기본 토큰 값은 쓰지 않고, 컴포넌트와 값은 프로젝트의 것으로만 그린다.
+
+- **강제하는 항목**: 1-1, 1-4, 1-5, 1-6, 1-7, 1-8, 1-10. 플랫폼·안전 항목이라
+  프로젝트의 디자인 시스템 안에서도 같은 기준이다. 고칠 때도 프로젝트의 값과
+  유틸리티(Tailwind 클래스, DS 컴포넌트 prop 등)로 고친다.
+- **권장으로 내리는 항목**: 1-2, 1-3, 1-9. 전역 폰트 CDN·전역 CSS·아이콘 세트를
+  주입하지 않는다. 목록으로도 먼저 내밀지 않고, 사용자가 물을 때만 말한다.
+- 기본 토큰 값, 정적 자산(`tokens.css`·`base.css`·아이콘), entry 배선은 건너뛴다.
 
 ## 2층 — 권장 (소프트, "잘 만들자")
 
@@ -300,15 +321,17 @@ Product Ethics가 상위다. 관련성 없는 강매, 기만, 사행성 과장�
 
 ## 부록: CSS entry 배선 절차
 
-화면을 그릴 때 `../assets/project/base.css`(및 `tokens.css`)가 프로젝트
-진입점에 배선돼 있는지 먼저 확인한다. 이미 배선돼 있으면 다시 넣지 않는다
+이 절차는 `scripts/inject-project-guide.sh`가 실행한다 — 기록용 정본이고,
+화면을 그리는 쪽이 손으로 따라 하지 않는다. 화면 코드에서 `base.css`·`tokens.css`를
+다시 import하지 않는다. 스크립트는 이미 배선돼 있으면 다시 넣지 않는다
 (idempotent).
 
 1. **탐지 순서** — 아래 순서로 첫 번째로 존재하는 파일을 진입점으로 본다:
    `src/main.tsx` → `src/main.ts` → `src/index.tsx` → `src/index.ts` →
    `index.tsx` → `index.ts`.
-2. **idempotency 확인** — 그 파일에서 `styles/base.css`를 grep한다. 이미
-   잡히면 skip.
+2. **idempotency 확인** — 그 파일과 `index.html` 양쪽에서 `styles/base.css`를
+   grep한다. 어느 한쪽에라도 잡히면 skip(`index.html`의 `<link>`로 이미 걸려
+   있는데 진입점에 import를 더하면 두 번 로드된다).
 3. **vite/client 가드** — `src/vite-env.d.ts` 존재 또는 tsconfig `types`에
    `vite/client` 포함 여부를 확인한다. 있으면 진입점 첫 import 줄에
    `import './styles/base.css';`를 추가한다.

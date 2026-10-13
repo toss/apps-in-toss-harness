@@ -3739,6 +3739,79 @@ describe('A2/design-icon-asset-invalid negative tests (N3)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// A3/design-guide-template-drift — 템플릿 가이드 사본 ↔ design 정본
+// ---------------------------------------------------------------------------
+
+const GUIDE_CANON_REL = path.join('shared', 'skills', DESIGN_SKILL_NAME, 'assets', 'project');
+const GUIDE_SCRIPT_REL = path.join(
+  'shared',
+  'skills',
+  DESIGN_SKILL_NAME,
+  'scripts',
+  'inject-project-guide.sh',
+);
+const GUIDE_TPL_REL = path.join('shared', 'templates', 'guide-tpl');
+const GUIDE_DIGEST = '앱인토스 미니앱 프로젝트다.\n\n하드 규칙:\n- 텍스트 11px 이하 금지\n';
+const GUIDE_COPIES: Array<[string, string, string]> = [
+  ['design-guide.md', path.join('docs', 'design-guide.md'), '# 디자인 가이드\n'],
+  ['tokens.css', path.join('src', 'styles', 'tokens.css'), ':root { --a: 1px; }\n'],
+  ['base.css', path.join('src', 'styles', 'base.css'), 'body { margin: 0; }\n'],
+  ['icons.tsx', path.join('src', 'components', 'icons.tsx'), 'export const X = 1;\n'],
+];
+
+function writeValidGuideTemplate(dir: string): void {
+  writeFile(path.join(dir, GUIDE_SCRIPT_REL), '#!/usr/bin/env bash\nMV=2\n');
+  writeFile(path.join(dir, GUIDE_CANON_REL, 'memory-digest.md'), GUIDE_DIGEST);
+  for (const [canon, rel, body] of GUIDE_COPIES) {
+    writeFile(path.join(dir, GUIDE_CANON_REL, canon), body);
+    writeFile(path.join(dir, GUIDE_TPL_REL, rel), body);
+  }
+  writeFile(
+    path.join(dir, GUIDE_TPL_REL, 'AGENTS.md'),
+    `<!-- ait:design-guide v2 -->\n${GUIDE_DIGEST}<!-- /ait:design-guide -->\n`,
+  );
+  writeFile(
+    path.join(dir, GUIDE_TPL_REL, 'CLAUDE.md'),
+    '<!-- ait:design-guide v2 -->\n@AGENTS.md\n<!-- /ait:design-guide -->\n',
+  );
+}
+
+describe('A3/design-guide-template-drift negative tests', () => {
+  it('사본이 정본·마커 버전과 일치하면 발화하지 않는다 (positive control)', async () => {
+    buildValidFixture(tmpDir);
+    writeValidGuideTemplate(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).not.toContain('A3/design-guide-template-drift');
+  });
+
+  it('사본 한 바이트가 정본과 다르면 위반이 나고, 복원하면 조용해진다', async () => {
+    buildValidFixture(tmpDir);
+    writeValidGuideTemplate(tmpDir);
+    writeFile(
+      path.join(tmpDir, GUIDE_TPL_REL, 'src', 'styles', 'tokens.css'),
+      ':root { --a: 2px; }\n',
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A3/design-guide-template-drift');
+
+    writeValidGuideTemplate(tmpDir);
+    const { violations: restored } = await runChecks(tmpDir);
+    expect(rulesFired(restored)).not.toContain('A3/design-guide-template-drift');
+  });
+
+  it('템플릿 AGENTS.md 마커 버전이 주입 스크립트의 MV 와 다르면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeValidGuideTemplate(tmpDir);
+    writeFile(
+      path.join(tmpDir, GUIDE_TPL_REL, 'AGENTS.md'),
+      `<!-- ait:design-guide v0 -->\n${GUIDE_DIGEST}<!-- /ait:design-guide -->\n`,
+    );
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).toContain('A3/design-guide-template-drift');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A11 — 어댑터 manifest 정합성 (.cursor-plugin ↔ .claude-plugin)
 // ---------------------------------------------------------------------------
 //

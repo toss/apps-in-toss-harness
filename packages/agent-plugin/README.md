@@ -11,7 +11,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 - `/ait:welcome` — 설치 확인 + 환경·연동 점검(git·Node/npm/npx, MCP 노출 등) + 다음 단계 권유·hand-off
 - `/ait:new` — 새 미니앱 스캐폴딩
 - `/ait:plan` — 아이데이션 · 경량 PRD · SDK 도메인/권한/약관 기획 (스캐폴드 전)
-- `/ait:design` — Figma 디자인 → 등록용 이미지 에셋
+- `/ait:design` — 화면 만들기·고치기 — 하드 규칙 위반 직접 수정, 품질 채점, 등록용 이미지 자산(Figma는 선택)
 - `/ait:inject-devtools` / `/ait:inject-debug-console` — 기존 프로젝트에 설정 주입
 - `/ait:setup-debugger` — on-device 디버그 MCP 서버를 프로젝트 `.mcp.json`에 배선
 - `/ait:debug` — 라이브 상태 디버깅 안내 (브라우저 devtools 패널 · `window.__ait` · 실기기 on-device CDP relay)
