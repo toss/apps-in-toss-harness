@@ -55,7 +55,7 @@ jobs:
     steps:
       # 아래 두 스텝(패키지 결정 + 입력 검증)은 checkout·pnpm install도 필요
       # 없다 — 되돌릴 수 없는 액션이니 잘못된 입력은 CI 시간을 쓰기 전에
-      # 최대한 빨리 걸러낸다(fail fast). 게이트(lint/build/typecheck/test)는
+      # 최대한 빨리 걸러낸다(fail fast). 게이트(ci.yml과 같은 lint~audit)는
       # 몇 분씩 걸리므로, 그 전에 막을 수 있는 실수는 여기서 막는다.
       - name: Resolve target packages
         id: plan
@@ -112,7 +112,7 @@ jobs:
       # 태그 규약: <pkg>-v<version> (예: debugger-v0.2.0). 버전은 항상 해당
       # package.json에서 동적으로 읽는다 — 워크플로에 하드코딩하지 않는다.
       # 실릴리즈일 때만 중복 태그를 검사한다: 같은 태그의 릴리즈가 이미
-      # 있으면 gate(lint/build/typecheck/test, 몇 분 소요)를 돌리기 전에
+      # 있으면 gate(ci.yml과 같은 lint~audit, 몇 분 소요)를 돌리기 전에
       # 여기서 즉시 실패시킨다(fail fast). dry-run은 이 워크플로 자체를
       # 반복 테스트하는 용도라 기존 릴리즈 존재 여부와 무관하게 통과시킨다.
       - name: Resolve versions and guard against duplicate releases
@@ -136,7 +136,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # 게이트는 CI(.github/workflows/ci.yml)와 정확히 같은 커맨드·순서를 쓴다:
+      # 게이트는 CI(.github/workflows/ci.yml)의 check job과 같은 커맨드·순서를 쓴다
+      # (각 스텝의 사유는 ci.yml 주석 참고 — 여기에 하나라도 빠지면 CI가 막는 결함이
+      # 릴리즈 경로로는 그대로 발행된다. 두 파일의 run 목록을 함께 고쳐라):
       # `pnpm -r <cmd>`가 아니라 루트 package.json의 스크립트(`pnpm lint`·`pnpm
       # test` 등)를 그대로 호출한다 — 루트 스크립트는 워크스페이스 재귀 실행 위에
       # scripts/__tests__/ 같은 루트 전용 테스트를 얹을 수 있어서(`pnpm test` =
@@ -150,8 +152,15 @@ jobs:
       # dist를 읽음.
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm -r check:dashboard-html-fresh
+      - run: pnpm -r check:mcp-react-free
+      - run: pnpm -r check:test-runner-dist
+      - run: pnpm -r check:debug-surface-absent
+      - run: pnpm check:pack-manifests
+      - run: pnpm check:dist-urls
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm audit --prod --audit-level high
 
       # @apps-in-toss/agent-plugin과 @apps-in-toss/internal-protocol은 private: true라
       # workflow_dispatch의 package 선택지에 애초에 없다(구조적 배제). 그래도
