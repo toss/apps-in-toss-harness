@@ -152,6 +152,16 @@ jobs:
       # dist를 읽음.
       - run: pnpm lint
       - run: pnpm build
+      # TS 7(tsgo)의 d.ts emit이 rootDir 정렬을 놓치면 shared/internal-protocol/src 옆에
+      # .d.ts가 새어 나온다. 빌드 직후 shared/ 아래 변경이 없어야 한다
+      # (tsconfig.dts-*.json의 rootDir 설정이 이를 막는다).
+      - name: Guard against d.ts leaking into shared/
+        run: |
+          if [ -n "$(git status --porcelain shared/)" ]; then
+            echo "::error::build left untracked/modified files under shared/"
+            git status --porcelain shared/
+            exit 1
+          fi
       - run: pnpm -r check:dashboard-html-fresh
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist

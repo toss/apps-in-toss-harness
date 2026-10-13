@@ -18,6 +18,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
+      # TS 7(tsgo)의 d.ts emit이 rootDir 정렬을 놓치면 shared/internal-protocol/src 옆에
+      # .d.ts가 새어 나온다. 빌드 직후 shared/ 아래 변경이 없어야 한다
+      # (tsconfig.dts-*.json의 rootDir 설정이 이를 막는다).
+      - name: Guard against d.ts leaking into shared/
+        run: |
+          if [ -n "$(git status --porcelain shared/)" ]; then
+            echo "::error::build left untracked/modified files under shared/"
+            git status --porcelain shared/
+            exit 1
+          fi
       # devtools·debugger의 `src/mcp/dashboard.generated.ts`는 빌드 산출물이면서
       # 커밋된다. `pnpm build`가 매번 재생성하므로 손수정본을 커밋해도 런타임엔
       # 영향이 없고, 그래서 아무도 안 보면 조용히 어긋난 채 남는다. 두 패키지가
