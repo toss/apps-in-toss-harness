@@ -45,7 +45,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@vitest/runner": "^4.1.11",
     "chii": "^1.15.5",
     "cloudflared": "^0.7.3",
     "esbuild": "^0.28.2",
@@ -68,7 +67,7 @@
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.3.4",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.3"
   },
   "keywords": [
     "apps-in-toss",
