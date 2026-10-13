@@ -23,7 +23,7 @@
  * type at a single explicit boundary rather than fabricating fake values.
  */
 
-import { relative } from 'node:path';
+import { relative, sep } from 'node:path';
 import type { RunnerTaskEventPack as TaskEventPack } from 'vitest';
 import type {
   RunnerTestFile as File,
@@ -72,7 +72,8 @@ function createFileTask(
   projectName: string | undefined,
   pool: string,
 ): File {
-  const path = relative(root, filepath);
+  // Vitest used `pathe.relative`, which always yields `/` separators.
+  const path = relative(root, filepath).split(sep).join('/');
   const file = {
     id: generateHash(`${path}${projectName || ''}`),
     name: path,
