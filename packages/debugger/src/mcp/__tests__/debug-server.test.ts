@@ -346,11 +346,16 @@ describe('start_attach — protocol version skew', () => {
   const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
   const schemeUrl = 'intoss-private://miniapp?_deploymentId=skew-test';
 
-  it('returns a clear error naming both versions when the device reports a skew', async () => {
+  it('returns a clear error naming both protocol versions when the device reports a skew', async () => {
     const client = await makeClient({
       getTunnelStatus: () => tunnelUp,
       connection: attachedConn(schemeUrl),
-      getProtocolVersionSkew: () => ({ match: false, device: '0.1.0', host: '0.2.0' }),
+      getProtocolVersionSkew: () => ({
+        match: false,
+        deviceProtocol: 1,
+        hostProtocol: 2,
+        deviceVersion: '0.1.5',
+      }),
     });
 
     const result = await client.callTool({
@@ -361,9 +366,9 @@ describe('start_attach — protocol version skew', () => {
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
     expect(text).toContain('@apps-in-toss/debug-console');
-    expect(text).toContain('0.1.0');
+    expect(text).toContain('프로토콜 1');
     expect(text).toContain('@apps-in-toss/debugger');
-    expect(text).toContain('0.2.0');
+    expect(text).toContain('프로토콜 2');
     // SECRET-HANDLING: the diagnostic carries two version strings and nothing
     // else — no relay URL, tunnel host, or auth code may ride along.
     expect(text).not.toContain('wss://');

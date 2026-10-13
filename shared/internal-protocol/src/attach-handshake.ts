@@ -11,13 +11,21 @@
  * indicator renders empty, a field reads `undefined`, a close frame goes
  * unrecognised. Nothing in the stack says why.
  *
- * Changesets `fixed` keeps `@apps-in-toss/debugger` and `@apps-in-toss/debug-console` on
- * one version number, so "same version" is exactly "mutually tested pair". What
- * `fixed` cannot do is stop a consumer from installing a skewed pair. This
- * handshake turns that skew from a silent misbehaviour into one diagnostic
- * line: the device reports its build-time `__VERSION__` on a fire-and-forget
- * request just before it injects `target.js`, and the daemon compares it with
- * its own.
+ * The two packages are versioned independently (Changesets `fixed` is empty),
+ * so their package versions say nothing about wire compatibility. What the
+ * contract needs is its own number: {@link PROTOCOL_VERSION}. It is bumped by
+ * hand ONLY when a clause above changes incompatibly, and stays put across
+ * every release that does not touch the contract. The device reports it on a
+ * fire-and-forget request just before it injects `target.js`; the daemon
+ * compares it with its own. The device's package version rides along purely as
+ * a human-readable label for the diagnostic and is never compared.
+ *
+ * Legacy devices: `@apps-in-toss/debug-console` up to and including 0.1.5
+ * report only their package version (`v`). The contract in this directory is
+ * byte-identical between debug-console-v0.1.4/v0.1.5 and every debugger release
+ * since, so a report without `p` is, by definition, protocol 1
+ * ({@link LEGACY_DEVICE_PROTOCOL_VERSION}). When protocol 2 ships, such a
+ * device compares as 1 against 2 and is flagged, which is the correct outcome.
  *
  * Why a dedicated request rather than a query param on `target.js`: chii's
  * stock `target.js` derives its WebSocket endpoint from its own script `src`
@@ -26,10 +34,10 @@
  * the dial. The path is therefore separate, and it rides the same
  * `/at/<code>/` prefix so the relay's existing auth gate covers it unchanged.
  *
- * SECRET-HANDLING: the payload is a version string and nothing else. The
+ * SECRET-HANDLING: the payload is version values and nothing else. The
  * request carries a TOTP code only in the same path-prefix form the target
  * script already uses; neither side may log the URL, the code, or the relay
- * host. The mismatch diagnostic names two version strings — never a URL.
+ * host. The mismatch diagnostic names version numbers — never a URL.
  */
 
 /**
@@ -38,44 +46,73 @@
  */
 export const ATTACH_HANDSHAKE_PATH = '/ait-attach';
 
-/** Query parameter carrying the device-side build-time `__VERSION__`. */
+/** Query parameter carrying the device-side build-time `__VERSION__` (label only). */
 export const ATTACH_HANDSHAKE_VERSION_PARAM = 'v';
 
-/** Outcome of comparing the reported device version with the daemon's own. */
+/** Query parameter carrying the device-side {@link PROTOCOL_VERSION}. */
+export const ATTACH_HANDSHAKE_PROTOCOL_PARAM = 'p';
+
+/**
+ * Device↔host wire-contract version. A positive integer, bumped by hand only
+ * on an incompatible change to the contract clauses listed at the top of this
+ * file. Never derive it from a package version.
+ */
+export const PROTOCOL_VERSION = 1;
+
+/**
+ * Protocol a device is assumed to speak when it reports no `p` but does report
+ * `v`: every `@apps-in-toss/debug-console` published before `p` existed
+ * (<= 0.1.5), whose contract is unchanged from {@link PROTOCOL_VERSION} 1.
+ */
+export const LEGACY_DEVICE_PROTOCOL_VERSION = 1;
+
+/** What the device reported on the handshake request. */
+export interface DeviceHandshakeReport {
+  /** Raw `p` query value, or `''`/nullish when absent. */
+  readonly protocol?: string | null;
+  /** Raw `v` query value (package version, label only), or `''`/nullish. */
+  readonly version?: string | null;
+}
+
+/** Outcome of comparing the device's protocol with the daemon's own. */
 export interface ProtocolVersionCheck {
   /**
-   * `true` when the two sides are a mutually tested pair, or when the device
-   * reported nothing at all.
-   *
-   * An absent report is deliberately NOT a mismatch: a device running a build
-   * from before this handshake existed, or one whose fire-and-forget request
-   * was dropped by a flaky tunnel, must not be reported as skewed. Only two
-   * versions that are both present and different count.
+   * `true` when the protocols agree, or when there is nothing to contradict
+   * (the device reported nothing usable). An absent report is deliberately NOT
+   * a mismatch: a dropped fire-and-forget request must not read as skew.
    */
   readonly match: boolean;
-  /** Version the device reported, or `''` when it reported none. */
-  readonly device: string;
-  /** Version the daemon was built with, or `''` when unknown. */
-  readonly host: string;
+  /** Protocol the device speaks, or `null` when it reported nothing usable. */
+  readonly deviceProtocol: number | null;
+  /** Protocol the daemon speaks. */
+  readonly hostProtocol: number;
+  /** Device package version label, or `''` when not reported. */
+  readonly deviceVersion: string;
 }
 
 /**
- * Compares the device-reported version with the daemon's own build version.
+ * Compares the device-reported protocol with the daemon's own.
  *
- * Exact string equality — the two packages are released as a `fixed` pair, so
- * any difference at all means the consumer assembled a combination that was
- * never tested together. Semver-range logic would only blur that.
+ * Exact integer equality — there is no "compatible range"; a protocol bump
+ * means the clauses changed incompatibly. A report with `v` but no `p` is a
+ * legacy device and counts as {@link LEGACY_DEVICE_PROTOCOL_VERSION}. A
+ * malformed `p` is treated as "nothing usable" and stays silent.
  *
- * @param device - Version reported by `@apps-in-toss/debug-console`, if any.
- * @param host - The daemon's own `__VERSION__`, if any.
+ * @param report - What the device sent on the handshake request.
+ * @param hostProtocol - The daemon's own protocol (defaults to {@link PROTOCOL_VERSION}).
  */
 export function compareProtocolVersions(
-  device: string | null | undefined,
-  host: string | null | undefined,
+  report: DeviceHandshakeReport,
+  hostProtocol: number = PROTOCOL_VERSION,
 ): ProtocolVersionCheck {
-  const deviceVersion = typeof device === 'string' ? device.trim() : '';
-  const hostVersion = typeof host === 'string' ? host.trim() : '';
-  // Either side unknown → nothing to contradict. See `match` above.
-  const match = deviceVersion === '' || hostVersion === '' || deviceVersion === hostVersion;
-  return { match, device: deviceVersion, host: hostVersion };
+  const rawProtocol = typeof report.protocol === 'string' ? report.protocol.trim() : '';
+  const deviceVersion = typeof report.version === 'string' ? report.version.trim() : '';
+  let deviceProtocol: number | null = null;
+  if (rawProtocol !== '') {
+    deviceProtocol = /^[1-9][0-9]{0,8}$/.test(rawProtocol) ? Number(rawProtocol) : null;
+  } else if (deviceVersion !== '') {
+    deviceProtocol = LEGACY_DEVICE_PROTOCOL_VERSION;
+  }
+  const match = deviceProtocol === null || deviceProtocol === hostProtocol;
+  return { match, deviceProtocol, hostProtocol, deviceVersion };
 }

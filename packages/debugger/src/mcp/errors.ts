@@ -14,6 +14,8 @@
  * relay-live / LIVE guard 전체가 positive-allowlist kill-switch로 대체됐다.
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+
 /** MCP tool-result 에러 응답 형식. */
 export interface McpErrorResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -160,31 +162,36 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
 /* -------------------------------------------------------------------------- */
 
 /**
- * device(`@apps-in-toss/debug-console`)와 host(`@apps-in-toss/debugger`)의 빌드 버전이
- * 어긋났을 때의 에러.
+ * device(`@apps-in-toss/debug-console`)와 host(`@apps-in-toss/debugger`)의
+ * 프로토콜 버전(`PROTOCOL_VERSION`)이 어긋났을 때의 에러.
  *
- * 두 패키지는 Changesets `fixed` 쌍이라 같은 버전 = "상호 테스트된 조합"이다.
- * 버전이 어긋나도 attach 자체는 성공하고 크래시도 안 나지만, 값-복제로만
- * 연결된 계약(인디케이터 스냅샷 필드, 이벤트명, close code 등)이 조용히
- * 어긋나 인디케이터가 비거나 필드가 `undefined`가 된다. 이 에러는 그
- * 조용한 오작동을 한 줄 진단으로 바꾼다.
+ * 두 패키지는 독립 버전이라 패키지 버전은 호환 여부를 말해 주지 않는다. 비교 대상은
+ * 계약 자체의 버전(정수)이다. 어긋나도 attach는 성공하고 크래시도 안 나지만, 값-복제로만
+ * 연결된 계약(인디케이터 스냅샷 필드, 이벤트명, close code 등)이 조용히 어긋나 인디케이터가
+ * 비거나 필드가 `undefined`가 된다. 이 에러는 그 조용한 오작동을 한 줄 진단으로 바꾼다.
  *
- * SECRET-HANDLING: 버전 문자열 2개만 싣는다. relay `wss://` URL·터널 호스트·
+ * 어느 쪽을 올려야 하는지는 프로토콜 번호의 대소로 정한다: 기기 쪽이 낮으면 debug-console,
+ * 높으면 debugger. 존재하지 않는 패키지 버전을 안내하지 않도록 목표 버전은 적지 않고
+ * 각 패키지 README의 최신 릴리스 설치 명령을 가리킨다.
+ *
+ * SECRET-HANDLING: 숫자와 기기 패키지 버전 라벨만 싣는다. relay `wss://` URL·터널 호스트·
  * TOTP 코드는 이 메시지에 절대 들어가지 않는다.
  *
- * @param deviceVersion - 기기가 보고한 `@apps-in-toss/debug-console` 버전.
- * @param hostVersion   - 데몬 자신의 `@apps-in-toss/debugger` 버전.
+ * @param check - `match: false`인 프로토콜 비교 결과.
  */
-export function protocolVersionMismatchError(
-  deviceVersion: string,
-  hostVersion: string,
-): McpErrorResult {
+export function protocolVersionMismatchError(check: ProtocolVersionCheck): McpErrorResult {
+  const device = check.deviceProtocol ?? '?';
+  const label = check.deviceVersion !== '' ? ` (패키지 ${check.deviceVersion})` : '';
+  const deviceOlder = check.deviceProtocol !== null && check.deviceProtocol < check.hostProtocol;
+  const action = deviceOlder
+    ? '미니앱의 @apps-in-toss/debug-console을 최신 릴리스로 올려 재배포하세요(설치 명령은 debug-console README 참고).'
+    : '데몬의 @apps-in-toss/debugger를 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).';
   return mcpError(
     `device↔host 프로토콜 버전 불일치: ` +
-      `기기의 @apps-in-toss/debug-console은 ${deviceVersion}, 데몬의 @apps-in-toss/debugger는 ${hostVersion}입니다. ` +
-      '두 패키지는 같은 버전으로만 상호 테스트됩니다 — attach는 성공해도 인디케이터·브리지 스냅샷 등이 ' +
-      '조용히 어긋날 수 있습니다. 미니앱의 @apps-in-toss/debug-console을 ' +
-      `${hostVersion}으로 맞춰 재배포하거나, 데몬을 ${deviceVersion}으로 실행하세요.`,
+      `기기의 @apps-in-toss/debug-console${label}은 프로토콜 ${device}, ` +
+      `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
+      '두 패키지는 같은 프로토콜로만 상호 테스트됩니다. attach는 성공해도 인디케이터·브리지 스냅샷 등이 ' +
+      `조용히 어긋날 수 있습니다. ${action}`,
   );
 }
 

@@ -67,6 +67,7 @@ import type { Duplex } from 'node:stream';
 // to close with a named code.
 import {
   ATTACH_HANDSHAKE_PATH,
+  ATTACH_HANDSHAKE_PROTOCOL_PARAM,
   ATTACH_HANDSHAKE_VERSION_PARAM,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
 import {
@@ -225,6 +226,11 @@ export interface AttachHandshakeEvent {
    * the query parameter was absent or empty.
    */
   deviceVersion: string;
+  /**
+   * The raw protocol value (`p`) the device reported, or `''` when absent
+   * (a legacy debug-console <= 0.1.5 reports only `deviceVersion`).
+   */
+  deviceProtocol: string;
 }
 
 /**
@@ -303,7 +309,7 @@ export interface StartChiiRelayOptions {
    * Fired when a device reports its package version on the attach handshake
    * path, just before it injects `target.js`.
    *
-   * The daemon compares the reported version with its own `__VERSION__` so a
+   * The daemon compares the reported protocol version with its own so a
    * device↔host skew surfaces as one diagnostic line instead of the silent
    * misbehaviour it would otherwise be (an empty indicator, an `undefined`
    * field, an unrecognised close frame). Exceptions thrown by the callback are
@@ -484,9 +490,10 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
 
     const query = questionMark === -1 ? '' : normalised.slice(questionMark + 1);
     const deviceVersion = new URLSearchParams(query).get(ATTACH_HANDSHAKE_VERSION_PARAM) ?? '';
+    const deviceProtocol = new URLSearchParams(query).get(ATTACH_HANDSHAKE_PROTOCOL_PARAM) ?? '';
     if (onAttachHandshake !== undefined) {
       try {
-        onAttachHandshake({ deviceVersion });
+        onAttachHandshake({ deviceVersion, deviceProtocol });
       } catch {
         // Observability is best-effort — never let it break the relay.
       }

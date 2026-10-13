@@ -12,7 +12,9 @@
 
 import {
   ATTACH_HANDSHAKE_PATH,
+  ATTACH_HANDSHAKE_PROTOCOL_PARAM,
   ATTACH_HANDSHAKE_VERSION_PARAM,
+  PROTOCOL_VERSION,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
 import { RELAY_WS_STATE_EVENT } from '@apps-in-toss/internal-protocol/bridge-observer-state';
 import {
@@ -73,7 +75,8 @@ export function deriveTargetScriptUrl(relayUrl: string, atCode?: string | null):
  * Converts a validated `wss:` relay URL into the version-handshake URL.
  *
  * Same scheme/host/TOTP-prefix derivation as {@link deriveTargetScriptUrl},
- * with this package's build-time `__VERSION__` as the single query value. The
+ * with the wire-contract `PROTOCOL_VERSION` (`p`, compared by the daemon) and this
+ * package's build-time `__VERSION__` (`v`, a display label only). The
  * handshake gets its own path rather than a query on `target.js` because chii's
  * stock `target.js` derives its WebSocket endpoint from its own script `src`
  * (`src.replace('target.js', '')`) and then appends `target/<id>` — a query
@@ -93,7 +96,7 @@ export function deriveHandshakeUrl(relayUrl: string, atCode?: string | null): st
     atCode !== undefined && atCode !== null && atCode !== ''
       ? `/at/${encodeURIComponent(atCode)}${ATTACH_HANDSHAKE_PATH}`
       : ATTACH_HANDSHAKE_PATH;
-  u.search = `?${ATTACH_HANDSHAKE_VERSION_PARAM}=${encodeURIComponent(__VERSION__)}`;
+  u.search = `?${ATTACH_HANDSHAKE_PROTOCOL_PARAM}=${PROTOCOL_VERSION}&${ATTACH_HANDSHAKE_VERSION_PARAM}=${encodeURIComponent(__VERSION__)}`;
   u.hash = '';
   return u.toString();
 }

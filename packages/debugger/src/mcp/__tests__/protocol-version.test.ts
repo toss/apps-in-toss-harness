@@ -1,5 +1,5 @@
 /**
- * device↔host `__VERSION__` handshake — monitor, diagnostic, and relay wiring.
+ * device↔host protocol-version handshake — monitor, diagnostic, and relay wiring.
  *
  * The thing under test is a diagnosis, not a behaviour: a skewed pair attaches
  * perfectly happily and then misbehaves silently, because every clause of the
@@ -23,75 +23,106 @@ import { createProtocolVersionMonitor } from '../protocol-version.js';
 
 describe('createProtocolVersionMonitor', () => {
   it('reports no mismatch before any device has spoken', () => {
-    const monitor = createProtocolVersionMonitor('0.1.0');
+    const monitor = createProtocolVersionMonitor(1);
     expect(monitor.getLastCheck()).toBeNull();
     expect(monitor.getMismatch()).toBeNull();
   });
 
-  it('records a matching pair without flagging it', () => {
-    const monitor = createProtocolVersionMonitor('0.1.0');
-    monitor.record('0.1.0');
-    expect(monitor.getLastCheck()).toEqual({ match: true, device: '0.1.0', host: '0.1.0' });
+  it('records a matching protocol without flagging it', () => {
+    const monitor = createProtocolVersionMonitor(1);
+    monitor.record({ protocol: '1', version: '0.1.6' });
+    expect(monitor.getLastCheck()).toEqual({
+      match: true,
+      deviceProtocol: 1,
+      hostProtocol: 1,
+      deviceVersion: '0.1.6',
+    });
     expect(monitor.getMismatch()).toBeNull();
   });
 
-  it('flags a skewed pair and keeps both versions', () => {
-    const monitor = createProtocolVersionMonitor('0.2.0');
-    monitor.record('0.1.0');
+  it('accepts the published debug-console 0.1.5 handshake (version only, no protocol)', () => {
+    // Regression: 0.1.5 sends only `v=0.1.5`. Comparing package versions made
+    // every attach against debugger 0.2.x fail with a nonexistent target.
+    const monitor = createProtocolVersionMonitor();
+    monitor.record({ protocol: '', version: '0.1.5' });
+    expect(monitor.getMismatch()).toBeNull();
+  });
+
+  it('flags a different protocol and keeps both numbers', () => {
+    const monitor = createProtocolVersionMonitor(2);
+    monitor.record({ protocol: '1', version: '0.1.6' });
     const skew = monitor.getMismatch();
     expect(skew).not.toBeNull();
-    expect(skew?.device).toBe('0.1.0');
-    expect(skew?.host).toBe('0.2.0');
+    expect(skew?.deviceProtocol).toBe(1);
+    expect(skew?.hostProtocol).toBe(2);
+  });
+
+  it('flags a legacy device against a bumped host protocol', () => {
+    const monitor = createProtocolVersionMonitor(2);
+    monitor.record({ protocol: '', version: '0.1.5' });
+    expect(monitor.getMismatch()?.deviceProtocol).toBe(1);
   });
 
   it('stays silent when the device reported nothing', () => {
-    // A device on a build predating the handshake, or one whose
-    // fire-and-forget report was dropped, must not be called skewed.
-    const monitor = createProtocolVersionMonitor('0.2.0');
-    monitor.record('');
-    expect(monitor.getMismatch()).toBeNull();
-  });
-
-  it('stays silent when the daemon does not know its own version', () => {
-    const monitor = createProtocolVersionMonitor(null);
-    monitor.record('0.1.0');
+    const monitor = createProtocolVersionMonitor(2);
+    monitor.record({ protocol: '', version: '' });
     expect(monitor.getMismatch()).toBeNull();
   });
 
   it('tracks the latest report, so a corrected device clears the skew', () => {
-    const monitor = createProtocolVersionMonitor('0.2.0');
-    monitor.record('0.1.0');
+    const monitor = createProtocolVersionMonitor(2);
+    monitor.record({ protocol: '1' });
     expect(monitor.getMismatch()).not.toBeNull();
-    monitor.record('0.2.0');
+    monitor.record({ protocol: '2' });
     expect(monitor.getMismatch()).toBeNull();
   });
 });
 
 describe('protocolVersionMismatchError', () => {
-  const result = protocolVersionMismatchError('0.1.0', '0.2.0');
-  const text = result.content[0]?.text ?? '';
+  const older = protocolVersionMismatchError({
+    match: false,
+    deviceProtocol: 1,
+    hostProtocol: 2,
+    deviceVersion: '0.1.5',
+  });
+  const newer = protocolVersionMismatchError({
+    match: false,
+    deviceProtocol: 3,
+    hostProtocol: 2,
+    deviceVersion: '0.4.0',
+  });
+  const olderText = older.content[0]?.text ?? '';
+  const newerText = newer.content[0]?.text ?? '';
 
   it('is an MCP error result', () => {
-    expect(result.isError).toBe(true);
-    expect(result.content).toHaveLength(1);
+    expect(older.isError).toBe(true);
+    expect(older.content).toHaveLength(1);
   });
 
-  it('names both packages and both versions', () => {
-    expect(text).toContain('@apps-in-toss/debug-console');
-    expect(text).toContain('@apps-in-toss/debugger');
-    expect(text).toContain('0.1.0');
-    expect(text).toContain('0.2.0');
+  it('names both packages, both protocol numbers and the device package label', () => {
+    expect(olderText).toContain('@apps-in-toss/debug-console');
+    expect(olderText).toContain('@apps-in-toss/debugger');
+    expect(olderText).toContain('프로토콜 1');
+    expect(olderText).toContain('프로토콜 2');
+    expect(olderText).toContain('0.1.5');
   });
 
-  it('tells the operator what to do next', () => {
-    // The whole value of this diagnostic is that it is actionable at the point
-    // where the cause is still legible.
-    expect(text).toMatch(/재배포|실행/);
+  it('tells the operator to update the older side', () => {
+    expect(olderText).toContain('debug-console을 최신 릴리스로');
+    expect(newerText).toContain('debugger를 최신 릴리스로');
+  });
+
+  it('never recommends a concrete target version', () => {
+    // The packages are versioned independently; a version borrowed from the
+    // other package does not exist (the original bug told users to install
+    // debug-console 0.2.3). Only the device label (0.1.5) may appear.
+    expect(olderText.match(/\d+\.\d+\.\d+/g)).toEqual(['0.1.5']);
+    expect(olderText).not.toMatch(/맞춰/);
   });
 
   it('carries no URL, host, or auth material', () => {
     for (const forbidden of ['wss://', 'ws://', 'http://', 'https://', 'trycloudflare', 'at=']) {
-      expect(text).not.toContain(forbidden);
+      expect(olderText).not.toContain(forbidden);
     }
   });
 });
@@ -119,7 +150,14 @@ describe('relay handshake endpoint', () => {
     const { base, events } = await bootRelay();
     const res = await fetch(`${base}${ATTACH_HANDSHAKE_PATH}?v=0.1.0`);
     expect(res.status).toBe(204);
-    expect(events).toEqual([{ deviceVersion: '0.1.0' }]);
+    expect(events).toEqual([{ deviceVersion: '0.1.0', deviceProtocol: '' }]);
+  });
+
+  it('reports the protocol alongside the version label', async () => {
+    const { base, events } = await bootRelay();
+    const res = await fetch(`${base}${ATTACH_HANDSHAKE_PATH}?p=1&v=0.1.6`);
+    expect(res.status).toBe(204);
+    expect(events).toEqual([{ deviceVersion: '0.1.6', deviceProtocol: '1' }]);
   });
 
   it('accepts the handshake through the /at/<code>/ path prefix', async () => {
@@ -128,14 +166,14 @@ describe('relay handshake endpoint', () => {
     const { base, events } = await bootRelay();
     const res = await fetch(`${base}/at/123456${ATTACH_HANDSHAKE_PATH}?v=0.1.0`);
     expect(res.status).toBe(204);
-    expect(events).toEqual([{ deviceVersion: '0.1.0' }]);
+    expect(events).toEqual([{ deviceVersion: '0.1.0', deviceProtocol: '' }]);
   });
 
   it('reports an empty version rather than nothing when the param is absent', async () => {
     const { base, events } = await bootRelay();
     const res = await fetch(`${base}${ATTACH_HANDSHAKE_PATH}`);
     expect(res.status).toBe(204);
-    expect(events).toEqual([{ deviceVersion: '' }]);
+    expect(events).toEqual([{ deviceVersion: '', deviceProtocol: '' }]);
   });
 
   it('ignores unrelated paths', async () => {
