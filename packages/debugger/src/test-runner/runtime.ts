@@ -10,9 +10,7 @@
  * compatible API surface — describe/it/test/expect globals — collects results
  * into a plain JSON-safe object, and exports `runTestModule` as the entry point.
  *
- * @vitest/runner and @vitest/expect are listed as dependencies so that the
- * package's type contracts are available and so the browser-compatible subsets
- * can be referenced. The Vitest custom pool that drives this runtime through
+ * The Vitest custom pool that drives this runtime through
  * Vitest's `PoolRunnerInitializer` lives in `pool.ts`.
  *
  * NOTE: this file is imported by type from Node-side code (rpc.ts / relay-worker.ts)

@@ -8,10 +8,10 @@
  * tuples reported through `vitest.state`.
  *
  * This module bridges the two: it rebuilds the nested suite/test tree from the
- * ` > `-joined names, assigns Vitest-compatible stable ids via the official
- * `@vitest/runner/utils` helpers (NEVER hand-rolled — ids must match Vitest's
- * own scheme so reruns and reporter lookups line up), and emits the result
- * packs Vitest consumes.
+ * ` > `-joined names, assigns Vitest-compatible stable ids via local copies of
+ * Vitest's id helpers (the scheme must match Vitest's own so reruns and
+ * reporter lookups line up; `@vitest/runner` is no longer published as of
+ * Vitest 5), and emits the result packs Vitest consumes.
  *
  * Pure functions only — no CDP, no Node IO. This keeps the synthesis unit
  * testable with a plain `RunReport` input (no phone/relay needed).
@@ -23,18 +23,76 @@
  * type at a single explicit boundary rather than fabricating fake values.
  */
 
+import { relative } from 'node:path';
+import type { RunnerTaskEventPack as TaskEventPack } from 'vitest';
 import type {
-  File,
-  Suite,
-  Task,
-  TaskEventPack,
-  TaskResult,
-  TaskResultPack,
-  TaskState,
-  Test,
-} from '@vitest/runner';
-import { calculateSuiteHash, createFileTask, generateHash } from '@vitest/runner/utils';
+  RunnerTestFile as File,
+  RunnerTestSuite as Suite,
+  RunnerTask as Task,
+  RunnerTaskResult as TaskResult,
+  RunnerTaskResultPack as TaskResultPack,
+  RunnerTestCase as Test,
+} from 'vitest/node';
 import type { RunReport, TestResult } from './runtime.js';
+
+type TaskState = NonNullable<TaskResult['state']>;
+
+/**
+ * Same hash Vitest uses for task ids (`@vitest/runner/utils` `generateHash`).
+ * Vitest 5 stopped publishing `@vitest/runner` and exposes no public hash
+ * helper, so the algorithm is kept here verbatim. Ids are only ever compared
+ * with each other inside one run, but keeping the scheme identical keeps reruns
+ * and reporter lookups lined up.
+ */
+function generateHash(str: string): string {
+  let hash = 0;
+  if (str.length === 0) return `${hash}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash &= hash;
+  }
+  return `${hash}`;
+}
+
+/** Position-based ids for every task under `parent` (`<parentId>_<index>`). */
+function calculateSuiteHash(parent: Suite): void {
+  parent.tasks.forEach((t, idx) => {
+    t.id = `${parent.id}_${idx}`;
+    if (t.type === 'suite') calculateSuiteHash(t);
+  });
+}
+
+/**
+ * Builds the root `File` task, mirroring Vitest's `createFileTask`: id is the
+ * hash of the root-relative path + projectName, `file` points at itself.
+ */
+function createFileTask(
+  filepath: string,
+  root: string,
+  projectName: string | undefined,
+  pool: string,
+): File {
+  const path = relative(root, filepath);
+  const file = {
+    id: generateHash(`${path}${projectName || ''}`),
+    name: path,
+    fullName: path,
+    type: 'suite',
+    mode: 'queued',
+    filepath,
+    tasks: [],
+    meta: Object.create(null),
+    projectName,
+    file: undefined,
+    pool,
+    viteEnvironment: undefined,
+    // Required by Vitest 5's `File`; ignored by 4.x.
+    concurrencyId: 0,
+    workerId: 0,
+  } as unknown as File;
+  file.file = file;
+  return file;
+}
 
 /** Separator the page runtime uses to join suite path + test name. */
 const NAME_SEPARATOR = ' > ';
