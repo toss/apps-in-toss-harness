@@ -9,7 +9,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # persist-credentials: false — 이 job은 push를 하지 않는다(repo 상태는 status·diff로
+      # 읽기만 한다). 게이트가 서드파티 코드를 실행하므로(check:relay-pool-compat) 토큰이
+      # .git/config에 남지 않게 한다.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -49,7 +54,9 @@ jobs:
       # 소비자 쪽 4.1을 보지 못한다(debugger 0.2.4가 4.1에서 요약이 깨지고 10초 뒤
       # 종료되는 결함을 그대로 발행한 선례). 방금 빌드한 debugger를 `pnpm pack`해
       # 임시 소비자에 vitest 4.1.11과 5.x로 각각 설치하고 가짜 CDP 타깃으로 돌려
-      # 1 failed | 1 passed | 1 skipped와 제때 종료를 단언한다. dist가 필요해서
+      # 1 failed | 1 passed | 1 skipped와 제때 종료를 단언한다. 소비자 설치는 커밋된
+      # 픽스처 lockfile(packages/debugger/scripts/relay-pool-compat/, integrity 고정)의
+      # `npm ci --ignore-scripts`라 전이 의존성이 떠다니지 않는다. dist가 필요해서
       # build 뒤에 있고, 공개 registry를 쓰므로 npm 설치가 몇십 초 든다. 별도 job이
       # 아니라 이 job의 step인 것은 의도다 — main ruleset은 `check`만 필수로 보고,
       # release.yml 게이트와 같은 목록을 공유해야 발행 경로도 같이 막힌다.
