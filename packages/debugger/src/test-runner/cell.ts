@@ -20,7 +20,6 @@
  */
 
 import { THROTTLED_ERROR_CODE, THROTTLED_MESSAGE_SUBSTRING } from './throttle.js';
-import { unrefTimer } from './timers.js';
 
 /**
  * `__AIT_PERMS__` key → SDK function name whose `.getPermission()` is probed
@@ -236,9 +235,11 @@ export async function runPermissionPreflight(
   pace = true,
 ): Promise<Record<string, string> | undefined> {
   const TIMEOUT_SENTINEL = Symbol('permission-preflight-timeout');
-  const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
-    unrefTimer(setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs)),
-  );
+  // Cleared once the race settles (see rpc.ts injectAndRunBundle).
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+    timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutMs);
+  });
 
   try {
     const evalPromise = conn.send('Runtime.evaluate', {
@@ -250,7 +251,7 @@ export async function runPermissionPreflight(
     const raceResult = await Promise.race([
       evalPromise.then((v) => ({ tag: 'eval' as const, v })),
       timeoutPromise.then(() => ({ tag: 'timeout' as const })),
-    ]);
+    ]).finally(() => clearTimeout(timer));
 
     if (raceResult.tag === 'timeout') {
       process.stderr.write(
