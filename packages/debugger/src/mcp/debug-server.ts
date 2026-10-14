@@ -70,7 +70,6 @@ import {
   ATTACH_SUPERSEDED_REASON,
   type AttachDeps,
   type AttachUrlParts,
-  buildIndicatorExpression,
   buildIndicatorRemovalExpression,
   isRelayPageFresh,
   prepareAttach as prepareAttachCore,
@@ -1480,14 +1479,48 @@ export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
 /**
  * best-effort: 폰의 "Debugger Connected" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
  * `console.debug`를 쓰는 cell.ts 헬퍼 대신 직접 보낸다 — 데몬에서는 stdout이 MCP stdio라
- * 로그 한 줄이 프로토콜을 깨뜨린다. 연결·타깃이 없으면 조용히 끝난다.
+ * 로그 한 줄이 프로토콜을 깨뜨린다. 연결·타깃이 없거나 전송이 실패해도 조용히 끝난다.
+ * 반환 Promise는 `Runtime.evaluate` 응답(= relay가 프레임을 폰으로 넘긴 뒤)에 풀리고 절대
+ * reject하지 않는다.
  */
-function sendBadgeExpression(conn: CdpConnection, expression: string): void {
+function sendBadgeExpression(conn: CdpConnection, expression: string): Promise<void> {
   try {
-    if (conn.listTargets().length === 0) return;
-    conn.send('Runtime.evaluate', { expression }).catch(() => {});
+    if (conn.listTargets().length === 0) return Promise.resolve();
+    return conn.send('Runtime.evaluate', { expression }).then(
+      () => undefined,
+      () => undefined,
+    );
   } catch {
-    // best-effort
+    return Promise.resolve();
+  }
+}
+
+/** 종료 시 배지 제거 프레임이 폰에 닿을 때까지 기다리는 최대 시간. */
+const SHUTDOWN_BADGE_TIMEOUT_MS = 300;
+
+/**
+ * 종료 시퀀스: 폰의 배지를 지우는 식을 보내고 그 전송이 끝나거나 `timeoutMs`가 지나면
+ * `teardown`(relay·터널 종료)을 부른다. `family.stop()`은 `relay.close()`로 모든 소켓을 끊고
+ * cloudflared를 죽이므로, 보낸 프레임이 relay를 거쳐 폰에 닿기 전에 부르면 배지 제거는
+ * 아무 일도 하지 않는다. 그래서 전송을 먼저 기다린다. 신호 핸들러·부모 종료 경로에서만 쓴다
+ * (동기여야 하는 `process.on('exit')`·uncaughtException 경로는 기다릴 수 없다).
+ */
+export async function shutdownAfterBadgeRemoval(
+  conn: CdpConnection,
+  teardown: () => void,
+  timeoutMs: number = SHUTDOWN_BADGE_TIMEOUT_MS,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      sendBadgeExpression(conn, buildIndicatorRemovalExpression()),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    teardown();
   }
 }
 
@@ -2076,11 +2109,6 @@ export class DualConnectionRouter implements ConnectionRouter {
       () => {
         this.deps.diagnosticsCollector.recordDetach();
         logInfo('page.detached', { env: deriveEnvironment(activeFamily.connection.kind) });
-        // 타깃이 사라진 뒤라 보통은 보낼 곳이 없지만, 다른 target이 남은 경우를 위해 시도한다.
-        sendBadgeExpression(
-          activeFamily.connection,
-          buildIndicatorExpression({ state: 'disconnected' }),
-        );
         this.deps.onPageDetach?.();
       },
     );
@@ -2413,9 +2441,6 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     maxAgeWatchdog?.stop();
     if (totpRefreshHandle) clearInterval(totpRefreshHandle);
     router.stopWatcher();
-    // 폰에 "Debugger Connected" 배지가 남지 않게 best-effort로 지운다(family.stop()이
-    // 연결을 닫기 전에 보낸다).
-    sendBadgeExpression(router.active, buildIndicatorRemovalExpression());
     // Tear down every booted family (all lazy, #396 — only those ever started).
     // family.stop() is synchronous for the infra (tunnel/Chromium kill) — safe
     // from exit handlers; the relay's relay.close() inside is async fire-and-forget.
@@ -2427,11 +2452,20 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     lockHandle.release();
   };
 
+  // 신호·부모 종료 경로: 폰의 배지 제거 프레임이 relay 종료 전에 닿도록 잠깐 기다린 뒤
+  // shutdown()한다(한 번만 실행). 동기여야 하는 exit·uncaughtException 경로는 shutdown()을 직접 쓴다.
+  let gracefulShutdown: Promise<void> | null = null;
+  const shutdownGracefully = (): Promise<void> => {
+    if (closed) return Promise.resolve();
+    gracefulShutdown ??= shutdownAfterBadgeRemoval(router.active, shutdown);
+    return gracefulShutdown;
+  };
+
   // Graceful termination signals.
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', () => void shutdownGracefully());
+  process.once('SIGTERM', () => void shutdownGracefully());
   // SIGHUP: terminal hangup / parent process exit.
-  process.once('SIGHUP', shutdown);
+  process.once('SIGHUP', () => void shutdownGracefully());
 
   // Synchronous-only cleanup on process.exit (async calls are silently ignored
   // by Node at this stage — only family.stop() infra kills which are sync).
@@ -2484,19 +2518,16 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   if (process.env.AIT_DEBUG_NO_PARENT_WATCH !== '1') {
     parentWatcher = startParentWatcher(
       () => {
-        shutdown();
-        process.exit(0);
+        void shutdownGracefully().then(() => process.exit(0));
       },
       { intervalMs: 5_000 },
     );
     // Also exit when stdin closes — the MCP host closed the pipe.
     process.stdin.once('end', () => {
-      shutdown();
-      process.exit(0);
+      void shutdownGracefully().then(() => process.exit(0));
     });
     process.stdin.once('close', () => {
-      shutdown();
-      process.exit(0);
+      void shutdownGracefully().then(() => process.exit(0));
     });
   }
 
@@ -2516,8 +2547,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
         process.stderr.write(
           '[ait-debug] max-age watchdog: daemon lifetime exceeded — shutting down for a fresh start.\n',
         );
-        shutdown();
-        process.exit(0);
+        void shutdownGracefully().then(() => process.exit(0));
       },
       { maxAgeMs },
     );
@@ -2809,9 +2839,6 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     maxAgeWatchdog?.stop();
     if (totpRefreshHandle) clearInterval(totpRefreshHandle);
     router.stopWatcher();
-    // 폰에 "Debugger Connected" 배지가 남지 않게 best-effort로 지운다(family.stop()이
-    // 연결을 닫기 전에 보낸다).
-    sendBadgeExpression(router.active, buildIndicatorRemovalExpression());
     // Tear down every booted family (all lazy, #396 — only those ever started).
     for (const family of router.bootedFamilies()) family.stop();
     void server.close();
@@ -2820,9 +2847,18 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     lockHandle.release();
   };
 
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
-  process.once('SIGHUP', shutdown);
+  // 신호·부모 종료 경로: 폰의 배지 제거 프레임이 relay 종료 전에 닿도록 잠깐 기다린 뒤
+  // shutdown()한다(한 번만 실행). 동기여야 하는 exit·uncaughtException 경로는 shutdown()을 직접 쓴다.
+  let gracefulShutdown: Promise<void> | null = null;
+  const shutdownGracefully = (): Promise<void> => {
+    if (closed) return Promise.resolve();
+    gracefulShutdown ??= shutdownAfterBadgeRemoval(router.active, shutdown);
+    return gracefulShutdown;
+  };
+
+  process.once('SIGINT', () => void shutdownGracefully());
+  process.once('SIGTERM', () => void shutdownGracefully());
+  process.once('SIGHUP', () => void shutdownGracefully());
 
   process.on('exit', () => {
     if (!closed) {
@@ -2867,18 +2903,15 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   if (process.env.AIT_DEBUG_NO_PARENT_WATCH !== '1') {
     parentWatcher = startParentWatcher(
       () => {
-        shutdown();
-        process.exit(0);
+        void shutdownGracefully().then(() => process.exit(0));
       },
       { intervalMs: 5_000 },
     );
     process.stdin.once('end', () => {
-      shutdown();
-      process.exit(0);
+      void shutdownGracefully().then(() => process.exit(0));
     });
     process.stdin.once('close', () => {
-      shutdown();
-      process.exit(0);
+      void shutdownGracefully().then(() => process.exit(0));
     });
   }
 
@@ -2892,8 +2925,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
         process.stderr.write(
           '[ait-debug] max-age watchdog: daemon lifetime exceeded — shutting down for a fresh start.\n',
         );
-        shutdown();
-        process.exit(0);
+        void shutdownGracefully().then(() => process.exit(0));
       },
       { maxAgeMs },
     );

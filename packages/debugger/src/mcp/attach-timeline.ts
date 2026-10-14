@@ -49,6 +49,9 @@ export interface AttachStageEvent {
 
 export type AttachStageListener = (event: AttachStageEvent) => void;
 
+/** 현재 시도의 QR 페이지인지 판정하는 함수(orchestrator의 `isMatchingPage`). */
+export type AttachPageMatcher = (pages: ReadonlyArray<{ url: string }>) => boolean;
+
 export interface AttachTimelineSnapshot {
   /** 현재(마지막) 시도 번호. 시도가 시작된 적 없으면 0. */
   attempt: number;
@@ -71,6 +74,7 @@ export class AttachTimeline {
   private attempt = 0;
   private attemptStartedAt: string | null = null;
   private lastTunnel: AttachStageEvent | null = null;
+  private pageMatcher: AttachPageMatcher | null = null;
 
   constructor(opts: { capacity?: number; nowMs?: () => number } = {}) {
     this.capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
@@ -86,6 +90,26 @@ export class AttachTimeline {
 
   currentAttempt(): number {
     return this.attempt;
+  }
+
+  /**
+   * 현재 시도의 페이지 판정기를 등록한다. `matched`는 대기 경로(`runWait`)에서만 기록되므로
+   * `wait_for_attach=false`·타임아웃 뒤 늦은 attach·붙은 채로 재호출한 경우에는 기록이 없다.
+   * 진단이 그때도 "이미 붙었다"를 알 수 있도록, 현재 relay에 붙은 페이지를 이 판정기로
+   * 다시 확인한다.
+   */
+  setPageMatcher(matcher: AttachPageMatcher): void {
+    this.pageMatcher = matcher;
+  }
+
+  /** 등록된 판정기로 `pages` 중 이번 시도의 페이지가 있는지 본다(판정기가 없으면 `false`). */
+  matchesCurrentPage(pages: ReadonlyArray<{ url: string }>): boolean {
+    if (this.pageMatcher === null || pages.length === 0) return false;
+    try {
+      return this.pageMatcher(pages);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -166,6 +190,12 @@ export interface AttachDiagnosis {
 export interface DiagnoseContext {
   /** 지금 relay에 붙어 있는 페이지들. */
   observedPages?: ReadonlyArray<{ url: string }>;
+  /**
+   * 지금 붙어 있는 페이지가 이번 시도의 QR 페이지인지(`AttachTimeline.matchesCurrentPage`).
+   * `true`면 기록된 단계와 무관하게 `attached`다 — `matched` 이벤트는 대기 경로에서만
+   * 남기 때문이다.
+   */
+  matchesCurrentPage?: boolean;
 }
 
 const MAX_OBSERVED_PAGES = 3;
@@ -216,6 +246,10 @@ export function diagnoseAttach(
       summary: 'cloudflared 터널이 끊겨 있어요.',
       actions: ['MCP 서버를 재시작하거나 잠시 후 get_debug_status로 터널 상태를 다시 확인하세요.'],
     };
+  }
+
+  if (ctx.matchesCurrentPage === true) {
+    return { kind: 'attached', lastStage, summary: '디버거가 연결되어 있어요.', actions: [] };
   }
 
   if (lastEvent(events, (e) => e.stage === 'qr-issued') === undefined) {

@@ -2324,7 +2324,10 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
   const attachStages = timelineSnapshot?.events ?? [];
   const attachDiagnosis =
     timelineSnapshot !== undefined && timelineSnapshot.attempt > 0
-      ? diagnoseAttach(timelineSnapshot, { observedPages: pages?.pages ?? [] })
+      ? diagnoseAttach(timelineSnapshot, {
+          observedPages: pages?.pages ?? [],
+          matchesCurrentPage: attachTimeline?.matchesCurrentPage(pages?.pages ?? []) ?? false,
+        })
       : null;
 
   const nextRecommendedAction = computeNextRecommendedAction(

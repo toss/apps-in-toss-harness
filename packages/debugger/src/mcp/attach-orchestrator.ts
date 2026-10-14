@@ -259,7 +259,7 @@ export type PrepareAttachResult =
   | {
       ok: true;
       parts: AttachUrlParts;
-      isMatchingPage: (pages: ReturnType<CdpConnection['listTargets']>) => boolean;
+      isMatchingPage: (pages: ReadonlyArray<{ url: string }>) => boolean;
       buildTimeoutError: (
         baseText: string,
         timeoutSec: number,
@@ -499,7 +499,7 @@ export async function prepareAttach(
   const wssForMatch = tunnelForBuild.wssUrl;
   const matchesRelay = (url: string): boolean =>
     url.includes(wssForMatch) || url.includes(encodeURIComponent(wssForMatch));
-  const isMatchingPage = (pages: ReturnType<CdpConnection['listTargets']>): boolean => {
+  const isMatchingPage = (pages: ReadonlyArray<{ url: string }>): boolean => {
     if (pages.length === 0) return false;
     if (deploymentId === null) return true;
     return pages.some((p) => p.url.includes(deploymentId) || matchesRelay(p.url));
@@ -587,6 +587,7 @@ export async function renderAndMaybeWait(
   // 임시 기록기를 쓴다 — 타임아웃 진단은 QR 발급 이후 단계까지만 알게 된다.
   const timeline = deps.timeline ?? new AttachTimeline({ nowMs });
   timeline.beginAttempt();
+  timeline.setPageMatcher(prep.isMatchingPage);
   // 대기 중 삼켜지던 비-타임아웃 에러(redact됨). 타임아웃 진단과 recentErrors에 싣는다.
   let waitError: string | undefined;
   const canOpenBrowserFn = resolveCanOpenBrowser(deps);

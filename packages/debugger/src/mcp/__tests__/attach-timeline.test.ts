@@ -56,6 +56,20 @@ describe('AttachTimeline', () => {
     expect(tl.snapshot().lastTunnel?.result).toBe('down');
   });
 
+  it('matchesCurrentPage uses the latest page matcher and is false without one, with no pages, or on throw', () => {
+    const tl = new AttachTimeline();
+    const pages = [{ url: 'intoss-private://app?_deploymentId=a' }];
+    expect(tl.matchesCurrentPage(pages)).toBe(false);
+    tl.setPageMatcher((p) => p.some((x) => x.url.includes('_deploymentId=a')));
+    expect(tl.matchesCurrentPage(pages)).toBe(true);
+    expect(tl.matchesCurrentPage([])).toBe(false);
+    expect(tl.matchesCurrentPage([{ url: 'intoss-private://app?_deploymentId=b' }])).toBe(false);
+    tl.setPageMatcher(() => {
+      throw new Error('boom');
+    });
+    expect(tl.matchesCurrentPage(pages)).toBe(false);
+  });
+
   it('is a ring buffer (capacity bound)', () => {
     const tl = new AttachTimeline({ capacity: 3 });
     tl.beginAttempt();
@@ -138,6 +152,24 @@ describe('diagnoseAttach — priority table', () => {
     const d = diagnoseAttach(tl.snapshot());
     expect(d.kind).toBe('attached');
     expect(d.actions).toEqual([]);
+  });
+
+  it('attached when the current page matches, even without a recorded matched event', () => {
+    const { tl } = freshAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('target-connected', 'ok');
+    // wait_for_attach=false 이후 늦게 붙은 경우: matched 기록이 없다.
+    expect(diagnoseAttach(tl.snapshot()).kind).toBe('wrong-page');
+    const d = diagnoseAttach(tl.snapshot(), { matchesCurrentPage: true });
+    expect(d.kind).toBe('attached');
+    expect(d.actions).toEqual([]);
+  });
+
+  it('tunnel-down still wins over a matching page', () => {
+    const { tl } = freshAttempt();
+    tl.record('tunnel', 'down');
+    tl.record('qr-issued', 'ok', 'mint');
+    expect(diagnoseAttach(tl.snapshot(), { matchesCurrentPage: true }).kind).toBe('tunnel-down');
   });
 
   it('a rejected auth followed by a connection is not qr-expired', () => {

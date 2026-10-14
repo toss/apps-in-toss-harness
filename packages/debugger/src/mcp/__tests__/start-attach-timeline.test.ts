@@ -292,3 +292,58 @@ describe('start_attach — supersede', () => {
     expect(firstResult.isError).toBeFalsy();
   }, 20_000);
 });
+
+describe('get_debug_status — attach diagnosis when the page attaches outside the wait', () => {
+  async function diagnosisKind(client: Client): Promise<string | undefined> {
+    const res = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const parsed = JSON.parse(text(res)) as { data?: Record<string, unknown> } & Record<
+      string,
+      unknown
+    >;
+    const body = (parsed.data ?? parsed) as { attachDiagnosis?: { kind: string } | null };
+    return body.attachDiagnosis?.kind;
+  }
+
+  const SCHEME = 'intoss-private://miniapp?_deploymentId=late-1';
+  const PAGE = { id: 't1', title: 'ok', url: SCHEME };
+
+  it('a late attach after the wait timed out reports attached', async () => {
+    const connection = new FakeCdpConnection([]);
+    const timeline = new AttachTimeline();
+    const client = await makeClient({ connection, timeline, waitForAttachTimeoutMs: 60 });
+    const result = await client.callTool(
+      { name: 'start_attach', arguments: { scheme_url: SCHEME } },
+      undefined,
+      { timeout: 5_000 },
+    );
+    expect(result.isError).toBe(true);
+    timeline.record('target-connected', 'ok');
+    connection.setTargets([PAGE]);
+    expect(await diagnosisKind(client)).toBe('attached');
+  });
+
+  it('re-calling start_attach while a page is attached reports attached', async () => {
+    const connection = new FakeCdpConnection([PAGE]);
+    const timeline = new AttachTimeline();
+    const client = await makeClient({ connection, timeline });
+    await client.callTool({ name: 'start_attach', arguments: { scheme_url: SCHEME } });
+    await client.callTool({ name: 'start_attach', arguments: { scheme_url: SCHEME } });
+    expect(await diagnosisKind(client)).toBe('attached');
+  });
+
+  it('a page from another deployment stays wrong-page', async () => {
+    const connection = new FakeCdpConnection([]);
+    const timeline = new AttachTimeline();
+    const client = await makeClient({ connection, timeline, waitForAttachTimeoutMs: 60 });
+    await client
+      .callTool({ name: 'start_attach', arguments: { scheme_url: SCHEME } }, undefined, {
+        timeout: 5_000,
+      })
+      .catch(() => undefined);
+    timeline.record('target-connected', 'ok');
+    connection.setTargets([
+      { id: 't9', title: 'old', url: 'intoss-private://miniapp?_deploymentId=stale-9' },
+    ]);
+    expect(await diagnosisKind(client)).toBe('wrong-page');
+  });
+});
