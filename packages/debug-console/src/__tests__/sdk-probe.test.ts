@@ -1,7 +1,7 @@
 /**
  * Runtime SDK probe — the mechanism that keeps this package peer-free.
  *
- * This package ships with `eruda` as its only dependency and zero peers, which
+ * This package ships with zero runtime dependencies and zero peers, which
  * is what makes "what can end up in a production bundle?" answerable from one
  * package.json. Reaching `@apps-in-toss/web-framework` through `import()` in a
  * `try` is what buys that, and it is also what keeps 2.x consumers working:
@@ -12,6 +12,8 @@
  * worth of module state kept apart by `vi.resetModules()` + dynamic import.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const setScreenAwakeMode = vi.fn(() => Promise.resolve({ enabled: true }));
@@ -113,5 +115,16 @@ describe('with the SDK absent', () => {
     const { setScreenAwake, setScreenAwakeNow } = await import('../sdk-probe.js');
     await expect(setScreenAwake(true)).resolves.toBe(false);
     expect(setScreenAwakeNow(false)).toBe(false);
+  });
+});
+
+describe('package manifest', () => {
+  it('declares no runtime dependencies and no peers', () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(manifest.dependencies).toBeUndefined();
+    expect(manifest.peerDependencies).toBeUndefined();
+    expect(manifest.optionalDependencies).toBeUndefined();
   });
 });

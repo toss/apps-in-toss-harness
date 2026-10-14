@@ -22,9 +22,9 @@ import {
   RELAY_AUTH_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-auth-close';
 import { installBridgeObserver, uninstallBridgeObserver } from './bridge-observer.js';
-import { mountEruda, unmountEruda } from './eruda-overlay.js';
 import { checkDebugGate, type GateResult } from './index.js';
 import { setScreenAwake, setScreenAwakeNow } from './sdk-probe.js';
+import { setDebugStatus } from './status-banner.js';
 
 /**
  * Converts a validated `wss:` relay URL into the Chii `target.js` script URL.
@@ -150,6 +150,13 @@ let authExpiredNotified = false;
 /** Set once a relay-bound socket closed with 4401 — flips dials to fail-fast. */
 let relayAuthExpired = false;
 
+/**
+ * Set once any relay-bound socket reached `open`. Splits a later close into
+ * "session ended" (it did connect) vs "server unreachable" (it never did) for
+ * the on-phone status banner.
+ */
+let relayWsEverOpened = false;
+
 /** Guard against stacking multiple observer wrappers on window.WebSocket. */
 let wsObserverInstalled = false;
 
@@ -195,6 +202,8 @@ function broadcastRelayWsState(state: 'open' | 'close'): void {
 function notifyAuthExpired(): void {
   if (authExpiredNotified) return;
   authExpiredNotified = true;
+  // On-phone counterpart of the console line below (opt-in pages only).
+  setDebugStatus('code-expired');
   console.warn(
     '[@apps-in-toss/debug-console] relay rejected the TOTP code (expired) — rescan the QR to re-attach',
   );
@@ -286,7 +295,7 @@ function createFailFastSocket(url: string): WebSocket {
 // Real-device observation (run7): after an env3 run completes the phone showed
 // a persistent "Debugger Disconnected" badge and the app felt wedged. This is
 // the in-app half of the fix — a single idempotent teardown that removes OUR
-// debug-surface elements (the CDP-injected indicator badge, the eruda console)
+// debug-surface elements (the CDP-injected indicator badge)
 // and restores the keepAwake side effect, so nothing we injected lingers after
 // the relay session ends.
 //
@@ -342,6 +351,9 @@ function scheduleDetach(): void {
   }
   pendingDetachTimer = setTimeout(() => {
     pendingDetachTimer = null;
+    // The relay did not come back within the grace window. Tell the operator
+    // before teardown — the banner outlives the detached surface on purpose.
+    setDebugStatus(relayWsEverOpened ? 'session-ended' : 'server-unreachable');
     detachDebugSurface();
   }, RECONNECT_GRACE_MS);
 }
@@ -357,17 +369,17 @@ function scheduleDetach(): void {
  *      interval leaks past detach; `buildIndicatorExpression` also
  *      self-dismisses the node — this is the in-app hard guarantee, idempotent,
  *      a no-op if it is already gone.
- *   2. The eruda in-page console (floating button + any open panel).
- *   3. The native-bridge call observer (#749) — its `callAsyncMethod` /
+ *   2. The native-bridge call observer (#749) — its `callAsyncMethod` /
  *      `postMessage` / emitter wraps are restored and `window.__ait_bridge` is
  *      removed, so nothing we wrapped survives the run's end.
- *   4. keepAwake — forced on at attach; restored here so a run that ends
+ *   3. keepAwake — forced on at attach; restored here so a run that ends
  *      WITHOUT a page unload does not leave the screen pinned awake (the
  *      existing `beforeunload` restore only covers the unload path).
  *
  * Deliberately NOT touched: the `window.WebSocket` observer proxy (kept so the
  * #478 post-4401 fail-fast survives; it is non-blocking and never absorbs
- * input), and any NATIVE overlay (out of our layer — see the block comment
+ * input), the status banner (it must outlive the session to say why it ended;
+ * a tap dismisses it), and any NATIVE overlay (out of our layer — see the block comment
  * above and issue #748 hypothesis (a)).
  *
  * Never throws into the host app — every step is individually guarded.
@@ -393,14 +405,7 @@ export function detachDebugSurface(): void {
     // Never let a DOM edge case break teardown.
   }
 
-  // 2. Tear down the eruda console (unmountEruda is itself fail-silent).
-  try {
-    unmountEruda();
-  } catch {
-    // unmountEruda already swallows internally; this is belt-and-suspenders.
-  }
-
-  // 3. Restore the native-bridge call observer wraps and drop the snapshot
+  // 2. Restore the native-bridge call observer wraps and drop the snapshot
   // (#749) — never throws (uninstallBridgeObserver guards each undo).
   try {
     uninstallBridgeObserver();
@@ -408,7 +413,7 @@ export function detachDebugSurface(): void {
     // Belt-and-suspenders — uninstall is already internally guarded.
   }
 
-  // 4. Restore normal screen sleep. Runtime probe — a no-op when the SDK is
+  // 3. Restore normal screen sleep. Runtime probe — a no-op when the SDK is
   // absent or predates the API (see sdk-probe.ts). The synchronous form comes
   // first because one caller of this function is the `pagehide` handler, and a
   // page being torn down owes us no microtask turn: after a successful attach
@@ -472,6 +477,8 @@ export function installRelayWsObserver(relayUrl: string): void {
       // debug indicator can flip its live badge — additive to the existing
       // 4401-specific branch below, which is untouched.
       ws.addEventListener('open', () => {
+        relayWsEverOpened = true;
+        setDebugStatus('connected');
         broadcastRelayWsState('open');
         // #748: a (re)connect aborts any pending graceful-detach — a transient
         // tunnel blip that target.js recovers from must not tear the surface down.
@@ -494,6 +501,10 @@ export function installRelayWsObserver(relayUrl: string): void {
       // #748: an error that never emits a clean close still needs teardown
       // (unclean-close path) — schedule defensively; a recovery 'open' cancels it.
       ws.addEventListener('error', () => {
+        // Never opened → the relay is unreachable from this network; say so now
+        // instead of waiting out the grace window. After an open, a close
+        // follows and the grace timer decides (a reconnect may still recover).
+        if (!relayWsEverOpened) setDebugStatus('server-unreachable');
         scheduleDetach();
       });
       return ws;
@@ -541,6 +552,9 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
     if (gateResult.reason === 'auth') {
       notifyAuthExpired();
     }
+    // On-phone reason + next action (opt-in pages only; set last so the gate
+    // reason wins over notifyAuthExpired's generic `code-expired`).
+    setDebugStatus(`blocked-${gateResult.reason}`);
     return;
   }
 
@@ -607,27 +621,24 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
   // above can't see it. Probe the same URL once with fetch(): the relay's
   // 401 now carries CORS headers, so the status is readable cross-origin.
   // 401 → surface auth-expired; anything else (tunnel down, transient
-  // network) stays silent — same behaviour as before #478.
+  // network) stays silent in the console — same behaviour as before #478 — but
+  // the on-phone banner names it as an unreachable server.
   script.onerror = () => {
     void fetch(src)
       .then((res) => {
         if (res.status === 401) notifyAuthExpired();
+        else setDebugStatus('server-unreachable');
       })
       .catch(() => {
-        // Network-level failure — not an auth signal; stay silent.
+        // Network-level failure — not an auth signal; no console line, but tell
+        // the operator on the phone.
+        setDebugStatus('server-unreachable');
       });
   };
   (document.head ?? document.documentElement).appendChild(script);
 
   attached = true;
-
-  // Mount the eruda in-page console alongside the Chii remote transport. Same
-  // post-gate point, same debug session — Chii relays CDP to the PC frontend,
-  // eruda shows the console on the phone itself. Fire-and-forget: eruda loads
-  // lazily and fail-silent, so a slow or absent eruda never blocks the Chii
-  // attach or the keepAwake step below. See eruda-overlay.ts for the build-time
-  // absence + gate-inheritance contract.
-  void mountEruda();
+  setDebugStatus('connecting');
 
   // keepAwake — keep phone screen on during the debug session.
   // Opt out via noKeepAwake=1 in the URL (consistent with direct window reads
@@ -642,7 +653,7 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
   // Runtime probe rather than a static import: `setScreenAwakeMode` does not
   // exist on `@apps-in-toss/web-framework` 2.x's web surface at all, so a
   // static import would break every 2.x consumer — and it would drag the SDK
-  // into this package's graph, which must stay `eruda`-only (see sdk-probe.ts).
+  // into this package's graph, which must stay dependency-free (see sdk-probe.ts).
   void setScreenAwake(true).then((held) => {
     // Restore normal sleep on page unload — only if the enable call landed
     // (nothing to restore when the API was unavailable or rejected).

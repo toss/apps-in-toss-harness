@@ -33,9 +33,9 @@ export {
   installBridgeObserver,
   uninstallBridgeObserver,
 } from './bridge-observer.js';
-export { mountEruda, unmountEruda } from './eruda-overlay.js';
 export type { GateInput, GateResult, GateResultAttach, GateResultBlocked } from './gate.js';
 export { evaluateDebugGate, isPrivateAppsHost, isTossminiHost } from './gate.js';
+export type { DebugStatus } from './status-banner.js';
 
 /**
  * Evaluates the runtime debug activation layers (B and C) against the current
