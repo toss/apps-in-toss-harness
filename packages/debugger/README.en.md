@@ -107,6 +107,7 @@ When `start_attach` times out it names the last stage reached, the likely cause 
 | QR code expired | A long-open dashboard or an old QR was scanned | Reload the dashboard and scan the new QR |
 | Script / WebSocket connection incomplete | The page opened but the connection to the relay is blocked | Check the status bar, switch Wi-Fi, scan a new QR |
 | A different page attached | A page from an earlier deployment attached, or `_deploymentId` differs | Close the mini-app with X, scan a new QR, check `scheme_url` |
+| Another mini-app rejected (close 4409) | A relay serves one mini-app at a time: it keeps the one that attached first and rejects pages from a different host | Close the attached mini-app with X, call `start_attach` again, scan the new QR |
 | Attached, then dropped | The app went to the background or the network dropped | Bring the app to the front, close it with X, scan a new QR |
 | Tunnel down | cloudflared exited | Call `start_attach` again |
 | QR image missing, tunnel badge shows "disconnected" | Piled-up dashboard tabs hit the browser's per-host connection limit (6 in Firefox) | Keep a single dashboard tab and reload it |

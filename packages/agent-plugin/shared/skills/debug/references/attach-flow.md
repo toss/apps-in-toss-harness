@@ -47,6 +47,7 @@
 | `qr-expired` | relay가 폰의 코드를 거부(만료·지난 QR) | 대시보드를 새로고침해 새 QR을 스캔 |
 | `script-not-loaded` | 페이지는 열렸지만 `target.js` 로드·WebSocket이 끝나지 않음 | 폰 화면 상태 표시 확인, Wi-Fi 변경, 새 QR 스캔 |
 | `wrong-page` | 폰이 붙었지만 이번 배포의 미니앱이 아님 | 붙은 페이지 목록을 보여 주고, 다르면 X로 닫고 새 QR 스캔. `scheme_url`의 `_deploymentId`가 방금 올린 번들인지 확인 |
+| `rejected-busy` | 다른 미니앱이 같은 QR로 붙으려 해서 relay가 거부함(먼저 붙은 미니앱 유지, close 4409) | 진단에 나온 두 미니앱 이름을 사용자에게 알린다. 새 미니앱을 디버깅하려면 먼저 붙은 미니앱을 X로 닫고 `start_attach`를 다시 호출해 새 QR을 스캔 |
 | `session-dropped` | 붙었다가 끊김(앱 백그라운드, 네트워크) | 앱을 앞에 두고, X로 닫은 뒤 새 QR 스캔 |
 
 relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데몬이 가진 `.ait_relay` secret이 relay와 다르거나 PC 시계가 어긋난 경우이므로, 에러 안내대로 `start_attach`를 다시 부르고 반복되면 시스템 시계를 동기화한다.
@@ -66,6 +67,7 @@ relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데�
 | `connected` | 디버거에 연결됐어요(3초 뒤 자동 숨김) | — |
 | `session-ended` | 디버거 세션이 끝났어요 | X로 닫고 QR을 다시 스캔 |
 | `server-unreachable` | 디버거 서버에 접속할 수 없어요 | 사내망·MDM이 `*.trycloudflare.com`을 막고 있을 수 있다 — Wi-Fi 변경 |
+| `relay-busy` | 이 디버거는 이미 다른 미니앱에 연결돼 있어요 | 먼저 연결된 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔 |
 
 막대가 아예 없으면 폰이 이번 QR의 페이지를 열지 않았거나(`page-not-opened`), 구버전 `debug-console`이 설치된 것이다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 안내한다.
 
