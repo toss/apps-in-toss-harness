@@ -117,8 +117,8 @@ argument-hint: '[screen or request]'
 - 배포되는 `dist/tossface.css`는 단일 폰트 파일이 아니라 `unicode-range`로
   나뉜 **12개 subset**(`TossFaceFontMac-00`~`-11`)의 모음이다 — 이 사실이
   CDN 링크와 번들 포함 사이의 대가를 가른다. CDN 링크는 런타임에 브라우저가
-  실제로 쓰는 subset만 내려받아 번들 용량을 늘리지 않지만, 토스 앱 webview
-  안에서의 CDN 도달성은 harness가 실측하지 않았다(확인 필요). 번들 포함은
+  실제로 쓰는 subset만 내려받아 번들 용량을 늘리지 않는다. 토스 앱 webview에서
+  CDN 로드는 확인됐다(2026-10-14, iOS·Android). 번들 포함은
   네트워크 없이 결정적으로 동작하지만, 앱이 실제로 쓰는 이모지가 속한
   subset만 골라 담아도 subset당 약 520KB~1.9MB가 늘어난다(12개 전량은 약
   13.2MB). 어느 쪽이든 **원본 파일을 다시 subsetting하거나 포맷 변환하지

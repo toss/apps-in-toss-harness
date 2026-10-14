@@ -2,8 +2,8 @@
 @import "./tokens.css";
 
 /* CDN이 막힌 환경에서는 에러 없이 시스템 이모지 폰트로 조용히 대체된다.
-   토스 앱 WebView 안에서 jsdelivr CDN 도달성은 단정하지 않는다 — 실제 확인은
-   /ait:test-on-device(번들 업로드 → 콘솔 컴파일 확인 → 토스 앱에서 열기)로 한다. */
+   토스 앱 WebView에서 jsdelivr CDN 로드는 확인됐다(2026-10-14, iOS·Android).
+   자기 앱에서 확인하려면 /ait:test-on-device(번들 업로드 → 콘솔 컴파일 확인 → 토스 앱에서 열기). */
 
 *,
 *::before,
