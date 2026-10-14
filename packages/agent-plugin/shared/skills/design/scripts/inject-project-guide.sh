@@ -10,7 +10,7 @@
 #   `아이콘:` 두 줄만 TDS 문구로 바꾼다.
 # --existing-ds <이름>: 기성 디자인 시스템(존중 모드) 프로젝트 — 같은 건너뜀에 더해
 #   다이제스트의 토큰 줄을 "프로젝트 디자인 시스템의 토큰·컴포넌트를 쓴다"로 바꾸고
-#   1-2·1-3·1-9 계열 줄을 권장으로 내린다. 이름은 보고용이다(요약에 ds=<이름>).
+#   1-3·1-9 계열 줄을 권장으로 내린다(1-2 Tossface는 다이제스트에서 이미 권장). 이름은 보고용이다(요약에 ds=<이름>).
 #   둘 다 없으면 package.json 의존성(@toss/tds*·@mui/*·@chakra-ui/*·antd·
 #   @mantine/*·tailwindcss·@radix-ui/*)·components.json·tailwind.config.*로
 #   직접 감지해 같은 경로를 탄다(요약에 ds=<이름>(auto)). 라이브러리가 없어도
@@ -27,7 +27,7 @@ TDS=0
 EXDS=0
 DSNAME=""
 NO_TOSSFACE=0
-MV=2
+MV=3
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -150,7 +150,7 @@ R=""; T=""; T2=""
 if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
   DG="$SRC/memory-digest.md"
   if [ "$EXDS" = 1 ]; then
-    T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^토큰 사용:/{print "토큰 사용: 프로젝트 디자인 시스템의 토큰·컴포넌트를 쓴다."; skip=1; next} skip&&/^$/{skip=0} skip{next} /^- 모든 이모지는 Tossface/{print $0 " (권장 — 기성 디자인 시스템이 정한 서체를 우선)"; next} /^- 한글은 `word-break: keep-all`/{print $0 " (권장)"; next} /^- 꺾쇠·화살표는 텍스트 글리프/{print $0 " (권장 — 프로젝트의 아이콘 체계를 쓴다)"; next} /^아이콘: React/{print "아이콘은 프로젝트 디자인 시스템이 주는 것을 쓴다(이 가이드의 아이콘 파일은 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{next} {print}' "$DG" > "$T" && DG="$T"
+    T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^토큰 사용:/{print "토큰 사용: 프로젝트 디자인 시스템의 토큰·컴포넌트를 쓴다."; skip=1; next} skip&&/^$/{skip=0} skip{next} /^권장: 이모지는 Tossface/{print "권장: 이모지 서체는 기성 디자인 시스템이 정한 것을 우선한다(Tossface 배선은 이 프로젝트에 없다)."; next} /^- 한글은 `word-break: keep-all`/{print $0 " (권장)"; next} /^- 꺾쇠·화살표는 텍스트 글리프/{print $0 " (권장 — 프로젝트의 아이콘 체계를 쓴다)"; next} /^아이콘: React/{print "아이콘은 프로젝트 디자인 시스템이 주는 것을 쓴다(이 가이드의 아이콘 파일은 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{next} {print}' "$DG" > "$T" && DG="$T"
   elif [ "$TDS" = 1 ]; then
     T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^아이콘: React/{print "이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{print "1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다."; next} {print}' "$DG" > "$T" && DG="$T"
   fi

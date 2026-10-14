@@ -3760,7 +3760,7 @@ const GUIDE_COPIES: Array<[string, string, string]> = [
 ];
 
 function writeValidGuideTemplate(dir: string): void {
-  writeFile(path.join(dir, GUIDE_SCRIPT_REL), '#!/usr/bin/env bash\nMV=2\n');
+  writeFile(path.join(dir, GUIDE_SCRIPT_REL), '#!/usr/bin/env bash\nMV=3\n');
   writeFile(path.join(dir, GUIDE_CANON_REL, 'memory-digest.md'), GUIDE_DIGEST);
   for (const [canon, rel, body] of GUIDE_COPIES) {
     writeFile(path.join(dir, GUIDE_CANON_REL, canon), body);
@@ -3768,11 +3768,11 @@ function writeValidGuideTemplate(dir: string): void {
   }
   writeFile(
     path.join(dir, GUIDE_TPL_REL, 'AGENTS.md'),
-    `<!-- ait:design-guide v2 -->\n${GUIDE_DIGEST}<!-- /ait:design-guide -->\n`,
+    `<!-- ait:design-guide v3 -->\n${GUIDE_DIGEST}<!-- /ait:design-guide -->\n`,
   );
   writeFile(
     path.join(dir, GUIDE_TPL_REL, 'CLAUDE.md'),
-    '<!-- ait:design-guide v2 -->\n@AGENTS.md\n<!-- /ait:design-guide -->\n',
+    '<!-- ait:design-guide v3 -->\n@AGENTS.md\n<!-- /ait:design-guide -->\n',
   );
 }
 
