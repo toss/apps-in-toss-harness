@@ -166,6 +166,15 @@ export interface QrHttpServer {
  */
 export const MAX_SSE_CLIENTS = 2;
 
+/**
+ * `GET /events` 구독 프로토콜 표식(`?v=2`). `superseded` 이벤트를 이해하는 클라이언트
+ * 스크립트만 이 표식을 붙인다. 표식이 없는 요청(이전 데몬이 띄운 채 남은 오래된 탭)은
+ * 204로 거절한다 — EventSource는 204를 받으면 재연결을 멈추고, 요청은 구독 슬롯도
+ * 차지하지 않는다. 안 그러면 오래된 탭들이 3초마다 재연결하며 서로를 밀어내는 핑퐁이 된다.
+ */
+export const SSE_PROTOCOL_PARAM = 'v';
+export const SSE_PROTOCOL_VERSION = '2';
+
 /** HTML 특수문자를 이스케이프한다. */
 function escapeHtml(s: string): string {
   return s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -620,7 +629,7 @@ function buildSseScript(strings: SseScriptStrings): string {
       }, checkIntervalMs);
 
       // ── SSE 구독 ──────────────────────────────────────────────────────────
-      var src = new EventSource('/events');
+      var src = new EventSource('/events?v=2');
       src.onopen = function () {
         // 연결 복구 시 lastSeen 갱신 — 일시적 끊김이 watchdog을 발화시키지 않게.
         // watchdog이 이미 발화했으면 갱신하지 않는다(폴백 UI를 그대로 유지).
@@ -1095,7 +1104,8 @@ export async function startQrHttpServer(
 
     // ── GET /events — SSE 스트림 ──────────────────────────────────────────
     if (path === '/events') {
-      if (!getDashboardState) {
+      // 표식 없는 오래된 클라이언트는 슬롯 없이 204로 돌려보내 재연결을 멈춘다.
+      if (!getDashboardState || params.get(SSE_PROTOCOL_PARAM) !== SSE_PROTOCOL_VERSION) {
         res.writeHead(204, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end();
         return;

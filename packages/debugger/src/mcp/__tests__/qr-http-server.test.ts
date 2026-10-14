@@ -390,7 +390,7 @@ describe('startQrHttpServer — 인스펙터 열기 링크 (#503)', () => {
       inspectorUrl: INSPECTOR_URL,
     }));
     try {
-      const frame = await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`);
+      const frame = await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`);
       expect(frame).toHaveProperty('inspectorUrl', INSPECTOR_URL);
     } finally {
       await srv.close();
@@ -406,7 +406,7 @@ describe('startQrHttpServer — 인스펙터 열기 링크 (#503)', () => {
       inspectorUrl: null,
     }));
     try {
-      const frame = await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`);
+      const frame = await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`);
       expect(frame).toHaveProperty('inspectorUrl', null);
     } finally {
       await srv.close();
@@ -467,7 +467,7 @@ describe('startQrHttpServer — 주기 SSE 갱신 (#509)', () => {
 
     // SSE 연결 — sseClients에 추가되게 한다.
     const ctrl = new AbortController();
-    const fetchPromise = fetch(`http://127.0.0.1:${srv.port}/events`, {
+    const fetchPromise = fetch(`http://127.0.0.1:${srv.port}/events?v=2`, {
       signal: ctrl.signal,
     });
     // 연결이 서버에 도달하고 초기 push가 일어날 시간을 준다.
@@ -530,7 +530,7 @@ describe('startQrHttpServer — 주기 SSE 갱신 (#509)', () => {
 
     // SSE 연결 + 초기 push 대기
     const ctrl = new AbortController();
-    fetch(`http://127.0.0.1:${srv.port}/events`, { signal: ctrl.signal }).catch(() => {});
+    fetch(`http://127.0.0.1:${srv.port}/events?v=2`, { signal: ctrl.signal }).catch(() => {});
     await new Promise<void>((r) => setTimeout(r, 30));
 
     ctrl.abort();
@@ -653,7 +653,7 @@ describe('startQrHttpServer — SSE /events', () => {
     try {
       const ctrl = new AbortController();
       setTimeout(() => ctrl.abort(), 2000);
-      const res = await fetch(`http://127.0.0.1:${srv.port}/events`, { signal: ctrl.signal });
+      const res = await fetch(`http://127.0.0.1:${srv.port}/events?v=2`, { signal: ctrl.signal });
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toMatch(/text\/event-stream/);
     } finally {
@@ -667,7 +667,7 @@ describe('startQrHttpServer — SSE /events', () => {
     const srv = await startQrHttpServer(() => state);
     try {
       const frame = (await readFirstSseFrame(
-        `http://127.0.0.1:${srv.port}/events`,
+        `http://127.0.0.1:${srv.port}/events?v=2`,
       )) as DashboardState;
       expect(frame.tunnel.up).toBe(true);
       expect(Array.isArray(frame.pages)).toBe(true);
@@ -682,7 +682,7 @@ describe('startQrHttpServer — SSE /events', () => {
     const srv = await startQrHttpServer(() => state);
     try {
       const frame = (await readFirstSseFrame(
-        `http://127.0.0.1:${srv.port}/events`,
+        `http://127.0.0.1:${srv.port}/events?v=2`,
       )) as DashboardState;
       expect(frame.attachUrl).toBeNull();
     } finally {
@@ -696,7 +696,7 @@ describe('startQrHttpServer — SSE /events', () => {
       // 구독 시작 (초기 frame은 버림)
       const ctrl = new AbortController();
       const timeoutId = setTimeout(() => ctrl.abort(), 3000);
-      const res = await fetch(`http://127.0.0.1:${srv.port}/events`, { signal: ctrl.signal });
+      const res = await fetch(`http://127.0.0.1:${srv.port}/events?v=2`, { signal: ctrl.signal });
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No body');
 
@@ -757,7 +757,7 @@ describe('startQrHttpServer — SSE /events', () => {
     state.tunnel = { up: true, wssUrl: 'wss://secret-relay-host.trycloudflare.com' };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         tunnel?: { wssUrl?: unknown };
       };
       // wssUrl 필드는 frame 안에 들어가더라도 값이 null이어야 한다.
@@ -778,7 +778,7 @@ describe('startQrHttpServer — SSE /events', () => {
       'intoss-private://app?_deploymentId=test&debug=1&relay=wss%3A%2F%2Fx.tc.com&at=SECRET123';
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as Record<
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as Record<
         string,
         unknown
       >;
@@ -2384,7 +2384,7 @@ describe('startQrHttpServer — phase 필드 SSE payload (#730)', () => {
     };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         phase?: string;
       };
       expect(frame.phase).toBe('running');
@@ -2402,7 +2402,7 @@ describe('startQrHttpServer — phase 필드 SSE payload (#730)', () => {
     };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         phase?: string;
       };
       expect(frame.phase).toBe('complete');
@@ -2420,7 +2420,7 @@ describe('startQrHttpServer — phase 필드 SSE payload (#730)', () => {
     };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         phase?: string;
       };
       expect(frame.phase).toBe('shutdown');
@@ -2440,7 +2440,7 @@ describe('startQrHttpServer — phase 필드 SSE payload (#730)', () => {
     } as unknown as DashboardState;
     const srv = await startQrHttpServer(() => stateWithoutPhase);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         phase?: string;
       };
       expect(frame.phase).toBe('active');
@@ -2465,7 +2465,7 @@ describe('startQrHttpServer — manualPrompt 필드 SSE payload (devtools#741)',
     };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         manualPrompt?: { file: string; index: number; total: number } | null;
       };
       expect(frame.manualPrompt).toEqual({
@@ -2487,7 +2487,7 @@ describe('startQrHttpServer — manualPrompt 필드 SSE payload (devtools#741)',
     };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         manualPrompt?: unknown;
       };
       expect(frame.manualPrompt).toBeNull();
@@ -2506,7 +2506,7 @@ describe('startQrHttpServer — manualPrompt 필드 SSE payload (devtools#741)',
     };
     const srv = await startQrHttpServer(() => state);
     try {
-      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events`)) as {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
         manualPrompt?: { file: string };
       };
       expect(frame.manualPrompt?.file).toBe('camera.manual.ait.test.ts');
@@ -2902,7 +2902,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
     abort: () => void;
   }> {
     const ctrl = new AbortController();
-    const res = await fetch(`http://127.0.0.1:${port}/events`, { signal: ctrl.signal });
+    const res = await fetch(`http://127.0.0.1:${port}/events?v=2`, { signal: ctrl.signal });
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -2965,6 +2965,44 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
       expect(srv.hasActiveClients()).toBe(true);
 
       for (const c of [...opened, newest]) c.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('프로토콜 표식(?v=2)이 없는 오래된 클라이언트는 204로 거절되고 슬롯·hasActiveClients에 영향이 없다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
+      for (let i = 0; i < MAX_SSE_CLIENTS; i++) {
+        opened.push(await openSse(srv.port));
+      }
+      // 이전 데몬이 띄운 채 남은 탭: superseded를 모르고 /events(표식 없음)로 재연결한다.
+      for (let i = 0; i < 5; i++) {
+        const res = await fetch(`http://127.0.0.1:${srv.port}/events`);
+        expect(res.status).toBe(204);
+      }
+      for (const c of opened) {
+        expect(c.text()).not.toContain('event: superseded');
+      }
+      expect(srv.hasActiveClients()).toBe(true);
+      for (const c of opened) c.abort();
+      await waitFor(() => !srv.hasActiveClients());
+      expect(srv.hasActiveClients()).toBe(false);
+      // 표식 없는 요청만 있으면 hasActiveClients는 계속 false다(start_attach가 새 탭을 연다).
+      const stale = await fetch(`http://127.0.0.1:${srv.port}/events`);
+      expect(stale.status).toBe(204);
+      expect(srv.hasActiveClients()).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('대시보드 클라이언트 스크립트는 표식이 붙은 /events?v=2로 구독한다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
+      expect(html).toContain("new EventSource('/events?v=2')");
     } finally {
       await srv.close();
     }
