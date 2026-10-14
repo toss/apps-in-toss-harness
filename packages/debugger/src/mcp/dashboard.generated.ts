@@ -14,6 +14,8 @@
  *   __ATTACH_SECTION__     QR img+url-box HTML, or hint text
  *   __INSPECTOR_SECTION__  inspector link <a> or waiting hint <span> (#503)
  *   __PAGES_SECTION__      pages <section> block, or empty string
+ *   __TIMELINE_SECTION__   attach stage timeline <section>, or empty string
+ *   __SESSION_LINE__       session kind/start/PID line, or empty string
  *   __NOW__                ISO timestamp of current render
  *   __LANG_SWITCHER__      ko/en toggle links (href preserves existing query params)
  *
@@ -90,10 +92,14 @@ li.empty { opacity: 0.4; list-style: none; padding-left: 0; }
 .page-id { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
 .page-url { word-break: break-all; }
 hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
+.session-line { font-size: 0.75rem; opacity: 0.55; margin: 0; }
+.session-line:empty { display: none; }
+li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
+li.stage-bad { color: #f85149; }
 .lang-switcher { display: flex; gap: 0.5rem; font-size: 0.75rem; }
 .lang-switcher a { color: #58a6ff; text-decoration: none; opacity: 0.6; }
 .lang-switcher a.active { font-weight: 700; text-decoration: underline; opacity: 1; }
-</style></head><body><h1>AIT 디버그 Dashboard</h1>__LANG_SWITCHER__<p class="updated" id="updated">마지막 갱신: __NOW__</p><section><h2>터널 상태</h2><span class="status __TUNNEL_CLASS__" id="tunnel-status">__TUNNEL_STATUS__</span></section><hr/><section><h2>Attach QR</h2><div id="attach-section">__ATTACH_SECTION__</div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section>__PAGES_SECTION__</body></html>`;
+</style></head><body><h1>AIT 디버그 Dashboard</h1>__LANG_SWITCHER__<p class="updated" id="updated">마지막 갱신: __NOW__</p><p class="session-line" id="session-line">__SESSION_LINE__</p><section><h2>터널 상태</h2><span class="status __TUNNEL_CLASS__" id="tunnel-status">__TUNNEL_STATUS__</span></section><hr/><section><h2>Attach QR</h2><div id="attach-section">__ATTACH_SECTION__</div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section>__TIMELINE_SECTION____PAGES_SECTION__</body></html>`;
 
 export const attachChromeHtmlKo =
 `<!DOCTYPE html>
@@ -217,10 +223,14 @@ li.empty { opacity: 0.4; list-style: none; padding-left: 0; }
 .page-id { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
 .page-url { word-break: break-all; }
 hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
+.session-line { font-size: 0.75rem; opacity: 0.55; margin: 0; }
+.session-line:empty { display: none; }
+li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
+li.stage-bad { color: #f85149; }
 .lang-switcher { display: flex; gap: 0.5rem; font-size: 0.75rem; }
 .lang-switcher a { color: #58a6ff; text-decoration: none; opacity: 0.6; }
 .lang-switcher a.active { font-weight: 700; text-decoration: underline; opacity: 1; }
-</style></head><body><h1>AIT Debug Dashboard</h1>__LANG_SWITCHER__<p class="updated" id="updated">Last updated: __NOW__</p><section><h2>Tunnel status</h2><span class="status __TUNNEL_CLASS__" id="tunnel-status">__TUNNEL_STATUS__</span></section><hr/><section><h2>Attach QR</h2><div id="attach-section">__ATTACH_SECTION__</div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section>__PAGES_SECTION__</body></html>`;
+</style></head><body><h1>AIT Debug Dashboard</h1>__LANG_SWITCHER__<p class="updated" id="updated">Last updated: __NOW__</p><p class="session-line" id="session-line">__SESSION_LINE__</p><section><h2>Tunnel status</h2><span class="status __TUNNEL_CLASS__" id="tunnel-status">__TUNNEL_STATUS__</span></section><hr/><section><h2>Attach QR</h2><div id="attach-section">__ATTACH_SECTION__</div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section>__TIMELINE_SECTION____PAGES_SECTION__</body></html>`;
 
 export const attachChromeHtmlEn =
 `<!DOCTYPE html>

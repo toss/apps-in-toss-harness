@@ -3192,3 +3192,126 @@ describe('startQrHttpServer — 이미 열린 미니앱은 스캔해도 새로�
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// attach 단계 타임라인 + 세션 표시
+// ---------------------------------------------------------------------------
+
+describe('startQrHttpServer — attach 타임라인과 세션 표시', () => {
+  const baseState = (): DashboardState => ({
+    tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
+    pages: [],
+    attachUrl: null,
+    phase: 'active',
+  });
+
+  it('stages가 없으면(undefined/null) 타임라인 섹션과 세션 줄이 보이지 않는다', async () => {
+    const srv = await startQrHttpServer(() => baseState());
+    try {
+      const html = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(html).not.toContain('__TIMELINE_SECTION__');
+      expect(html).not.toContain('__SESSION_LINE__');
+      expect(html).not.toContain('id="timeline-section"');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('stages를 한국어 라벨과 경과 초로 렌더링하고 거부 단계는 stage-bad로 표시한다', async () => {
+    const t0 = Date.parse('2026-10-14T00:00:00.000Z');
+    const at = (sec: number) => new Date(t0 + sec * 1000).toISOString();
+    const state: DashboardState = {
+      ...baseState(),
+      stages: [
+        { at: at(0), stage: 'qr-issued', result: 'ok', detail: 'mint' },
+        { at: at(12), stage: 'device-handshake', result: 'ok' },
+        { at: at(13), stage: 'auth', result: 'rejected', detail: 'ws-4401' },
+      ],
+    };
+    const srv = await startQrHttpServer(() => state);
+    try {
+      const html = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(html).toContain('id="timeline-section"');
+      expect(html).toContain('+12s');
+      expect(html).toContain('stage-bad');
+      expect(html).toContain('stage-ok');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('빈 stages 배열이면 섹션은 보이고 "아직 기록 없음" 문구를 보여 준다', async () => {
+    const state: DashboardState = { ...baseState(), stages: [] };
+    const srv = await startQrHttpServer(() => state);
+    try {
+      const ko = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(ko).toContain('id="timeline-section"');
+      expect(ko).toContain('class="empty"');
+      const en = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'en' } })
+      ).text();
+      expect(en).toContain('id="timeline-section"');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('세션 줄이 데몬/테스트 러너를 구분해 PID와 함께 보여 준다', async () => {
+    const daemon: DashboardState = {
+      ...baseState(),
+      session: { kind: 'daemon', startedAt: '2026-10-14T00:00:00.000Z', pid: 4242 },
+    };
+    const runner: DashboardState = {
+      ...baseState(),
+      session: { kind: 'test-runner', startedAt: '2026-10-14T00:00:00.000Z', pid: 4343 },
+    };
+    const srvA = await startQrHttpServer(() => daemon);
+    const srvB = await startQrHttpServer(() => runner);
+    try {
+      const a = await (
+        await fetch(`http://127.0.0.1:${srvA.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      const b = await (
+        await fetch(`http://127.0.0.1:${srvB.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(a).toContain('4242');
+      expect(a).not.toContain('테스트 러너 세션');
+      expect(b).toContain('테스트 러너 세션');
+      expect(b).toContain('4343');
+    } finally {
+      await srvA.close();
+      await srvB.close();
+    }
+  });
+
+  it('SSE frame에 stages가 실리고(없으면 null) 비밀은 없다', async () => {
+    const withStages: DashboardState = {
+      ...baseState(),
+      stages: [
+        { at: '2026-10-14T00:00:00.000Z', stage: 'qr-issued', result: 'ok', detail: 'mint' },
+      ],
+    };
+    const srv = await startQrHttpServer(() => withStages);
+    const srvNone = await startQrHttpServer(() => baseState());
+    try {
+      const frame = (await readFirstSseFrame(`http://127.0.0.1:${srv.port}/events?v=2`)) as {
+        stages: Array<{ stage: string }> | null;
+      };
+      expect(frame.stages?.[0]?.stage).toBe('qr-issued');
+      const none = (await readFirstSseFrame(`http://127.0.0.1:${srvNone.port}/events?v=2`)) as {
+        stages: unknown;
+      };
+      expect(none.stages).toBeNull();
+      expect(JSON.stringify(frame)).not.toMatch(/at=\d{6}/);
+    } finally {
+      await srv.close();
+      await srvNone.close();
+    }
+  });
+});

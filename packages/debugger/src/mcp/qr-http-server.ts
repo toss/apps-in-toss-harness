@@ -19,6 +19,8 @@
  *       __TUNNEL_STATUS__   : 로컬라이즈된 tunnel 상태 레이블
  *       __ATTACH_SECTION__  : QR img+url-box, 또는 hint 텍스트
  *       __PAGES_SECTION__   : pages <section> 블록, 또는 빈 문자열 (null → '')
+ *       __TIMELINE_SECTION__: attach 진행 단계 <section> 블록, 또는 빈 문자열 (stages 미주입 → '')
+ *       __SESSION_LINE__    : 세션 종류·시작 시각·PID 한 줄, 또는 빈 문자열 (session 미주입 → '')
  *   - inline SSE <script> → 런타임 suffix로 append (localised string 포함)
  *
  * i18n:
@@ -108,6 +110,33 @@ export interface DashboardState {
    * SECRET-HANDLING: 파일명만 담는다 — relay wss/TOTP/scheme URL 없음.
    */
   manualPrompt?: { file: string; index: number; total: number } | null;
+  /**
+   * 현재 `start_attach` 시도의 단계 기록 — `AttachTimeline`과 같은 기록(타임아웃 진단·
+   * progress·`get_debug_status`와 공유)이다. 대시보드가 "어디까지 됐는지"를 그대로 보여
+   * 준다.
+   *
+   * - 배열 — 타임라인 섹션을 렌더한다(빈 배열은 "아직 시도 없음").
+   * - `undefined`/`null` — 호출자가 단계 기록을 모른다(예: relay를 소유하지 않는 unplugin
+   *   호스트). 거짓 "시도 없음"을 보이지 않도록 섹션 자체를 숨긴다(`pages: null`과 같은 원칙).
+   *
+   * SECRET-HANDLING: 시각·단계·결과 enum만 담는다 — URL·TOTP·relay host 없음.
+   */
+  stages?: DashboardStage[] | null;
+  /**
+   * 이 대시보드를 운영하는 프로세스 표시 — 어느 세션(MCP 데몬 / 테스트 러너)이 relay를
+   * 쥐고 있는지 한눈에 알게 한다. 미지정이면 표시하지 않는다.
+   *
+   * SECRET-HANDLING: 종류 enum·시작 시각·PID뿐이다.
+   */
+  session?: { kind: 'daemon' | 'test-runner'; startedAt: string; pid: number };
+}
+
+/** {@link DashboardState.stages}의 한 줄 — `AttachStageEvent`의 표시용 부분집합. */
+export interface DashboardStage {
+  at: string;
+  stage: string;
+  result: string;
+  detail?: string;
 }
 
 /**
@@ -204,6 +233,42 @@ function buildLangSwitcher(
   return `<div class="lang-switcher"><a href="${switcherHref('ko')}" class="${koClass}">${koLabel}</a><a href="${switcherHref('en')}" class="${enClass}">${enLabel}</a></div>`;
 }
 
+/** 타임라인 라벨 키 → ko/en 문구. 클라이언트 스크립트(SSE 재렌더)도 같은 표를 쓴다. */
+function buildTimelineLabels(s: ReturnType<typeof resolveLocaleStrings>): Record<string, string> {
+  return {
+    'tunnel.ok': s('dashboard.timeline.tunnelUp'),
+    'tunnel.down': s('dashboard.timeline.tunnelDown'),
+    'qr-issued.mint': s('dashboard.timeline.qrIssued'),
+    'qr-issued.remint': s('dashboard.timeline.qrReissued'),
+    'device-handshake.ok': s('dashboard.timeline.handshake'),
+    'auth.script': s('dashboard.timeline.scriptServed'),
+    'auth.http-401': s('dashboard.timeline.authHttpRejected'),
+    'auth.ws-4401': s('dashboard.timeline.authWsRejected'),
+    'target-connected.ok': s('dashboard.timeline.targetConnected'),
+    'target-disconnected.ok': s('dashboard.timeline.targetDisconnected'),
+    'matched.ok': s('dashboard.timeline.matched'),
+    'cdp-ready.ok': s('dashboard.timeline.cdpReady'),
+  };
+}
+
+/** 타임라인 `<li>` 목록 — 서버 렌더. SSE 클라이언트 렌더(`renderTimeline`)와 같은 구조다. */
+function buildTimelineItems(
+  stages: DashboardStage[],
+  labels: Record<string, string>,
+  emptyLabel: string,
+): string {
+  if (stages.length === 0) return `<li class="empty">${escapeHtml(emptyLabel)}</li>`;
+  const t0 = Date.parse(stages[0]?.at ?? '');
+  return stages
+    .map((e) => {
+      const label = labels[`${e.stage}.${e.detail ?? e.result}`] ?? `${e.stage} ${e.result}`;
+      const rel = Number.isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
+      const cls = e.result === 'ok' ? 'stage-ok' : 'stage-bad';
+      return `<li class="${cls}"><span class="stage-time">+${rel}s</span> ${escapeHtml(label)}</li>`;
+    })
+    .join('');
+}
+
 /**
  * Dashboard HTML — precompiled chrome에 per-request 동적 값을 채워 완성한다.
  *
@@ -215,7 +280,7 @@ function buildLangSwitcher(
  * 동적 파트 분류:
  *   - "token-fill": 단일 값 교체 (__NOW__, __TUNNEL_CLASS__, __TUNNEL_STATUS__,
  *     __ATTACH_SECTION__, __INSPECTOR_SECTION__)
- *   - "runtime builder": 가변 길이 구조 (__PAGES_SECTION__ — 조건부 렌더 + 가변 rows)
+ *   - "runtime builder": 가변 길이 구조 (__PAGES_SECTION__, __TIMELINE_SECTION__ — 조건부 렌더 + 가변 rows)
  *   - "suffix": inline SSE <script> (빌드 파이프라인 없는 클라이언트 스크립트, locale
  *     aware 문자열 포함)
  *
@@ -318,6 +383,35 @@ function buildDashboardHtml(
             : `<li class="empty">${escapeHtml(s('dashboard.pages.empty'))}</li>`
         }</ul></section>`;
 
+  // timelineSection — attach 진행 단계. stages가 없으면(호출자가 모름) 섹션 자체를 숨긴다.
+  const timelineLabels = buildTimelineLabels(s);
+  const timelineEmpty = s('dashboard.timeline.empty');
+  const timelineSection =
+    state.stages === undefined || state.stages === null
+      ? ''
+      : `<hr /><section id="timeline-section"><h2>${escapeHtml(s('dashboard.timeline.section'))}</h2><ul id="timeline-list">${buildTimelineItems(
+          state.stages,
+          timelineLabels,
+          timelineEmpty,
+        )}</ul></section>`;
+
+  // sessionLine — 이 대시보드를 운영하는 세션(MCP 데몬 / 테스트 러너) 한 줄.
+  let sessionLine = '';
+  if (state.session) {
+    const started = new Date(state.session.startedAt);
+    const time = Number.isNaN(started.getTime())
+      ? state.session.startedAt
+      : started.toLocaleTimeString(locale === 'ko' ? 'ko-KR' : 'en-US', { hour12: false });
+    sessionLine = escapeHtml(
+      s(
+        state.session.kind === 'test-runner'
+          ? 'dashboard.session.lineTestRunner'
+          : 'dashboard.session.lineDaemon',
+        { time, pid: state.session.pid },
+      ),
+    );
+  }
+
   // locale-aware strings for the inline SSE client script
   // watchdog timeout: server refresh 주기보다 넉넉히 크게 잡아 일시적 끊김을 오탐하지 않는다.
   //   - 기본(90s): 90s × 2 + 30s = 210s — 주기 1회 놓쳐도 정상 케이스 배제.
@@ -347,6 +441,8 @@ function buildDashboardHtml(
     reopenHint: JSON.stringify(s('dashboard.attach.reopenHint')),
     supersededTitle: JSON.stringify(s('dashboard.superseded.title')),
     supersededBody: JSON.stringify(s('dashboard.superseded.body')),
+    timelineLabels: JSON.stringify(timelineLabels),
+    timelineEmpty: JSON.stringify(timelineEmpty),
   };
 
   const langSwitcher = buildLangSwitcher(path, params, locale, s);
@@ -362,7 +458,9 @@ function buildDashboardHtml(
     .replaceAll('__TUNNEL_STATUS__', escapeHtml(tunnelStatus))
     .replaceAll('__ATTACH_SECTION__', attachSection)
     .replaceAll('__INSPECTOR_SECTION__', inspectorSection)
-    .replaceAll('__PAGES_SECTION__', pagesSection);
+    .replaceAll('__PAGES_SECTION__', pagesSection)
+    .replaceAll('__TIMELINE_SECTION__', timelineSection)
+    .replaceAll('__SESSION_LINE__', sessionLine);
 
   // Append the inline SSE <script> suffix directly before </body>.
   // This keeps the client script out of the precompiled chrome (it references
@@ -433,6 +531,13 @@ interface SseScriptStrings {
   supersededTitle: string;
   /** 다른 탭에 밀려난 탭의 정적 안내 본문 (JSON.stringify로 이미 escape됨). */
   supersededBody: string;
+  /**
+   * 타임라인 라벨 표 `{ "<stage>.<detail|result>": "<문구>" }` (JSON.stringify됨). SSE
+   * 재렌더가 서버 렌더와 같은 문구를 쓰게 한다. /attach 표면에서는 `{}`.
+   */
+  timelineLabels: string;
+  /** 타임라인이 비었을 때의 문구 (JSON.stringify로 이미 escape됨). /attach에서는 `""`. */
+  timelineEmpty: string;
 }
 
 /**
@@ -494,7 +599,30 @@ function buildSseScript(strings: SseScriptStrings): string {
       var REOPEN_HINT = ${strings.reopenHint};
       var SUPERSEDED_TITLE = ${strings.supersededTitle};
       var SUPERSEDED_BODY = ${strings.supersededBody};
+      var TIMELINE_LABELS = ${strings.timelineLabels};
+      var TIMELINE_EMPTY = ${strings.timelineEmpty};
       var disconnectedShown = false;
+
+      // ── attach 진행 단계 타임라인 ──────────────────────────────────────────
+      // 서버 렌더(buildTimelineItems)와 같은 구조 — 라벨 표는 서버가 같은 ko/en 카탈로그로 준다.
+      function escHtml(v) {
+        return String(v).replace(/[<>&"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; });
+      }
+      function renderTimeline(stages) {
+        var tl = document.getElementById('timeline-list');
+        if (!tl) return;
+        if (!stages.length) {
+          tl.innerHTML = '<li class="empty">' + escHtml(TIMELINE_EMPTY) + '</li>';
+          return;
+        }
+        var t0 = Date.parse(stages[0].at);
+        tl.innerHTML = stages.map(function (e) {
+          var label = TIMELINE_LABELS[e.stage + '.' + (e.detail || e.result)] || (e.stage + ' ' + e.result);
+          var rel = isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
+          return '<li class="' + (e.result === 'ok' ? 'stage-ok' : 'stage-bad') + '"><span class="stage-time">+' +
+            rel + 's</span> ' + escHtml(label) + '</li>';
+        }).join('');
+      }
 
       // ── 클립보드 복사 헬퍼 ────────────────────────────────────────────────
       function copyText(text) {
@@ -671,6 +799,8 @@ function buildSseScript(strings: SseScriptStrings): string {
               }
             }
           }
+          // attach 진행 단계 — stages가 없으면(null/undefined) 섹션을 건드리지 않는다.
+          if (s.stages !== null && s.stages !== undefined) renderTimeline(s.stages);
           // attachUrl QR + url-box 갱신
           // SECRET-HANDLING: URL 값을 로그로 출력하지 않는다.
           // 터널이 죽으면(s.tunnel.up=false) attachUrl이 남아 있어도 QR을
@@ -849,6 +979,9 @@ function buildAttachHtml(
     reopenHint: JSON.stringify(s('dashboard.attach.reopenHint')),
     supersededTitle: JSON.stringify(s('dashboard.superseded.title')),
     supersededBody: JSON.stringify(s('dashboard.superseded.body')),
+    // /attach 표면에는 타임라인 섹션이 없다 — renderTimeline은 #timeline-list가 없으면 no-op.
+    timelineLabels: '{}',
+    timelineEmpty: '""',
   };
   const sseScript = buildSseScript(sseStrings);
   return filled.replace('</body>', `${sseScript}\n</body>`);
@@ -1021,6 +1154,8 @@ export async function startQrHttpServer(
       phase: state.phase ?? 'active',
       // manualPrompt: 수동-변형 모드 진행 상태 (#741) — 파일명만, 시크릿 없음.
       manualPrompt: state.manualPrompt ?? null,
+      // stages: attach 진행 단계(시각·단계·결과 enum) — 시크릿 없음. 미주입이면 null.
+      stages: state.stages ?? null,
     });
     // SSE frame: "data: <json>\n\n"
     res.write(`data: ${payload}\n\n`);
