@@ -246,7 +246,17 @@ WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 debug-console을 바꾸라고 하지 말고 debugger 항목 업그레이드를 제안한다.
 
 TOTP 코드가 만료되면 `start_attach`가 자동으로 재발행해 QR/대시보드를 갱신하므로
-타임아웃마다 재호출할 필요가 없다.
+그 경우에 한해 재호출할 필요가 없다. 타임아웃·단계별 진단은 다르다 — 에러 본문의
+"해야 할 일"을 사용자에게 전하고, 그 조치(미니앱 X로 닫기, 새 QR 스캔 등)를 마친 뒤에
+`start_attach`를 다시 부른다. 재호출하면 이전 대기는 `superseded`로 끝나고 새 호출이
+이어받는다.
+
+`start_attach`는 attach 과정을 단계(터널 → QR 발급 → 폰 핸드셰이크 → 스크립트 로드·인증 →
+WebSocket 연결 → 페이지 매칭)로 기록하고, 타임아웃 에러와 `get_debug_status`
+(`attachStages`·`attachDiagnosis`)가 같은 기록을 보여 준다. 원인별 조치 표와 폰 화면 상태
+표시 읽는 법은 `references/attach-flow.md`의 "타임아웃 진단"·"폰 화면 상태 표시"를 따른다.
+대시보드는 탭 하나만 쓴다(여러 탭을 열면 브라우저 연결 한도에 걸려 QR이 안 뜬다). 이미
+열린 미니앱은 스캔해도 새로고침되지 않으므로 **X 버튼으로 닫은 뒤 스캔**하게 안내한다.
 
 ### 5-D. attach 확인 및 도구 자동 등록
 
@@ -397,7 +407,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 - dogfood relay 루프 (candidate 빌드 → QR 스캔 → attach → 관측 사이클) 문서(devtools `docs/dogfood-relay-loop.md`) — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - devtools (mock + panel + unplugin, 브라우저 dev 전용) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - on-device debug MCP 데몬(`start_debug`/`start_attach` 등 attach 도구): `@apps-in-toss/debugger`(`/mcp/server` + `/mcp/cli` exports, `debugger`·`debugger-test` bin) — `/ait:setup-debugger`가 배선한 프로젝트 `.mcp.json`의 `mcpServers."ait-devtools"`가 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz debugger`로 기동. server key `ait-devtools`는 유지하되 실제 데몬 패키지는 `@apps-in-toss/debugger`다(Phase 3 분리, 이전에는 devtools repo의 `devtools-mcp` bin이었다): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
-- on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + eruda): `@apps-in-toss/debug-console`(`.` + `/auto` exports) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 미니앱 `dependencies`로 별도 설치해야 한다. 설치·와이어업은 `/ait:inject-debug-console` (`inject` skill의 debug-console facet)이 담당한다.
+- on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + 폰 화면 상태 표시): `@apps-in-toss/debug-console`(`.` + `/auto` exports) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 미니앱 `dependencies`로 별도 설치해야 한다. 설치·와이어업은 `/ait:inject-debug-console` (`inject` skill의 debug-console facet)이 담당한다.
 - lifecycle 디버깅(swipe-back 등), on-device CDP relay 디버깅 구조·진입 경로,
   relay TOTP 인증(터널 URL 유출 차단) 등은 docs MCP(`searchDocumentation`/
   `getPage`)로 조회한다.
