@@ -15,7 +15,7 @@
  */
 
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
-import type { AttachDiagnosis } from './attach-timeline.js';
+import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
 
 /** MCP tool-result 에러 응답 형식. */
 export interface McpErrorResult {
@@ -102,13 +102,60 @@ export function tunnelDownError(): McpErrorResult {
  *
  * enableDomains()가 "No mini-app page attached" 에러를 던질 때.
  */
-export function pageMissingError(toolName?: string): McpErrorResult {
+export function pageMissingError(toolName?: string, gone?: PageGoneContext): McpErrorResult {
   const prefix = toolName ? `${toolName}: ` : '';
+  if (gone?.detach) {
+    // 연결됐다가 끊긴 경우: "attach 안 됨"보다 "언제, 왜 끊겼는지"가 다음 행동을 정한다.
+    return mcpError(`${prefix}${describeDetach(gone)}`);
+  }
   return mcpError(
     `${prefix}페이지가 attach 안 됨. ` +
       'dog-food 번들 배포 후 start_attach를 호출해 QR 생성 + attach까지 진행하세요: ' +
       '`ait deploy --scheme-only` → `start_attach(scheme_url)` → QR 스캔.',
   );
+}
+
+/** 끊김 원인 → 사용자에게 보이는 말. */
+const DETACH_CAUSE_LABEL: Record<DetachCause, string> = {
+  'target-closed': '폰에서 페이지가 닫혔거나 백그라운드로 갔어요',
+  'replaced-same-app': '같은 미니앱이 다시 열려 이전 페이지가 교체됐어요',
+  'tunnel-down': 'cloudflared 터널이 끊겼어요',
+  unknown: '원인을 알 수 없어요',
+};
+
+/** `pageMissingError`가 끊김 정보를 말하는 데 쓰는 재료. 전부 secret-free다. */
+export interface PageGoneContext {
+  /** 마지막 페이지 끊김(시각·원인), 없으면 `null`. */
+  detach: LastDetach | null;
+  /** 마지막으로 다른 미니앱의 attach를 거부한 기록(첫 DNS 라벨만). */
+  busy?: (BusyApps & { at: string }) | null;
+  /** 경과 시간 계산 기준(ms). 테스트가 고정한다. */
+  nowMs: number;
+}
+
+function formatElapsed(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return `${sec}초`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}분`;
+  return `${Math.floor(sec / 3600)}시간`;
+}
+
+/**
+ * "폰 페이지 연결이 42초 전에 끊겼어요(원인: …). start_attach를 다시 호출하고 QR을 스캔하세요."
+ * 끊긴 뒤에 다른 미니앱의 연결을 거부한 기록이 있으면 한 줄 덧붙인다.
+ */
+export function describeDetach(gone: PageGoneContext): string {
+  const detach = gone.detach;
+  if (detach === null) return '페이지가 attach 안 됨.';
+  const ago = formatElapsed(gone.nowMs - Date.parse(detach.at));
+  let text =
+    `폰 페이지 연결이 ${ago} 전에 끊겼어요(원인: ${DETACH_CAUSE_LABEL[detach.cause]}). ` +
+    'start_attach를 다시 호출하고 QR을 스캔하세요.';
+  const busy = gone.busy;
+  if (busy && Date.parse(busy.at) >= Date.parse(detach.at)) {
+    text += ` 그 사이 다른 미니앱(${busy.rejected})의 연결 시도는 거부했어요.`;
+  }
+  return text;
 }
 
 /**
@@ -230,6 +277,11 @@ export function attachTimeoutMessage(details: AttachTimeoutDetails): string {
       lines.push(`${i + 1}. ${action}`);
     });
   }
+  if (diagnosis.kind === 'rejected-busy' && deploymentId) {
+    lines.push(
+      `기다리던 deploymentId=${deploymentId} 페이지가 거부된 미니앱의 것이면, 위 순서대로 먼저 연결된 미니앱을 닫은 뒤 다시 시도하세요.`,
+    );
+  }
   if (protocolNote !== undefined) lines.push(protocolNote);
   if (waitError !== undefined) lines.push(`대기 중 오류: ${waitError}`);
   if (stageHistory !== undefined && stageHistory.length > 0) {
@@ -310,8 +362,18 @@ export function relayDisconnectError(toolName?: string): McpErrorResult {
  * - 연결 끊김 패턴 (`relay에 연결되어 있지 않습니다`, `relay WebSocket`) → relayDisconnectError
  * - 그 외 (일반 에러) → 원본 메시지를 포함한 mcpError
  */
-export function classifyToolError(err: unknown, toolName: string, isLocal = false): McpErrorResult {
+export function classifyToolError(
+  err: unknown,
+  toolName: string,
+  isLocal = false,
+  gone?: PageGoneContext,
+): McpErrorResult {
   const message = err instanceof Error ? err.message : String(err);
+
+  // 상태 2: page 미attach (sendCommand 경로가 던지는 패턴). 끊긴 적이 있으면 시각·원인을 말한다.
+  if (gone?.detach && message.includes('No mini-app page attached')) {
+    return pageMissingError(toolName, gone);
+  }
 
   // 상태 1: tunnel 미가동 (buildAttachUrl이 던지는 패턴)
   if (message.startsWith('tunnel-down:') || message.includes('터널이 안 떠 있습니다')) {

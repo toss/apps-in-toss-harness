@@ -63,6 +63,8 @@ export const ko = {
   'dashboard.timeline.authWsRejected': '폰의 코드가 거부됐어요 (QR 만료 또는 지난 QR)',
   'dashboard.timeline.targetConnected': '폰 연결됨',
   'dashboard.timeline.targetDisconnected': '폰 연결이 끊겼어요',
+  'dashboard.timeline.rejectedBusy':
+    '{rejected} 미니앱의 연결을 거부했어요 (먼저 연결된 미니앱: {attached}). 바꾸려면 먼저 연결된 미니앱을 X로 닫고 QR을 다시 스캔하세요',
   'dashboard.timeline.matched': '미니앱 페이지 매칭됨',
   'dashboard.timeline.cdpReady': 'CDP 준비 완료',
   'dashboard.session.lineDaemon': 'MCP 데몬 세션 · {time} 시작 · PID {pid}',

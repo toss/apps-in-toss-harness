@@ -18,6 +18,7 @@
 
 import type { AttachHandshakeEvent, RelayAuthRejectEvent } from './chii-relay.js';
 import type { DashboardState } from './qr-http-server.js';
+import { hostLabel } from './target-busy.js';
 
 export type AttachStage =
   | 'tunnel'
@@ -26,6 +27,7 @@ export type AttachStage =
   | 'auth'
   | 'target-connected'
   | 'target-disconnected'
+  | 'target-rejected-busy'
   | 'matched'
   | 'cdp-ready';
 
@@ -34,6 +36,26 @@ export type AttachStageResult = 'ok' | 'down' | 'rejected' | 'failed';
 
 /** 단계 안의 세부 구분(enum). 자유 문자열이 아니므로 비밀이 섞일 수 없다. */
 export type AttachStageDetail = 'mint' | 'remint' | 'script' | 'http-401' | 'ws-4401';
+
+/**
+ * "먼저 붙은 미니앱이 이긴다"로 거부된 attach의 표시용 라벨. 호스트의 첫 DNS 라벨(`bar`)뿐이다.
+ * 전체 호스트·URL은 어디에도 없다.
+ */
+export interface BusyApps {
+  /** 거부된 새 미니앱. */
+  rejected: string;
+  /** 그 시점에 붙어 있던 미니앱(모르면 `null`). */
+  attached: string | null;
+}
+
+/** 마지막으로 페이지 연결이 끊긴 원인(enum). */
+export type DetachCause = 'target-closed' | 'replaced-same-app' | 'tunnel-down' | 'unknown';
+
+export interface LastDetach {
+  /** ISO 시각. */
+  at: string;
+  cause: DetachCause;
+}
 
 export interface AttachStageEvent {
   /** 타임라인 전체에서 단조 증가하는 번호(progress 알림의 단조 증가 값의 근거). */
@@ -45,6 +67,8 @@ export interface AttachStageEvent {
   stage: AttachStage;
   result: AttachStageResult;
   detail?: AttachStageDetail;
+  /** `target-rejected-busy`에만: 거부된 앱과 붙어 있던 앱의 라벨. */
+  apps?: BusyApps;
 }
 
 export type AttachStageListener = (event: AttachStageEvent) => void;
@@ -61,7 +85,16 @@ export interface AttachTimelineSnapshot {
   events: AttachStageEvent[];
   /** 마지막 터널 이벤트(시도와 무관하게 유지) — 없으면 `null`. */
   lastTunnel: AttachStageEvent | null;
+  /** 마지막 busy 거부(시도와 무관하게 유지) — 없으면 `null`/생략. */
+  lastBusy?: (BusyApps & { at: string; count: number }) | null;
+  /** 마지막 페이지 끊김(시각·원인) — 없으면 `null`/생략. */
+  lastDetach?: LastDetach | null;
 }
+
+/** 끊김 원인 통지가 이 시간 안에 있었을 때만 그 끊김의 원인으로 묶는다. */
+const DETACH_CAUSE_WINDOW_MS = 60_000;
+/** 끊김 확정 직후 늦게 도착한 원인 통지로 `unknown`을 보정하는 유예. */
+const DETACH_CAUSE_LATE_MS = 5_000;
 
 const DEFAULT_CAPACITY = 100;
 
@@ -75,6 +108,9 @@ export class AttachTimeline {
   private attemptStartedAt: string | null = null;
   private lastTunnel: AttachStageEvent | null = null;
   private pageMatcher: AttachPageMatcher | null = null;
+  private busy: (BusyApps & { at: string; count: number }) | null = null;
+  private detach: LastDetach | null = null;
+  private pendingCause: { cause: DetachCause; atMs: number } | null = null;
 
   constructor(opts: { capacity?: number; nowMs?: () => number } = {}) {
     this.capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
@@ -120,6 +156,7 @@ export class AttachTimeline {
     stage: AttachStage,
     result: AttachStageResult,
     detail?: AttachStageDetail,
+    apps?: BusyApps,
   ): AttachStageEvent {
     this.seq += 1;
     const event: AttachStageEvent = {
@@ -129,10 +166,12 @@ export class AttachTimeline {
       stage,
       result,
       ...(detail !== undefined ? { detail } : {}),
+      ...(apps !== undefined ? { apps } : {}),
     };
     this.buffer.push(event);
     if (this.buffer.length > this.capacity) this.buffer.shift();
     if (stage === 'tunnel') this.lastTunnel = event;
+    if (stage === 'tunnel' && result === 'down') this.noteDetachCause('tunnel-down');
     for (const listener of [...this.listeners]) {
       try {
         listener(event);
@@ -141,6 +180,54 @@ export class AttachTimeline {
       }
     }
     return event;
+  }
+
+  /**
+   * 다른 미니앱의 attach를 거부했다는 기록. 호스트는 첫 DNS 라벨로만 줄여서 저장한다.
+   * SECRET-HANDLING: 전체 호스트·URL은 받지도 저장하지도 않는다(호출부가 호스트명만 넘긴다).
+   */
+  recordBusyRejection(rejectedHost: string | null, attachedHost: string | null): AttachStageEvent {
+    const apps: BusyApps = {
+      rejected: hostLabel(rejectedHost),
+      attached: attachedHost === null ? null : hostLabel(attachedHost),
+    };
+    this.busy = {
+      ...apps,
+      at: new Date(this.nowMs()).toISOString(),
+      count: (this.busy?.count ?? 0) + 1,
+    };
+    return this.record('target-rejected-busy', 'rejected', undefined, apps);
+  }
+
+  /** 끊김 원인 후보를 알린다(소켓 닫힘·터널 끊김·같은 앱 교체). 다음 `commitDetach`가 쓴다. */
+  noteDetachCause(cause: DetachCause): void {
+    const nowMs = this.nowMs();
+    this.pendingCause = { cause, atMs: nowMs };
+    // 끊김 확정이 원인 통지보다 먼저 온 경우(폴링이 소켓 close 콜백보다 빠름)를 보정한다.
+    if (
+      this.detach !== null &&
+      this.detach.cause === 'unknown' &&
+      nowMs - Date.parse(this.detach.at) <= DETACH_CAUSE_LATE_MS
+    ) {
+      this.detach = { at: this.detach.at, cause };
+    }
+  }
+
+  /** 페이지가 사라진 것이 확인되는 순간 부른다. 최근에 통지된 원인을 묶고 없으면 `unknown`. */
+  commitDetach(): LastDetach {
+    const nowMs = this.nowMs();
+    const pending = this.pendingCause;
+    const cause: DetachCause =
+      pending !== null && nowMs - pending.atMs <= DETACH_CAUSE_WINDOW_MS
+        ? pending.cause
+        : 'unknown';
+    this.pendingCause = null;
+    this.detach = { at: new Date(nowMs).toISOString(), cause };
+    return this.detach;
+  }
+
+  lastDetach(): LastDetach | null {
+    return this.detach;
   }
 
   /** 모든 표면이 쓰는 공통 구독 경로(`onStage`). 반환값은 구독 해제 함수. */
@@ -157,6 +244,8 @@ export class AttachTimeline {
       attemptStartedAt: this.attemptStartedAt,
       events: this.buffer.filter((e) => e.attempt === this.attempt),
       lastTunnel: this.lastTunnel,
+      lastBusy: this.busy,
+      lastDetach: this.detach,
     };
   }
 }
@@ -173,6 +262,7 @@ export type AttachDiagnosisKind =
   | 'script-not-loaded'
   | 'wrong-page'
   | 'session-dropped'
+  | 'rejected-busy'
   | 'attached';
 
 export interface AttachDiagnosis {
@@ -213,6 +303,24 @@ export function sanitizePageUrl(url: string): string {
   return redacted.slice(0, MAX_PAGE_URL_LENGTH);
 }
 
+/** busy 거부 한 줄(한국어). 라벨만 싣는다. */
+export function busyMessage(apps: BusyApps | undefined): string {
+  const rejected = apps?.rejected ?? '다른 미니앱';
+  const attached = apps?.attached ?? null;
+  const now =
+    attached !== null ? `지금은 ${attached}에 연결돼 있어요.` : '이미 다른 미니앱이 연결돼 있어요.';
+  return `다른 미니앱(${rejected})이 이 디버거에 연결하려 해서 거부했어요. ${now}`;
+}
+
+function busyActions(apps: BusyApps | undefined): string[] {
+  const rejected = apps?.rejected ?? '새 미니앱';
+  const attached = apps?.attached ?? '먼저 연결된 미니앱';
+  return [
+    `${rejected} 미니앱을 디버깅하려면 ${attached} 미니앱을 X로 닫고, start_attach를 다시 호출해 ${rejected}에서 새 QR을 스캔하세요.`,
+    `${attached} 미니앱을 계속 디버깅하려면 ${rejected} 미니앱을 닫으세요 — 디버거는 먼저 붙은 미니앱을 유지해요.`,
+  ];
+}
+
 function lastEvent(
   events: readonly AttachStageEvent[],
   pred: (e: AttachStageEvent) => boolean,
@@ -250,6 +358,23 @@ export function diagnoseAttach(
 
   if (ctx.matchesCurrentPage === true) {
     return { kind: 'attached', lastStage, summary: '디버거가 연결되어 있어요.', actions: [] };
+  }
+
+  const busyEvent = lastEvent(events, (e) => e.stage === 'target-rejected-busy');
+  if (busyEvent !== undefined) {
+    const matchedAfter = lastEvent(
+      events,
+      (e) => (e.stage === 'matched' || e.stage === 'cdp-ready') && e.result === 'ok',
+    );
+    if (matchedAfter === undefined || matchedAfter.seq < busyEvent.seq) {
+      return {
+        kind: 'rejected-busy',
+        lastStage,
+        summary: busyMessage(busyEvent.apps),
+        actions: busyActions(busyEvent.apps),
+        ...withPages,
+      };
+    }
   }
 
   if (lastEvent(events, (e) => e.stage === 'qr-issued') === undefined) {
@@ -349,6 +474,10 @@ export interface RelayStageHooks {
   onTargetScriptServed(): void;
   onWsUpgrade(event: { kind: 'target' | 'client'; accepted: boolean }): void;
   onTargetClose(): void;
+  onTargetRejectedBusy(event: {
+    pageHost: string | null;
+    attachedHosts: ReadonlyArray<string | null>;
+  }): void;
 }
 
 export function createRelayStageHooks(timeline: AttachTimeline): RelayStageHooks {
@@ -369,6 +498,13 @@ export function createRelayStageHooks(timeline: AttachTimeline): RelayStageHooks
     },
     onTargetClose: () => {
       timeline.record('target-disconnected', 'ok');
+      timeline.noteDetachCause('target-closed');
+    },
+    onTargetRejectedBusy: (event) => {
+      timeline.recordBusyRejection(
+        event.pageHost,
+        event.attachedHosts.find((h): h is string => h !== null) ?? null,
+      );
     },
   };
 }
@@ -393,6 +529,10 @@ export function formatStageLabel(event: AttachStageEvent): string {
       return '폰 연결됨';
     case 'target-disconnected':
       return '폰 연결이 끊김';
+    case 'target-rejected-busy':
+      return event.apps !== undefined
+        ? `${event.apps.rejected} 미니앱의 연결을 거부했어요 (${event.apps.attached ?? '다른 미니앱'}이 먼저 연결돼 있어요)`
+        : '다른 미니앱의 연결을 거부했어요 (먼저 연결된 미니앱을 유지해요)';
     case 'matched':
       return '미니앱 페이지 매칭됨';
     case 'cdp-ready':
@@ -431,6 +571,7 @@ export function buildDashboardTimelineState(
       stage: e.stage,
       result: e.result,
       ...(e.detail !== undefined ? { detail: e.detail } : {}),
+      ...(e.apps !== undefined ? { apps: e.apps } : {}),
     })),
     session: { kind, startedAt, pid: process.pid },
   };

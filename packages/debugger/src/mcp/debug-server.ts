@@ -84,6 +84,8 @@ import {
 } from './attach-timeline.js';
 import { startMaxAgeWatchdog, startParentWatcher } from './parent-watcher.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
+import { redirectConsoleToStderr } from './stdout-guard.js';
+import { shouldRejectNewTarget } from './target-busy.js';
 
 // Back-compat re-exports (issue #684 PR1): these symbols moved to
 // `attach-orchestrator.ts` but were previously exported from here. Re-export so
@@ -108,6 +110,7 @@ import { deriveEnvironment, isRelayEnv, type McpEnvironment } from './environmen
 import {
   classifyToolError,
   mcpError,
+  type PageGoneContext,
   pageCrashError,
   pageMissingError,
   protocolVersionMismatchError,
@@ -515,6 +518,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // 공유한다. 데몬은 relay 훅과 같은 인스턴스를 주입한다.
   const timeline: AttachTimeline = deps.attachTimeline ?? new AttachTimeline({ nowMs });
 
+  // 연결됐다가 끊긴 이력(시각·원인)을 "페이지가 attach 안 됨" 에러에 싣는다.
+  const pageGoneContext = (): PageGoneContext => {
+    const snap = timeline.snapshot();
+    return {
+      detach: snap.lastDetach ?? null,
+      busy: snap.lastBusy ?? null,
+      nowMs: nowMs(),
+    };
+  };
+
   // 대기 중인 start_attach 한 건의 취소 수단. 새 start_attach가 들어오면 이전 대기를
   // 끊어(`superseded`) 두 대기가 같은 relay를 놓고 겹치지 않게 한다.
   let activeAttachController: AbortController | null = null;
@@ -722,6 +735,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             return protocolVersionMismatchError(skew);
           }
           // Debugger attached — show the on-phone "Debugger Connected" indicator.
+          // The attach wait resolves on the relay's /targets listing; the client
+          // WebSocket that carries CDP commands is only opened by enableDomains()
+          // (idempotent). Without this the badge's Runtime.evaluate hit
+          // "No mini-app page attached … Call enableDomains() first" and the badge
+          // was never drawn. Best-effort: a failure here must not fail the attach.
+          try {
+            await attachConn.enableDomains();
+          } catch {
+            // injectDebugIndicator swallows the resulting send failure on its own.
+          }
           await injectDebugIndicator(attachConn);
         }
         return attachResult;
@@ -828,7 +851,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         return envelopeResult(pagesData, name, env, attached);
       }
       // 4상태 분류: page 미attach vs crash vs relay disconnect
-      return classifyEnableDomainError(err, name);
+      return classifyEnableDomainError(err, name, pageGoneContext());
     }
 
     try {
@@ -1126,7 +1149,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       // issue #360: sdk-absent 분류가 local 세션이면 로컬 dev 브리지 안내
       // (sdkAbsentError의 isLocal 분기, errors.ts)로 갈리도록 connection 종류를
       // 넘긴다. 다른 에러 분류에는 영향 없음(isLocal 미사용).
-      return errorResult(err, name, conn.kind === 'local');
+      return errorResult(err, name, conn.kind === 'local', pageGoneContext());
     }
   });
 
@@ -1310,12 +1333,12 @@ function unknownTool(name: string) {
  * - relay disconnect 패턴 → relay 연결 끊김
  * - 그 외 → 원본 메시지 + list_pages 안내
  */
-function classifyEnableDomainError(err: unknown, toolName: string) {
+function classifyEnableDomainError(err: unknown, toolName: string, gone?: PageGoneContext) {
   const message = err instanceof Error ? err.message : String(err);
 
   // 상태 2: page 미attach
   if (message.includes('No mini-app page attached') || message.includes('페이지가 attach 안')) {
-    return pageMissingError(toolName);
+    return pageMissingError(toolName, gone);
   }
 
   // 상태 3: page crash / target destroyed / replaced
@@ -1338,15 +1361,15 @@ function classifyEnableDomainError(err: unknown, toolName: string) {
   }
 
   // 그 외
-  return classifyToolError(err, toolName);
+  return classifyToolError(err, toolName, false, gone);
 }
 
 /**
  * CDP/AIT 명령 실행 중 catch된 에러를 4상태로 분류해 tool 결과로 반환한다.
  * debug-server 내부 try/catch 블록에서 공통으로 사용한다.
  */
-function errorResult(err: unknown, name: string, isLocal = false) {
-  return classifyToolError(err, name, isLocal);
+function errorResult(err: unknown, name: string, isLocal = false, gone?: PageGoneContext) {
+  return classifyToolError(err, name, isLocal, gone);
 }
 
 /**
@@ -1471,6 +1494,12 @@ export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
   const timeline = new AttachTimeline();
   timeline.onStage((event) => {
     logInfo('stage.changed', { stage: event.stage, result: event.result, attempt: event.attempt });
+    if (event.stage === 'target-rejected-busy' && event.apps !== undefined) {
+      logInfo('page.rejected-busy', {
+        rejectedApp: event.apps.rejected,
+        ...(event.apps.attached !== null ? { attachedApp: event.apps.attached } : {}),
+      });
+    }
     notify();
   });
   return timeline;
@@ -1560,7 +1589,7 @@ export { buildRelayVerifyAuth };
  * The relay base URL is only available after `startChiiRelay()` resolves, so
  * the factory is called right after that point (same as before this refactor).
  */
-function createRelayConnection(relayBaseUrl: string): ChiiCdpConnection {
+function createRelayConnection(relayBaseUrl: string, timeline?: AttachTimeline): ChiiCdpConnection {
   // Pass the SECRET (not a code) so the connection mints a fresh TOTP per
   // (re)connect. Read from env directly: both callers run
   // assertRelayAuthConfigured() first, so when a TOTP-gated relay is up this is
@@ -1569,6 +1598,12 @@ function createRelayConnection(relayBaseUrl: string): ChiiCdpConnection {
   return new ChiiCdpConnection({
     relayBaseUrl,
     totpSecret: process.env.AIT_DEBUG_TOTP_SECRET,
+    // 안전망: relay 게이트를 통과한 다른 호스트 target도 갈아타지 않고 거부로 기록한다.
+    onTargetRejectedBusy: (e) => timeline?.recordBusyRejection(e.rejectedHost, e.attachedHost),
+    onTargetReplaced: () => {
+      timeline?.noteDetachCause('replaced-same-app');
+      timeline?.commitDetach();
+    },
   });
 }
 
@@ -1761,6 +1796,9 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
     onTargetScriptServed: stageHooks?.onTargetScriptServed,
     onWsUpgrade: stageHooks?.onWsUpgrade,
     onTargetClose: stageHooks?.onTargetClose,
+    // 먼저 붙은 미니앱이 이긴다: 다른 호스트의 새 target은 거부한다. 정책은 target-busy.ts.
+    shouldRejectTarget: (info) => shouldRejectNewTarget(info),
+    onTargetRejectedBusy: stageHooks?.onTargetRejectedBusy,
   });
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
   logInfo('server.start', { port: relay.port, totpEnabled });
@@ -1837,7 +1875,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
   // via the side-effects on `tunnelStatus` from inside `.then`.
   void tunnelReady;
 
-  const connection = createRelayConnection(relay.baseUrl);
+  const connection = createRelayConnection(relay.baseUrl, options.timeline);
 
   return {
     connection,
@@ -2197,6 +2235,8 @@ export class DualConnectionRouter implements ConnectionRouter {
  *   4. expose the debug tools backed by a `ChiiCdpConnection` + `ChiiAitSource`.
  */
 export async function runDebugServer(options: RunDebugServerOptions = {}): Promise<void> {
+  // stdout은 MCP JSON-RPC 전용 — console.log/info/debug를 stderr로 돌린다.
+  redirectConsoleToStderr();
   // Enforce a single debug session per machine. If another server is alive,
   // ServerLockConflictError is thrown — the MCP host surfaces the message to
   // the agent without a relay or cloudflared ever starting.
@@ -2273,7 +2313,10 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     devtoolsOpener,
     onPageAttach: () => qrServer?.notifyStateChange(),
     // Fix #705-A: push an immediate SSE update when the phone silently disconnects.
-    onPageDetach: () => qrServer?.notifyStateChange(),
+    onPageDetach: () => {
+      attachTimeline.commitDetach();
+      qrServer?.notifyStateChange();
+    },
     // Stable /inspector URL for auto-open (issue #530). qrServer is set after
     // the router is created but before armWatcher fires, so the closure safely
     // captures it by reference.
@@ -2605,6 +2648,8 @@ export interface RunLocalDebugServerOptions {
  * via `RoutingAitSource`, so they follow `start_debug` swaps.
  */
 export async function runLocalDebugServer(options: RunLocalDebugServerOptions = {}): Promise<void> {
+  // stdout은 MCP JSON-RPC 전용 — console.log/info/debug를 stderr로 돌린다.
+  redirectConsoleToStderr();
   // Enforce a single debug session per machine (same lock as relay mode).
   // `force: true` kills the existing process and takes over the lock.
   const lockHandle = acquireLock({ force: options.force ?? false });
@@ -2692,7 +2737,10 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     devtoolsOpener,
     onPageAttach: () => qrServer?.notifyStateChange(),
     // Fix #705-A: push an immediate SSE update when the phone silently disconnects.
-    onPageDetach: () => qrServer?.notifyStateChange(),
+    onPageDetach: () => {
+      attachTimeline.commitDetach();
+      qrServer?.notifyStateChange();
+    },
     // Stable /inspector URL for auto-open (issue #530).
     getInspectorStableUrl: () => qrServer?.inspectorStableUrl ?? null,
   });

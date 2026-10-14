@@ -572,9 +572,10 @@ describe('start_attach — wait_for_attach', () => {
     expect(text.split('').some((c) => c.charCodeAt(0) === 0x1b)).toBe(false);
   });
 
-  it('does not call enableDomains during wait_for_attach polling', async () => {
-    // enableDomains being called would imply an attach check via CDP domain
-    // negotiation, which is wrong — listTargets is a buffered read.
+  it('calls enableDomains only once, after the wait resolves (for the badge), not while polling', async () => {
+    // The wait itself is a buffered listTargets read — it must not negotiate CDP
+    // domains. enableDomains() runs exactly once after the attach succeeded, so
+    // the client WS exists when the "Debugger Connected" badge is injected.
     // Target URL must match the deploymentId so polling resolves immediately.
     const spyTarget: CdpTarget = {
       id: 'target-spy',
@@ -595,7 +596,7 @@ describe('start_attach — wait_for_attach', () => {
       },
     });
 
-    expect(enableDomainsSpy).not.toHaveBeenCalled();
+    expect(enableDomainsSpy).toHaveBeenCalledTimes(1);
   });
 
   // ---- deploymentId matching (#276) ----------------------------------------

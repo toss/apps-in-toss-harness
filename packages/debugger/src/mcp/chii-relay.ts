@@ -74,7 +74,12 @@ import {
   RELAY_AUTH_REJECT_CLOSE_CODE,
   RELAY_AUTH_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-auth-close';
+import {
+  RELAY_BUSY_CLOSE_CODE,
+  RELAY_BUSY_REASON,
+} from '@apps-in-toss/internal-protocol/relay-busy-close';
 import { type WebSocket, WebSocketServer } from 'ws';
+import { extractTargetPageHost } from './target-busy.js';
 import { restoreTlsRejectUnauthorized, snapshotTlsRejectUnauthorized } from './tls-guard.js';
 
 const require = createRequire(import.meta.url);
@@ -365,6 +370,30 @@ export interface StartChiiRelayOptions {
    */
   onTargetClose?: () => void;
   /**
+   * "먼저 붙은 미니앱이 이긴다" 게이트. 인증을 통과한 `/target/<id>` 업그레이드마다 불린다.
+   * `true`를 돌려주면 relay가 핸드셰이크를 끝낸 뒤 `RELAY_BUSY_CLOSE_CODE`(4409)로 닫고 chii에는
+   * 넘기지 않는다. 던지면 허용으로 처리한다(fail-open).
+   *
+   * `pageHost`는 chii가 보내는 `url` 쿼리(페이지 URL)의 호스트명뿐이다(없으면 `null`).
+   * `attachedHosts`는 지금 열려 있는(수락된) 다른 target 소켓들의 호스트명이다 — relay가
+   * 소켓 수명으로 직접 세므로 `/targets` 폴링 지연에 영향받지 않는다.
+   *
+   * SECRET-HANDLING: URL·`at`·target id는 넘기지 않는다. 호스트명만.
+   */
+  shouldRejectTarget?: (info: {
+    pageHost: string | null;
+    attachedHosts: ReadonlyArray<string | null>;
+  }) => boolean;
+  /**
+   * 위 게이트가 target을 거부했을 때 한 번 불린다. 예외는 삼킨다.
+   *
+   * SECRET-HANDLING: 호스트명만(페이지 URL·`at`·target id 없음).
+   */
+  onTargetRejectedBusy?: (event: {
+    pageHost: string | null;
+    attachedHosts: ReadonlyArray<string | null>;
+  }) => void;
+  /**
    * WS protocol ping interval in milliseconds (issue #483).
    *
    * The relay sends a ping frame to every connected WebSocket at this interval
@@ -407,6 +436,8 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     onTargetScriptServed,
     onWsUpgrade,
     onTargetClose,
+    shouldRejectTarget,
+    onTargetRejectedBusy,
   } = options;
   const keepaliveIntervalMs =
     options.keepaliveIntervalMs !== undefined
@@ -613,7 +644,9 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   // Upgrades the gate below rejected, so the observer after it can report
   // `accepted: false` without re-running the verifier (and re-reading the code).
   const rejectedUpgrades = new WeakSet<IncomingMessage>();
-  if (verifyAuth) {
+  // 수락돼 열려 있는 target 소켓의 페이지 호스트(= relay가 직접 센 "지금 붙어 있는 미니앱").
+  const openTargetHosts = new Set<{ host: string | null }>();
+  if (verifyAuth || shouldRejectTarget) {
     const chiiUpgradeListeners = httpServer.listeners('upgrade') as Array<
       (req: IncomingMessage, socket: Duplex, head: Buffer) => void
     >;
@@ -630,7 +663,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
       if (rewritten !== null) {
         req.url = rewritten;
       }
-      if (!verifyAuth(req)) {
+      if (verifyAuth && !verifyAuth(req)) {
         // Reject: complete the handshake, then close with a NAMED code so the
         // browser-side observer (in-app attach.ts) can distinguish "stale
         // TOTP code" (4401) from "tunnel down" (1006). Raw-401-destroy only
@@ -645,8 +678,43 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
         // Early return — chii's captured listeners are NOT called.
         return;
       }
-      // Auth passed: hand the upgrade to chii's own listeners (it sees the
-      // stripped URL — same observable behaviour as the pre-#478 ordering).
+      // Auth passed. A phone `/target/<id>` upgrade may still lose to a page
+      // that is already attached from a DIFFERENT mini-app (first wins).
+      const upgradePath = (req.url ?? '').split('?')[0] ?? '';
+      if (upgradePath.startsWith('/target/')) {
+        const pageHost = extractTargetPageHost(req.url ?? '');
+        const attachedHosts = [...openTargetHosts].map((e) => e.host);
+        let reject = false;
+        if (shouldRejectTarget) {
+          try {
+            reject = shouldRejectTarget({ pageHost, attachedHosts }) === true;
+          } catch {
+            reject = false; // fail-open: a broken policy must not block attach.
+          }
+        }
+        if (reject) {
+          // SECRET-HANDLING: the close reason is a fixed enum; req.url is never logged.
+          rejectWss.handleUpgrade(req, socket, head, (ws) => {
+            ws.close(RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON);
+          });
+          rejectedUpgrades.add(req);
+          if (onTargetRejectedBusy) {
+            try {
+              onTargetRejectedBusy({ pageHost, attachedHosts });
+            } catch {
+              // Observability is best-effort.
+            }
+          }
+          return;
+        }
+        const entry = { host: pageHost };
+        openTargetHosts.add(entry);
+        socket.once('close', () => {
+          openTargetHosts.delete(entry);
+        });
+      }
+      // Hand the upgrade to chii's own listeners (it sees the stripped URL —
+      // same observable behaviour as the pre-#478 ordering).
       for (const listener of chiiUpgradeListeners) {
         listener(req, socket, head);
       }

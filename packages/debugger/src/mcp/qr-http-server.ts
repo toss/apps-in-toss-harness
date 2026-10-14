@@ -137,6 +137,8 @@ export interface DashboardStage {
   stage: string;
   result: string;
   detail?: string;
+  /** `target-rejected-busy`에만: 거부된 앱과 붙어 있던 앱의 첫 DNS 라벨. */
+  apps?: { rejected: string; attached: string | null };
 }
 
 /**
@@ -246,9 +248,18 @@ function buildTimelineLabels(s: ReturnType<typeof resolveLocaleStrings>): Record
     'auth.ws-4401': s('dashboard.timeline.authWsRejected'),
     'target-connected.ok': s('dashboard.timeline.targetConnected'),
     'target-disconnected.ok': s('dashboard.timeline.targetDisconnected'),
+    'target-rejected-busy.rejected': s('dashboard.timeline.rejectedBusy'),
     'matched.ok': s('dashboard.timeline.matched'),
     'cdp-ready.ok': s('dashboard.timeline.cdpReady'),
   };
+}
+
+/** 라벨 템플릿의 `{rejected}`/`{attached}`를 앱 라벨(첫 DNS 라벨)로 채운다. */
+function fillTimelineApps(template: string, apps: DashboardStage['apps']): string {
+  if (apps === undefined) return template.replace(/\{rejected\}|\{attached\}/g, '?');
+  return template
+    .replace(/\{rejected\}/g, apps.rejected)
+    .replace(/\{attached\}/g, apps.attached ?? '?');
 }
 
 /** 타임라인 `<li>` 목록 — 서버 렌더. SSE 클라이언트 렌더(`renderTimeline`)와 같은 구조다. */
@@ -261,7 +272,8 @@ function buildTimelineItems(
   const t0 = Date.parse(stages[0]?.at ?? '');
   return stages
     .map((e) => {
-      const label = labels[`${e.stage}.${e.detail ?? e.result}`] ?? `${e.stage} ${e.result}`;
+      const template = labels[`${e.stage}.${e.detail ?? e.result}`] ?? `${e.stage} ${e.result}`;
+      const label = fillTimelineApps(template, e.apps);
       const rel = Number.isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
       const cls = e.result === 'ok' ? 'stage-ok' : 'stage-bad';
       return `<li class="${cls}"><span class="stage-time">+${rel}s</span> ${escapeHtml(label)}</li>`;
@@ -618,6 +630,8 @@ function buildSseScript(strings: SseScriptStrings): string {
         var t0 = Date.parse(stages[0].at);
         tl.innerHTML = stages.map(function (e) {
           var label = TIMELINE_LABELS[e.stage + '.' + (e.detail || e.result)] || (e.stage + ' ' + e.result);
+          var apps = e.apps || {};
+          label = label.replace(/{rejected}/g, apps.rejected || '?').replace(/{attached}/g, apps.attached || '?');
           var rel = isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
           return '<li class="' + (e.result === 'ok' ? 'stage-ok' : 'stage-bad') + '"><span class="stage-time">+' +
             rel + 's</span> ' + escHtml(label) + '</li>';

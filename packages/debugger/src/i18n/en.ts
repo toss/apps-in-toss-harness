@@ -55,6 +55,8 @@ export const en: Record<StringKey, string> = {
   'dashboard.timeline.authWsRejected': "The phone's code was rejected (expired or old QR)",
   'dashboard.timeline.targetConnected': 'Phone connected',
   'dashboard.timeline.targetDisconnected': 'Phone connection dropped',
+  'dashboard.timeline.rejectedBusy':
+    'Rejected mini-app {rejected} (already attached: {attached}). To switch, close the attached mini-app and scan the QR again',
   'dashboard.timeline.matched': 'Mini-app page matched',
   'dashboard.timeline.cdpReady': 'CDP ready',
   'dashboard.session.lineDaemon': 'MCP daemon session · started {time} · PID {pid}',
