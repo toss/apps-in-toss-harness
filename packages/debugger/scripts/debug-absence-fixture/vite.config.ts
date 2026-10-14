@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 // Minimal release-consumer fixture for the build-time absence guard
 // (devtools#647). Builds scripts/debug-absence-fixture/main.ts, whose single
 // `import('@apps-in-toss/debug-console')` is guarded by `if (__DEBUG_BUILD__)`.
-// AIT_DEBUG_BUILD unset -> false -> the in-app graph (Chii + eruda) DCEs to 0
+// AIT_DEBUG_BUILD unset -> false -> the in-app graph (Chii + status banner) DCEs to 0
 // bytes; AIT_DEBUG_BUILD=1 -> true -> it survives (positive control).
 //
 // Intentionally NOT a panel/mock fixture: no mock/panel import and no
@@ -23,7 +23,7 @@ export default defineConfig({
     emptyOutDir: true,
     // Minify ON (Vite default for production) is required: a dead
     // if(false){} husk would otherwise survive as text and its identifier
-    // strings (e.g. 'eruda') would false-positive the grep. See
+    // strings (e.g. '__ait_debug_status') would false-positive the grep. See
     // check-debug-surface-absent.sh.
   },
 });

@@ -10,7 +10,8 @@
 // scripts/check-debug-surface-absent.sh builds this in two modes:
 //   - release (AIT_DEBUG_BUILD unset -> __DEBUG_BUILD__ false): the whole
 //     `import('@apps-in-toss/debug-console')` graph — Chii target.js injection AND
-//     the eruda console it pulls in — must DCE to 0 bytes.
+//     the on-phone status banner (`__ait_debug_status` / `__ait_status_banner`)
+//     it drives — must DCE to 0 bytes.
 //   - debug (AIT_DEBUG_BUILD=1 -> true): the surface must survive (positive
 //     control), and the inner runtime gate (debug=1 + relay + Layer B/C TOTP
 //     in maybeAttach) still applies.
