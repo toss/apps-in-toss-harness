@@ -80,6 +80,7 @@ import {
 } from '@apps-in-toss/internal-protocol/relay-busy-close';
 import { type WebSocket, WebSocketServer } from 'ws';
 import { extractTargetPageHost } from './target-busy.js';
+import { buildGuardedTargetScript, readChiiTargetScript } from './target-guard.js';
 import { restoreTlsRejectUnauthorized, snapshotTlsRejectUnauthorized } from './tls-guard.js';
 
 const require = createRequire(import.meta.url);
@@ -578,6 +579,30 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
           onTargetScriptServed();
         } catch {
           // Observability is best-effort — never let it break the relay.
+        }
+      }
+      // 먼저 붙은 미니앱이 있으면 chii의 target.js 앞에 호스트 가드를 붙여 직접 내려준다.
+      // 거부된 미니앱의 debug-console 버전이 옛것이어도(4409를 화면에 못 그려도) 이 스크립트는
+      // 실행되므로 미니앱 화면에 경고를 띄울 수 있다. 응답을 여기서 끝내므로 Koa는 쓰지 않는다.
+      // 붙은 target이 없거나 원본을 못 읽으면 chii 기본 응답 그대로(fail-open).
+      if (req.method === 'GET' && openTargetHosts.size > 0) {
+        try {
+          const body = readChiiTargetScript();
+          const guarded =
+            body === null
+              ? null
+              : buildGuardedTargetScript(
+                  body,
+                  [...openTargetHosts].map((e) => e.host),
+                );
+          if (guarded !== null) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.end(guarded);
+          }
+        } catch {
+          // fail-open: chii serves the stock script.
         }
       }
       return;
