@@ -1,11 +1,10 @@
-<!-- ait:design-guide v2 -->
+<!-- ait:design-guide v3 -->
 앱인토스 미니앱 프로젝트다. 화면 코드를 쓸 때 아래 규칙을 적용한다. 화면 생성·수정 요청은 `/ait:design`이 맡는다.
 사용자가 묻지 않으면 규칙을 설명하거나 사용자의 코드·선택을 지적하지 않는다.
 프로젝트에 자체 디자인 시스템·토큰이 있으면 그것을 따른다. 아래 토큰은 이 가이드가 넣은 `tokens.css`가 있을 때만 쓴다.
 
 하드 규칙:
 - 텍스트 11px 이하 금지, 본문은 15px 이상
-- 모든 이모지는 Tossface로 렌더(폰트 스택 배선 또는 `.tf`)
 - 한글은 `word-break: keep-all`
 - 터치 타깃 44px 이상
 - 하단 CTA는 safe area 34px
@@ -14,6 +13,8 @@
 - 꺾쇠·화살표는 텍스트 글리프 대신 SVG(currentColor)
 - 상단 네비는 직접 그리지 않음(플랫폼 자동 배치)
 - font-weight는 400~700만 사용
+
+권장: 이모지는 Tossface로 통일(폰트 스택 배선 또는 `.tf`). 완료를 막지 않는다.
 
 토큰 사용:
 - 텍스트 색: `--color-text-strong/default/subtle/hint/disabled/inverse`
