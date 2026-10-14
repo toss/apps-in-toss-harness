@@ -43,7 +43,7 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   unplugin을 주입하며, `apps-in-toss.config.ts`와 `build`/`build:vite`/`deploy`
   스크립트도, `.gitignore`의 `*.ait` 줄도 같은 실행이 만든다(실측 2026-08-07,
   `create-ait-app@0.2.3` — `*.ait` 줄은 `@apps-in-toss/cli` 3.1.1 dist 실측
-  2026-09-07). 순정
+  2026-09-07, 0.2.8 재현 2026-10-14에서도 동일). 순정
   create-vite 템플릿에는 SDK mock이 없어 브라우저에서 SDK 호출이 실패하지만(샘플
   코드가 "샌드박스앱/토스앱에서 실행해주세요" alert를 띄운다) 이 배선 덕에 토스 앱
   없이 `npm run dev`로 바로 개발할 수 있다. `ait init`은 실패해도 CLI가 "완료"로
@@ -86,15 +86,10 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
   (`"--template과 --tds는 함께 사용할 수 없어요."`, `assertNonInteractiveArgs`
   실측). `--tds`는 **단독**으로 지정한다.
 
-  > **알려진 실패(실측 2026-08-03, 3/3 재현 — 당시 기본 PM이던 pnpm 기준)**:
-  > TDS 템플릿이 끌어오는 `vite@6.4.3`(→ `esbuild@0.25.12`)가 pnpm 11에서
-  > `ERR_PNPM_IGNORED_BUILDS`를 냈고, 그 실패가 **scaffold 단계의 install**에서
-  > 나면 CLI가 생성 디렉터리를 통째로 삭제했다(0.2.3 dist 실측:
-  > `installDependencies`가 throw하고 최상위 `catch`가 `rmSync`한다 — 삭제
-  > 동작은 PM과 무관하다). npm 기본(`--pm npm`)에는 postinstall을 막는 게이트가
-  > 없어 이 트리거는 재현되지 않지만 **다른 이유로 실패해도 디렉터리가 사라지는
-  > 것은 같고**(아래 §2), `--skip-install` 우회는 0.2.3에서 그 플래그가 없어져
-  > 성립하지 않는다. CLI `--help`도 "에이전트는 TDS를 충분히 활용하지 못하므로,
+  > npm(`--pm npm`, harness 기본)으로는 정상 종료한다(0.2.8 실측). pnpm으로
+  > 부르면 TDS 템플릿의 `vite@6`(→ `esbuild`)가 pnpm 11에서
+  > `ERR_PNPM_IGNORED_BUILDS`로 exit 1이 나지만 디렉터리는 남는다(복구는 §2
+  > 실패 항목). CLI `--help`도 "에이전트는 TDS를 충분히 활용하지 못하므로,
   > 사용자에게 TDS 사용을 비권장한다고 안내해 주세요"라고 명시한다 — 꼭 요구하는
   > 경우가 아니면 `--template`(기본값)을 권한다.
 - `--sample <ids>` (선택): `iap`, `iaa` 콤마 구분 — 인앱결제·인앱광고 예제
@@ -152,9 +147,8 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
   (사용자가 명시적으로 요구하면 그 값에 맞춘다). Step 0이 실행 전 검사한다.
 - **인터넷 필요** — `npx -y`가 create-ait-app을 받아 파일 생성부터
   install·`ait init`까지 한 번에 수행한다. `@apps-in-toss/web-framework`의
-  버전은 create-ait-app이 자기 빌드에 박아 둔 정확 버전이다(0.2.5·0.2.6 dist
-  실측: `.github/version-pins/package.json`의 `3.1.1`을 `dependencies`에 그대로
-  쓴다) — 공개 `latest`가 더 높아도 그 핀을 받고, 핀은 create-ait-app이 새로
+  버전은 create-ait-app이 자기 빌드에 박아 둔 정확 버전이다(`.github/version-pins/package.json`의
+  핀을 `dependencies`에 그대로 쓴다. 0.2.8 dist 실측 `3.7.0`) — 공개 `latest`가 더 높아도 그 핀을 받고, 핀은 create-ait-app이 새로
   발행될 때만 움직인다. 종전 CLI는 `"latest"` 리터럴을 써서 install 시점의
   registry에 달렸었다(harness#90 항목1 — 공개 `latest`가 3.x 출시 뒤에도 한동안
   2.10.8을 가리키는 어긋남이 그때 확인됨). 오프라인이면 `--local` 폴백.
@@ -207,9 +201,9 @@ npm도 함께 들어온다).
 
 scaffold는 **명령 하나**다 — CLI가 파일 생성 → `npm install` →
 `ait init --app-name <name> --skip-input`(devtools·번들 설정 배선)까지 전부
-수행한다. install을 떼어낼 방법은 없다(`--skip-install`은 0.2.3에서 제거됐다 —
-지정하면 `알 수 없는 옵션이에요: --skip-install`로 즉사하고 산출물이 0이다,
-실측 2026-08-10). 디자인 가이드 주입(5-B)도 같은 체인에 잇는다 — 별도 단계로
+수행한다. install을 떼어낼 방법은 없다(`--skip-install`은 없다 — 지정하면
+`알 수 없는 옵션이에요: --skip-install`로 즉사하고 산출물이 0이다, 0.2.3 실측
+2026-08-10, 0.2.8 플래그 표에도 없다). 디자인 가이드 주입(5-B)도 같은 체인에 잇는다 — 별도 단계로
 미루면 일부 run이 건너뛰는 실측 사례가 있어, scaffold가 성공한 모든 run이
 반드시 주입까지 실행하도록 명령 레벨에서 결합했다:
 
@@ -233,7 +227,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
 > 부르는 것이 정책이다(maintainer 결정 2026-08-10) — 명시 핀은 upstream
 > 개선(이 skill이 우회하던 결함의 수정 포함)을 받지 못하게 막는 쪽이 더 컸다.
 > `@apps-in-toss/web-framework`의 버전은 이 skill이 정하지 않는다 —
-> create-ait-app이 자기 빌드에 박아 둔 정확 버전(0.2.5·0.2.6은 `3.1.1`)을
+> create-ait-app이 자기 빌드에 박아 둔 정확 버전을
 > 쓰므로 "최신 create-ait-app이 고른 wf"를 받는 셈이고, 공개 `latest`보다 뒤일
 > 수 있다. 대신 산출물 형상은 매 run 후처리 0(Step 3)이 검사하므로,
 > 형상이 바뀌면 조용히 깨지는 대신 그 자리에서 멈춘다. **다만 형상 가드가
@@ -245,7 +239,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
 > 있다는 위험은 아래
 > "버전 해석이 실패하는 경우" 항목에서 다룬다.
 
-호출 규칙 (create-ait-app 0.2.3 소스 실측 근거 — 실행 버전은 `@latest` 해석에
+호출 규칙 (create-ait-app 0.2.3·0.2.8 소스 실측 근거 — 실행 버전은 `@latest` 해석에
 따른다):
 
 - **`<package_name>`(positional)·`--pm npm`·`--template react-ts`(또는 `--tds`)를
@@ -273,9 +267,9 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   확인한다. "Shell cwd was reset" 알림도 확정 신호가 아니다 — 알림과 실제 cwd가
   어긋나는 환경이 있으니, 보이면 `cd`로 되받아치지 말고 프로젝트가
   `./<package_name>`에 있는지부터 재확인한다.
-- **`--skills`·`--skip-install`은 존재하지 않는다** — 0.2.3의 플래그 표는 값
+- **`--skills`·`--skip-install`은 존재하지 않는다** — 플래그 표는 값
   플래그 `--pm`·`--sample`·`--template`, 불리언 플래그
-  `--help`·`--inline`·`--list-templates`·`--tds`가 전부다(dist 실측). 없는
+  `--help`·`--inline`·`--list-templates`·`--tds`·`--version`이 전부다(0.2.8 dist 실측). 없는
   플래그는 즉시 에러이므로 "혹시 되나" 식으로 붙이지 않는다. `--skills`를 피하던
   이유도 유효하다 — 에이전트용 지식 주입은 이 plugin의 skill 체제가 담당한다.
 - **`npx -y`를 쓴다** — `-y`는 npx 최초 실행 시 나오는 설치 확인 프롬프트를
@@ -302,7 +296,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   스크립트 파일을 Read로 열어 보지 마라 — 내용을 알 필요 없이 이 호출 하나면
   된다. 출력 해석·보고 규칙은 5-B 절.
 - **이 규칙과 실제 CLI가 어긋나면 CLI 에러가 최신 규칙이다** — `@latest`가
-  여기 적힌 0.2.3보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
+  여기 적힌 0.2.8보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
   그때는 플래그를 빼고 다시 넣어 보는 식으로 우회하지 말고, 에러 문구를 그대로
   사용자에게 전하고 중단한다(그 자리에서 `--help`로 현재 규칙을 확인해 함께
   보고하는 것까지는 해도 된다).
@@ -321,15 +315,20 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   미러(`registry.npmmirror.com`)·jsdelivr로 교차 확인하고, 그 프로젝트 전용
   `.npmrc`의 registry override나 `--local` 폴백으로 우회한다(호스트명을
   하드코드하지 않는다).
-- **scaffold 단계 install이 실패해 디렉터리가 통째로 사라진 경우** — CLI가
-  `installDependencies` 실패를 최상위에서 잡아 `rmSync`하기 때문이다(0.2.3 dist
-  실측 — 실패 원인과 무관하게 일어난다). `--skip-install`도 없어져 자동 복구
-  수단이 없다. 에러를 그대로 보고하고 중단한 뒤 선택지를 준다: (a) 같은 명령 1회
-  재시도(주입 세그먼트가 붙은 전체 한 줄 그대로 — 스캐폴더 부분만 재실행하지
-  않는다), (b) `--local` 폴백.
+- **scaffold 단계 install이 실패한 경우** — 0.2.4부터 CLI는 생성 디렉터리를
+  지우지 않고 남긴 채 `cd <dir>` 이어하기 안내를 낸다(0.2.8 실측). 이 실패는
+  `ait init` **앞**에서 난 것이라 안내대로 install만 다시 하면 devtools와
+  `apps-in-toss.config.ts`가 없는 프로젝트가 된다. 에러를 그대로 보고하고,
+  원인을 고친 뒤 `npm --prefix ./<package_name> install`로 install을 마치고
+  §2-1 2번의 `ait init` 재실행으로 이어 가거나, 선택지로 `--local` 폴백을
+  안내한다. 주입 세그먼트는 그 뒤에 따로 실행한다(`bash "<base>/../design/scripts/inject-project-guide.sh" "./<package_name>"`).
+  pnpm(11)에서 `--tds`가 `ERR_PNPM_IGNORED_BUILDS: esbuild`로 실패한 경우는
+  `pnpm-workspace.yaml`의 `allowBuilds`에 `esbuild: true`를 추가하고
+  `pnpm install`을 다시 한 뒤 같은 `ait init` 재실행을 한다(0.2.8 재현으로
+  복구 확인).
 - **`package.json`의 `@apps-in-toss/web-framework`는 create-ait-app이 박은
-  정확 버전이다**(0.2.5·0.2.6 실측 `"3.1.1"` — 자기 저장소
-  `.github/version-pins/package.json`의 핀을 빌드에 넣는다). 그래서 wf 버전은
+  정확 버전이다**(자기 저장소 `.github/version-pins/package.json`의 핀을
+  빌드에 넣는다. 0.2.8 실측 `"3.7.0"`). 그래서 wf 버전은
   실행된 create-ait-app 버전에 따라가고, `create-ait-app@latest` 해석이 환경마다
   다르면 wf도 따라 달라진다. 종전 CLI는 `"latest"` 리터럴을 써서 install 시점마다
   달랐다(실측: 공개 `latest`가 `3.0.1`인 시점에 `3.0.0`이 설치됨). 검증·측정
@@ -343,8 +342,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   `ait init` 단계에서 죽은 경우) `package.json`에 `overrides`를 더해 문제
   패키지를 미러에 존재하는 인접 버전으로 고정한 뒤 `npm --prefix
   ./<package_name> install`을 재실행하는 회피를 안내한다. scaffold
-  단계에서 죽어 디렉터리가 사라졌다면 위 항목과 같은 선택지(재시도·`--local`)로
-  처리한다.
+  단계에서 죽었다면 위 실패 항목으로 처리한다.
 
   어느 인접 버전이 미러에 실재하는지는 후보 버전의 tarball URL을 `curl -I`로
   HEAD 요청해 200/404로 확인한다(실측: `baseline-browser-mapping@2.11.7`이
@@ -360,7 +358,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
 **scaffold가 exit 0으로 끝나도 의존성이 다 깔렸다는 뜻은 아니다.** CLI는 install을
 두 번 한다 — 자기 `npm install` 한 번, `ait init`이 devtools를 배선하며 한 번. 이
 중 **`ait init` 쪽 실패는 CLI가 삼킨다**: `⚠️ ait init 실행에 실패했어요: …`
-경고만 찍고 그대로 exit 0을 낸다(0.2.3 dist 실측 — `runAitInit`의 try/catch).
+경고만 찍고 `✅`와 exit 0을 낸다(0.2.3 dist 실측, 0.2.8 재현에서도 같다).
 그래서 scaffold 직후 **항상** 아래 수렴 절차를 돈다(출력 파싱에 의존하지 않는다).
 npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워크·registry 문제로
 좁혀진다.
@@ -526,7 +524,7 @@ fence는 두 줄을 찍는다. 첫 줄이 형상 판정, 둘째 줄이 디자인
 
 형상은 세 가지를 본다: `apps-in-toss.config.ts` 존재, `dependencies`의
 `@apps-in-toss/web-framework`, `scripts.build`의 `ait build`. 앞뒤 둘은 `ait init`이
-만들고(create-ait-app 0.2.3 dist에는 이 설정 파일도 `build` 스크립트도 쓰는 코드가
+만들고(create-ait-app dist에는 이 설정 파일도 `build` 스크립트도 쓰는 코드가
 없다) 가운데 하나만 create-ait-app이 직접 쓴다 — 이 부분이 "CLI가 자기 몫과
 `ait init` 몫을 둘 다 끝냈는가"를 판정한다. 디자인 가이드 판정은 이 가드와 별개라
 바로 아래 "하나라도 실패하면 중단"의 대상이 **아니다**(fail-soft). `형상 불일치`로
@@ -547,7 +545,7 @@ fence는 두 줄을 찍는다. 첫 줄이 형상 판정, 둘째 줄이 디자인
   ```
 
 **설치된 `@apps-in-toss/web-framework`의 major도 함께 확인한다** — 형상 파일
-체크만으로는 부족하다. 현재 create-ait-app은 wf를 정확 버전(`3.1.1`)으로 박지만,
+체크만으로는 부족하다. 현재 create-ait-app은 wf를 정확 버전으로 박지만,
 `create-ait-app@latest`가 구버전으로 해석되는 환경(프록시가 최신을 숨기는 경우)이나
 `"latest"` 리터럴을 쓰던 종전 CLI가 내려온 경우에는 2.x가 조용히 들어올 수 있다(npm의
 `latest` dist-tag가 3.x 출시 이후에도 한동안 2.10.8을 가리킨 어긋남 — harness#90
@@ -1064,7 +1062,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 ## 하지 말아야 할 것
 
 - ❌ 기존 디렉토리 덮어쓰기 (`<package_name>/`이 이미 있으면 즉시 중단).
-- ❌ create-ait-app에 `--skip-install`·`--skills` 플래그 — 0.2.3에 존재하지
+- ❌ create-ait-app에 `--skip-install`·`--skills` 플래그 — 존재하지
   않는다(알 수 없는 옵션으로 즉시 에러, 산출물 0). install을 떼어내는 설계는
   더 이상 성립하지 않는다.
 - ❌ `--pm` 생략 — non-TTY에서 PM 프롬프트로 멈출 수 있다.
@@ -1090,8 +1088,8 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   `references/project-guide.md`를 이 skill이 소유한다).
 - 공식 스캐폴더: https://github.com/toss/create-ait-app — 번들된 create-vite에
   위임하는 템플릿(+ `--tds` 변형), IAP/IAA 샘플, brownfield `add-sample`
-  서브커맨드. 이 skill의 호출 규칙·후처리 근거는 `create-ait-app@0.2.3` 소스
-  실측이다(2026-08-10 기준 공개 latest) — `@latest`가 그보다 새 버전을 받아
+  서브커맨드. 이 skill의 호출 규칙·후처리 근거는 `create-ait-app` 0.2.3·0.2.8 소스
+  실측이다(0.2.8은 2026-10-14 기준 공개 latest) — `@latest`가 그보다 새 버전을 받아
   어긋나면 CLI의 에러·`--help`를 정본으로 본다.
 - devtools (mock + panel + unplugin) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
