@@ -16,6 +16,7 @@ Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a
 - `/ait:setup-debugger` — wire the on-device debug MCP server into the project's `.mcp.json`
 - `/ait:debug` — live-state debugging guidance (browser devtools panel · `window.__ait` · on-device CDP relay)
 - `/ait:test-on-device` — upload the bundle to the console and check it in the real Toss app (build → upload → confirm compile → hand over the link)
+- `/ait:launch` — pre-launch check, rejection handling, and a review request you approve
 
 You do not have to memorize the commands — the same skills answer to plain language, and every skill
 prints its next step on **both surfaces**: the slash command and its plain-language equivalent. Five

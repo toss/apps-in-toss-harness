@@ -16,6 +16,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 - `/ait:setup-debugger` — on-device 디버그 MCP 서버를 프로젝트 `.mcp.json`에 배선
 - `/ait:debug` — 라이브 상태 디버깅 안내 (브라우저 devtools 패널 · `window.__ait` · 실기기 on-device CDP relay)
 - `/ait:test-on-device` — 번들을 콘솔에 올려 실제 토스 앱에서 확인 (빌드 → 업로드 → 컴파일 확인 → 링크 전달)
+- `/ait:launch` — 출시 전 점검과 반려 대응, 사용자가 승인한 검수 요청
 
 명령을 몰라도 됩니다 — 같은 skill을 자연어로도 부를 수 있고, 각 skill은 다음 단계를 슬래시 명령과 자연어 동치 **두 표면으로** 인쇄합니다. 발화 예시 5종은 repo 루트 [`README.md`](../../README.md)의 "말로 시키기" 절에 있습니다.
 

@@ -577,6 +577,8 @@ design 완료
                          # 말로: "이 화면 문구를 UX 라이팅 기준으로 다듬어줘"
   /ait:debug             # 폰에서만 화면이 다르게 보이면 라이브 진단
                          # 말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
+  /ait:launch            # 검수에 넣기 전 출시 체크리스트 점검
+                         # 말로: "검수 넣기 전에 한번 봐줘"
 
   console MCP            # 이 자산으로 miniapp_create → bundle_upload →
                          # bundle_upload_complete 로 등록·업로드

@@ -695,7 +695,7 @@ const DOCS_LINK_ALLOWLIST = new Set();
 // searchDocumentation/getPage)가 manifest 기본 포함되면서, skill 말미의 문서
 // 안내는 docs.aitc.dev deep-link 대신 "docs MCP로 조회" 안내로 통일됐다
 // (harness — aitcc 전제 skill 제거와 함께 `docs` skill 자체도 제거: MCP tool이
-// 대체). 잔존 8개 skill 은 전부 문서 참조가 있으므로 면제 없음 — 새 skill을
+// 대체). 잔존 10개 skill 은 전부 문서 참조가 있으므로 면제 없음 — 새 skill을
 // 추가할 때 정말 문서 참조가 무관하면 여기에 등재한다.
 const DOCS_MCP_MENTION_EXEMPT = new Set();
 

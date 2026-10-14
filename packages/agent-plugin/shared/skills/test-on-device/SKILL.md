@@ -231,13 +231,18 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
   /ait:debug            # 실기기 CDP attach로 관측
                         #   말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
 
+폰에서 확인을 마치고 검수에 넣을 차례라면:
+  /ait:launch           # 출시 전 점검, 검수 요청
+                        #   말로: "검수 넣기 전에 한번 봐줘"
+
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
 ## Out of scope (이 skill이 하지 않는 것)
 
 - ❌ **검수 제출** — `review_*` 계열, `bundle_submit_review`. 비가역 상태
-  전환이라 이 skill은 어떤 경우에도 호출하지 않는다.
+  전환이라 이 skill은 어떤 경우에도 호출하지 않는다. 검수 요청은 `/ait:launch`가
+  사용자 승인을 받은 뒤에 한다.
 - ❌ **릴리즈·롤백·프로모션** — 라이브 버전 전환 계열 도구 전반. 실기기 확인은
   업로드·컴파일까지가 경계다.
 - ❌ 마케팅 푸시 캠페인 발송, 푸시 전달률·지연 QA. 이 skill은 자기 번들을 자기
