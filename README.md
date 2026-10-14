@@ -216,7 +216,7 @@ agent mcp login apps-in-toss-console
 | `/ait:plan [requirements]` | 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리 (기획만, `/ait:new`로 hand-off) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | `create-ait-app`을 비대화형으로 구동해 미니앱을 scaffold하고, devtools(mock SDK + panel)와 디자인 가이드(토큰·CSS·아이콘·`AGENTS.md`)를 후처리 배선 (greenfield 전용) | 1. scaffold |
 | `/ait:inject-devtools` | 기존 프로젝트 빌드 설정에 devtools unplugin을 추가 (brownfield) | 2. dev |
-| `/ait:inject-debug-console` | `debug-console`(on-device attach + eruda)을 dependencies로 설치하고 self-gating import 배선 — 프로덕션 번들에 들어갈 수 있는 유일한 디버그 패키지 | 2. dev / 3. debug |
+| `/ait:inject-debug-console` | `debug-console`(on-device attach)을 dependencies로 설치하고 self-gating import 배선 — 프로덕션 번들에 들어갈 수 있는 유일한 디버그 패키지 | 2. dev / 3. debug |
 | `/ait:inject-tossface` | 이모지 서체 Tossface를 CDN 링크(번들 증가 0) 또는 필요한 subset만 골라 번들(결정적 렌더, subset당 약 520KB~1.9MB)로 배선 | 2. dev |
 | `/ait:setup-debugger` | 디버그 MCP 서버(`debugger`)를 프로젝트 `.mcp.json`(Cursor면 `.cursor/mcp.json`)에 opt-in으로 배선 | 3. debug |
 | `/ait:debug` | 로컬 브라우저·on-device candidate 두 환경을 관측 결과에 따라 분기해 디버깅 | 3. debug |
@@ -313,7 +313,7 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex·Cursor) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.2.5`) |
-| `@apps-in-toss/debug-console` | `packages/debug-console` | on-device attach + eruda 콘솔 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debug-console-v0.1.7`) |
+| `@apps-in-toss/debug-console` | `packages/debug-console` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debug-console-v0.1.7`) |
 
 `shared/internal-protocol`은 `debugger`·`debug-console`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계). `packages/`가 아닌 `shared/`에 살며 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.
 
