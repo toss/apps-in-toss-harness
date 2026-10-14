@@ -533,7 +533,7 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
     // A wrong/expired TOTP code is the ONLY block reason that is a
     // user-actionable failure inside a deliberate debug session — the operator
     // scanned a QR expecting an attach. Raise it to warn level so it stands out
-    // in the page console; every other reason ('host'/'entry'/'opt-in'/
+    // in the page console; every other reason ('host'/'opt-in'/
     // 'invalid-relay') fires on ordinary non-debug page loads and stays at
     // debug level to avoid noise on every plain pageview.
     // SECRET-HANDLING: the message names ONLY the 'auth' reason — never the

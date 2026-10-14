@@ -71,7 +71,7 @@ No bins are shipped.
 
 ## Security scope
 
-**This package can genuinely end up in a production bundle** — which is exactly why its dependency is pinned to `eruda` alone with zero peerDependencies. Attach only happens after a 3-layer activation gate passes: (B) host allowlist + deployment entry param, (C) `debug=1` opt-in + a valid `wss:` relay URL + (when configured) a TOTP code. If the gate does not pass, no attach occurs, and a gate failure is only ever surfaced as one of the enum values `'host' | 'entry' | 'opt-in' | 'invalid-relay' | 'auth'` — no secret, code value, or relay URL itself ever reaches any log.
+**This package can genuinely end up in a production bundle** — which is exactly why its dependency is pinned to `eruda` alone with zero peerDependencies. Attach only happens after a 3-layer activation gate passes: (B) host allowlist (`*.tossmini.com` or localhost), (C) `debug=1` opt-in + a valid `wss:` relay URL + a TOTP code (the `at=` code is mandatory on `*.tossmini.com` hosts; `_deploymentId` is reported when present but never required). If the gate does not pass, no attach occurs, and a gate failure is only ever surfaced as one of the enum values `'host' | 'opt-in' | 'invalid-relay' | 'auth'` (`'entry'` stays in the type for compatibility but is no longer returned) — no secret, code value, or relay URL itself ever reaches any log.
 
 ## License
 

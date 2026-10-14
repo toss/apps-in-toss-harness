@@ -71,7 +71,7 @@ bin은 없다.
 
 ## 보안 스코프
 
-**이 패키지는 프로덕션 번들에 실제로 들어갈 수 있다** — 그래서 dependency가 `eruda` 하나로 고정되어 있고 peerDependency는 0개다. attach는 3단계 활성화 게이트를 통과해야만 이뤄진다: (B) 호스트 allowlist + 배포 엔트리 파라미터, (C) `debug=1` opt-in + 유효한 `wss:` relay URL + (설정된 경우) TOTP 코드. 이 게이트를 통과하지 못하면 attach는 일어나지 않으며, gate 실패 사유는 `'host' | 'entry' | 'opt-in' | 'invalid-relay' | 'auth'` enum 값으로만 노출된다 — 시크릿·코드 값·relay URL 자체는 어떤 로그에도 남지 않는다.
+**이 패키지는 프로덕션 번들에 실제로 들어갈 수 있다** — 그래서 dependency가 `eruda` 하나로 고정되어 있고 peerDependency는 0개다. attach는 3단계 활성화 게이트를 통과해야만 이뤄진다: (B) 호스트 allowlist(`*.tossmini.com` 또는 localhost), (C) `debug=1` opt-in + 유효한 `wss:` relay URL + TOTP 코드(`*.tossmini.com` 호스트에서는 `at=` 코드가 필수이며, `_deploymentId`는 있으면 보고만 하고 요구하지 않는다). 이 게이트를 통과하지 못하면 attach는 일어나지 않으며, gate 실패 사유는 `'host' | 'opt-in' | 'invalid-relay' | 'auth'` (`'entry'`는 타입 호환을 위해 남아 있지만 더 이상 반환되지 않는다) enum 값으로만 노출된다 — 시크릿·코드 값·relay URL 자체는 어떤 로그에도 남지 않는다.
 
 ## 라이선스
 
