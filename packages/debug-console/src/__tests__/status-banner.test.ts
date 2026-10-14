@@ -17,6 +17,7 @@
  */
 
 import { RELAY_AUTH_REJECT_CLOSE_CODE } from '@apps-in-toss/internal-protocol/relay-auth-close';
+import { RELAY_BUSY_CLOSE_CODE } from '@apps-in-toss/internal-protocol/relay-busy-close';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GateResult } from '../index.js';
 import type { DebugStatus } from '../status-banner.js';
@@ -131,6 +132,7 @@ describe('setDebugStatus — rendering', () => {
     ['connected', /연결됐어요/],
     ['session-ended', /X로 닫고 QR을 다시 스캔/],
     ['code-expired', /QR 코드가 만료/],
+    ['relay-busy', /이미 다른 미니앱에 연결돼 있어요/],
     ['server-unreachable', /접속할 수 없어요/],
   ];
 
@@ -257,6 +259,54 @@ describe('maybeAttach — relay lifecycle', () => {
     ws.dispatchEvent(closeEventWithCode(RELAY_AUTH_REJECT_CLOSE_CODE));
     expect(window.__ait_debug_status).toBe('code-expired');
     expect(bannerText()).toMatch(/QR 코드가 만료/);
+  });
+
+  it('shows "relay-busy" on a 4409 close, distinct from 4401 and session-ended', async () => {
+    const { maybeAttach } = await import('../attach.js');
+    maybeAttach(pass);
+    const ws = new window.WebSocket(`wss://${RELAY_HOST}/target/abc`);
+    ws.dispatchEvent(new Event('open'));
+    ws.dispatchEvent(closeEventWithCode(RELAY_BUSY_CLOSE_CODE));
+    expect(window.__ait_debug_status).toBe('relay-busy');
+    expect(bannerText()).toContain(
+      '이 디버거는 이미 다른 미니앱에 연결돼 있어요. 그 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔하세요.',
+    );
+    // Terminal: the grace timer must not later flip it to session-ended.
+    vi.advanceTimersByTime(10000);
+    expect(window.__ait_debug_status).toBe('relay-busy');
+    // SECRET-HANDLING: no host or code in the banner.
+    expect(bannerText()).not.toContain(RELAY_HOST);
+    expect(bannerText()).not.toContain(SECRET_CODE);
+  });
+
+  it('stops dialing after 4409 (fail-fast), keeping the banner on relay-busy', async () => {
+    const { maybeAttach } = await import('../attach.js');
+    maybeAttach(pass);
+    const ws = new window.WebSocket(`wss://${RELAY_HOST}/target/abc`);
+    ws.dispatchEvent(new Event('open'));
+    ws.dispatchEvent(closeEventWithCode(RELAY_BUSY_CLOSE_CODE));
+    const dialsBefore = FakeWebSocket.instances.length;
+    const retry = new window.WebSocket(`wss://${RELAY_HOST}/target/abc`);
+    expect(FakeWebSocket.instances.length).toBe(dialsBefore);
+    expect(retry.readyState).toBe(3);
+    const codes: number[] = [];
+    retry.addEventListener('close', (ev) => codes.push((ev as CloseEvent).code));
+    await vi.runAllTimersAsync();
+    expect(codes).toEqual([RELAY_BUSY_CLOSE_CODE]);
+    expect(window.__ait_debug_status).toBe('relay-busy');
+  });
+
+  it('logs a single fixed-label console line for 4409', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { maybeAttach } = await import('../attach.js');
+    maybeAttach(pass);
+    const ws = new window.WebSocket(`wss://${RELAY_HOST}/target/abc`);
+    ws.dispatchEvent(closeEventWithCode(RELAY_BUSY_CLOSE_CODE));
+    ws.dispatchEvent(closeEventWithCode(RELAY_BUSY_CLOSE_CODE));
+    const busyLines = warn.mock.calls.filter((c) => /already attached/.test(String(c[0])));
+    expect(busyLines).toHaveLength(1);
+    expect(String(busyLines[0]?.[0])).not.toContain(RELAY_HOST);
+    warn.mockRestore();
   });
 
   it('shows "session-ended" once a non-4401 close outlasts the grace window', async () => {

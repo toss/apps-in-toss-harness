@@ -21,6 +21,10 @@ import {
   RELAY_AUTH_REJECT_CLOSE_CODE,
   RELAY_AUTH_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-auth-close';
+import {
+  RELAY_BUSY_CLOSE_CODE,
+  RELAY_BUSY_REASON,
+} from '@apps-in-toss/internal-protocol/relay-busy-close';
 import { installBridgeObserver, uninstallBridgeObserver } from './bridge-observer.js';
 import { checkDebugGate, type GateResult } from './index.js';
 import { setScreenAwake, setScreenAwakeNow } from './sdk-probe.js';
@@ -150,6 +154,17 @@ let authExpiredNotified = false;
 /** Set once a relay-bound socket closed with 4401 — flips dials to fail-fast. */
 let relayAuthExpired = false;
 
+/** One-shot guard for the relay-busy console notice. */
+let relayBusyNotified = false;
+
+/**
+ * Set once a relay-bound socket closed with 4409 (`relay-busy`): another
+ * mini-app already holds the relay. Terminal for this page — flips dials to
+ * fail-fast with the same code so chii's reconnect loop stops, and keeps the
+ * generic close/error handlers from overwriting the banner.
+ */
+let relayBusy = false;
+
 /**
  * Set once any relay-bound socket reached `open`. Splits a later close into
  * "session ended" (it did connect) vs "server unreachable" (it never did) for
@@ -210,6 +225,19 @@ function notifyAuthExpired(): void {
 }
 
 /**
+ * Records the busy-relay rejection in the page console, once. Fixed label only
+ * — never the host, relay URL, or close frame contents.
+ */
+function notifyRelayBusy(): void {
+  if (relayBusyNotified) return;
+  relayBusyNotified = true;
+  setDebugStatus('relay-busy');
+  console.warn(
+    '[@apps-in-toss/debug-console] relay is already attached to another mini-app — close this one and rescan the QR',
+  );
+}
+
+/**
  * Normalises a URL into a comparable origin key, mapping the HTTP scheme pair
  * onto the WS pair (`https:`→`wss:`, `http:`→`ws:`) so the `wss:` relay URL
  * from the gate result matches the dials target.js derives from its
@@ -239,7 +267,7 @@ function wsOriginKey(rawUrl: string): string | null {
  * consumer. (A consumer wiring BOTH would see a double callback; acceptable
  * for a retry scheduler and irrelevant for chii.)
  */
-function createFailFastSocket(url: string): WebSocket {
+function createFailFastSocket(url: string, closeCode: number, closeReason: string): WebSocket {
   const eventTarget = new EventTarget();
   const sock = {
     url,
@@ -271,14 +299,14 @@ function createFailFastSocket(url: string): WebSocket {
     let closeEvent: Event;
     try {
       closeEvent = new CloseEvent('close', {
-        code: RELAY_AUTH_REJECT_CLOSE_CODE,
-        reason: RELAY_AUTH_REJECT_REASON,
+        code: closeCode,
+        reason: closeReason,
         wasClean: false,
       });
     } catch {
       closeEvent = Object.assign(new Event('close'), {
-        code: RELAY_AUTH_REJECT_CLOSE_CODE,
-        reason: RELAY_AUTH_REJECT_REASON,
+        code: closeCode,
+        reason: closeReason,
         wasClean: false,
       });
     }
@@ -470,7 +498,11 @@ export function installRelayWsObserver(relayUrl: string): void {
       }
       if (relayAuthExpired) {
         // Retry-storm cutoff: the relay already named this session expired.
-        return createFailFastSocket(url);
+        return createFailFastSocket(url, RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
+      }
+      if (relayBusy) {
+        // Same cutoff for the busy rejection: another mini-app holds the relay.
+        return createFailFastSocket(url, RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON);
       }
       const ws = Reflect.construct(target, args) as WebSocket;
       // #730: broadcast generic open/close lifecycle (any close code) so the
@@ -492,6 +524,13 @@ export function installRelayWsObserver(relayUrl: string): void {
           // #748: 4401 is terminal by design (no reconnect without a QR rescan)
           // — tear down immediately, no grace window.
           detachDebugSurface();
+        } else if ((event as CloseEvent).code === RELAY_BUSY_CLOSE_CODE) {
+          // Another mini-app holds the relay. Terminal for this page: the
+          // banner says to close this app and rescan, so no grace window and
+          // no 'session-ended' / 'server-unreachable' overwrite.
+          relayBusy = true;
+          notifyRelayBusy();
+          detachDebugSurface();
         } else {
           // #748: any other close may be transient — schedule teardown after a
           // grace window; a reconnect 'open' cancels it.
@@ -504,6 +543,7 @@ export function installRelayWsObserver(relayUrl: string): void {
         // Never opened → the relay is unreachable from this network; say so now
         // instead of waiting out the grace window. After an open, a close
         // follows and the grace timer decides (a reconnect may still recover).
+        if (relayBusy || relayAuthExpired) return;
         if (!relayWsEverOpened) setDebugStatus('server-unreachable');
         scheduleDetach();
       });

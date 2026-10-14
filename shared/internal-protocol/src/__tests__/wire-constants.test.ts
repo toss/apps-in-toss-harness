@@ -17,6 +17,7 @@ import {
   RELAY_WS_STATE_EVENT,
 } from '../bridge-observer-state.js';
 import { RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON } from '../relay-auth-close.js';
+import { RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON } from '../relay-busy-close.js';
 
 describe('relay auth rejection', () => {
   it('uses an application close code, not a protocol one', () => {
@@ -36,6 +37,22 @@ describe('relay auth rejection', () => {
     // `TextEncoder` to measure with).
     expect(RELAY_AUTH_REJECT_REASON).toMatch(/^[\x20-\x7e]+$/);
     expect(RELAY_AUTH_REJECT_REASON.length).toBeLessThanOrEqual(123);
+  });
+});
+
+describe('relay busy rejection', () => {
+  it('uses an application close code distinct from the auth rejection', () => {
+    expect(RELAY_BUSY_CLOSE_CODE).toBeGreaterThanOrEqual(4000);
+    expect(RELAY_BUSY_CLOSE_CODE).toBeLessThanOrEqual(4999);
+    expect(RELAY_BUSY_CLOSE_CODE).toBe(4409);
+    expect(RELAY_BUSY_CLOSE_CODE).not.toBe(RELAY_AUTH_REJECT_CLOSE_CODE);
+  });
+
+  it('names the rejection with a fixed plain-ASCII enum string', () => {
+    expect(RELAY_BUSY_REASON).toBe('relay-busy');
+    expect(RELAY_BUSY_REASON).toMatch(/^[\x20-\x7e]+$/);
+    expect(RELAY_BUSY_REASON.length).toBeLessThanOrEqual(123);
+    expect(RELAY_BUSY_REASON).not.toBe(RELAY_AUTH_REJECT_REASON);
   });
 });
 

@@ -56,6 +56,7 @@ attach가 어디까지 됐는지, 안 됐다면 왜인지를 폰 화면 아래�
 | `connected` | 연결됐다. 몇 초 뒤 스스로 사라진다 |
 | `session-ended` | 연결됐다가 끊겼고 돌아오지 않았다. X로 미니앱을 닫고 QR을 다시 스캔한다 |
 | `code-expired` | relay가 코드를 거부했다(4401 또는 스크립트 401). 새 QR을 스캔한다 |
+| `relay-busy` | 이 디버거가 이미 다른 미니앱에 연결돼 있다(relay 4409). 그 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔한다 |
 | `server-unreachable` | relay에 닿지 못했다. 사내망이나 MDM이 `*.trycloudflare.com`을 막는 경우가 많다 |
 
 같은 값이 `window.__ait_debug_status`에 문자열로 들어가므로 CDP로도 읽을 수 있다. 상태 표시는 기존 attach 이벤트와 close code만 읽고, 데몬과 주고받는 프로토콜(버전 `1`)은 바꾸지 않는다.

@@ -40,6 +40,7 @@ export type BlockedReason = 'host' | 'entry' | 'opt-in' | 'invalid-relay' | 'aut
  * - `connected`          relay socket open
  * - `session-ended`      relay socket closed (non-4401) and did not recover
  * - `code-expired`       relay rejected the TOTP code (4401 / target.js 401)
+ * - `relay-busy`        relay is already attached to another mini-app (4409)
  * - `server-unreachable` relay unreachable (target.js fetch failed non-401, or
  *                        the socket never opened)
  */
@@ -49,6 +50,7 @@ export type DebugStatus =
   | 'connected'
   | 'session-ended'
   | 'code-expired'
+  | 'relay-busy'
   | 'server-unreachable';
 
 declare global {
@@ -96,6 +98,10 @@ const MESSAGES: Record<DebugStatus, { tone: Tone; text: string }> = {
   'code-expired': {
     tone: 'error',
     text: 'QR 코드가 만료됐어요. 대시보드를 새로고침하고 새 QR을 스캔하세요.',
+  },
+  'relay-busy': {
+    tone: 'error',
+    text: '이 디버거는 이미 다른 미니앱에 연결돼 있어요. 그 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔하세요.',
   },
   'server-unreachable': {
     tone: 'error',

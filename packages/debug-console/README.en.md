@@ -56,6 +56,7 @@ A small bar at the bottom of the phone screen says how far the attach got and, i
 | `connected` | Connected. Hides itself after a few seconds |
 | `session-ended` | It connected, then dropped and did not come back. Close the mini-app with X and scan the QR again |
 | `code-expired` | The relay rejected the code (4401, or a 401 on the script). Scan a new QR |
+| `relay-busy` | This debugger is already attached to another mini-app (relay 4409). Close that mini-app with X, then scan the QR again from this one |
 | `server-unreachable` | The relay could not be reached. A corporate network or MDM blocking `*.trycloudflare.com` is a common cause |
 
 The same value is exposed as a string on `window.__ait_debug_status`, so it can also be read over CDP. The banner only reads existing attach events and close codes; the protocol spoken with the daemon (version `1`) is unchanged.
