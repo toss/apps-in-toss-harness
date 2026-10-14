@@ -30,16 +30,30 @@
  * Node-only.
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import {
+  AttachTimeline,
+  type AttachTimelineSnapshot,
+  diagnoseAttach,
+  formatStageHistory,
+} from './attach-timeline.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
 import type { McpEnvironment } from './environment.js';
-import { classifyToolError, mcpError } from './errors.js';
+import {
+  attachSupersededError,
+  attachTimeoutMessage,
+  classifyToolError,
+  mcpError,
+  protocolVersionMismatchError,
+} from './errors.js';
 import { logInfo } from './log.js';
 import type { QrHttpServer } from './qr-http-server.js';
 import {
   canOpenBrowser as defaultCanOpenBrowser,
   listPages,
   openQrInBrowser,
+  redactErrorMessage,
   type TunnelStatus,
 } from './tools.js';
 import { generateTotp, RELAY_VERIFY_SKEW_STEPS } from './totp.js';
@@ -50,10 +64,9 @@ import { renderQr } from './tunnel.js';
  * the Toss app, scanning an attach QR only brings the existing WebView to the
  * front — it is NOT reloaded with the new query (`relay=`, `at=`), so the stale
  * page never dials the new relay and `start_attach` waits until its timeout.
- * Surfaced in the tool description, the result header and the timeout error.
+ * Surfaced in the tool description, the result header and the timeout error
+ * (the timeout error's English line lives in `errors.ts#attachTimeoutMessage`).
  */
-const ALREADY_OPEN_NOTICE_EN =
-  'If the mini-app is already open in the Toss app, scanning a QR does NOT reload it with the new relay/at params, so it never attaches.';
 const ALREADY_OPEN_NOTICE_KO =
   '토스 앱에 이 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지 않아 attach되지 않습니다 — 미니앱 상단의 X 버튼으로 먼저 닫은 뒤 스캔하세요.';
 
@@ -183,6 +196,60 @@ export type McpResult = {
 };
 
 /**
+ * `buildTimeoutError`에 넘기는 시도별 재료. `renderAndMaybeWait`가 타임아웃 시점에 채운다.
+ * 둘 다 secret-free다(단계 기록은 시각·enum, 대기 오류는 redact된 메시지).
+ */
+export interface TimeoutContext {
+  /** 타임아웃 시점의 attach 단계 기록. */
+  snapshot?: AttachTimelineSnapshot;
+  /** 대기 중 삼켜졌던 비-타임아웃 에러(redact됨). */
+  waitError?: string;
+}
+
+/** `AbortSignal.reason`으로 쓰는, 새 `start_attach`가 이전 대기를 대체했다는 표지. */
+export const ATTACH_SUPERSEDED_REASON = 'superseded';
+
+/** 대기가 `AbortSignal`로 끊겼음을 알리는 내부 에러. */
+class AttachAbortedError extends Error {
+  constructor(readonly reason: unknown) {
+    super('start_attach: 대기가 취소됐습니다');
+  }
+}
+
+/** `work`를 `signal` abort와 경주시킨다. 진 쪽 프로미스의 늦은 거절은 삼킨다. */
+function raceWithAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return work;
+  if (signal.aborted) {
+    work.catch(() => {});
+    return Promise.reject(new AttachAbortedError(signal.reason));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new AttachAbortedError(signal.reason));
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** `renderAndMaybeWait`의 호출별 옵션. */
+export interface RenderAndWaitOptions {
+  /**
+   * 대기를 끊는 신호. abort되면 대기를 멈추고, 이유가 {@link ATTACH_SUPERSEDED_REASON}이면
+   * "대체됨" 결과를, 아니면 "취소됨" 결과를 돌려준다. MCP 요청 취소(`extra.signal`)와 중복
+   * `start_attach` 대체가 같은 경로를 쓴다.
+   */
+  signal?: AbortSignal;
+}
+
+/**
  * Output of the {@link prepareAttach} helper (issue #626) — the validation +
  * component bundle the env-3 (relay-dev) attach path produces. On any
  * validation failure the helper returns `{ ok: false, error }` with a
@@ -197,6 +264,7 @@ export type PrepareAttachResult =
         baseText: string,
         timeoutSec: number,
         observed: ReturnType<CdpConnection['listTargets']>,
+        ctx?: TimeoutContext,
       ) => string;
       authorityWarning: string | undefined;
       totpMeta: AttachTotpMeta | undefined;
@@ -238,6 +306,22 @@ export interface AttachDeps {
    * `renderAndMaybeWait`이 브라우저 자동 열기 가능 여부 판정에 사용한다.
    */
   canOpenBrowser?: () => boolean;
+  /**
+   * attach 단계 기록기. `renderAndMaybeWait`가 시도를 시작하고(`beginAttempt`) QR 발급·재발급·
+   * 페이지 매칭을 기록하며, relay 훅이 나머지 단계를 같은 기록기에 쓴다. 구독(`onStage`)이
+   * progress 알림·터미널 단계 출력·대시보드의 공통 경로다. 생략하면 이 호출만 임시 기록기를
+   * 쓴다(진단은 QR 발급 이후 단계만 알 수 있다).
+   */
+  timeline?: AttachTimeline;
+  /**
+   * 삼켜지던 대기 중 에러를 `get_debug_status`의 recentErrors로 흘려보내는 콜백(선택).
+   * 메시지는 호출 전에 redact된다.
+   */
+  recordError?: (message: string, category?: string) => void;
+  /**
+   * 기기↔호스트 프로토콜 불일치 조회(선택). 타임아웃 진단에 원인 후보로 함께 싣는다.
+   */
+  getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
 }
 
 /** Resolves `deps.nowMs` to its default (`Date.now`). */
@@ -424,20 +508,43 @@ export async function prepareAttach(
     baseText: string,
     timeoutSec: number,
     observed: ReturnType<CdpConnection['listTargets']>,
+    ctx: TimeoutContext = {},
   ): string => {
-    const observedUrls = observed
-      .slice(0, 3)
-      .map((p) => p.url.slice(0, 80))
-      .join(', ');
-    const observedNote =
-      observed.length > 0 ? ` — previously attached pages: [${observedUrls}]` : '';
-    const deploymentNote = deploymentId ? ` matching deploymentId=${deploymentId}` : '';
-    return (
-      `${baseText}\n\nNo page${deploymentNote} attached within ${timeoutSec}s${observedNote} — ` +
-      'call list_pages to retry. ' +
-      `${ALREADY_OPEN_NOTICE_EN} ` +
-      'Tell the user to close the mini-app with the X button, then call start_attach again and scan the new QR.'
-    );
+    // 진단은 `diagnoseAttach` 하나가 맡는다 — get_debug_status와 같은 분류기다.
+    const snapshot: AttachTimelineSnapshot = ctx.snapshot ?? {
+      attempt: 0,
+      attemptStartedAt: null,
+      events: [],
+      lastTunnel: null,
+    };
+    // 터널이 죽어 있으면 기록이 없어도 터널 끊김으로 분류한다(상태가 기록보다 최신).
+    const tunnelNow = getTunnelStatus();
+    const effective: AttachTimelineSnapshot = tunnelNow.up
+      ? snapshot
+      : {
+          ...snapshot,
+          lastTunnel: {
+            seq: 0,
+            at: new Date().toISOString(),
+            attempt: snapshot.attempt,
+            stage: 'tunnel',
+            result: 'down',
+          },
+        };
+    const diagnosis = diagnoseAttach(effective, { observedPages: observed });
+    const skew = deps.getProtocolVersionSkew?.() ?? null;
+    const protocolNote =
+      skew !== null
+        ? (protocolVersionMismatchError(skew).content[0]?.text ?? undefined)
+        : undefined;
+    return `${baseText}\n\n${attachTimeoutMessage({
+      diagnosis,
+      timeoutSec,
+      stageHistory: formatStageHistory(effective),
+      deploymentId,
+      ...(ctx.waitError !== undefined ? { waitError: ctx.waitError } : {}),
+      ...(protocolNote !== undefined ? { protocolNote } : {}),
+    })}`;
   };
 
   return {
@@ -471,15 +578,24 @@ export async function renderAndMaybeWait(
   waitForAttach: boolean,
   callTimeoutMs: number,
   conn: CdpConnection,
+  options: RenderAndWaitOptions = {},
 ): Promise<McpResult> {
   const { getTunnelStatus, qrHttpServer, onAttachUrlBuilt } = deps;
+  const { signal } = options;
   const nowMs = resolveNowMs(deps);
+  // attach 단계 기록: 이 호출이 새 시도를 연다. 기록기가 주입되지 않았으면 이 호출 전용
+  // 임시 기록기를 쓴다 — 타임아웃 진단은 QR 발급 이후 단계까지만 알게 된다.
+  const timeline = deps.timeline ?? new AttachTimeline({ nowMs });
+  timeline.beginAttempt();
+  // 대기 중 삼켜지던 비-타임아웃 에러(redact됨). 타임아웃 진단과 recentErrors에 싣는다.
+  let waitError: string | undefined;
   const canOpenBrowserFn = resolveCanOpenBrowser(deps);
   const { parts, isMatchingPage, buildTimeoutError, authorityWarning, totpMeta } = prep;
 
   // Initial mint + dashboard notify (components, not a finished URL, so
   // getDashboardState re-mints on every SSE push — Defect 1).
   let attachUrl = mintAttachUrl(deps, parts);
+  timeline.record('qr-issued', 'ok', 'mint');
   onAttachUrlBuilt?.(parts);
   let totpIssuedAt = nowMs();
   let reminted = 0;
@@ -526,18 +642,32 @@ export async function renderAndMaybeWait(
     // Immediate check — already attached resolves without any wait/re-mint.
     if (isMatchingPage(conn.listTargets())) return conn.listTargets();
     for (;;) {
+      if (signal?.aborted) throw new AttachAbortedError(signal.reason);
       const remaining = deadline - nowMs();
       if (remaining <= 0) {
         throw new Error(`start_attach: 타임아웃 (${callTimeoutMs}ms)`);
       }
       const segmentMs = Math.min(START_ATTACH_SEGMENT_MS, remaining);
       try {
-        return await waitForAttachWithEvents(conn, isMatchingPage, segmentMs);
-      } catch {
+        // 페이지 쪽 wait에는 취소 수단이 없다(세그먼트 ≤30초라 늦은 정리는 감수) — 취소는
+        // abort와의 경주로 처리한다.
+        return await raceWithAbort(
+          waitForAttachWithEvents(conn, isMatchingPage, segmentMs),
+          signal,
+        );
+      } catch (err) {
+        if (err instanceof AttachAbortedError) throw err;
+        // 세그먼트 타임아웃은 정상 흐름이고, 그 밖의 에러는 진단 재료라 버리지 않는다.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes('타임아웃') && !/timeout/i.test(message)) {
+          waitError = redactErrorMessage(message).slice(0, 200);
+          deps.recordError?.(waitError, 'attach');
+        }
         // Segment elapsed without attach — re-mint if the code is aging, then
         // loop into the next segment. SECRET-HANDLING: code never logged.
         if (totpMeta && nowMs() - totpIssuedAt >= START_ATTACH_REMINT_THRESHOLD_MS) {
           attachUrl = mintAttachUrl(deps, parts);
+          timeline.record('qr-issued', 'ok', 'remint');
           onAttachUrlBuilt?.(parts);
           totpIssuedAt = nowMs();
           reminted += 1;
@@ -577,15 +707,28 @@ export async function renderAndMaybeWait(
     }
     try {
       await waitWithRemint();
-    } catch {
+    } catch (err) {
+      if (err instanceof AttachAbortedError) {
+        // 대체/취소된 호출은 단계를 더 기록하지 않는다 — 기록기는 새 시도가 이어받았다.
+        return err.reason === ATTACH_SUPERSEDED_REASON
+          ? attachSupersededError()
+          : mcpError('start_attach: 호출이 취소됐습니다.');
+      }
       const observed = conn.listTargets();
       return {
         content: [
-          { type: 'text', text: buildTimeoutError(baseText, callTimeoutMs / 1000, observed) },
+          {
+            type: 'text',
+            text: buildTimeoutError(baseText, callTimeoutMs / 1000, observed, {
+              snapshot: timeline.snapshot(),
+              ...(waitError !== undefined ? { waitError } : {}),
+            }),
+          },
         ],
         isError: true,
       };
     }
+    timeline.record('matched', 'ok');
     return successResult(baseText);
   };
 

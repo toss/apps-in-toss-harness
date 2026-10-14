@@ -16,6 +16,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import type { AitMethodMap, AitMethodName, AitSource } from '../ait-source.js';
+import { AttachTimeline } from '../attach-timeline.js';
 import type {
   CdpCommandMap,
   CdpCommandName,
@@ -1067,5 +1068,105 @@ describe('version resolvers (issue #361 — build-define, not globalThis)', () =
     };
     expect(typeof parsed.version).toBe('string');
     expect(parsed.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+describe('getDiagnostics — attach timeline', () => {
+  const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc.trycloudflare.com' };
+
+  function base(timeline?: AttachTimeline, connection?: FakeCdpConnection) {
+    return getDiagnostics({
+      tunnel: tunnelUp,
+      connection,
+      env: 'relay-dev',
+      envReason: 'test',
+      collector: new InMemoryDiagnosticsCollector(),
+      readLock: () => null,
+      attachTimeline: timeline,
+    });
+  }
+
+  it('is empty/null when no attach was ever attempted', async () => {
+    const withTimeline = await base(new AttachTimeline());
+    expect(withTimeline.attachStages).toEqual([]);
+    expect(withTimeline.attachDiagnosis).toBeNull();
+    const without = await base(undefined);
+    expect(without.attachStages).toEqual([]);
+    expect(without.attachDiagnosis).toBeNull();
+  });
+
+  it('returns the current attempt stages and a diagnosis', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('device-handshake', 'ok');
+    const result = await base(tl);
+    expect(result.attachStages.map((e) => e.stage)).toEqual(['qr-issued', 'device-handshake']);
+    expect(result.attachDiagnosis?.kind).toBe('script-not-loaded');
+    expect(result.attachDiagnosis?.actions.length).toBeGreaterThan(0);
+  });
+
+  it('drops events from earlier attempts', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('auth', 'rejected', 'ws-4401');
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    const result = await base(tl);
+    expect(result.attachStages).toHaveLength(1);
+    expect(result.attachDiagnosis?.kind).toBe('page-not-opened');
+  });
+
+  it('feeds observed pages (sanitized) into a wrong-page diagnosis', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('target-connected', 'ok');
+    const connection = new FakeCdpConnection([
+      { id: 'p1', title: 'old', url: 'intoss-private://app?_deploymentId=stale&at=424242' },
+    ]);
+    const result = await base(tl, connection);
+    expect(result.attachDiagnosis?.kind).toBe('wrong-page');
+    const dump = JSON.stringify(result.attachDiagnosis);
+    expect(dump).toContain('_deploymentId=stale');
+    expect(dump).not.toContain('424242');
+  });
+
+  it('appends the previous-attempt diagnosis to the start_attach recommendation', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('auth', 'rejected', 'ws-4401');
+    const result = await base(tl, new FakeCdpConnection([]));
+    expect(result.nextRecommendedAction?.tool).toBe('start_attach');
+    expect(result.nextRecommendedAction?.reason).toContain('직전 시도');
+  });
+
+  it('get_debug_status tool exposes attachStages when a timeline is injected', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    const server = createDebugServer({
+      connection: new FakeCdpConnection([]),
+      aitSource: new FakeAitSource(),
+      getTunnelStatus: () => tunnelUp,
+      getEnvironment: () => 'relay-dev' as McpEnvironment,
+      getEnvironmentReason: () => 'test',
+      attachTimeline: tl,
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'c', version: '0.0.0' });
+    await client.connect(clientTransport);
+    const res = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const text = (res.content as Array<{ text?: string }>)[0]?.text ?? '';
+    const parsed = JSON.parse(text) as { data?: Record<string, unknown> } & Record<string, unknown>;
+    const body = (parsed.data ?? parsed) as {
+      attachStages?: unknown[];
+      attachDiagnosis?: { kind: string };
+    };
+    expect(body.attachStages).toHaveLength(1);
+    expect(body.attachDiagnosis?.kind).toBe('page-not-opened');
   });
 });

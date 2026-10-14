@@ -79,6 +79,9 @@ import { restoreTlsRejectUnauthorized, snapshotTlsRejectUnauthorized } from './t
 
 const require = createRequire(import.meta.url);
 
+/** Path the phone page loads the debug script from (chii's static `target.js`). */
+const TARGET_SCRIPT_PATH = '/target.js';
+
 /**
  * WS keepalive ping interval (ms).
  *
@@ -234,6 +237,19 @@ export interface AttachHandshakeEvent {
 }
 
 /**
+ * A WebSocket upgrade as seen by the relay (see
+ * {@link StartChiiRelayOptions.onWsUpgrade}).
+ *
+ * SECRET-HANDLING: only the surface kind and the gate verdict.
+ */
+export interface RelayWsUpgradeEvent {
+  /** `target` = the phone page (`/target/<id>`), `client` = the daemon/inspector (`/client/<id>`). */
+  kind: 'target' | 'client';
+  /** `false` when the TOTP gate rejected the upgrade (4401 accept-then-close). */
+  accepted: boolean;
+}
+
+/**
  * Rewrites a `/at/<code>/…` path-prefixed request URL into the equivalent
  * query-based form, e.g.:
  *
@@ -320,6 +336,35 @@ export interface StartChiiRelayOptions {
    */
   onAttachHandshake?: (event: AttachHandshakeEvent) => void;
   /**
+   * Fired when `target.js` is served to a request that was not rejected by the
+   * auth gate — the phone page got past its gate and is loading the debug
+   * script. Fires in no-TOTP mode too (the listener is unconditional, like
+   * {@link onAttachHandshake}). Exceptions are swallowed.
+   *
+   * SECRET-HANDLING: no payload at all — never `req.url`, the TOTP code, or the
+   * relay host.
+   */
+  onTargetScriptServed?: () => void;
+  /**
+   * Fired for every WebSocket upgrade, classified by the pathname AFTER
+   * `rewriteAtPathPrefix` (`/target/<id>` = the phone page, `/client/<id>` =
+   * the daemon/inspector side; any other path is not reported). `accepted` is
+   * `false` when the TOTP gate rejected the upgrade. Installed outside the
+   * `verifyAuth` block, so a no-TOTP relay is observed too. Exceptions are
+   * swallowed.
+   *
+   * SECRET-HANDLING: the event carries ONLY `kind` and `accepted` — the target
+   * id, `req.url` and any `at=` value are never exposed.
+   */
+  onWsUpgrade?: (event: RelayWsUpgradeEvent) => void;
+  /**
+   * Fired once when an ACCEPTED `/target/<id>` WebSocket closes (phone went to
+   * the background, tunnel dropped, page closed). Exceptions are swallowed.
+   *
+   * SECRET-HANDLING: no payload.
+   */
+  onTargetClose?: () => void;
+  /**
    * WS protocol ping interval in milliseconds (issue #483).
    *
    * The relay sends a ping frame to every connected WebSocket at this interval
@@ -355,7 +400,14 @@ export interface StartChiiRelayOptions {
 export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promise<ChiiRelay> {
   const requestedPort = options.port ?? 0;
   const host = options.host ?? '127.0.0.1';
-  const { verifyAuth, onAuthReject, onAttachHandshake } = options;
+  const {
+    verifyAuth,
+    onAuthReject,
+    onAttachHandshake,
+    onTargetScriptServed,
+    onWsUpgrade,
+    onTargetClose,
+  } = options;
   const keepaliveIntervalMs =
     options.keepaliveIntervalMs !== undefined
       ? options.keepaliveIntervalMs
@@ -486,6 +538,19 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     const normalised = rewriteAtPathPrefix(raw) ?? raw;
     const questionMark = normalised.indexOf('?');
     const pathname = questionMark === -1 ? normalised : normalised.slice(0, questionMark);
+    if (pathname === TARGET_SCRIPT_PATH) {
+      // The auth listener above ends a rejected request (401) before this one
+      // runs (`writableEnded` guard), so reaching here means the phone page is
+      // being served the debug script. Chii's Koa handler still serves it.
+      if (onTargetScriptServed !== undefined) {
+        try {
+          onTargetScriptServed();
+        } catch {
+          // Observability is best-effort — never let it break the relay.
+        }
+      }
+      return;
+    }
     if (pathname !== ATTACH_HANDSHAKE_PATH) return;
 
     const query = questionMark === -1 ? '' : normalised.slice(questionMark + 1);
@@ -545,6 +610,9 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   // second handshake on the rejected socket — frames after our close frame
   // would reach chii's server-side WebSocket, i.e. an auth bypass. Capturing
   // chii's listeners and re-dispatching only on auth pass closes that hole.
+  // Upgrades the gate below rejected, so the observer after it can report
+  // `accepted: false` without re-running the verifier (and re-reading the code).
+  const rejectedUpgrades = new WeakSet<IncomingMessage>();
   if (verifyAuth) {
     const chiiUpgradeListeners = httpServer.listeners('upgrade') as Array<
       (req: IncomingMessage, socket: Duplex, head: Buffer) => void
@@ -572,6 +640,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
         rejectWss.handleUpgrade(req, socket, head, (ws) => {
           ws.close(RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
         });
+        rejectedUpgrades.add(req);
         notifyAuthReject('ws-upgrade');
         // Early return — chii's captured listeners are NOT called.
         return;
@@ -580,6 +649,51 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
       // stripped URL — same observable behaviour as the pre-#478 ordering).
       for (const listener of chiiUpgradeListeners) {
         listener(req, socket, head);
+      }
+    });
+  }
+
+  // Upgrade observer (phone-leg vs daemon-leg, accepted vs rejected). Registered
+  // OUTSIDE the `verifyAuth` block on purpose — a no-TOTP relay must be observable
+  // too, exactly like the unconditional handshake listener above. It only reads
+  // the pathname and never touches the socket's data or the chii listeners; the
+  // gate above (when present) has already run, so `req.url` is in the query form
+  // and `rejectedUpgrades` already holds a rejected request.
+  //
+  // SECRET-HANDLING: only the pathname's first segment is classified. `req.url`,
+  // the target id and the `at` value are never passed to a callback or logged.
+  if (onWsUpgrade !== undefined || onTargetClose !== undefined) {
+    httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
+      try {
+        const raw = req.url ?? '';
+        const normalised = rewriteAtPathPrefix(raw) ?? raw;
+        const questionMark = normalised.indexOf('?');
+        const pathname = questionMark === -1 ? normalised : normalised.slice(0, questionMark);
+        const kind = pathname.startsWith('/target/')
+          ? 'target'
+          : pathname.startsWith('/client/')
+            ? 'client'
+            : null;
+        if (kind === null) return;
+        const accepted = !rejectedUpgrades.has(req);
+        if (onWsUpgrade !== undefined) {
+          try {
+            onWsUpgrade({ kind, accepted });
+          } catch {
+            // Observability is best-effort — never let it break the relay.
+          }
+        }
+        if (kind === 'target' && accepted && onTargetClose !== undefined) {
+          socket.once('close', () => {
+            try {
+              onTargetClose();
+            } catch {
+              // Observability is best-effort.
+            }
+          });
+        }
+      } catch {
+        // Never let a malformed URL or a throwing observer break the upgrade chain.
       }
     });
   }

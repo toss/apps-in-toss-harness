@@ -26,6 +26,8 @@
  *   page.attached   — first CDP target appeared (deploymentId, env)
  *   page.detached   — target evicted / session replaced
  *   page.crashed    — target crash detected
+ *   stage.changed   — one attach stage transition (stage + result enum + attempt
+ *                     number only; see attach-timeline.ts)
  *   tool.call       — MCP tool invocation (tool name only — no args/results)
  *   tool.error      — MCP tool error (tool name + safe error category)
  *   tls.restored    — chii's load-time NODE_TLS_REJECT_UNAUTHORIZED side effect
@@ -43,6 +45,9 @@ export type LogEvent =
   | 'page.attached'
   | 'page.detached'
   | 'page.crashed'
+  // One attach stage transition (attach-timeline.ts). Carries only the stage and
+  // result enum plus the attempt number — never a URL, code or host.
+  | 'stage.changed'
   | 'tool.call'
   | 'tool.error'
   // run_tests progress (#646) — operator-visible in the daemon log, never in
@@ -72,6 +77,10 @@ const ALLOWED_KEYS = new Set([
   'reason',
   'prevTargetId',
   'mode',
+  // stage.changed (attach-timeline.ts) — enum strings and an attempt number.
+  'stage',
+  'result',
+  'attempt',
   // run_tests progress counts (#646) — numbers, redact-safe.
   'fileCount',
   'passed',

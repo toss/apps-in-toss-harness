@@ -46,8 +46,8 @@
 // was `import … from '../in-app/gate.js'` — the daemon reaching into the
 // browser tree. That reverse edge would now be a hard `@apps-in-toss/debugger` →
 // `@apps-in-toss/debug-console` dependency, which is exactly what the split forbids:
-// it would put `eruda` in the daemon's install graph while the bundle grep
-// still passed. The predicate lives in the shared protocol package instead and
+// it would put the device-side runtime's dependencies in the daemon's install
+// graph while the bundle grep still passed. The predicate lives in the shared protocol package instead and
 // is inlined into both bundles at build time.
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import { isDebugAllowedHost } from '@apps-in-toss/internal-protocol/debug-host';
@@ -67,13 +67,22 @@ import type { AitSource } from './ait-source.js';
 // to module level. `createDebugServer` assembles `attachDeps` from its closure
 // variables and calls these. Pure extraction; behavior unchanged (#684 PR1).
 import {
+  ATTACH_SUPERSEDED_REASON,
   type AttachDeps,
   type AttachUrlParts,
+  buildIndicatorExpression,
+  buildIndicatorRemovalExpression,
   isRelayPageFresh,
   prepareAttach as prepareAttachCore,
   RELAY_STALE_PAGE_MS,
   renderAndMaybeWait as renderAndMaybeWaitCore,
 } from './attach-orchestrator.js';
+import { startAttachProgress } from './attach-progress.js';
+import {
+  AttachTimeline,
+  buildDashboardTimelineState,
+  createRelayStageHooks,
+} from './attach-timeline.js';
 import { startMaxAgeWatchdog, startParentWatcher } from './parent-watcher.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
 
@@ -313,6 +322,12 @@ export interface DebugServerDeps {
    */
   diagnosticsCollector?: DiagnosticsCollector;
   /**
+   * attach 단계 기록기. 데몬은 relay 훅과 같은 인스턴스를 넘겨 폰 쪽 단계(핸드셰이크·
+   * 스크립트·WS)까지 한 기록에 담는다. 생략하면 이 서버 전용 기록기를 만든다(오케스트레이터가
+   * 남기는 QR 발급·매칭 단계만 기록된다).
+   */
+  attachTimeline?: AttachTimeline;
+  /**
    * Returns the device↔host protocol version skew observed on the attach
    * handshake, or `null` when the two halves agree (or no device has reported
    * yet).
@@ -497,6 +512,14 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // is supplied so existing tests that don't inject one continue to work.
   const collector: DiagnosticsCollector = collectorDep ?? new InMemoryDiagnosticsCollector();
 
+  // attach 단계 기록기 — progress 알림·타임아웃 진단·get_debug_status·대시보드가 이 하나를
+  // 공유한다. 데몬은 relay 훅과 같은 인스턴스를 주입한다.
+  const timeline: AttachTimeline = deps.attachTimeline ?? new AttachTimeline({ nowMs });
+
+  // 대기 중인 start_attach 한 건의 취소 수단. 새 start_attach가 들어오면 이전 대기를
+  // 끊어(`superseded`) 두 대기가 같은 relay를 놓고 겹치지 않게 한다.
+  let activeAttachController: AbortController | null = null;
+
   // ──────────────────────────────────────────────────────────────────────────
   // start_attach orchestration (issue #626 → extracted #684 PR1).
   //
@@ -516,6 +539,10 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     qrHttpServer,
     onAttachUrlBuilt,
     nowMs,
+    timeline,
+    // 삼켜지던 대기 중 에러를 get_debug_status.recentErrors로 흘려보낸다(redact는 collector).
+    recordError: (message, category) => collector.recordError(message, category),
+    getProtocolVersionSkew: deps.getProtocolVersionSkew,
   };
 
   const server = new Server(
@@ -542,7 +569,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     return { tools };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     if (!isDebugToolName(name)) {
       return {
@@ -650,15 +677,38 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         return Math.round(clamped) * 1000;
       })();
 
+      let attachController: AbortController | null = null;
+      let progress: { stop(): void } | null = null;
       try {
         const prep = await prepareAttachCore(attachDeps, attachEnv, args, attachConn);
         if (!prep.ok) return prep.error;
+        // 새 start_attach가 이전 대기를 대체한다: 이전 호출은 "superseded"로 끝나고, 이 호출이
+        // QR 발급과 대기를 이어받는다. prepare 검증을 통과한 뒤에 끊어, 잘못된 호출이 멀쩡한
+        // 대기를 죽이지 않게 한다.
+        activeAttachController?.abort(ATTACH_SUPERSEDED_REASON);
+        attachController = new AbortController();
+        activeAttachController = attachController;
+        // 클라이언트의 요청 취소(extra.signal)와 대체 신호를 한 신호로 합친다.
+        const waitSignal = extra?.signal
+          ? AbortSignal.any([attachController.signal, extra.signal])
+          : attachController.signal;
+        // progress 알림: 클라이언트가 progressToken을 보낸 경우에만 켠다. 같은 단계 기록을
+        // 구독할 뿐이라, 못 보는 클라이언트는 타임아웃 진단·get_debug_status로 같은 정보를 받는다.
+        progress = startAttachProgress({
+          timeline,
+          progressToken: extra?._meta?.progressToken,
+          sendNotification: (notification) => extra.sendNotification(notification),
+          signal: waitSignal,
+          totalSec: Math.round(callTimeoutMs / 1000),
+          nowMs,
+        });
         const attachResult = await renderAndMaybeWaitCore(
           attachDeps,
           prep,
           waitForAttach,
           callTimeoutMs,
           attachConn,
+          { signal: waitSignal },
         );
         if (!attachResult.isError) {
           // The device reported its build version on the handshake path while
@@ -678,6 +728,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         return attachResult;
       } catch (err) {
         return errorResult(err, name);
+      } finally {
+        progress?.stop();
+        if (attachController !== null && activeAttachController === attachController) {
+          activeAttachController = null;
+        }
       }
     }
 
@@ -746,6 +801,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           readLock: readLockFn,
           recentErrorsLimit,
           tunnelChildPid: getTunnelChildPid?.() ?? undefined,
+          attachTimeline: timeline,
         });
         const attached = conn.listTargets().length > 0;
         return envelopeResult(result, name, env, attached);
@@ -1407,6 +1463,34 @@ export function startAttachWatcher(
   };
 }
 
+/**
+ * 데몬용 attach 단계 기록기. 단계가 쌓일 때마다 구조화 로그(`stage.changed` — 단계·결과·시도
+ * 번호만)를 남기고 대시보드 SSE를 깨운다. `notify`는 `qrServer?.notifyStateChange()`를
+ * 늦게 평가해 넘긴다(qrServer는 기록기보다 나중에 만들어진다).
+ */
+export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
+  const timeline = new AttachTimeline();
+  timeline.onStage((event) => {
+    logInfo('stage.changed', { stage: event.stage, result: event.result, attempt: event.attempt });
+    notify();
+  });
+  return timeline;
+}
+
+/**
+ * best-effort: 폰의 "Debugger Connected" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
+ * `console.debug`를 쓰는 cell.ts 헬퍼 대신 직접 보낸다 — 데몬에서는 stdout이 MCP stdio라
+ * 로그 한 줄이 프로토콜을 깨뜨린다. 연결·타깃이 없으면 조용히 끝난다.
+ */
+function sendBadgeExpression(conn: CdpConnection, expression: string): void {
+  try {
+    if (conn.listTargets().length === 0) return;
+    conn.send('Runtime.evaluate', { expression }).catch(() => {});
+  } catch {
+    // best-effort
+  }
+}
+
 export interface RunDebugServerOptions {
   /**
    * Local Chii relay port. Default 0 (OS-assigned ephemeral port).
@@ -1585,6 +1669,12 @@ export interface BootRelayFamilyOptions {
    * inside `tunnelStatus`, surfaced via `getTunnelStatus()`).
    */
   onTunnelDown?: () => void;
+  /**
+   * attach 단계 기록기. 주면 relay 훅(스크립트 제공·WS 업그레이드·target 종료·인증 거부·
+   * 핸드셰이크)과 터널 up/down 이벤트가 이 기록기에 단계로 남는다. 기록은 비밀 없이 단계
+   * 이름·결과만 담는다.
+   */
+  timeline?: AttachTimeline;
 }
 
 /**
@@ -1622,11 +1712,22 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
   const relayPort = options.relayPort ?? 0;
   const totpEnabled = options.verifyAuth !== undefined;
 
+  // relay 훅 → 단계 기록. 기존 콜백(진단 수집기·프로토콜 버전 모니터)과 나란히 호출한다.
+  const stageHooks = options.timeline ? createRelayStageHooks(options.timeline) : undefined;
   const relay = await startChiiRelay({
     port: relayPort,
     verifyAuth: options.verifyAuth,
-    onAuthReject: options.onAuthReject,
-    onAttachHandshake: options.onAttachHandshake,
+    onAuthReject: (event) => {
+      stageHooks?.onAuthReject(event);
+      options.onAuthReject?.(event);
+    },
+    onAttachHandshake: (event) => {
+      stageHooks?.onAttachHandshake(event);
+      options.onAttachHandshake?.(event);
+    },
+    onTargetScriptServed: stageHooks?.onTargetScriptServed,
+    onWsUpgrade: stageHooks?.onWsUpgrade,
+    onTargetClose: stageHooks?.onTargetClose,
   });
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
   logInfo('server.start', { port: relay.port, totpEnabled });
@@ -1654,6 +1755,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
       }
       // SECRET-HANDLING: wssUrl contains the relay host — do not log it directly.
       logInfo('tunnel.up', { totpEnabled });
+      options.timeline?.record('tunnel', 'ok');
 
       // Start the health probe now that the tunnel URL is known.
       // The probe runs every 60 s and attempts up to 3 reissues on drop.
@@ -1662,6 +1764,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
           tunnel = newTunnel;
           tunnelStatus = makeTunnelStatus(true, newTunnel.wssUrl, null, 0);
           options.onWssUrl?.(newTunnel.wssUrl);
+          options.timeline?.record('tunnel', 'ok');
           // FIX (issue #572 review): update the lock's tunnelChildPid so a later
           // acquireLock sees the reissued tunnel's child — not the original dead one.
           // childPid is a plain integer — not a secret.
@@ -1675,6 +1778,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
         },
         onPermanentDrop: (droppedAt) => {
           tunnelStatus = makeTunnelStatus(false, null, droppedAt, 3);
+          options.timeline?.record('tunnel', 'down');
           logError('tunnel.down', {
             msg: `tunnel permanently dropped (${droppedAt}). Restart: ${RESTART_CMD}`,
           });
@@ -1690,6 +1794,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
     },
     (err) => {
       const message = err instanceof Error ? err.message : String(err);
+      options.timeline?.record('tunnel', 'down');
       logError('tunnel.down', {
         msg: `Failed to open cloudflared quick tunnel: ${message}. The relay is up locally; attach over the public URL is unavailable until the tunnel starts.`,
       });
@@ -1934,6 +2039,7 @@ export class DualConnectionRouter implements ConnectionRouter {
       this.deps.attachWatcherIntervalMs ?? 1_000,
       () => {
         this.deps.diagnosticsCollector.recordAttach();
+        logInfo('page.attached', { env: deriveEnvironment(activeFamily.connection.kind) });
         // Notify dashboard of page attach — SSE push so the browser tab updates.
         this.deps.onPageAttach?.();
         // Auto-open Chii DevTools only for a relay attach (env 3). The
@@ -1968,6 +2074,13 @@ export class DualConnectionRouter implements ConnectionRouter {
       // Fix #705-A: notify dashboard on silent detach (non-empty→empty) so
       // open browser tabs immediately see the "disconnected" state.
       () => {
+        this.deps.diagnosticsCollector.recordDetach();
+        logInfo('page.detached', { env: deriveEnvironment(activeFamily.connection.kind) });
+        // 타깃이 사라진 뒤라 보통은 보낼 곳이 없지만, 다른 target이 남은 경우를 위해 시도한다.
+        sendBadgeExpression(
+          activeFamily.connection,
+          buildIndicatorExpression({ state: 'disconnected' }),
+        );
         this.deps.onPageDetach?.();
       },
     );
@@ -2075,6 +2188,10 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // `PROTOCOL_VERSION` with this daemon's; package versions are never compared
   // (the two packages are versioned independently).
   const protocolVersionMonitor = createProtocolVersionMonitor();
+  // attach 단계 기록기 — relay 훅·오케스트레이터·터널 이벤트가 쓰고, progress 알림·
+  // get_debug_status·대시보드·구조화 로그가 읽는다.
+  const attachTimeline = createDaemonAttachTimeline(() => qrServer?.notifyStateChange());
+  const sessionStartedAt = new Date().toISOString();
 
   // FIX (issue #572 review): track the live cloudflared child PID in memory so
   // get_debug_status can pass it to getDiagnostics as source (a). Updated by
@@ -2122,6 +2239,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
             // new state so the dashboard swaps the dead QR for the error
             // state (mirror of onWssUrl's notifyStateChange).
             onTunnelDown: () => qrServer?.notifyStateChange(),
+            timeline: attachTimeline,
           }),
     diagnosticsCollector,
     devtoolsOpener,
@@ -2171,6 +2289,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
       // 분기(#468). start_debug family swap을 따라가도록 저장하지 않고 파생한다.
       mode: deriveEnvironment(router.active.kind),
       phase: currentPhase, // #730
+      ...buildDashboardTimelineState(attachTimeline, sessionStartedAt),
     };
   };
 
@@ -2240,6 +2359,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
       return qrServer;
     },
     diagnosticsCollector,
+    attachTimeline,
     // Device↔host version skew, or null. Read at call time so a device that
     // reports after the server was built is still seen.
     getProtocolVersionSkew: () => protocolVersionMonitor.getMismatch(),
@@ -2293,6 +2413,9 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     maxAgeWatchdog?.stop();
     if (totpRefreshHandle) clearInterval(totpRefreshHandle);
     router.stopWatcher();
+    // 폰에 "Debugger Connected" 배지가 남지 않게 best-effort로 지운다(family.stop()이
+    // 연결을 닫기 전에 보낸다).
+    sendBadgeExpression(router.active, buildIndicatorRemovalExpression());
     // Tear down every booted family (all lazy, #396 — only those ever started).
     // family.stop() is synchronous for the infra (tunnel/Chromium kill) — safe
     // from exit handlers; the relay's relay.close() inside is async fire-and-forget.
@@ -2489,6 +2612,10 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   // `PROTOCOL_VERSION` with this daemon's; package versions are never compared
   // (the two packages are versioned independently).
   const protocolVersionMonitor = createProtocolVersionMonitor();
+  // attach 단계 기록기 — relay 훅·오케스트레이터·터널 이벤트가 쓰고, progress 알림·
+  // get_debug_status·대시보드·구조화 로그가 읽는다.
+  const attachTimeline = createDaemonAttachTimeline(() => qrServer?.notifyStateChange());
+  const sessionStartedAt = new Date().toISOString();
 
   // FIX (issue #572 review): track the live cloudflared child PID in memory so
   // get_debug_status can pass it to getDiagnostics as source (a). Updated by
@@ -2529,6 +2656,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
             // new state so the dashboard swaps the dead QR for the error
             // state (mirror of onWssUrl's notifyStateChange).
             onTunnelDown: () => qrServer?.notifyStateChange(),
+            timeline: attachTimeline,
           }),
     diagnosticsCollector,
     devtoolsOpener,
@@ -2567,6 +2695,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
       attachUrl: lastAttachParts ? rebuildAttachUrl(lastAttachParts) : null,
       inspectorUrl,
       phase: currentPhase, // #730
+      ...buildDashboardTimelineState(attachTimeline, sessionStartedAt),
     };
   };
 
@@ -2637,6 +2766,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
       return qrServer;
     },
     diagnosticsCollector,
+    attachTimeline,
     // Device↔host version skew, or null. Read at call time so a device that
     // reports after the server was built is still seen.
     getProtocolVersionSkew: () => protocolVersionMonitor.getMismatch(),
@@ -2679,6 +2809,9 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     maxAgeWatchdog?.stop();
     if (totpRefreshHandle) clearInterval(totpRefreshHandle);
     router.stopWatcher();
+    // 폰에 "Debugger Connected" 배지가 남지 않게 best-effort로 지운다(family.stop()이
+    // 연결을 닫기 전에 보낸다).
+    sendBadgeExpression(router.active, buildIndicatorRemovalExpression());
     // Tear down every booted family (all lazy, #396 — only those ever started).
     for (const family of router.bootedFamilies()) family.stop();
     void server.close();

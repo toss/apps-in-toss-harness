@@ -28,6 +28,12 @@ import type {
   AitSdkCallHistory,
   AitSource,
 } from './ait-source.js';
+import {
+  type AttachDiagnosis,
+  type AttachStageEvent,
+  type AttachTimeline,
+  diagnoseAttach,
+} from './attach-timeline.js';
 import type {
   CdpCallFrame,
   CdpConnection,
@@ -153,7 +159,13 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'and refreshes the dashboard QR in place (no browser re-open). You do NOT need to re-call ' +
       'start_attach every time the code would expire — a single call covers the whole wait window. ' +
       'The response includes a `totp` field with `expiresAt` and a `reminted` count of how many fresh ' +
-      'codes were issued during the wait. Without AIT_DEBUG_TOTP_SECRET, the attachUrl has no expiry.',
+      'codes were issued during the wait. Without AIT_DEBUG_TOTP_SECRET, the attachUrl has no expiry. ' +
+      '(That applies to code expiry only — if the call times out, follow the diagnosis in the error text instead of re-calling blindly.)\n\n' +
+      'Progress: when the client sends a progressToken, the call emits notifications/progress with the attach stage ' +
+      '(QR issued → phone opened the page → script loaded → phone connected → page matched) and a heartbeat every ~15 s. ' +
+      'Not every client renders these, so the same stage history is also in the timeout error and in get_debug_status ' +
+      '(`attachStages`, `attachDiagnosis`). On timeout the error names the last stage reached, the likely cause and what the user should do. ' +
+      'Calling start_attach again while a previous call is still waiting cancels the previous wait (it returns "superseded").',
     inputSchema: {
       type: 'object',
       properties: {
@@ -436,6 +448,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'recentErrors (last N server-side errors, PII/secret redacted), ' +
       'authRejects ({count, lastAt} — relay TOTP 401 rejections, secret-free; count > 0 with empty pages ' +
       'means the phone reached the relay but its code was rejected), ' +
+      'attachStages (stage history of the latest start_attach attempt: tunnel, qr-issued, device-handshake, auth, ' +
+      'target-connected/disconnected, matched — time + result only, no URLs or codes) and ' +
+      'attachDiagnosis ({kind, lastStage, summary, actions[]} — where the latest attempt stopped and what the user should do, or null before any attempt), ' +
       'environment (kind: mock|relay-dev, env: mock|relay backward-compat, reason, ' +
       'liveGuardActive: always false — relay-live and LIVE guard removed (#665); ' +
       'start_debug mode→kind mapping: relay-staging→relay-dev, local-browser→mock), ' +
@@ -1812,6 +1827,17 @@ export interface DiagnosticsResult {
    */
   authRejects: AuthRejectsSnapshot;
   /**
+   * 현재(마지막) `start_attach` 시도의 단계 기록 — 타임아웃 진단·progress·대시보드
+   * 타임라인과 같은 기록이다. 시도가 없었으면 `[]`. 시각·단계·결과 enum만 담는다
+   * (URL·코드·host 없음).
+   */
+  attachStages: AttachStageEvent[];
+  /**
+   * `attachStages`를 `diagnoseAttach`로 분류한 결과(타임아웃 에러와 같은 함수). attach
+   * 시도가 한 번도 없었으면 `null`.
+   */
+  attachDiagnosis: AttachDiagnosis | null;
+  /**
    * Resolved environment and the reason string.
    *
    * `kind` — the precise environment (`mock` | `relay-dev`). Use this for new
@@ -2064,6 +2090,7 @@ export function computeNextRecommendedAction(
   pages: ListPagesResult | null,
   env: McpEnvironment,
   authRejects: AuthRejectsSnapshot | null = null,
+  attachDiagnosis: AttachDiagnosis | null = null,
 ): NextRecommendedAction | null {
   // Rule 0: permanent tunnel drop — highest priority, beats crash / empty-pages rules.
   // droppedAt is set by the health probe after exhausting all reissue attempts.
@@ -2118,9 +2145,17 @@ export function computeNextRecommendedAction(
 
   // Rule 2: tunnel up but no pages attached in relay env → start attach.
   if (isRelayEnv(env) && pages !== null && pages.pages.length === 0 && !pages.crashDetectedAt) {
+    // 직전 attach 시도가 어디서 멈췄는지 알면 그 진단을 같이 실어 보낸다
+    // (`not-started`/`attached`는 덧붙일 말이 없다).
+    const diagnosisNote =
+      attachDiagnosis !== null &&
+      attachDiagnosis.kind !== 'not-started' &&
+      attachDiagnosis.kind !== 'attached'
+        ? ` — 직전 시도: ${attachDiagnosis.summary}`
+        : '';
     return {
       tool: 'start_attach',
-      reason: 'tunnel ready, no pages attached — call start_attach to generate the attach QR',
+      reason: `tunnel ready, no pages attached — call start_attach to generate the attach QR${diagnosisNote}`,
     };
   }
 
@@ -2176,6 +2211,12 @@ export interface GetDiagnosticsInput {
    * as truth when the cloudflared process has already exited.
    */
   tunnelChildPid?: number | null;
+  /**
+   * attach 단계 기록기. 주면 `attachStages`/`attachDiagnosis`를 채운다(없으면 `[]`/`null`).
+   * collector와 따로 받는 이유: `DiagnosticsCollector`를 구현한 기존 fake들이 깨지지
+   * 않게 하려는 것이다.
+   */
+  attachTimeline?: AttachTimeline;
 }
 
 /**
@@ -2200,6 +2241,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     getMcpVersion = readMcpSdkVersion,
     checkParentAlive = () => isPidAlive(process.ppid),
     tunnelChildPid,
+    attachTimeline,
   } = input;
 
   const [mcpVersion, devtoolsVersion] = await Promise.all([
@@ -2277,7 +2319,21 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     });
   }
 
-  const nextRecommendedAction = computeNextRecommendedAction(tunnelInfo, pages, env, authRejects);
+  // attach 단계 기록 + 분류. 시도가 한 번도 없었으면 진단하지 않는다(null).
+  const timelineSnapshot = attachTimeline?.snapshot();
+  const attachStages = timelineSnapshot?.events ?? [];
+  const attachDiagnosis =
+    timelineSnapshot !== undefined && timelineSnapshot.attempt > 0
+      ? diagnoseAttach(timelineSnapshot, { observedPages: pages?.pages ?? [] })
+      : null;
+
+  const nextRecommendedAction = computeNextRecommendedAction(
+    tunnelInfo,
+    pages,
+    env,
+    authRejects,
+    attachDiagnosis,
+  );
 
   return {
     mcpVersion,
@@ -2288,6 +2344,8 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     lastDetachAt: collector.getLastDetachAt(),
     recentErrors,
     authRejects,
+    attachStages,
+    attachDiagnosis,
     environment: {
       kind: env,
       env: toLegacyEnv(env),

@@ -12,7 +12,10 @@
  *   - classifyToolError(): 에러 메시지 패턴으로 4상태 자동 분류
  */
 import { describe, expect, it } from 'vitest';
+import { AttachTimeline, diagnoseAttach } from '../attach-timeline.js';
 import {
+  attachSupersededError,
+  attachTimeoutMessage,
   classifyToolError,
   mcpError,
   pageCrashError,
@@ -20,6 +23,7 @@ import {
   relayDisconnectError,
   sdkAbsentError,
   tierRejectionError,
+  totpRejectedError,
   tunnelDownError,
 } from '../errors.js';
 
@@ -284,5 +288,98 @@ describe('classifyToolError — 에러 패턴 자동 분류', () => {
   it('Error 이외의 타입도 처리', () => {
     const result = classifyToolError('plain string error', 'list_exceptions');
     expect(getText(result)).toContain('list_exceptions');
+  });
+});
+
+// ---------- attach 타임아웃 / superseded / TOTP 4401 ----------
+
+describe('attachTimeoutMessage', () => {
+  function diag(setup: (tl: AttachTimeline) => void, pages: Array<{ url: string }> = []) {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    setup(tl);
+    return diagnoseAttach(tl.snapshot(), { observedPages: pages });
+  }
+
+  it('leads with the Korean diagnosis and numbered actions, then the English retry line', () => {
+    const text = attachTimeoutMessage({
+      diagnosis: diag((tl) => tl.record('qr-issued', 'ok', 'mint')),
+      timeoutSec: 180,
+      stageHistory: ['+0s QR 발급됨 — 폰으로 스캔하세요'],
+      deploymentId: 'abc',
+    });
+    expect(text.split('\n')[0]).toMatch(/^attach 타임아웃 \(180초\): /);
+    expect(text).toContain('해야 할 일:');
+    expect(text).toContain('1. ');
+    expect(text).toContain('진행 기록:');
+    expect(text).toContain('No page matching deploymentId=abc attached within 180s');
+    expect(text).toContain('list_pages');
+    // 열린 미니앱 안내(에이전트 대면 영문 계약)
+    expect(text).toContain('already open in the Toss app');
+    expect(text).toContain('X button');
+  });
+
+  it('lists previously attached pages and omits the already-open note when attach is not the problem', () => {
+    const wrong = attachTimeoutMessage({
+      diagnosis: diag(
+        (tl) => {
+          tl.record('qr-issued', 'ok', 'mint');
+          tl.record('target-connected', 'ok');
+        },
+        [{ url: 'intoss-private://app?_deploymentId=old-session-fake-id&at=111111' }],
+      ),
+      timeoutSec: 30,
+    });
+    expect(wrong).toContain(
+      'previously attached pages: [intoss-private://app?_deploymentId=old-session-fake-id&at=<redacted>]',
+    );
+    expect(wrong).not.toContain('111111');
+
+    const expired = attachTimeoutMessage({
+      diagnosis: diag((tl) => {
+        tl.record('qr-issued', 'ok', 'mint');
+        tl.record('auth', 'rejected', 'ws-4401');
+      }),
+      timeoutSec: 30,
+    });
+    expect(expired).not.toContain('X button');
+  });
+
+  it('carries the protocol note and the swallowed wait error', () => {
+    const text = attachTimeoutMessage({
+      diagnosis: diag((tl) => tl.record('qr-issued', 'ok', 'mint')),
+      timeoutSec: 10,
+      protocolNote: '프로토콜 불일치 안내',
+      waitError: 'relay fetch failed',
+    });
+    expect(text).toContain('프로토콜 불일치 안내');
+    expect(text).toContain('대기 중 오류: relay fetch failed');
+  });
+});
+
+describe('attachSupersededError', () => {
+  it('is an error result that says the wait was superseded', () => {
+    const r = attachSupersededError();
+    expect(r.isError).toBe(true);
+    expect(getText(r)).toContain('superseded');
+    expect(getText(r)).toContain('새 start_attach');
+  });
+});
+
+describe('classifyToolError — TOTP 4401', () => {
+  it('classifies a relay close 4401 as a TOTP rejection, not a disconnect', () => {
+    const r = classifyToolError(new Error('relay closed: close 4401 unauthorized'), 'list_pages');
+    expect(getText(r)).toContain('relay 인증(TOTP)이 거부됐습니다');
+    expect(getText(r)).toContain('list_pages');
+    expect(getText(r)).not.toContain('연결이 끊');
+  });
+
+  it('also matches the Korean rejection wording', () => {
+    const r = classifyToolError(new Error('relay 인증(TOTP)이 거부됐습니다'), 'start_attach');
+    expect(getText(r)).toContain('.ait_relay');
+  });
+
+  it('totpRejectedError never embeds a code or URL', () => {
+    expect(getText(totpRejectedError())).not.toMatch(/\d{6}|wss?:\/\//);
   });
 });
