@@ -13,6 +13,7 @@ import type {
   RuntimeExceptionThrownEvent,
 } from '../cdp-connection.js';
 import {
+  DEBUG_TOOL_DEFINITIONS,
   getDomDocument,
   getMockState,
   getOperationalEnvironment,
@@ -627,5 +628,19 @@ describe('listExceptions', () => {
     const connection = new FakeCdpConnection({ exceptions: events });
     const result = listExceptions(connection, 999);
     expect(result).toHaveLength(50);
+  });
+});
+
+describe('start_attach tool description — already-open mini-app guidance', () => {
+  const def = DEBUG_TOOL_DEFINITIONS.find((t) => t.name === 'start_attach');
+
+  it('warns that scanning does not reload an already-open mini-app and says to close it with X first', () => {
+    expect(def?.description).toContain('ALREADY open in the Toss app');
+    expect(def?.description).toContain('does not reload');
+    expect(def?.description).toContain('X button');
+  });
+
+  it('documents that an existing dashboard tab is refreshed instead of opening a new one', () => {
+    expect(def?.description).toContain('no new tab is opened');
   });
 });

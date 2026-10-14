@@ -581,24 +581,27 @@ export function createRelayConnectionFactory(
     },
 
     async close(connection: CdpConnection): Promise<void> {
-      // #730: flip the on-phone badge to disconnected AND push the terminal
-      // dashboard frame BEFORE tearing anything down, so neither surface goes
-      // dark without explanation when the CLI exits (dog-food gaps #1 + #2).
+      // #730: push the terminal dashboard frame AND take the on-phone badge off
+      // the page BEFORE tearing anything down, so neither surface goes dark
+      // without explanation when the CLI exits (dog-food gaps #1 + #2).
+      // The badge is REMOVED rather than flipped to "disconnected": a leftover
+      // badge on a page that will never dial a relay again misleads (the page is
+      // not reloaded by a new QR scan while the mini-app is still open).
       // Both are best-effort over the still-open channels — the ordering
       // (before family.stop()/qrServer.close()) is load-bearing:
       //   - qrServer.notifyStateChange() writes synchronously to the still-open
       //     SSE sockets, so the 'complete' frame is on the wire before the HTTP
       //     server is closed below.
-      //   - injectDebugIndicator runs over the still-open CDP channel, so the
-      //     phone actually receives the disconnected-state update before the
-      //     relay/tunnel are torn down.
+      //   - removeDebugIndicator runs over the still-open CDP channel, so the
+      //     phone actually receives the removal before the relay/tunnel are
+      //     torn down.
       if (phase !== 'complete') {
         phase = 'complete';
         qrServer?.notifyStateChange();
       }
       try {
-        const { injectDebugIndicator } = await import('./cell.js');
-        await injectDebugIndicator(connection, { state: 'disconnected' });
+        const { removeDebugIndicator } = await import('./cell.js');
+        await removeDebugIndicator(connection);
       } catch {
         // Channel may already be down (e.g. attach never completed) — non-fatal,
         // the badge is informational UI only.

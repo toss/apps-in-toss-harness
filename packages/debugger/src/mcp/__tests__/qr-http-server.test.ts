@@ -23,7 +23,7 @@
  */
 import { createServer, type Server } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type DashboardState, startQrHttpServer } from '../qr-http-server.js';
+import { type DashboardState, MAX_SSE_CLIENTS, startQrHttpServer } from '../qr-http-server.js';
 
 process.env.AIT_DEBUG_HTTP_PORT = '0';
 
@@ -2203,6 +2203,8 @@ describe('startQrHttpServer — SSE watchdog 실발화 검증 (#681)', () => {
       onopen: ((e: Event) => void) | null;
       onmessage: ((e: MessageEvent) => void) | null;
       onerror: ((e: Event) => void) | null;
+      closed: boolean;
+      emit: (type: string) => void;
     };
     closeSpy: ReturnType<typeof vi.fn>;
     cleanup: () => void;
@@ -2214,12 +2216,26 @@ describe('startQrHttpServer — SSE watchdog 실발화 검증 (#681)', () => {
       onopen: ((e: Event) => void) | null;
       onmessage: ((e: MessageEvent) => void) | null;
       onerror: ((e: Event) => void) | null;
+      closed: boolean;
+      emit: (type: string) => void;
     } | null = null;
 
     class StubEventSource {
       onopen: ((e: Event) => void) | null = null;
       onmessage: ((e: MessageEvent) => void) | null = null;
       onerror: ((e: Event) => void) | null = null;
+      closed = false;
+      private listeners = new Map<string, Array<(e: Event) => void>>();
+      addEventListener(type: string, fn: (e: Event) => void): void {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+      }
+      /** 서버가 보내는 named SSE 이벤트(`superseded` 등)를 시뮬레이션한다. */
+      emit(type: string): void {
+        for (const fn of this.listeners.get(type) ?? []) fn(new Event(type));
+      }
+      close(): void {
+        this.closed = true;
+      }
       constructor() {
         // 인스턴스를 외부로 노출해 테스트에서 직접 호출한다.
         sseInstance = this;
@@ -2564,6 +2580,8 @@ describe('startQrHttpServer — SSE onerror/phase 클라이언트 동작 시뮬�
       onopen: ((e: Event) => void) | null;
       onmessage: ((e: MessageEvent) => void) | null;
       onerror: ((e: Event) => void) | null;
+      closed: boolean;
+      emit: (type: string) => void;
     };
     cleanup: () => void;
   } {
@@ -2571,12 +2589,26 @@ describe('startQrHttpServer — SSE onerror/phase 클라이언트 동작 시뮬�
       onopen: ((e: Event) => void) | null;
       onmessage: ((e: MessageEvent) => void) | null;
       onerror: ((e: Event) => void) | null;
+      closed: boolean;
+      emit: (type: string) => void;
     } | null = null;
 
     class StubEventSource {
       onopen: ((e: Event) => void) | null = null;
       onmessage: ((e: MessageEvent) => void) | null = null;
       onerror: ((e: Event) => void) | null = null;
+      closed = false;
+      private listeners = new Map<string, Array<(e: Event) => void>>();
+      addEventListener(type: string, fn: (e: Event) => void): void {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+      }
+      /** 서버가 보내는 named SSE 이벤트(`superseded` 등)를 시뮬레이션한다. */
+      emit(type: string): void {
+        for (const fn of this.listeners.get(type) ?? []) fn(new Event(type));
+      }
+      close(): void {
+        this.closed = true;
+      }
       constructor() {
         sseInstance = this;
       }
@@ -2847,6 +2879,278 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
       stderrSpy.mockRestore();
       await closeNetServer(occupiedA);
       await closeNetServer(occupiedB);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSE 구독 상한 + 대시보드 탭 재사용 (연결 기아 방지)
+// ---------------------------------------------------------------------------
+
+describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
+  const baseState: DashboardState = {
+    tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
+    pages: [],
+    attachUrl: null,
+    phase: 'active',
+  };
+
+  /** /events를 열고 지금까지 받은 텍스트를 모으는 리더. */
+  async function openSse(port: number): Promise<{
+    text: () => string;
+    ended: Promise<void>;
+    abort: () => void;
+  }> {
+    const ctrl = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/events`, { signal: ctrl.signal });
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    const ended = (async () => {
+      try {
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          buf += decoder.decode(value, { stream: true });
+        }
+      } catch {
+        // abort
+      }
+    })();
+    // 초기 frame이 도착할 때까지 대기.
+    for (let i = 0; i < 100 && !buf.includes('\n\n'); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return { text: () => buf, ended, abort: () => ctrl.abort() };
+  }
+
+  async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!cond() && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it('구독 탭이 없으면 hasActiveClients()는 false, 연결하면 true, 끊으면 다시 false', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      expect(srv.hasActiveClients()).toBe(false);
+      const a = await openSse(srv.port);
+      expect(srv.hasActiveClients()).toBe(true);
+      a.abort();
+      await waitFor(() => !srv.hasActiveClients());
+      expect(srv.hasActiveClients()).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it(`구독이 ${MAX_SSE_CLIENTS}개를 넘으면 가장 오래된 구독에 superseded 이벤트를 보내고 응답을 끝낸다`, async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
+      for (let i = 0; i < MAX_SSE_CLIENTS; i++) {
+        opened.push(await openSse(srv.port));
+      }
+      const oldest = opened[0];
+      expect(oldest?.text()).not.toContain('event: superseded');
+
+      const newest = await openSse(srv.port);
+
+      await oldest?.ended; // 서버가 응답을 end → 스트림 종료
+      expect(oldest?.text()).toContain('event: superseded');
+      // 새 구독과 나머지 구독은 밀려나지 않는다.
+      expect(newest.text()).not.toContain('event: superseded');
+      expect(opened[1]?.text()).not.toContain('event: superseded');
+      expect(srv.hasActiveClients()).toBe(true);
+
+      for (const c of [...opened, newest]) c.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('상한을 넘겨 연속으로 열어도 notifyStateChange는 살아있는 구독자에게만 전달된다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const clients: Array<Awaited<ReturnType<typeof openSse>>> = [];
+      for (let i = 0; i < MAX_SSE_CLIENTS + 2; i++) {
+        clients.push(await openSse(srv.port));
+      }
+      expect(() => srv.notifyStateChange()).not.toThrow();
+      const last = clients[clients.length - 1];
+      await waitFor(() => (last?.text().match(/data: /g)?.length ?? 0) >= 2);
+      expect(last?.text().match(/data: \{/g)?.length).toBeGreaterThanOrEqual(2);
+      for (const c of clients) c.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe('startQrHttpServer — 대시보드 SSE 클라이언트 스크립트 (상한/pagehide)', () => {
+  const state: DashboardState = {
+    tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
+    pages: [],
+    attachUrl: null,
+    phase: 'active',
+  };
+
+  async function fetchScript(port: number): Promise<string> {
+    const html = await (
+      await fetch(`http://127.0.0.1:${port}/`, { headers: { 'Accept-Language': 'ko' } })
+    ).text();
+    return extractLastScriptContent(html);
+  }
+
+  type StubSse = {
+    onerror: ((e: Event) => void) | null;
+    closed: boolean;
+    emit: (type: string) => void;
+  };
+
+  function evalScript(script: string): StubSse {
+    let inst: StubSse | null = null;
+    class StubEventSource {
+      onopen: ((e: Event) => void) | null = null;
+      onmessage: ((e: MessageEvent) => void) | null = null;
+      onerror: ((e: Event) => void) | null = null;
+      closed = false;
+      private listeners = new Map<string, Array<(e: Event) => void>>();
+      addEventListener(type: string, fn: (e: Event) => void): void {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+      }
+      emit(type: string): void {
+        for (const fn of this.listeners.get(type) ?? []) fn(new Event(type));
+      }
+      close(): void {
+        this.closed = true;
+      }
+      constructor() {
+        inst = this;
+      }
+    }
+    vi.stubGlobal('EventSource', StubEventSource);
+    (window as unknown as Record<string, unknown>).close = vi.fn();
+    document.body.innerHTML =
+      '<div id="test-root"><div id="tunnel-status"></div><div id="attach-section"></div></div>';
+    // biome-ignore lint/security/noGlobalEval: 인라인 스크립트 검증 목적
+    eval(script);
+    if (!inst) throw new Error('StubEventSource 인스턴스가 생성되지 않았습니다');
+    return inst;
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('superseded 이벤트를 받으면 EventSource를 닫고 정적 안내만 남기며 재연결 오류가 덮어쓰지 않는다', async () => {
+    const srv = await startQrHttpServer(() => state);
+    try {
+      const sse = evalScript(await fetchScript(srv.port));
+      sse.emit('superseded');
+
+      expect(sse.closed).toBe(true);
+      expect(document.body.textContent).toContain('다른 탭에서 대시보드가 열려 있어요');
+
+      // 서버가 응답을 끝낸 뒤 오는 onerror가 안내를 '연결 끊김'으로 덮어쓰지 않는다.
+      sse.onerror?.(new Event('error'));
+      expect(document.body.textContent).toContain('다른 탭에서 대시보드가 열려 있어요');
+      expect(document.body.textContent).not.toContain('연결 끊김');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('pagehide 시 EventSource를 닫아 연결을 즉시 반납한다', async () => {
+    const srv = await startQrHttpServer(() => state);
+    try {
+      const sse = evalScript(await fetchScript(srv.port));
+      expect(sse.closed).toBe(false);
+      window.dispatchEvent(new Event('pagehide'));
+      expect(sse.closed).toBe(true);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 이미 열린 미니앱 안내 (스캔해도 새로고침되지 않음)
+// ---------------------------------------------------------------------------
+
+describe('startQrHttpServer — 이미 열린 미니앱은 스캔해도 새로고침되지 않는다는 안내', () => {
+  const stateWithQr: DashboardState = {
+    tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
+    pages: [],
+    attachUrl: 'intoss-private://app?_deploymentId=x&relay=wss%3A%2F%2Ftest',
+    phase: 'active',
+  };
+
+  it('QR이 있는 대시보드 정적 렌더에 X 버튼으로 먼저 닫으라는 안내(ko)가 들어간다', async () => {
+    const srv = await startQrHttpServer(() => stateWithQr);
+    try {
+      const html = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(html).toContain('reopen-hint');
+      expect(html).toContain('새로고침되지 않아');
+      expect(html).toContain('X 버튼');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('en 로케일은 영어 안내를 쓴다', async () => {
+    const srv = await startQrHttpServer(() => stateWithQr);
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=en`)).text();
+      expect(html).toContain('does not reload it');
+      expect(html).toContain('X button');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('QR이 없는 대기 상태에는 안내를 그리지 않는다 (SSE 스크립트 상수에만 존재)', async () => {
+    const srv = await startQrHttpServer(() => ({ ...stateWithQr, attachUrl: null }));
+    try {
+      const html = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(html).not.toContain('<p class="hint reopen-hint">');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('SSE 재렌더도 같은 안내를 QR 아래에 다시 그린다 (복사 버튼과 같은 구조 유지)', async () => {
+    const srv = await startQrHttpServer(() => stateWithQr);
+    try {
+      const html = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      const script = extractLastScriptContent(html);
+      expect(script).toContain('REOPEN_HINT');
+      expect(script).toContain('\'<p class=\\"hint reopen-hint\\">\' + REOPEN_HINT');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('/attach 스캔 절차 1단계에도 이미 열린 미니앱을 먼저 닫으라는 안내가 있다', async () => {
+    const srv = await startQrHttpServer(() => stateWithQr);
+    try {
+      const html = await (
+        await fetch(
+          `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent('intoss-private://app?_deploymentId=x')}`,
+          { headers: { 'Accept-Language': 'ko' } },
+        )
+      ).text();
+      expect(html).toContain('이미 열려 있다면');
+      expect(html).toContain('X 버튼으로 먼저 닫으세요');
+    } finally {
+      await srv.close();
     }
   });
 });

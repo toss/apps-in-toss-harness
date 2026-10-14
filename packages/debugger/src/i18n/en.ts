@@ -19,6 +19,8 @@ export const en: Record<StringKey, string> = {
   'dashboard.attach.hint': 'Call the start_attach MCP tool to show the QR here.',
   'dashboard.attach.tunnelDown':
     'Relay disconnected — this QR is no longer valid. Restart the relay, then regenerate the QR.',
+  'dashboard.attach.reopenHint':
+    'If the mini-app is already open in the Toss app, scanning the QR does not reload it, so it will not attach. Close the mini-app with the X button first, then scan again.',
   'dashboard.pages.section': 'Connected Pages',
   'dashboard.pages.empty': 'No attached pages',
   'dashboard.url.copy': 'Copy',
@@ -33,6 +35,9 @@ export const en: Record<StringKey, string> = {
     'The MCP server has stopped. This session is no longer active. You may close this tab.',
   'dashboard.watchdog.close': 'Close tab',
   'dashboard.conn.lost': 'Connection lost — reconnecting…',
+  'dashboard.superseded.title': 'The dashboard is open in another tab',
+  'dashboard.superseded.body':
+    'This tab no longer updates. Use the most recently opened dashboard tab, or close this one.',
   'dashboard.session.completeTitle': 'Test run complete',
   'dashboard.session.completeBody': 'The runner exited cleanly. See your terminal for results.',
   'dashboard.session.shutdownTitle': 'Debug server stopped',
@@ -44,7 +49,8 @@ export const en: Record<StringKey, string> = {
   'attach.faq.section': 'Troubleshooting checklist',
   'attach.url.section': 'URL (fallback)',
   'attach.mode.intossDev': 'env 3 — intoss-private relay dev',
-  'attach.intoss.step1': 'Open the Toss app.',
+  'attach.intoss.step1':
+    'Open the Toss app. If this mini-app is already open, scanning will not reload it, so close it with the X button first.',
   'attach.intoss.step2': 'Scan the QR code with your phone camera app.',
   'attach.intoss.step3': 'Tap <strong>"Open in Toss"</strong> when the popup appears.',
   'attach.intoss.step4': 'The mini-app opens and the debug session attaches automatically.',

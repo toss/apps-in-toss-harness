@@ -134,7 +134,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'builds the self-attaching deep-link QR for the active relay environment, and waits for the ' +
       'phone to attach — all in one call (replaces the old attach-URL + start_debug two-step). ' +
       'Scan the QR with the phone camera to open the mini-app and attach it to this debug session ' +
-      '(QR is the single entry path — no USB cable or platform CLI needed).\n\n' +
+      '(QR is the single entry path — no USB cable or platform CLI needed). ' +
+      'If the mini-app is ALREADY open in the Toss app, scanning does not reload it with the new relay/at params, ' +
+      'so it never attaches and this call waits until it times out: tell the user to close the mini-app with the X button first, then scan.\n\n' +
       'mode (optional): pass "relay-staging" (env 3) to switch the active environment first. ' +
       'When omitted, the current relay environment is used as-is (no switch). ' +
       'Passing "local-browser" returns an error — start_attach is relay-only (env 3). ' +
@@ -143,7 +145,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       '`ait deploy --scheme-only`. Splices debug=1 + relay URL into the scheme URL.\n\n' +
       'Waits for a page to attach by default (up to wait_timeout_seconds, default 60 s). ' +
       'The server automatically opens the QR dashboard in the OS default browser when running on a ' +
-      'local GUI machine — headless/remote environments fall back to the text QR in the tool output.' +
+      'local GUI machine — headless/remote environments fall back to the text QR in the tool output. ' +
+      'If a dashboard tab is already connected, no new tab is opened; the existing tab is refreshed in place.' +
       '\n\nTOTP auto re-mint: when AIT_DEBUG_TOTP_SECRET is set on the MCP server, the attachUrl carries ' +
       'a one-time code (at=<code>) valid for ~3 minutes (the relay gate accepts ±6 TOTP steps). ' +
       'While waiting, start_attach AUTOMATICALLY re-mints a fresh code before the current one expires ' +

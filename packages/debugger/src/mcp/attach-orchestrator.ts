@@ -46,6 +46,18 @@ import { generateTotp, RELAY_VERIFY_SKEW_STEPS } from './totp.js';
 import { renderQr } from './tunnel.js';
 
 /**
+ * Why a QR scan can silently do nothing: when the mini-app is ALREADY open in
+ * the Toss app, scanning an attach QR only brings the existing WebView to the
+ * front — it is NOT reloaded with the new query (`relay=`, `at=`), so the stale
+ * page never dials the new relay and `start_attach` waits until its timeout.
+ * Surfaced in the tool description, the result header and the timeout error.
+ */
+const ALREADY_OPEN_NOTICE_EN =
+  'If the mini-app is already open in the Toss app, scanning a QR does NOT reload it with the new relay/at params, so it never attaches.';
+const ALREADY_OPEN_NOTICE_KO =
+  '토스 앱에 이 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지 않아 attach되지 않습니다 — 미니앱 상단의 X 버튼으로 먼저 닫은 뒤 스캔하세요.';
+
+/**
  * Maximum age (ms) of a page's `lastSeenAt` before it is treated as a ghost
  * and excluded from the `wait_for_attach` short-circuit in `start_attach`
  * (issue #610).
@@ -422,7 +434,9 @@ export async function prepareAttach(
     const deploymentNote = deploymentId ? ` matching deploymentId=${deploymentId}` : '';
     return (
       `${baseText}\n\nNo page${deploymentNote} attached within ${timeoutSec}s${observedNote} — ` +
-      'call list_pages to retry.'
+      'call list_pages to retry. ' +
+      `${ALREADY_OPEN_NOTICE_EN} ` +
+      'Tell the user to close the mini-app with the X button, then call start_attach again and scan the new QR.'
     );
   };
 
@@ -482,7 +496,8 @@ export async function renderAndMaybeWait(
   // (Page visibility signals die together with the relay).
   const header =
     'This tool result is shown to the user directly — do NOT re-print the QR below in your reply (it wastes output tokens). Just tell the user to scan the QR in this output (Ctrl+O to expand if collapsed).\n\n' +
-    '테스트가 끝날 때까지 앱을 화면 앞에 유지하세요 — 백그라운드로 전환하면 디버그 세션이 끊어집니다.';
+    '테스트가 끝날 때까지 앱을 화면 앞에 유지하세요 — 백그라운드로 전환하면 디버그 세션이 끊어집니다.\n' +
+    ALREADY_OPEN_NOTICE_KO;
   const authorityNotice = authorityWarning ? `⚠️  scheme_url 경고: ${authorityWarning}\n\n` : '';
   const warningPrefix = authorityNotice;
   const guiAvailable = canOpenBrowserFn();
@@ -588,6 +603,22 @@ export async function renderAndMaybeWait(
   if (guiAvailable && qrHttpServer) {
     const httpUrl = qrHttpServer.buildAttachPageUrl(attachUrl);
     const pngUrl = `http://127.0.0.1:${qrHttpServer.port}/qr.png?u=${encodeURIComponent(attachUrl)}`;
+    // A dashboard tab is already connected: do NOT open another one. Every tab
+    // holds an SSE connection to the fixed dashboard port and Firefox caps
+    // persistent connections per host at 6, so a new tab per call starves
+    // `/qr.png` and the SSE streams. Push a state refresh to the open tab(s)
+    // instead (the fresh attach URL is already in getDashboardState()).
+    if (qrHttpServer.hasActiveClients()) {
+      qrHttpServer.notifyStateChange();
+      const openResult = { attempted: false, succeeded: true, reusedExistingTab: true };
+      const shortText =
+        `${warningPrefix}${header}\n` +
+        `${JSON.stringify({ relayUrl, openResult, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n` +
+        `이미 열려 있는 대시보드 탭의 QR을 갱신했습니다. 폰 카메라로 스캔하세요.\n` +
+        `URL: ${httpUrl}`;
+      return runWait(shortText);
+    }
+
     const browserResult = await openQrInBrowser(httpUrl, pngUrl);
 
     if (browserResult.opened) {
@@ -664,6 +695,14 @@ const INDICATOR_HEARTBEAT_MS = 1000;
 const INDICATOR_PENDING_STALE_MS = 120_000;
 
 /**
+ * Default disconnected-state badge text. A badge still on screen means the page
+ * was NOT reloaded by the last QR scan (Toss only brings an already-open
+ * mini-app to the front), so the label says how to recover instead of just
+ * stating the fact.
+ */
+export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 닫고 QR을 다시 스캔하세요';
+
+/**
  * Builds a self-contained IIFE DOM expression that renders a LIVE
  * "Debugger Connected" / disconnected badge on the bottom-left of the phone
  * screen (#730), with a graceful self-dismiss on disconnect (#748).
@@ -732,8 +771,10 @@ const INDICATOR_PENDING_STALE_MS = 120_000;
  *
  * @param opts.label - Attached-state badge text (default: `'Debugger Connected'`).
  * @param opts.disconnectedLabel - Disconnected-state badge text. Default is the
- *   Korean notice `'디버거 연결 끊김'` (ko-primary in-app string convention) —
- *   shown briefly then self-dismissed.
+ *   Korean notice {@link DEFAULT_DISCONNECTED_LABEL} (ko-primary in-app string
+ *   convention) — shown briefly then self-dismissed. It also tells the user how
+ *   to recover: a leftover badge means the page did NOT reload, so the mini-app
+ *   must be closed (X) and the QR scanned again.
  * @param opts.state - Initial/forced state for THIS injection call (default: `'attached'`).
  * @returns A JS expression string suitable for `Runtime.evaluate`.
  */
@@ -743,7 +784,7 @@ export function buildIndicatorExpression(opts?: {
   state?: 'attached' | 'disconnected';
 }): string {
   const label = opts?.label ?? 'Debugger Connected';
-  const disconnectedLabel = opts?.disconnectedLabel ?? '디버거 연결 끊김';
+  const disconnectedLabel = opts?.disconnectedLabel ?? DEFAULT_DISCONNECTED_LABEL;
   // JSON.stringify ensures the labels/state are safely embedded even if they
   // contain quotes or backslashes.
   const safeLabel = JSON.stringify(label);
@@ -812,6 +853,9 @@ export function buildIndicatorExpression(opts?: {
     // the badge (a reconnect after a self-dismiss re-mounts it), and cancels any
     // pending self-dismiss so a transient blip that reconnects does not remove it.
     `function setState(c, next) {` +
+    // A removed indicator (removal expression marks it dead) must stay gone:
+    // stale relay-ws-state / WebSocket listeners still hold this controller.
+    `if (c.dead) { return; }` +
     `clearTimers(c);` +
     `c.state = next; c.dismissed = false; c.removed = false;` +
     `render(c);` +
@@ -914,6 +958,43 @@ export function buildIndicatorExpression(opts?: {
     `}` +
     // Apply THIS injection call's requested state (default 'attached').
     `setState(c, ${safeState});` +
+    `})()`
+  );
+}
+
+/**
+ * Builds a self-contained IIFE expression that REMOVES the on-phone indicator
+ * badge injected by {@link buildIndicatorExpression}.
+ *
+ * Why this exists: a badge left on the page after the run ended (pass or fail)
+ * reads as "debugger still around" and hides the real situation — the relay is
+ * gone and the page will not dial a new one until the mini-app is reloaded.
+ * `close()` of the `debugger-test` relay factory evaluates this over the
+ * still-open CDP channel right before the relay is torn down.
+ *
+ * Behavior: stops the controller's timers (self-dismiss + heartbeat), detaches
+ * the node, marks the controller `dead`/`removed` so late `ait:relay-ws-state`
+ * / WebSocket listeners (which still close over it) cannot re-mount the badge,
+ * and drops `window.__ait_indicator` so a later injection builds a fresh badge.
+ * Idempotent: with no badge present it is a no-op that returns `true`.
+ *
+ * SECRET-HANDLING: contains no secrets, relay URLs, or TOTP codes.
+ */
+export function buildIndicatorRemovalExpression(): string {
+  return (
+    `(() => {` +
+    `var W = window;` +
+    `var c = W.__ait_indicator;` +
+    `if (c) {` +
+    `c.dead = true; c.removed = true;` +
+    `try { if (c.stop) { c.stop(); } } catch (_) {}` +
+    `try { if (c.el && c.el.parentNode) { c.el.parentNode.removeChild(c.el); } } catch (_) {}` +
+    `try { delete W.__ait_indicator; } catch (_) { W.__ait_indicator = undefined; }` +
+    `}` +
+    // Orphan node (controller already gone) — remove by id as well.
+    `var n = document.getElementById('__ait_debug_indicator');` +
+    `if (n && n.parentNode) { n.parentNode.removeChild(n); }` +
+    `return true;` +
     `})()`
   );
 }

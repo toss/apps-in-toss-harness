@@ -27,6 +27,8 @@ export const ko = {
   'dashboard.attach.hint': 'start_attach MCP tool을 호출하면 QR이 여기에 표시됩니다.',
   'dashboard.attach.tunnelDown':
     'relay 연결이 끊겼습니다 — 이 QR은 더 이상 유효하지 않습니다. relay를 재시작한 뒤 QR을 다시 생성하세요.',
+  'dashboard.attach.reopenHint':
+    '토스 앱에서 이 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지 않아 attach되지 않아요. 미니앱 상단의 X 버튼으로 먼저 닫은 뒤 다시 스캔하세요.',
   'dashboard.pages.section': '연결된 Pages',
   'dashboard.pages.empty': 'attach된 페이지 없음',
   'dashboard.url.copy': '복사',
@@ -41,6 +43,9 @@ export const ko = {
     'MCP server가 종료되어 이 세션이 더 이상 유효하지 않습니다. 이 탭을 닫아도 됩니다.',
   'dashboard.watchdog.close': '탭 닫기',
   'dashboard.conn.lost': '연결 끊김 — 재연결 시도 중…',
+  'dashboard.superseded.title': '다른 탭에서 대시보드가 열려 있어요',
+  'dashboard.superseded.body':
+    '이 탭은 더 이상 갱신되지 않아요. 가장 최근에 연 대시보드 탭을 쓰시거나, 이 탭을 닫아도 됩니다.',
   'dashboard.session.completeTitle': '테스트 실행 완료',
   'dashboard.session.completeBody': '러너가 정상 종료되었습니다. 결과는 터미널에서 확인하세요.',
   'dashboard.session.shutdownTitle': '디버그 서버가 종료되었습니다',
@@ -52,7 +57,8 @@ export const ko = {
   'attach.faq.section': '진단 체크리스트',
   'attach.url.section': 'URL (fallback)',
   'attach.mode.intossDev': '환경 3 — intoss-private relay dev',
-  'attach.intoss.step1': '토스 앱을 실행하세요.',
+  'attach.intoss.step1':
+    '토스 앱을 실행하세요. 이 미니앱이 이미 열려 있다면 스캔해도 새로고침되지 않으니, X 버튼으로 먼저 닫으세요.',
   'attach.intoss.step2': '폰 카메라 앱으로 QR 코드를 스캔하세요.',
   'attach.intoss.step3': '팝업이 뜨면 <strong>"토스로 열기"</strong>를 탭하세요.',
   'attach.intoss.step4': '미니앱이 열리고 디버그 세션이 자동으로 attach됩니다.',

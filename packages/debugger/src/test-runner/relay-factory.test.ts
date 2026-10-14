@@ -26,9 +26,11 @@ vi.mock('../mcp/attach-orchestrator.js', () => ({
 
 // cell.ts
 const injectDebugIndicatorMock = vi.fn(() => Promise.resolve());
+const removeDebugIndicatorMock = vi.fn(() => Promise.resolve());
 const injectGlobalsMock = vi.fn(() => Promise.resolve());
 vi.mock('./cell.js', () => ({
   injectDebugIndicator: injectDebugIndicatorMock,
+  removeDebugIndicator: removeDebugIndicatorMock,
   injectGlobals: injectGlobalsMock,
 }));
 
@@ -120,6 +122,7 @@ const fakeQrServer = {
   buildAttachPageUrl: (url: string) => `http://127.0.0.1:49152/?u=${encodeURIComponent(url)}`,
   inspectorStableUrl: 'http://127.0.0.1:49152/inspector',
   notifyStateChange: qrServerNotifyMock,
+  hasActiveClients: () => false,
   close: qrServerCloseMock,
 };
 const startQrHttpServerMock = vi.fn(() => Promise.resolve(fakeQrServer));
@@ -1271,11 +1274,11 @@ describe('createRelayConnectionFactory — phase lifecycle (#730)', () => {
     expect(qrServerNotifyMock.mock.calls.length).toBeGreaterThan(notifyCallsBefore);
   });
 
-  it('close() ordering — notifyStateChange (phase complete) and injectDebugIndicator(disconnected) fire BEFORE family.stop()/qrServer.close() (load-bearing)', async () => {
+  it('close() ordering — notifyStateChange (phase complete) and removeDebugIndicator fire BEFORE family.stop()/qrServer.close() (load-bearing)', async () => {
     const order: string[] = [];
     qrServerNotifyMock.mockImplementation(() => order.push('notifyStateChange'));
-    injectDebugIndicatorMock.mockImplementation(() => {
-      order.push('injectDebugIndicator');
+    removeDebugIndicatorMock.mockImplementation(() => {
+      order.push('removeDebugIndicator');
       return Promise.resolve();
     });
     fakeStop.mockImplementation(() => order.push('family.stop'));
@@ -1294,22 +1297,25 @@ describe('createRelayConnectionFactory — phase lifecycle (#730)', () => {
 
     await factory.close(conn);
 
-    expect(injectDebugIndicatorMock).toHaveBeenCalledWith(conn, { state: 'disconnected' });
+    // The badge is REMOVED (not flipped to "disconnected") so no stale badge is
+    // left on a page that will never dial a relay again.
+    expect(removeDebugIndicatorMock).toHaveBeenCalledWith(conn);
+    expect(injectDebugIndicatorMock).not.toHaveBeenCalledWith(conn, { state: 'disconnected' });
     expect(order.indexOf('notifyStateChange')).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf('injectDebugIndicator')).toBeLessThan(order.indexOf('family.stop'));
+    expect(order.indexOf('removeDebugIndicator')).toBeLessThan(order.indexOf('family.stop'));
     expect(order.indexOf('notifyStateChange')).toBeLessThan(order.indexOf('qrServer.close'));
   });
 
-  it('close() is non-throwing even when injectDebugIndicator rejects', async () => {
+  it('close() is non-throwing even when removeDebugIndicator rejects', async () => {
     const factory = createRelayConnectionFactory({
       schemeUrl: SYNTHETIC_SCHEME_URL,
       onQrContent,
     });
 
     // open() also calls injectDebugIndicator (attached-state badge) — let that
-    // one succeed, and only reject the disconnected-state call made by close().
+    // one succeed, and only reject the removal call made by close().
     const conn = await factory.open();
-    injectDebugIndicatorMock.mockRejectedValueOnce(new Error('CDP channel already closed'));
+    removeDebugIndicatorMock.mockRejectedValueOnce(new Error('CDP channel already closed'));
 
     await expect(factory.close(conn)).resolves.toBeUndefined();
   });

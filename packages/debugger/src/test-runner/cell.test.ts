@@ -22,7 +22,10 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { buildIndicatorExpression } from '../mcp/attach-orchestrator.js';
+import {
+  buildIndicatorExpression,
+  buildIndicatorRemovalExpression,
+} from '../mcp/attach-orchestrator.js';
 import type {
   CdpCommandMap,
   CdpCommandName,
@@ -35,6 +38,7 @@ import {
   buildPermissionPreflightExpression,
   injectDebugIndicator,
   injectGlobals,
+  removeDebugIndicator,
   runPermissionPreflight,
 } from './cell.js';
 
@@ -276,9 +280,9 @@ describe('buildIndicatorExpression', () => {
   // persistent English "Debugger Disconnected" is replaced by a self-dismissing
   // one). DOM behavior of the notice is covered in
   // src/mcp/__tests__/indicator-expression.test.ts.
-  it('embeds the ko default disconnected label "디버거 연결 끊김"', () => {
+  it('embeds the actionable ko default disconnected label (close the app, rescan the QR)', () => {
     const expr = buildIndicatorExpression();
-    expect(expr).toContain('디버거 연결 끊김');
+    expect(expr).toContain('디버거 연결 끊김 — 앱을 닫고 QR을 다시 스캔하세요');
   });
 
   it('embeds a custom disconnected label', () => {
@@ -412,6 +416,35 @@ describe('injectDebugIndicator', () => {
     const { conn } = makeSpyConnection();
     const result = await injectDebugIndicator(conn);
     expect(result).toBeUndefined();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* removeDebugIndicator                                                        */
+/* -------------------------------------------------------------------------- */
+
+describe('removeDebugIndicator', () => {
+  it('sends the removal expression via Runtime.evaluate exactly once', async () => {
+    const { conn, sentExpressions } = makeSpyConnection();
+    await removeDebugIndicator(conn);
+
+    expect(conn.send).toHaveBeenCalledTimes(1);
+    expect(sentExpressions).toEqual([buildIndicatorRemovalExpression()]);
+  });
+
+  it('resolves (does NOT reject) even when conn.send throws — best effort', async () => {
+    const failConn: CdpConnection = {
+      kind: 'relay' as const,
+      enableDomains: () => Promise.resolve(),
+      listTargets: () => [],
+      getBufferedEvents: <E extends CdpEventName>(_e: E): ReadonlyArray<CdpEventMap[E]> => [],
+      on:
+        <E extends CdpEventName>(_e: E, _l: (p: CdpEventMap[E]) => void) =>
+        () => {},
+      send: () => Promise.reject(new Error('CDP: page detached')),
+    };
+
+    await expect(removeDebugIndicator(failConn)).resolves.toBeUndefined();
   });
 });
 

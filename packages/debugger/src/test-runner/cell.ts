@@ -282,7 +282,10 @@ export async function runPermissionPreflight(
   }
 }
 
-import { buildIndicatorExpression } from '../mcp/attach-orchestrator.js';
+import {
+  buildIndicatorExpression,
+  buildIndicatorRemovalExpression,
+} from '../mcp/attach-orchestrator.js';
 import type { CdpConnection } from '../mcp/cdp-connection.js';
 
 /**
@@ -356,5 +359,27 @@ export async function injectDebugIndicator(
   } catch (err) {
     // Badge injection is informational UI — swallow and log; never propagate.
     console.debug('[@apps-in-toss/debugger] debug indicator inject skipped:', err);
+  }
+}
+
+/**
+ * Removes the on-phone debug indicator badge via `Runtime.evaluate` (best
+ * effort). Called when a `debugger-test` run finishes (pass or fail), before
+ * the relay is torn down, so a stale "Debugger Connected" / "disconnected"
+ * badge is not left on a page that will never dial a relay again.
+ *
+ * Same isolation guarantee as {@link injectDebugIndicator}: NEVER throws to its
+ * caller — a detached page or already-closed channel is swallowed.
+ *
+ * @param conn - The live CDP connection (relay-attached page).
+ */
+export async function removeDebugIndicator(conn: CdpConnection): Promise<void> {
+  try {
+    await conn.send('Runtime.evaluate', {
+      expression: buildIndicatorRemovalExpression(),
+      returnByValue: true,
+    });
+  } catch (err) {
+    console.debug('[@apps-in-toss/debugger] debug indicator removal skipped:', err);
   }
 }

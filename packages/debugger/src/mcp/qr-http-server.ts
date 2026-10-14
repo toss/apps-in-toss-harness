@@ -147,8 +147,24 @@ export interface QrHttpServer {
    * `getDashboardState`가 주입돼 있지 않으면 no-op.
    */
   notifyStateChange(): void;
+  /**
+   * 현재 대시보드(`GET /events` SSE) 구독 탭이 하나라도 연결돼 있는지.
+   *
+   * `start_attach`가 매 호출마다 새 브라우저 탭을 여는 대신, 이미 열린 탭이 있으면
+   * 그 탭에 상태 refresh만 push하도록 판단하는 근거다. 브라우저는 호스트당 영속
+   * 연결을 6개로 제한(Firefox)하는데 탭마다 SSE 연결 1개를 붙들기 때문에, 탭이
+   * 쌓이면 `/qr.png`와 신규 SSE 요청이 굶는다.
+   */
+  hasActiveClients(): boolean;
   close(): Promise<void>;
 }
+
+/**
+ * 동시에 유지하는 SSE 구독 수 상한. 초과로 새 구독이 들어오면 가장 오래된
+ * 구독에 `superseded` 이벤트를 보내고 응답을 끝낸다 — 브라우저의 호스트당 영속
+ * 연결 한도(Firefox 6)를 대시보드 탭이 다 먹어 `/qr.png`가 굶는 것을 막는다.
+ */
+export const MAX_SSE_CLIENTS = 2;
 
 /** HTML 특수문자를 이스케이프한다. */
 function escapeHtml(s: string): string {
@@ -247,7 +263,8 @@ function buildDashboardHtml(
       `<div class="url-row">` +
       `<p class="url-box" id="url-box">${safeAttachUrl}</p>` +
       `<button class="copy-btn" id="copy-btn" type="button" aria-label="${copyLabel}">${copyLabel}</button>` +
-      `</div>`;
+      `</div>` +
+      `<p class="hint reopen-hint">${escapeHtml(s('dashboard.attach.reopenHint'))}</p>`;
   } else {
     attachSection = `<p class="hint">${escapeHtml(s('dashboard.attach.hint'))}</p>`;
   }
@@ -318,6 +335,9 @@ function buildDashboardHtml(
     completeBody: JSON.stringify(s('dashboard.session.completeBody')),
     shutdownTitle: JSON.stringify(s('dashboard.session.shutdownTitle')),
     shutdownBody: JSON.stringify(s('dashboard.session.shutdownBody')),
+    reopenHint: JSON.stringify(s('dashboard.attach.reopenHint')),
+    supersededTitle: JSON.stringify(s('dashboard.superseded.title')),
+    supersededBody: JSON.stringify(s('dashboard.superseded.body')),
   };
 
   const langSwitcher = buildLangSwitcher(path, params, locale, s);
@@ -394,6 +414,16 @@ interface SseScriptStrings {
   shutdownTitle: string;
   /** daemon 종료 terminal 배너 본문 (#730). */
   shutdownBody: string;
+  /**
+   * QR 아래 안내 — 토스 앱에 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지
+   * 않으니 X로 먼저 닫으라는 문구 (JSON.stringify로 이미 escape됨). dashboard 표면의
+   * SSE 재렌더가 정적 렌더와 같은 구조를 유지하는 데 쓴다.
+   */
+  reopenHint: string;
+  /** 다른 탭에 밀려난(`superseded`) 탭의 정적 안내 제목 (JSON.stringify로 이미 escape됨). */
+  supersededTitle: string;
+  /** 다른 탭에 밀려난 탭의 정적 안내 본문 (JSON.stringify로 이미 escape됨). */
+  supersededBody: string;
 }
 
 /**
@@ -452,6 +482,9 @@ function buildSseScript(strings: SseScriptStrings): string {
       var COMPLETE_BODY = ${strings.completeBody};
       var SHUTDOWN_TITLE = ${strings.shutdownTitle};
       var SHUTDOWN_BODY = ${strings.shutdownBody};
+      var REOPEN_HINT = ${strings.reopenHint};
+      var SUPERSEDED_TITLE = ${strings.supersededTitle};
+      var SUPERSEDED_BODY = ${strings.supersededBody};
       var disconnectedShown = false;
 
       // ── 클립보드 복사 헬퍼 ────────────────────────────────────────────────
@@ -649,7 +682,8 @@ function buildSseScript(strings: SseScriptStrings): string {
                 '<div class=\\"url-row\\">' +
                   '<p class=\\"url-box\\" id=\\"url-box\\">' + safeUrl + '</p>' +
                   '<button class=\\"copy-btn\\" id=\\"copy-btn\\" type=\\"button\\" aria-label=\\"' + COPY_LABEL + '\\">' + COPY_LABEL + '</button>' +
-                '</div>';`
+                '</div>' +
+                '<p class=\\"hint reopen-hint\\">' + REOPEN_HINT + '</p>';`
                   : `// /attach: img src만 교체 — url-box는 별도 #url-section에서 관리해 이중 표시 방지(#458).
               // QR img src 교체: img가 있으면 src만 갱신, 없으면 img 요소 생성.
               var img = sec.querySelector('img.qr');
@@ -691,6 +725,19 @@ function buildSseScript(strings: SseScriptStrings): string {
           if (upd) upd.textContent = upd.textContent.replace(/[^ ]+$/, new Date().toISOString());
         } catch (_) { /* 파싱 오류 무시 */ }
       };
+      // 서버가 SSE 구독 상한을 맞추려고 이 탭을 밀어냈다 — EventSource를 닫아
+      // 재연결(= 다른 탭을 다시 밀어내는 핑퐁)을 막고 정적 안내만 남긴다.
+      src.addEventListener('superseded', function () {
+        src.close();
+        showTerminalBanner(SUPERSEDED_TITLE, SUPERSEDED_BODY);
+      });
+      // 탭을 떠날 때 연결을 즉시 반납한다 — 브라우저의 호스트당 영속 연결 한도
+      // (Firefox 6)를 닫힌/이동한 탭이 붙들고 있지 않게 한다.
+      window.addEventListener('pagehide', function () { src.close(); });
+      // bfcache에서 복원되면 닫아 둔 EventSource가 되살아나지 않으므로 새로 불러온다.
+      window.addEventListener('pageshow', function (e) {
+        if (e.persisted && !watchdogFired) location.reload();
+      });
       src.onerror = function () {
         // EventSource는 "재시도 중"과 "서버 종료"를 구분하지 못하므로 즉시
         // 구분되는 "연결 끊김"을 표시한다(#730). 네이티브 auto-reconnect는 그대로
@@ -790,6 +837,9 @@ function buildAttachHtml(
     completeBody: JSON.stringify(s('dashboard.session.completeBody')),
     shutdownTitle: JSON.stringify(s('dashboard.session.shutdownTitle')),
     shutdownBody: JSON.stringify(s('dashboard.session.shutdownBody')),
+    reopenHint: JSON.stringify(s('dashboard.attach.reopenHint')),
+    supersededTitle: JSON.stringify(s('dashboard.superseded.title')),
+    supersededBody: JSON.stringify(s('dashboard.superseded.body')),
   };
   const sseScript = buildSseScript(sseStrings);
   return filled.replace('</body>', `${sseScript}\n</body>`);
@@ -967,6 +1017,25 @@ export async function startQrHttpServer(
     res.write(`data: ${payload}\n\n`);
   }
 
+  /**
+   * 새 구독이 들어오기 전에 상한({@link MAX_SSE_CLIENTS})을 맞춘다 — 가장 오래된
+   * 구독부터 `superseded` 이벤트를 보내고 응답을 끝낸다. 클라이언트는 이 이벤트를
+   * 받으면 EventSource를 닫고 재연결하지 않는다(안 닫으면 auto-reconnect가 다시
+   * 밀어내는 핑퐁이 된다).
+   */
+  function makeRoomForSseClient(): void {
+    while (sseClients.length >= MAX_SSE_CLIENTS) {
+      const oldest = sseClients.shift();
+      if (!oldest) break;
+      try {
+        oldest.write('event: superseded\ndata: {}\n\n');
+        oldest.end();
+      } catch {
+        // 이미 끊긴 연결 — 목록에서만 빠지면 된다.
+      }
+    }
+  }
+
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const rawUrl = req.url ?? '/';
     const [path, query = ''] = rawUrl.split('?', 2) as [string, string | undefined];
@@ -1041,6 +1110,7 @@ export async function startQrHttpServer(
       const initialState = getDashboardState();
       pushStateToClient(res, initialState);
 
+      makeRoomForSseClient();
       sseClients.push(res);
 
       // 연결 끊기면 목록에서 제거.
@@ -1290,6 +1360,9 @@ export async function startQrHttpServer(
     },
     notifyStateChange(): void {
       notifyStateChangeInternal();
+    },
+    hasActiveClients(): boolean {
+      return sseClients.some((c) => !c.destroyed && !c.writableEnded);
     },
     close(): Promise<void> {
       clearInterval(refreshHandle);
