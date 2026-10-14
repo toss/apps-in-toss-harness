@@ -84,7 +84,7 @@ export default definePhoneTestConfig({
 
 ## 보안 스코프
 
-이 패키지는 **devDependency / `npx` 전용**이다. `@apps-in-toss/debug-console`을 dependency나 자동 설치 peer로 선언하지 않는다 — 그렇게 하면 `eruda`가 데몬의 설치 그래프에 들어와 "데몬에는 debug 표면이 없다"는 불변식이 조용히 깨진다. 데몬 번들에는 `react`/`react-dom`도 포함되지 않는다.
+이 패키지는 **devDependency / `npx` 전용**이다. `@apps-in-toss/debug-console`을 dependency나 자동 설치 peer로 선언하지 않는다 — 그렇게 하면 debug-console의 폰 쪽 코드가 데몬의 설치 그래프에 들어와 "데몬에는 debug 표면이 없다"는 불변식이 조용히 깨진다. 데몬 번들에는 `react`/`react-dom`도 포함되지 않는다.
 
 이 패키지는 원격 디버깅 인프라이므로 시크릿을 다룬다. 다음은 어떤 출력(stdout/stderr/로그/에러 메시지)에도 절대 나타나서는 안 된다: TOTP 시크릿·생성된 코드, relay `wss://` URL과 trycloudflare 터널 호스트, `at=` 파라미터가 붙은 딥링크, Deploy Key. 로그에 안전하게 남길 수 있는 것은 `http://127.0.0.1:<port>` 형태의 로컬 주소뿐이다.
 
@@ -96,6 +96,24 @@ export default definePhoneTestConfig({
 - **`aitcc`** (콘솔 자동화 CLI) — 앱인토스 콘솔 등록·배포·조회. 이 패키지는 `aitcc`를 호출하지 않는다.
 
 ## Troubleshooting
+
+### attach가 안 될 때 (`start_attach`)
+
+`start_attach`는 시간 안에 붙지 못하면 마지막으로 도달한 단계로 원인을 가려 "해야 할 일"과 진행 기록을 돌려준다. 같은 진단이 `get_debug_status`(`attachStages`, `attachDiagnosis`)와 대시보드의 "진행 단계" 타임라인에도 나온다. 폰 화면 하단의 상태 막대(`debug-console` 0.2 이상)도 함께 본다.
+
+| 증상(진단) | 원인 | 조치 |
+|---|---|---|
+| 폰이 이번 QR의 페이지를 열지 않음 | 미니앱이 이미 열려 있어 스캔해도 새로고침되지 않았거나, gate가 막았거나, 사내망·MDM이 `*.trycloudflare.com`을 막음 | 미니앱을 X로 닫고 다시 스캔 → 폰 상태 막대의 사유 확인 → Wi-Fi 변경 |
+| QR 코드 만료 | 오래 열어 둔 대시보드나 지난 QR을 스캔함 | 대시보드를 새로고침하고 새 QR 스캔 |
+| 스크립트·WebSocket 연결 미완료 | 페이지는 열렸지만 relay로 가는 연결이 막힘 | 상태 막대 확인, Wi-Fi 변경, 새 QR 스캔 |
+| 다른 페이지가 붙음 | 이전 배포의 페이지가 붙었거나 `_deploymentId`가 다름 | 미니앱을 X로 닫고 새 QR 스캔, `scheme_url` 확인 |
+| 붙었다가 끊김 | 앱이 백그라운드로 갔거나 네트워크 단절 | 앱을 앞에 두고 X로 닫은 뒤 새 QR 스캔 |
+| 터널 끊김 | cloudflared 종료 | `start_attach`를 다시 호출 |
+| QR 이미지가 안 뜨고 터널이 "연결 끊김"으로 보임 | 대시보드 탭이 쌓여 브라우저 호스트당 연결 한도(Firefox 6개)에 걸림 | 대시보드 탭을 하나만 남기고 새로고침 |
+| relay 인증(TOTP) 거부, close 4401 | `.ait_relay` secret 불일치 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 시스템 시계 동기화 |
+| `debugger-test`가 "이미 debugger 프로세스가 relay를 운영 중"이라며 멈춤 | MCP 데몬이 relay를 쓰는 중 | 그 세션에서 `run_tests` 도구로 실행하거나 세션을 끈 뒤 재실행. 별도 relay가 필요하면 `--separate-relay` |
+
+`start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_debug_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
 
 ### cloudflared 바이너리가 준비되지 않을 때
 
