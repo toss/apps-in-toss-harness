@@ -19,7 +19,7 @@
 | 인앱 결제를 기기에서 시험 | 과금 여부, 샌드박스 제공 여부(SDK 버전별) | 인앱 결제 테스트 | `/guide/monetization/in-app-payment`, `/development/test/sandbox`, `/guide/operation/toss` |
 | SDK 3.x 프로젝트 | 2.x와 달라진 설정·API | SDK 3.x | `/documentation/sdk/v3`, `/documentation/integration/sdk-3.x` |
 | 출시 뒤 노출 | 노출 단계와 기준(시한 있는 공지가 있다) | 미니앱 노출 | `/guide/exposure` |
-| 핵심 지표 | 전환 지표 등록 | 핵심 지표 | `/guide/analytics/conversion-metrics` |
+| 핵심 지표 | 전환 지표 등록(MCP 도구가 없어 사용자가 콘솔 웹에서 한다) | 핵심 지표 | `/guide/analytics/conversion-metrics` |
 | SDK 버전별 변경 | 최근 변경 | 릴리즈 노트 | `/release-note` |
 
 - 같은 내용이 여러 페이지에 다르게 적혀 있으면 더 구체적인 쪽(표, API 레퍼런스)을

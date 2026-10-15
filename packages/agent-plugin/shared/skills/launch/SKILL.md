@@ -116,6 +116,10 @@ console MCP가 인가돼 있을 때만 읽는다. 아니면 "콘솔 상태 미�
 - `ALLOWED`는 출시 버튼이 켜진다는 뜻일 뿐 점검 통과가 아니다.
 - 현재 상태는 `reviewState`·`reviewStatus`로만 판단한다. `rejectedMessage`는
   마지막 반려 기록이다.
+- console MCP에 도구가 없는 작업은 사용자가 콘솔 웹에서 직접 한다. 핵심 지표
+  등록·수정, 사업자 등록, 약관 동의, 비즈월렛 충전, mTLS 인증서 발급이 그렇다.
+  도구를 찾느라 돌거나 다른 길로 우회하지 않는다. 메뉴 위치는 docs로 확인해
+  알려 준다(핵심 지표는 `references/lookup-map.md`).
 
 ### 4. 반려 대응 (docs 근거 4단계)
 
