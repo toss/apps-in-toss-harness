@@ -166,13 +166,19 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 
 ### 5. 컴파일 상태 확인 — `miniapp_get_status`
 
-`miniapp_get_status`로 방금 올린 번들의 컴파일 결과를 확인한다.
+`bundle_upload_complete` 호출 뒤 컴파일 진행은 `bundle_build_status`로 폴링한다.
+이 도구는 빌드 중(PREPARE·BUILDING)인 번들만 미니앱 단위로 돌려주는 경량 조회다.
 
-**`bundle_build_status`는 쓰지 않는다** — 파라미터와 무관하게 `-32000`으로 일관
-실패하는 것이 실측됐다(harness#43 결함 4). 폴링이 필요하면 `miniapp_get_status`를
-간격을 두고 다시 호출한다. 방금 올린 번들을 다른 이력과 구분해 특정해야 하면
-`bundle_list`로 번들 목록을 조회한다(로컬 `docs/upstream/mcp-gw-feedback.md`(repo 미포함
-— maintainer-local)에 근거가 있는 이름).
+- **종료 조건**: 4에서 올린 `deploymentId`가 `builds`에서 빠지면 그 번들의 빌드가
+  끝난 것이다(`CREATED` 또는 `BUILD_FAILED`). `builds`가 전부 빌 때까지 기다리지
+  않는다 — `bundle_upload`만 하고 `bundle_upload_complete`를 하지 않은 번들이
+  PREPARE로 남아 있으면 `isBuilding`이 계속 true일 수 있다.
+- **결과 확인**: 빌드가 끝나면 `bundle_list`에서 그 `deploymentId` 항목의 상태를
+  본다(`bundle_list`는 `bundle_upload_complete` 전의 PREPARE 번들을 보여주지
+  않는다). 페이지네이션의 `totalPage`는 마지막 페이지 번호(0-base)라 전체가
+  1페이지면 0이다 — 0이어도 결과 없음으로 해석하지 않는다.
+- `miniapp_get_status`는 미니앱의 공개 운영 상태(`serviceStatus`)를 돌려줄 뿐
+  번들 컴파일 결과가 아니다. 컴파일 판정에 쓰지 않는다.
 
 - `CREATED` — 컴파일 성공. 6으로 간다.
 - `BUILD_FAILED` — 1의 appName 일치부터 다시 본다. 같은 번들을 반복 업로드해서
@@ -182,17 +188,30 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 
 두 갈래를 위에서부터 시도한다.
 
-**6-A. 도구가 돌려준 링크를 그대로 전달한다.** 업로드 완료·상태 조회 응답에 진입
-링크(scheme URL, 형태는 `intoss-private://<appName>?_deploymentId=<uuid>` —
-`debug/SKILL.md` §5-B 참고, 형식 검증은 `packages/debugger/src/mcp/deeplink.ts`)가
-들어 있으면 그 문자열을 **가공 없이** 사용자에게 전달하고, 폰에서 열도록 안내한다.
-**현 시점에 이 응답이 실제로 그 링크를 담는지는 미확정이다** — 번들 업로드
-응답에 진입 링크 파라미터를 포함해 달라는 요구가 아직 해소되지 않은 상류 요청으로
-남아 있다(로컬 `docs/upstream/mcp-gw-feedback.md`(repo 미포함 — maintainer-local) §4 6번).
+**6-A. `bundle_test_push`의 `privateLink`를 그대로 전달한다.**
+`bundle_test_push`(`workspaceId`, `miniAppId`, 선택 `deploymentId` — 생략하면 빌드
+완료된 최신 번들)는 업로드한 번들을 요청자 본인의 토스 앱으로 테스트 푸시로
+보내고, 응답에 진입 링크를 담는다.
+
+- `privateLink` — 이 번들만 실행되는 테스트 전용 딥링크
+  (`intoss-private://<appName>?_deploymentId=<uuid>` 형태,
+  `debug/SKILL.md` §5-B 참고, 형식 검증은 `packages/debugger/src/mcp/deeplink.ts`).
+  푸시를 못 받았거나 다른 기기에서 열 때 쓴다. **가공 없이** 사용자에게 전달하고
+  폰에서 열도록 안내한다. 라이브 번들이 열리는 서비스 링크(`intoss://<appName>`)와
+  다르고, 본인 외 사람이 열어도 번들이 뜨지 않는다.
+- `consoleTestUrl` — 이 번들의 테스트 QR을 띄우는 콘솔 웹 주소. 딥링크가 열리지
+  않는 환경이면 PC에서 열어 QR을 찍도록 안내한다.
+- 본인 외 멤버에게는 발송되지 않는다. 호출하면 해당 deployment에 `isTested=true`
+  (테스트 환경 준비 완료)가 기록되는데, 실제 테스트 완료를 뜻하지 않는다.
+  링크를 안내한 뒤 멈추고, 사용자가 현재 대화에서 테스트 완료와 검토 요청을
+  명시하기 전에는 `bundle_submit_review`를 호출하지 않는다(그 호출은 이 skill
+  범위 밖이고 `/ait:launch`의 몫이다).
+- 대상은 지금 작업 중인 앱의 방금 올린 번들뿐이다. 다른 앱·다른 번들로 푸시하지
+  않는다.
 
 **링크를 손으로 조립하지 않는다** — 문서 예제의 링크 형태에 `deploymentId` 같은
 값을 끼워 넣어 만든 링크는 열리지 않는다(2026-08-07 도그푸딩에서 실제로 그렇게
-만든 링크가 실패했다). 응답에 링크가 없으면 "링크가 응답에 없다"고 그대로 말하고
+만든 링크가 실패했다). `privateLink`가 응답에 없으면 "링크가 응답에 없다"고 그대로 말하고
 6-B로 간다.
 
 **링크를 폰으로 옮기는 방법**: 메신저로 자신에게 전송하거나, 로컬 QR 생성
@@ -200,17 +219,11 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 발급과 같은 패턴이지만, 이 skill은 console MCP만 쓰므로 QR을 직접 발급하는
 도구는 호출하지 않는다 — 링크 문자열을 옮기는 구체 수단은 사용자 환경에 맡긴다).
 
-**6-B. 테스트 발송 도구가 세션에 있으면 그것으로 보낸다.** 콘솔 MCP에는 번들을
-테스트 대상 기기로 보내는 계열의 도구가 인벤토리에 기록돼 있지만, GW의
-`tools/list`는 **모든 도구의 description이 빈 문자열**로 내려오므로(harness#43
-결함 1) 이름만으로 인자·부작용을 단정할 수 없다. 그래서 절차는 항상 이렇다:
-
-1. 세션에 노출된 `apps-in-toss-console` 도구 목록에서 **실제 이름과 입력
-   스키마를 확인한다.**
-2. 이름·스키마가 "이 번들을 테스트 대상에게 보낸다"로 읽히고, 아래 "하지 말아야
-   할 것"의 검수·릴리즈·프로모션 계열이 아니면 호출한다.
-3. 확인되지 않으면 **도구 이름을 지어내지 않는다.** 콘솔 웹에서 해당 앱의 번들
-   목록을 열어 테스트 발송을 사용자가 직접 하도록 안내하고 멈춘다.
+**6-B. 링크를 받지 못했거나 열리지 않으면 콘솔 웹으로 간다.**
+`bundle_test_push`가 에러를 돌려주거나 `privateLink`가 비어 있거나 딥링크가 열리지
+않는 환경이면, `consoleTestUrl`이 있으면 그것을 안내하고 없으면 콘솔 웹에서 해당
+앱의 번들 목록을 열어 테스트 발송을 사용자가 직접 하도록 안내한 뒤 멈춘다. 에러
+응답은 가공 없이 전달한다. 도구 이름이나 링크를 지어내지 않는다.
 
 확인이 끝나면 한 블록으로 마무리한다:
 
@@ -221,8 +234,8 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
   상태   CREATED (컴파일 완료)
 
 토스 앱에서 확인:
-  1. 위 링크를 폰에서 엽니다 (도구가 돌려준 링크 그대로 — 직접 조립하지 마세요)
-  2. 링크가 없으면 콘솔 웹에서 이 번들의 테스트 발송을 진행합니다
+  1. 위 링크(`bundle_test_push`의 privateLink)를 폰에서 엽니다 (직접 조립하지 마세요)
+  2. 열리지 않으면 consoleTestUrl을 PC에서 열어 QR을 찍거나, 콘솔 웹에서 테스트 발송을 진행합니다
 
 폰에서만 재현되는 문제를 코드 레벨로 파고들려면
 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
@@ -258,16 +271,17 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 ## 하지 말아야 할 것
 
 - ❌ 진입 링크를 손으로 조립. 문서 예제 + `deploymentId` 조합으로 만든 링크는
-  열리지 않는다 — 링크는 항상 도구 산출물 그대로만 쓴다(6-A).
-- ❌ 확인되지 않은 도구 이름을 추측해 호출. `tools/list`의 description이 비어
-  있으므로(harness#43 결함 1) 세션에 실제로 노출된 이름·스키마만 근거로 삼고,
-  없으면 콘솔 웹 안내로 내려간다(6-B).
+  열리지 않는다 — 링크는 항상 `bundle_test_push`가 돌려준 `privateLink` 그대로만 쓴다(6-A).
+- ❌ 확인되지 않은 도구 이름을 추측해 호출. 세션에 실제로 노출된 이름·스키마만
+  근거로 삼고, 없으면 콘솔 웹 안내로 내려간다(6-B).
 - ❌ appName 불일치를 콘솔 쪽 새 앱 생성으로 해결. 기존 앱을 재사용하고, 어느
   쪽을 맞출지는 사용자가 정한다(1).
 - ❌ `BUILD_FAILED`를 같은 번들 재업로드로 우회 시도. 원인(대개 appName 불일치)을
   먼저 잡는다(5).
-- ❌ `bundle_build_status`로 컴파일 폴링. `-32000`으로 일관 실패한다 —
-  `miniapp_get_status`를 쓴다(5).
+- ❌ `builds`가 전부 빌 때까지 `bundle_build_status`를 기다림. 내가 올린
+  `deploymentId`가 빠졌는지로 판정한다(5).
+- ❌ `bundle_test_push` 성공(`isTested=true`)을 테스트 완료로 간주해 검수 제출로
+  이어감(6-A).
 - ❌ 브라우저에서 재현되는 문제를 실기기 업로드로 확인. 그건 `npm run dev` +
   `/ait:debug` 환경 1이 훨씬 빠르다.
 - ❌ 시크릿·인증 코드·업로드 presigned URL의 서명 파라미터를 stdout·로그·메시지에
