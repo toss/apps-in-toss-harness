@@ -267,6 +267,12 @@ export interface ConnectionRouter {
   /** The connection the request handlers must read this instant. */
   readonly active: CdpConnection;
   /**
+   * `false` while no family has been booted yet (fresh all-lazy daemon, #396):
+   * `active` is then a placeholder, so its `kind` says nothing about the user's
+   * intent. Omitted/`true` means `active` is a real, explicitly chosen family.
+   */
+  readonly booted?: boolean;
+  /**
    * Switches the active connection to the family for `mode`, lazily booting
    * that family's infra if needed, re-arming the attach watcher, and emitting
    * `tools/list_changed`.
@@ -571,6 +577,10 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     { capabilities: { tools: { listChanged: true } } },
   );
 
+  // True while the daemon has booted no family yet (fresh all-lazy start). Never
+  // true when a test pins the env via `getEnvironment`.
+  const isUnbooted = (): boolean => getEnvDep === undefined && router.booted === false;
+
   server.setRequestHandler(ListToolsRequestSchema, () => {
     // Per-request snapshot of the active connection (issue #348). `kind` is
     // authoritative even before any target attaches, so bootstrap visibility
@@ -578,8 +588,13 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     const conn = router.active;
     const env = resolveEnvironment();
     const attached = conn.listTargets().length > 0;
-    // Tier A/B filter first (env), then bootstrap tier (attach state).
-    const envFiltered = filterToolsByEnvironment(DEBUG_TOOL_DEFINITIONS, env);
+    // Tier A/B filter first (env), then bootstrap tier (attach state). An
+    // unbooted daemon has no env yet (the placeholder reads as `mock`), so the
+    // env filter is skipped — otherwise the documented 1-call `start_attach`
+    // bootstrap would be hidden until the user already ran start_debug.
+    const envFiltered = isUnbooted()
+      ? [...DEBUG_TOOL_DEFINITIONS]
+      : filterToolsByEnvironment(DEBUG_TOOL_DEFINITIONS, env);
     const tools = attached
       ? envFiltered.map((tool) => ({ ...tool }))
       : envFiltered
@@ -642,7 +657,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       // Mode prologue (optional). When `mode` is given and differs from the
       // active env, switch first. local-browser is rejected below (relay-only).
       let attachConn = conn;
-      const rawMode = args?.mode;
+      // Unbooted daemon + no `mode`: the only attachable family is relay, so
+      // default to relay-staging (switch, then attach) instead of failing on the
+      // placeholder's `mock` env. An explicit mode — including local-browser —
+      // is honoured as before.
+      const rawMode = args?.mode === undefined && isUnbooted() ? 'relay-staging' : args?.mode;
       if (rawMode !== undefined) {
         const mode = normalizeStartDebugMode(rawMode);
         // Reject an invalid OR local-browser mode BEFORE any switch — local has
@@ -2048,6 +2067,10 @@ export class DualConnectionRouter implements ConnectionRouter {
 
   constructor(deps: DualRouterDeps) {
     this.deps = deps;
+  }
+
+  get booted(): boolean {
+    return this.activeFamily !== null;
   }
 
   get active(): CdpConnection {

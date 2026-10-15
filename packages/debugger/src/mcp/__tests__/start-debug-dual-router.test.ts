@@ -326,6 +326,80 @@ describe('start_attach — mode prologue auto-switch', () => {
   });
 });
 
+// ---- unbooted daemon (fresh all-lazy start, #396) --------------------------
+
+/**
+ * Mirrors a fresh `DualConnectionRouter`: `booted` is false and `active` is a
+ * local-kind placeholder until the first switchMode boots a family.
+ */
+class UnbootedRouter extends TestRouter {
+  private isBooted = false;
+  readonly switchedModes: StartDebugMode[] = [];
+  readonly placeholder = new FakeConn('local');
+
+  constructor() {
+    super('relay');
+  }
+  get booted(): boolean {
+    return this.isBooted;
+  }
+  override get active(): CdpConnection {
+    return this.isBooted ? super.active : this.placeholder;
+  }
+  override switchMode(mode: StartDebugMode): Promise<ModeSwitchReport> {
+    this.isBooted = true;
+    this.switchedModes.push(mode);
+    return super.switchMode(mode);
+  }
+}
+
+describe('unbooted daemon — bootstrap tools and start_attach default', () => {
+  const schemeArg = { scheme_url: 'intoss-private://app' };
+
+  it('lists all four bootstrap tools including start_attach', async () => {
+    const client = await makeClient(new UnbootedRouter(), DUMMY_SECRET);
+    const names = (await client.listTools()).tools.map((t) => t.name).sort();
+    expect(names).toEqual(['get_debug_status', 'list_pages', 'start_attach', 'start_debug']);
+  });
+
+  it('hides start_attach again once local-browser was explicitly booted', async () => {
+    const router = new UnbootedRouter();
+    const client = await makeClient(router, DUMMY_SECRET);
+    await client.callTool({ name: 'start_debug', arguments: { mode: 'local-browser' } });
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain('start_attach');
+  });
+
+  it('start_attach without mode switches to relay-staging then attaches', async () => {
+    const router = new UnbootedRouter();
+    const client = await makeClient(router, DUMMY_SECRET);
+    const result = await client.callTool({ name: 'start_attach', arguments: { ...schemeArg } });
+    expect(result.isError).toBeFalsy();
+    expect(router.switchedModes).toEqual(['relay-staging']);
+    expect(router.active.kind).toBe('relay');
+  });
+
+  it('start_attach with mode local-browser still errors without booting', async () => {
+    const router = new UnbootedRouter();
+    const client = await makeClient(router, DUMMY_SECRET);
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { mode: 'local-browser' },
+    });
+    expect(result.isError).toBe(true);
+    expect(router.switchedModes).toEqual([]);
+  });
+
+  it('start_attach without mode stays an env error after an explicit local boot', async () => {
+    const router = new UnbootedRouter();
+    const client = await makeClient(router, DUMMY_SECRET);
+    await client.callTool({ name: 'start_debug', arguments: { mode: 'local-browser' } });
+    const result = await client.callTool({ name: 'start_attach', arguments: { ...schemeArg } });
+    expect(result.isError).toBe(true);
+    expect(router.switchedModes).toEqual(['local-browser']);
+  });
+});
+
 // ---- positive-allowlist kill-switch (replaces LIVE guard) ------------------
 // The LIVE guard matrix (relay × liveIntent × confirm) is removed (#665).
 // The allowlist kill-switch is tested in src/__tests__/in-app-gate.test.ts
