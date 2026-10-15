@@ -62,6 +62,7 @@ import { HttpAitSource } from './ait-http-source.js';
 import type { AitSource } from './ait-source.js';
 import { wrapEnvelope } from './envelope.js';
 import { mcpError, tierRejectionError } from './errors.js';
+import { redirectConsoleToStderr } from './stdout-guard.js';
 import {
   getMockState,
   getOperationalEnvironment,
@@ -625,6 +626,7 @@ function envelopeResult(tool: string, value: unknown) {
 
 /** Builds the dev-mode server and connects it over stdio. */
 export async function runDevServer(): Promise<void> {
+  redirectConsoleToStderr();
   const server = createDevServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);

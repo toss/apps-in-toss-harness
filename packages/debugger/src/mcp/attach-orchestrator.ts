@@ -30,20 +30,45 @@
  * Node-only.
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import {
+  AttachTimeline,
+  type AttachTimelineSnapshot,
+  diagnoseAttach,
+  formatStageHistory,
+} from './attach-timeline.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
 import type { McpEnvironment } from './environment.js';
-import { classifyToolError, mcpError } from './errors.js';
+import {
+  attachSupersededError,
+  attachTimeoutMessage,
+  classifyToolError,
+  mcpError,
+  protocolVersionMismatchError,
+} from './errors.js';
 import { logInfo } from './log.js';
 import type { QrHttpServer } from './qr-http-server.js';
 import {
   canOpenBrowser as defaultCanOpenBrowser,
   listPages,
   openQrInBrowser,
+  redactErrorMessage,
   type TunnelStatus,
 } from './tools.js';
 import { generateTotp, RELAY_VERIFY_SKEW_STEPS } from './totp.js';
 import { renderQr } from './tunnel.js';
+
+/**
+ * Why a QR scan can silently do nothing: when the mini-app is ALREADY open in
+ * the Toss app, scanning an attach QR only brings the existing WebView to the
+ * front — it is NOT reloaded with the new query (`relay=`, `at=`), so the stale
+ * page never dials the new relay and `start_attach` waits until its timeout.
+ * Surfaced in the tool description, the result header and the timeout error
+ * (the timeout error's English line lives in `errors.ts#attachTimeoutMessage`).
+ */
+const ALREADY_OPEN_NOTICE_KO =
+  '토스 앱에 이 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지 않아 attach되지 않습니다 — 미니앱 상단의 X 버튼으로 먼저 닫은 뒤 스캔하세요.';
 
 /**
  * Maximum age (ms) of a page's `lastSeenAt` before it is treated as a ghost
@@ -171,6 +196,60 @@ export type McpResult = {
 };
 
 /**
+ * `buildTimeoutError`에 넘기는 시도별 재료. `renderAndMaybeWait`가 타임아웃 시점에 채운다.
+ * 둘 다 secret-free다(단계 기록은 시각·enum, 대기 오류는 redact된 메시지).
+ */
+export interface TimeoutContext {
+  /** 타임아웃 시점의 attach 단계 기록. */
+  snapshot?: AttachTimelineSnapshot;
+  /** 대기 중 삼켜졌던 비-타임아웃 에러(redact됨). */
+  waitError?: string;
+}
+
+/** `AbortSignal.reason`으로 쓰는, 새 `start_attach`가 이전 대기를 대체했다는 표지. */
+export const ATTACH_SUPERSEDED_REASON = 'superseded';
+
+/** 대기가 `AbortSignal`로 끊겼음을 알리는 내부 에러. */
+class AttachAbortedError extends Error {
+  constructor(readonly reason: unknown) {
+    super('start_attach: 대기가 취소됐습니다');
+  }
+}
+
+/** `work`를 `signal` abort와 경주시킨다. 진 쪽 프로미스의 늦은 거절은 삼킨다. */
+function raceWithAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return work;
+  if (signal.aborted) {
+    work.catch(() => {});
+    return Promise.reject(new AttachAbortedError(signal.reason));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new AttachAbortedError(signal.reason));
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** `renderAndMaybeWait`의 호출별 옵션. */
+export interface RenderAndWaitOptions {
+  /**
+   * 대기를 끊는 신호. abort되면 대기를 멈추고, 이유가 {@link ATTACH_SUPERSEDED_REASON}이면
+   * "대체됨" 결과를, 아니면 "취소됨" 결과를 돌려준다. MCP 요청 취소(`extra.signal`)와 중복
+   * `start_attach` 대체가 같은 경로를 쓴다.
+   */
+  signal?: AbortSignal;
+}
+
+/**
  * Output of the {@link prepareAttach} helper (issue #626) — the validation +
  * component bundle the env-3 (relay-dev) attach path produces. On any
  * validation failure the helper returns `{ ok: false, error }` with a
@@ -180,11 +259,12 @@ export type PrepareAttachResult =
   | {
       ok: true;
       parts: AttachUrlParts;
-      isMatchingPage: (pages: ReturnType<CdpConnection['listTargets']>) => boolean;
+      isMatchingPage: (pages: ReadonlyArray<{ url: string }>) => boolean;
       buildTimeoutError: (
         baseText: string,
         timeoutSec: number,
         observed: ReturnType<CdpConnection['listTargets']>,
+        ctx?: TimeoutContext,
       ) => string;
       authorityWarning: string | undefined;
       totpMeta: AttachTotpMeta | undefined;
@@ -226,6 +306,22 @@ export interface AttachDeps {
    * `renderAndMaybeWait`이 브라우저 자동 열기 가능 여부 판정에 사용한다.
    */
   canOpenBrowser?: () => boolean;
+  /**
+   * attach 단계 기록기. `renderAndMaybeWait`가 시도를 시작하고(`beginAttempt`) QR 발급·재발급·
+   * 페이지 매칭을 기록하며, relay 훅이 나머지 단계를 같은 기록기에 쓴다. 구독(`onStage`)이
+   * progress 알림·터미널 단계 출력·대시보드의 공통 경로다. 생략하면 이 호출만 임시 기록기를
+   * 쓴다(진단은 QR 발급 이후 단계만 알 수 있다).
+   */
+  timeline?: AttachTimeline;
+  /**
+   * 삼켜지던 대기 중 에러를 `get_debug_status`의 recentErrors로 흘려보내는 콜백(선택).
+   * 메시지는 호출 전에 redact된다.
+   */
+  recordError?: (message: string, category?: string) => void;
+  /**
+   * 기기↔호스트 프로토콜 불일치 조회(선택). 타임아웃 진단에 원인 후보로 함께 싣는다.
+   */
+  getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
 }
 
 /** Resolves `deps.nowMs` to its default (`Date.now`). */
@@ -403,7 +499,7 @@ export async function prepareAttach(
   const wssForMatch = tunnelForBuild.wssUrl;
   const matchesRelay = (url: string): boolean =>
     url.includes(wssForMatch) || url.includes(encodeURIComponent(wssForMatch));
-  const isMatchingPage = (pages: ReturnType<CdpConnection['listTargets']>): boolean => {
+  const isMatchingPage = (pages: ReadonlyArray<{ url: string }>): boolean => {
     if (pages.length === 0) return false;
     if (deploymentId === null) return true;
     return pages.some((p) => p.url.includes(deploymentId) || matchesRelay(p.url));
@@ -412,18 +508,43 @@ export async function prepareAttach(
     baseText: string,
     timeoutSec: number,
     observed: ReturnType<CdpConnection['listTargets']>,
+    ctx: TimeoutContext = {},
   ): string => {
-    const observedUrls = observed
-      .slice(0, 3)
-      .map((p) => p.url.slice(0, 80))
-      .join(', ');
-    const observedNote =
-      observed.length > 0 ? ` — previously attached pages: [${observedUrls}]` : '';
-    const deploymentNote = deploymentId ? ` matching deploymentId=${deploymentId}` : '';
-    return (
-      `${baseText}\n\nNo page${deploymentNote} attached within ${timeoutSec}s${observedNote} — ` +
-      'call list_pages to retry.'
-    );
+    // 진단은 `diagnoseAttach` 하나가 맡는다 — get_debug_status와 같은 분류기다.
+    const snapshot: AttachTimelineSnapshot = ctx.snapshot ?? {
+      attempt: 0,
+      attemptStartedAt: null,
+      events: [],
+      lastTunnel: null,
+    };
+    // 터널이 죽어 있으면 기록이 없어도 터널 끊김으로 분류한다(상태가 기록보다 최신).
+    const tunnelNow = getTunnelStatus();
+    const effective: AttachTimelineSnapshot = tunnelNow.up
+      ? snapshot
+      : {
+          ...snapshot,
+          lastTunnel: {
+            seq: 0,
+            at: new Date().toISOString(),
+            attempt: snapshot.attempt,
+            stage: 'tunnel',
+            result: 'down',
+          },
+        };
+    const diagnosis = diagnoseAttach(effective, { observedPages: observed });
+    const skew = deps.getProtocolVersionSkew?.() ?? null;
+    const protocolNote =
+      skew !== null
+        ? (protocolVersionMismatchError(skew).content[0]?.text ?? undefined)
+        : undefined;
+    return `${baseText}\n\n${attachTimeoutMessage({
+      diagnosis,
+      timeoutSec,
+      stageHistory: formatStageHistory(effective),
+      deploymentId,
+      ...(ctx.waitError !== undefined ? { waitError: ctx.waitError } : {}),
+      ...(protocolNote !== undefined ? { protocolNote } : {}),
+    })}`;
   };
 
   return {
@@ -457,15 +578,25 @@ export async function renderAndMaybeWait(
   waitForAttach: boolean,
   callTimeoutMs: number,
   conn: CdpConnection,
+  options: RenderAndWaitOptions = {},
 ): Promise<McpResult> {
   const { getTunnelStatus, qrHttpServer, onAttachUrlBuilt } = deps;
+  const { signal } = options;
   const nowMs = resolveNowMs(deps);
+  // attach 단계 기록: 이 호출이 새 시도를 연다. 기록기가 주입되지 않았으면 이 호출 전용
+  // 임시 기록기를 쓴다 — 타임아웃 진단은 QR 발급 이후 단계까지만 알게 된다.
+  const timeline = deps.timeline ?? new AttachTimeline({ nowMs });
+  timeline.beginAttempt();
+  timeline.setPageMatcher(prep.isMatchingPage);
+  // 대기 중 삼켜지던 비-타임아웃 에러(redact됨). 타임아웃 진단과 recentErrors에 싣는다.
+  let waitError: string | undefined;
   const canOpenBrowserFn = resolveCanOpenBrowser(deps);
   const { parts, isMatchingPage, buildTimeoutError, authorityWarning, totpMeta } = prep;
 
   // Initial mint + dashboard notify (components, not a finished URL, so
   // getDashboardState re-mints on every SSE push — Defect 1).
   let attachUrl = mintAttachUrl(deps, parts);
+  timeline.record('qr-issued', 'ok', 'mint');
   onAttachUrlBuilt?.(parts);
   let totpIssuedAt = nowMs();
   let reminted = 0;
@@ -482,7 +613,8 @@ export async function renderAndMaybeWait(
   // (Page visibility signals die together with the relay).
   const header =
     'This tool result is shown to the user directly — do NOT re-print the QR below in your reply (it wastes output tokens). Just tell the user to scan the QR in this output (Ctrl+O to expand if collapsed).\n\n' +
-    '테스트가 끝날 때까지 앱을 화면 앞에 유지하세요 — 백그라운드로 전환하면 디버그 세션이 끊어집니다.';
+    '테스트가 끝날 때까지 앱을 화면 앞에 유지하세요 — 백그라운드로 전환하면 디버그 세션이 끊어집니다.\n' +
+    ALREADY_OPEN_NOTICE_KO;
   const authorityNotice = authorityWarning ? `⚠️  scheme_url 경고: ${authorityWarning}\n\n` : '';
   const warningPrefix = authorityNotice;
   const guiAvailable = canOpenBrowserFn();
@@ -511,18 +643,32 @@ export async function renderAndMaybeWait(
     // Immediate check — already attached resolves without any wait/re-mint.
     if (isMatchingPage(conn.listTargets())) return conn.listTargets();
     for (;;) {
+      if (signal?.aborted) throw new AttachAbortedError(signal.reason);
       const remaining = deadline - nowMs();
       if (remaining <= 0) {
         throw new Error(`start_attach: 타임아웃 (${callTimeoutMs}ms)`);
       }
       const segmentMs = Math.min(START_ATTACH_SEGMENT_MS, remaining);
       try {
-        return await waitForAttachWithEvents(conn, isMatchingPage, segmentMs);
-      } catch {
+        // 페이지 쪽 wait에는 취소 수단이 없다(세그먼트 ≤30초라 늦은 정리는 감수) — 취소는
+        // abort와의 경주로 처리한다.
+        return await raceWithAbort(
+          waitForAttachWithEvents(conn, isMatchingPage, segmentMs),
+          signal,
+        );
+      } catch (err) {
+        if (err instanceof AttachAbortedError) throw err;
+        // 세그먼트 타임아웃은 정상 흐름이고, 그 밖의 에러는 진단 재료라 버리지 않는다.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes('타임아웃') && !/timeout/i.test(message)) {
+          waitError = redactErrorMessage(message).slice(0, 200);
+          deps.recordError?.(waitError, 'attach');
+        }
         // Segment elapsed without attach — re-mint if the code is aging, then
         // loop into the next segment. SECRET-HANDLING: code never logged.
         if (totpMeta && nowMs() - totpIssuedAt >= START_ATTACH_REMINT_THRESHOLD_MS) {
           attachUrl = mintAttachUrl(deps, parts);
+          timeline.record('qr-issued', 'ok', 'remint');
           onAttachUrlBuilt?.(parts);
           totpIssuedAt = nowMs();
           reminted += 1;
@@ -562,15 +708,28 @@ export async function renderAndMaybeWait(
     }
     try {
       await waitWithRemint();
-    } catch {
+    } catch (err) {
+      if (err instanceof AttachAbortedError) {
+        // 대체/취소된 호출은 단계를 더 기록하지 않는다 — 기록기는 새 시도가 이어받았다.
+        return err.reason === ATTACH_SUPERSEDED_REASON
+          ? attachSupersededError()
+          : mcpError('start_attach: 호출이 취소됐습니다.');
+      }
       const observed = conn.listTargets();
       return {
         content: [
-          { type: 'text', text: buildTimeoutError(baseText, callTimeoutMs / 1000, observed) },
+          {
+            type: 'text',
+            text: buildTimeoutError(baseText, callTimeoutMs / 1000, observed, {
+              snapshot: timeline.snapshot(),
+              ...(waitError !== undefined ? { waitError } : {}),
+            }),
+          },
         ],
         isError: true,
       };
     }
+    timeline.record('matched', 'ok');
     return successResult(baseText);
   };
 
@@ -588,6 +747,22 @@ export async function renderAndMaybeWait(
   if (guiAvailable && qrHttpServer) {
     const httpUrl = qrHttpServer.buildAttachPageUrl(attachUrl);
     const pngUrl = `http://127.0.0.1:${qrHttpServer.port}/qr.png?u=${encodeURIComponent(attachUrl)}`;
+    // A dashboard tab is already connected: do NOT open another one. Every tab
+    // holds an SSE connection to the fixed dashboard port and Firefox caps
+    // persistent connections per host at 6, so a new tab per call starves
+    // `/qr.png` and the SSE streams. Push a state refresh to the open tab(s)
+    // instead (the fresh attach URL is already in getDashboardState()).
+    if (qrHttpServer.hasActiveClients()) {
+      qrHttpServer.notifyStateChange();
+      const openResult = { attempted: false, succeeded: true, reusedExistingTab: true };
+      const shortText =
+        `${warningPrefix}${header}\n` +
+        `${JSON.stringify({ relayUrl, openResult, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n` +
+        `이미 열려 있는 대시보드 탭의 QR을 갱신했습니다. 폰 카메라로 스캔하세요.\n` +
+        `URL: ${httpUrl}`;
+      return runWait(shortText);
+    }
+
     const browserResult = await openQrInBrowser(httpUrl, pngUrl);
 
     if (browserResult.opened) {
@@ -664,6 +839,14 @@ const INDICATOR_HEARTBEAT_MS = 1000;
 const INDICATOR_PENDING_STALE_MS = 120_000;
 
 /**
+ * Default disconnected-state badge text. A badge still on screen means the page
+ * was NOT reloaded by the last QR scan (Toss only brings an already-open
+ * mini-app to the front), so the label says how to recover instead of just
+ * stating the fact.
+ */
+export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 닫고 QR을 다시 스캔하세요';
+
+/**
  * Builds a self-contained IIFE DOM expression that renders a LIVE
  * "Debugger Connected" / disconnected badge on the bottom-left of the phone
  * screen (#730), with a graceful self-dismiss on disconnect (#748).
@@ -732,8 +915,10 @@ const INDICATOR_PENDING_STALE_MS = 120_000;
  *
  * @param opts.label - Attached-state badge text (default: `'Debugger Connected'`).
  * @param opts.disconnectedLabel - Disconnected-state badge text. Default is the
- *   Korean notice `'디버거 연결 끊김'` (ko-primary in-app string convention) —
- *   shown briefly then self-dismissed.
+ *   Korean notice {@link DEFAULT_DISCONNECTED_LABEL} (ko-primary in-app string
+ *   convention) — shown briefly then self-dismissed. It also tells the user how
+ *   to recover: a leftover badge means the page did NOT reload, so the mini-app
+ *   must be closed (X) and the QR scanned again.
  * @param opts.state - Initial/forced state for THIS injection call (default: `'attached'`).
  * @returns A JS expression string suitable for `Runtime.evaluate`.
  */
@@ -743,7 +928,7 @@ export function buildIndicatorExpression(opts?: {
   state?: 'attached' | 'disconnected';
 }): string {
   const label = opts?.label ?? 'Debugger Connected';
-  const disconnectedLabel = opts?.disconnectedLabel ?? '디버거 연결 끊김';
+  const disconnectedLabel = opts?.disconnectedLabel ?? DEFAULT_DISCONNECTED_LABEL;
   // JSON.stringify ensures the labels/state are safely embedded even if they
   // contain quotes or backslashes.
   const safeLabel = JSON.stringify(label);
@@ -812,6 +997,9 @@ export function buildIndicatorExpression(opts?: {
     // the badge (a reconnect after a self-dismiss re-mounts it), and cancels any
     // pending self-dismiss so a transient blip that reconnects does not remove it.
     `function setState(c, next) {` +
+    // A removed indicator (removal expression marks it dead) must stay gone:
+    // stale relay-ws-state / WebSocket listeners still hold this controller.
+    `if (c.dead) { return; }` +
     `clearTimers(c);` +
     `c.state = next; c.dismissed = false; c.removed = false;` +
     `render(c);` +
@@ -914,6 +1102,43 @@ export function buildIndicatorExpression(opts?: {
     `}` +
     // Apply THIS injection call's requested state (default 'attached').
     `setState(c, ${safeState});` +
+    `})()`
+  );
+}
+
+/**
+ * Builds a self-contained IIFE expression that REMOVES the on-phone indicator
+ * badge injected by {@link buildIndicatorExpression}.
+ *
+ * Why this exists: a badge left on the page after the run ended (pass or fail)
+ * reads as "debugger still around" and hides the real situation — the relay is
+ * gone and the page will not dial a new one until the mini-app is reloaded.
+ * `close()` of the `debugger-test` relay factory evaluates this over the
+ * still-open CDP channel right before the relay is torn down.
+ *
+ * Behavior: stops the controller's timers (self-dismiss + heartbeat), detaches
+ * the node, marks the controller `dead`/`removed` so late `ait:relay-ws-state`
+ * / WebSocket listeners (which still close over it) cannot re-mount the badge,
+ * and drops `window.__ait_indicator` so a later injection builds a fresh badge.
+ * Idempotent: with no badge present it is a no-op that returns `true`.
+ *
+ * SECRET-HANDLING: contains no secrets, relay URLs, or TOTP codes.
+ */
+export function buildIndicatorRemovalExpression(): string {
+  return (
+    `(() => {` +
+    `var W = window;` +
+    `var c = W.__ait_indicator;` +
+    `if (c) {` +
+    `c.dead = true; c.removed = true;` +
+    `try { if (c.stop) { c.stop(); } } catch (_) {}` +
+    `try { if (c.el && c.el.parentNode) { c.el.parentNode.removeChild(c.el); } } catch (_) {}` +
+    `try { delete W.__ait_indicator; } catch (_) { W.__ait_indicator = undefined; }` +
+    `}` +
+    // Orphan node (controller already gone) — remove by id as well.
+    `var n = document.getElementById('__ait_debug_indicator');` +
+    `if (n && n.parentNode) { n.parentNode.removeChild(n); }` +
+    `return true;` +
     `})()`
   );
 }

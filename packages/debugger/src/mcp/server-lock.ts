@@ -11,7 +11,7 @@
  *
  * Schema (JSON):
  * ```json
- * { "pid": 12345, "wssUrl": "wss://xxx.trycloudflare.com", "startedAt": "2026-01-01T00:00:00.000Z" }
+ * { "pid": 12345, "wssUrl": "wss://<relay host>", "startedAt": "2026-01-01T00:00:00.000Z", "clientPid": 999 }
  * ```
  *
  * ## Behaviour
@@ -19,9 +19,13 @@
  * - **Acquire**: write PID + wssUrl + startedAt. Returns a `release()` handle.
  * - **Stale lock recovery**: if the stored PID is no longer alive
  *   (`process.kill(pid, 0)` throws ESRCH), the lock is silently replaced.
- * - **Live conflict (option B)**: if the stored PID is alive, `acquireLock`
- *   throws `ServerLockConflictError` with the existing PID and wssUrl so the
- *   caller can surface a clear message to the agent.
+ * - **Same-client takeover**: if the holder is alive but belongs to the same MCP
+ *   client (`clientPid` equal, or the recorded client is gone — a reconnect left
+ *   the old daemon running), it is SIGTERMed (≤5 s, then SIGKILL for that PID and
+ *   its tunnel child only) and replaced.
+ * - **Live conflict**: if another live client holds the lock, `acquireLock`
+ *   throws `ServerLockConflictError` (PID + start time; never the relay host) and
+ *   the daemon starts in blocked mode (`blocked-server.ts`).
  * - **Release**: remove the lock file. Called on graceful shutdown (SIGINT /
  *   SIGTERM / SIGHUP). SIGKILL survivors leave a stale file — the next startup
  *   recovers it automatically via the alive check.
@@ -34,11 +38,11 @@
  * Node-only.
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isPidAlive as _isPidAlive } from './parent-watcher.js';
-import { RESTART_CMD_FORCE } from './restart-hint.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +62,14 @@ export interface LockData {
    * is known-dead as a stale lock and reclaims it.
    */
   tunnelChildPid?: number | null;
+  /**
+   * PID of the MCP client (e.g. `claude`) that spawned this daemon: the nearest
+   * ancestor that is not an `npm exec` / `npx` / shell wrapper. A new daemon that
+   * finds a live holder with the same `clientPid` knows the holder is a leftover
+   * of a reconnect by the same client, not another session. Absent in lock files
+   * from older versions (the holder's ancestry is walked instead).
+   */
+  clientPid?: number | null;
 }
 
 export interface LockHandle {
@@ -75,26 +87,25 @@ export interface LockHandle {
   release(): void;
 }
 
-/** Thrown when a live server process already holds the lock. */
+/**
+ * Thrown when a live server process of another client already holds the lock.
+ *
+ * SECRET-HANDLING: the message never contains the relay host (`wssUrl`) — that
+ * host is a secret. `existingWssUrl` stays on the object for programmatic
+ * callers only and must not be rendered.
+ */
 export class ServerLockConflictError extends Error {
   /** PID of the existing server process. */
   readonly existingPid: number;
-  /** wssUrl from the existing lock — may be `null` if the tunnel is still starting. */
+  /** wssUrl from the existing lock — may be `null`. Never put this in a message. */
   readonly existingWssUrl: string | null;
   /** ISO timestamp from the existing lock — when that session started. */
   readonly existingStartedAt: string;
 
   constructor(existingPid: number, existingWssUrl: string | null, existingStartedAt: string) {
-    const urlNote =
-      existingWssUrl != null
-        ? `  relay URL: ${existingWssUrl}\n`
-        : '  relay URL: (tunnel still starting — retry in a moment)\n';
-
     super(
-      `A debug server is already running (PID ${existingPid}).\n` +
-        urlNote +
-        'Stop the existing session before starting a new one.\n' +
-        'If it is already stopped but this error persists, remove the lock file:\n' +
+      `다른 debugger 세션이 이미 실행 중입니다 (PID ${existingPid}, 시작 ${existingStartedAt}).\n` +
+        '그 세션을 끝낸 뒤 다시 시작하세요. 이미 끝났는데도 이 에러가 나면 잠금 파일을 지우세요:\n' +
         `  rm "${lockFilePath()}"`,
     );
     this.name = 'ServerLockConflictError';
@@ -157,6 +168,7 @@ function readLock(lockPath: string): LockData | null {
         wssUrl: typeof p.wssUrl === 'string' ? p.wssUrl : null,
         startedAt: p.startedAt as string,
         tunnelChildPid,
+        clientPid: typeof p.clientPid === 'number' ? p.clientPid : null,
       };
     }
     // Unrecognised schema — treat as stale.
@@ -184,39 +196,153 @@ function removeLock(lockPath: string): void {
 // Force-takeover helper
 // ---------------------------------------------------------------------------
 
+/** Blocks the thread for `ms` without burning CPU. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /**
  * Sends SIGTERM to `pid` and waits up to `graceMs` (default 2 000 ms) for it
- * to exit; then falls back to SIGKILL.  Synchronous — uses a busy-wait loop so
- * it is usable in the top-level startup path without async plumbing.
+ * to exit; then falls back to SIGKILL for that PID only. Synchronous so it is
+ * usable in the top-level startup path without async plumbing.
  *
  * Ignores errors from `process.kill` so that a race where the target exits
  * between the alive check and the kill call does not crash the caller.
  */
-function killAndWait(pid: number, graceMs = 2_000): void {
+function killAndWait(pid: number, graceMs = 2_000, insp: ProcInspector = defaultInspector): void {
+  if (pid === process.pid) return;
   try {
-    process.kill(pid, 'SIGTERM');
+    insp.kill(pid, 'SIGTERM');
   } catch {
     // Already gone — nothing to do.
     return;
   }
 
   const deadline = Date.now() + graceMs;
-  // Poll every 100 ms until the process is gone or the grace period expires.
-  while (isPidAlive(pid) && Date.now() < deadline) {
-    // Busy-wait: this is a very short window (≤2 s) at startup.
-    const end = Date.now() + 100;
-    while (Date.now() < end) {
-      // spin
-    }
+  while (insp.isAlive(pid) && Date.now() < deadline) {
+    insp.sleep(100);
   }
 
-  if (isPidAlive(pid)) {
+  if (insp.isAlive(pid)) {
     try {
-      process.kill(pid, 'SIGKILL');
+      insp.kill(pid, 'SIGKILL');
     } catch {
       // Already gone.
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Process inspection (client / ancestry detection)
+// ---------------------------------------------------------------------------
+
+/** OS-level process queries, injectable so tests never touch real processes. */
+export interface ProcInspector {
+  /** Parent PID of `pid`, or `null` when unknown (no `ps`, process gone). */
+  parentOf(pid: number): number | null;
+  /** Command line of `pid`, or `null` when unknown. */
+  commandOf(pid: number): string | null;
+  isAlive(pid: number): boolean;
+  kill(pid: number, signal: NodeJS.Signals): void;
+  sleep(ms: number): void;
+}
+
+function psField(field: 'ppid' | 'command', pid: number): string | null {
+  try {
+    const out = execFileSync('ps', ['-o', `${field}=`, '-p', String(pid)], {
+      encoding: 'utf8',
+      timeout: 2_000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out === '' ? null : out;
+  } catch {
+    return null;
+  }
+}
+
+const defaultInspector: ProcInspector = {
+  parentOf(pid) {
+    const raw = psField('ppid', pid);
+    if (raw === null) return null;
+    const n = Number.parseInt(raw, 10);
+    return Number.isInteger(n) ? n : null;
+  },
+  commandOf: (pid) => psField('command', pid),
+  isAlive: (pid) => isPidAlive(pid),
+  kill: (pid, signal) => {
+    process.kill(pid, signal);
+  },
+  sleep: sleepSync,
+};
+
+/**
+ * True for the wrapper processes between an MCP client and the daemon:
+ * `npm exec` / `npx` (also run as `node …/npm-cli.js`) and plain shells.
+ */
+export function isWrapperCommand(command: string): boolean {
+  const head = command.trim().split(/\s+/).slice(0, 3).join(' ');
+  if (/(^|\/)(npm|npx)( |$)/.test(head)) return true;
+  if (/(npm|npx)-cli\.js/.test(head)) return true;
+  return /^(\S*\/)?(sh|bash|zsh|dash|env)( |$)/.test(head);
+}
+
+/**
+ * The MCP client above `startPid`: the nearest ancestor that is not an
+ * npm/npx/shell wrapper. `null` when it cannot be determined (reached init,
+ * `ps` unavailable, walk too deep).
+ */
+export function findClientPid(
+  startPid: number = process.pid,
+  insp: ProcInspector = defaultInspector,
+): number | null {
+  let pid = insp.parentOf(startPid);
+  for (let depth = 0; depth < 8; depth++) {
+    if (pid === null || pid <= 1) return null;
+    const cmd = insp.commandOf(pid);
+    if (cmd === null) return null;
+    if (!isWrapperCommand(cmd)) return pid;
+    pid = insp.parentOf(pid);
+  }
+  return null;
+}
+
+function ancestorsOf(startPid: number, insp: ProcInspector): number[] {
+  const out: number[] = [];
+  let pid = insp.parentOf(startPid);
+  while (pid !== null && pid > 1 && out.length < 12) {
+    out.push(pid);
+    pid = insp.parentOf(pid);
+  }
+  return out;
+}
+
+/**
+ * Decides whether a live lock holder is a leftover of the same MCP client as
+ * this process (an MCP reconnect that left the old daemon running).
+ *
+ * - holder recorded `clientPid`: same client iff it equals ours, or the
+ *   recorded client is gone (the holder is an orphan of a dead client).
+ * - legacy holder without `clientPid`: same client iff our client is among the
+ *   holder's ancestors.
+ * Different or undeterminable client → `false` (never touch it).
+ */
+export function isLeftoverOfSameClient(
+  holder: LockData,
+  myClientPid: number | null,
+  insp: ProcInspector = defaultInspector,
+): boolean {
+  if (typeof holder.clientPid === 'number') {
+    if (myClientPid !== null && holder.clientPid === myClientPid) return true;
+    return !insp.isAlive(holder.clientPid);
+  }
+  if (myClientPid === null) return false;
+  return ancestorsOf(holder.pid, insp).includes(myClientPid);
+}
+
+/** Refuses to signal a recycled PID that is no longer a debugger process. */
+function looksLikeDebugger(pid: number, insp: ProcInspector): boolean {
+  const cmd = insp.commandOf(pid);
+  return cmd !== null && /debugger/.test(cmd);
 }
 
 /**
@@ -231,13 +357,13 @@ function killAndWait(pid: number, graceMs = 2_000): void {
  * child is already gone. SECRET-HANDLING: logs the PID only — never the tunnel
  * host/wss (those never enter the lock file or this path).
  */
-function reapOrphanTunnelChild(existing: LockData): void {
+function reapOrphanTunnelChild(existing: LockData, insp: ProcInspector = defaultInspector): void {
   const childPid = existing.tunnelChildPid;
-  if (typeof childPid !== 'number' || !isPidAlive(childPid)) return;
+  if (typeof childPid !== 'number' || !insp.isAlive(childPid)) return;
   process.stderr.write(
     `[ait-debug] reaping orphaned tunnel child PID=${childPid} from previous session.\n`,
   );
-  killAndWait(childPid);
+  killAndWait(childPid, 2_000, insp);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +389,10 @@ export interface AcquireLockOptions {
    * Corresponds to the `--force` / `--takeover` CLI flag.
    */
   force?: boolean;
+  /** Process queries (tests inject a fake; default shells out to `ps`). */
+  inspector?: ProcInspector;
+  /** Grace period for the same-client takeover SIGTERM (default 5 000 ms). */
+  takeoverGraceMs?: number;
 }
 
 /**
@@ -279,18 +409,23 @@ export interface AcquireLockOptions {
  * `handle.updateWssUrl(url)` once the cloudflared tunnel is ready.
  */
 export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
-  const { force = false } = options;
+  const { force = false, inspector: insp = defaultInspector, takeoverGraceMs = 5_000 } = options;
   const lockPath = lockFilePath();
   const existing = readLock(lockPath);
+  let clientPidCache: number | null | undefined;
+  const myClientPid = (): number | null => {
+    clientPidCache ??= findClientPid(process.pid, insp);
+    return clientPidCache;
+  };
 
   if (existing !== null) {
-    if (isPidAlive(existing.pid)) {
+    if (insp.isAlive(existing.pid)) {
       // FIX 3 (issue #571): even if the Node process is alive, check whether
       // its cloudflared child has died. A zombie daemon whose tunnel is dead
       // is effectively stale — reclaim the lock without waiting for the user
       // to manually kill the process.
       const tunnelChildPid = existing.tunnelChildPid;
-      const tunnelChildDead = typeof tunnelChildPid === 'number' && !isPidAlive(tunnelChildPid);
+      const tunnelChildDead = typeof tunnelChildPid === 'number' && !insp.isAlive(tunnelChildPid);
 
       if (tunnelChildDead) {
         process.stderr.write(
@@ -302,21 +437,30 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
         process.stderr.write(
           `[ait-debug] --force: terminating existing session PID=${existing.pid} …\n`,
         );
-        killAndWait(existing.pid);
+        killAndWait(existing.pid, 2_000, insp);
         // Issue #628: killing the Node holder doesn't reliably cascade to a
         // detached cloudflared child — reap it explicitly so --force leaves no
         // orphaned tunnel.
-        reapOrphanTunnelChild(existing);
+        reapOrphanTunnelChild(existing, insp);
         process.stderr.write(`[ait-debug] --force: PID=${existing.pid} stopped, taking over.\n`);
-      } else {
-        // Emit a user-actionable message before throwing so the MCP host can
-        // surface it — the thrown message is included in the "process exited"
-        // log, but the stderr line is more prominent and machine-parseable.
-        const urlPart =
-          existing.wssUrl != null ? `wssUrl=${existing.wssUrl}` : 'wssUrl=(tunnel starting)';
+      } else if (
+        isLeftoverOfSameClient(existing, myClientPid(), insp) &&
+        looksLikeDebugger(existing.pid, insp)
+      ) {
+        // The holder belongs to the same MCP client (or its client is gone): a
+        // reconnect left the old daemon running. Replace it — SIGTERM, wait,
+        // SIGKILL only that PID and its recorded tunnel child.
         process.stderr.write(
-          `[ait-debug] 기존 debug-mode 세션이 이미 실행 중 — PID=${existing.pid}, started ${existing.startedAt}, ${urlPart}\n` +
-            `[ait-debug] 회복: \`kill ${existing.pid}\` 또는 \`${RESTART_CMD_FORCE}\`\n`,
+          `[ait-debug] 같은 클라이언트가 남긴 이전 debugger(PID=${existing.pid})를 종료하고 이어받습니다.\n`,
+        );
+        killAndWait(existing.pid, takeoverGraceMs, insp);
+        reapOrphanTunnelChild(existing, insp);
+      } else {
+        // Another live client owns the session. SECRET-HANDLING: no relay host
+        // (wssUrl) in any line, and no hard-coded release URL in the hint.
+        process.stderr.write(
+          `[ait-debug] 다른 세션이 debugger를 이미 사용 중 — PID=${existing.pid}, 시작 ${existing.startedAt}\n` +
+            `[ait-debug] 회복: \`kill ${existing.pid}\` 또는 같은 명령에 --force를 붙여 다시 실행\n`,
         );
         throw new ServerLockConflictError(existing.pid, existing.wssUrl, existing.startedAt);
       }
@@ -328,7 +472,7 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
       // Issue #628: a SIGKILL'd/crashed Node couldn't TERM-cascade to its
       // cloudflared child, so that child may still be holding a stale tunnel.
       // Reap it before the new session boots its own tunnel.
-      reapOrphanTunnelChild(existing);
+      reapOrphanTunnelChild(existing, insp);
     }
   }
 
@@ -336,6 +480,7 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
     pid: process.pid,
     wssUrl: null,
     startedAt: new Date().toISOString(),
+    clientPid: myClientPid(),
   };
   writeLock(lockPath, data);
 

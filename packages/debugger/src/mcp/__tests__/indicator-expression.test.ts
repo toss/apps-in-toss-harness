@@ -21,7 +21,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildIndicatorExpression } from '../attach-orchestrator.js';
+import {
+  buildIndicatorExpression,
+  buildIndicatorRemovalExpression,
+  DEFAULT_DISCONNECTED_LABEL,
+} from '../attach-orchestrator.js';
 
 const BADGE_ID = '__ait_debug_indicator';
 // Kept in sync with attach-orchestrator.ts constants.
@@ -81,7 +85,7 @@ describe('buildIndicatorExpression — badge DOM behavior', () => {
     const el = badge();
     expect(el).not.toBeNull();
     expect(el?.style.pointerEvents).toBe('none');
-    expect(el?.textContent).toBe('디버거 연결 끊김');
+    expect(el?.textContent).toBe(DEFAULT_DISCONNECTED_LABEL);
   });
 
   it('disconnected badge SELF-DISMISSES — removed from the DOM after the window', () => {
@@ -286,7 +290,7 @@ describe('buildIndicatorExpression — freeze/spinner triage signals (#749)', ()
     evalExpression();
     evalExpression({ state: 'disconnected' });
     // Disconnected → the badge is just the ko notice; no ♥/⏳ text lingers.
-    expect(badge()?.textContent).toBe('디버거 연결 끊김');
+    expect(badge()?.textContent).toBe(DEFAULT_DISCONNECTED_LABEL);
   });
 
   it('stop() halts the heartbeat interval — beats freeze (teardown contract)', () => {
@@ -319,5 +323,101 @@ describe('buildIndicatorExpression — freeze/spinner triage signals (#749)', ()
     expect(expr).not.toMatch(/\.args\b/);
     expect(expr).not.toMatch(/\.result\b/);
     expect(expr).not.toMatch(/wss:\/\//);
+  });
+});
+
+/** Indirect eval of the removal expression (same global-scope pattern as above). */
+function evalRemoval(): unknown {
+  // biome-ignore lint/security/noGlobalEval: deliberately evaluating the removal IIFE to exercise its DOM behavior.
+  const indirectEval = eval;
+  return indirectEval(buildIndicatorRemovalExpression());
+}
+
+describe('buildIndicatorRemovalExpression — end-of-run badge removal', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '';
+    (window as unknown as Record<string, unknown>).__ait_relay_ws_observed = true;
+    delete (window as unknown as Record<string, unknown>).__ait_indicator;
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    delete (window as unknown as Record<string, unknown>).__ait_relay_ws_observed;
+    delete (window as unknown as Record<string, unknown>).__ait_indicator;
+  });
+
+  it('removes an attached badge from the DOM and drops the controller', () => {
+    evalExpression();
+    expect(badge()).not.toBeNull();
+
+    expect(evalRemoval()).toBe(true);
+
+    expect(badge()).toBeNull();
+    expect((window as unknown as Record<string, unknown>).__ait_indicator).toBeUndefined();
+  });
+
+  it('removes a badge that is already in the disconnected state', () => {
+    evalExpression();
+    evalExpression({ state: 'disconnected' });
+    expect(badge()).not.toBeNull();
+
+    evalRemoval();
+
+    expect(badge()).toBeNull();
+  });
+
+  it('late relay-ws-state events cannot re-mount a removed badge', () => {
+    evalExpression();
+    evalRemoval();
+
+    window.dispatchEvent(new CustomEvent('ait:relay-ws-state', { detail: { state: 'open' } }));
+    window.dispatchEvent(new CustomEvent('ait:relay-ws-state', { detail: { state: 'closed' } }));
+    vi.advanceTimersByTime(SELF_DISMISS_MS + FADE_MS + 2000);
+
+    expect(badge()).toBeNull();
+  });
+
+  it('stops the heartbeat/self-dismiss timers (no leak after removal)', () => {
+    evalExpression();
+    evalExpression({ state: 'disconnected' });
+
+    evalRemoval();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('is idempotent and a no-op when no badge was ever injected', () => {
+    expect(() => evalRemoval()).not.toThrow();
+    evalExpression();
+    evalRemoval();
+    expect(() => evalRemoval()).not.toThrow();
+    expect(badge()).toBeNull();
+  });
+
+  it('a fresh injection after removal builds a new badge', () => {
+    evalExpression();
+    evalRemoval();
+
+    evalExpression();
+
+    expect(badge()).not.toBeNull();
+    expect(label()?.textContent).toBe('Debugger Connected');
+  });
+
+  it('SECRET-HANDLING: the expression carries no URLs or codes', () => {
+    const expr = buildIndicatorRemovalExpression();
+    expect(expr).not.toMatch(/wss:\/\//);
+    expect(expr).not.toMatch(/at=/);
+    expect(expr).not.toMatch(/:\/\//);
+  });
+});
+
+describe('DEFAULT_DISCONNECTED_LABEL', () => {
+  it('tells the user how to recover: close the mini-app and scan the QR again', () => {
+    expect(DEFAULT_DISCONNECTED_LABEL).toContain('디버거 연결 끊김');
+    expect(DEFAULT_DISCONNECTED_LABEL).toContain('앱을 닫고');
+    expect(DEFAULT_DISCONNECTED_LABEL).toContain('QR을 다시 스캔');
   });
 });

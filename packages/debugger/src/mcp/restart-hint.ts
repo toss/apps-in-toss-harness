@@ -15,6 +15,3 @@
  */
 export const RESTART_CMD =
   'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz debugger';
-
-/** {@link RESTART_CMD} with `--force`, for the server-lock recovery hint. */
-export const RESTART_CMD_FORCE = `${RESTART_CMD} --force`;

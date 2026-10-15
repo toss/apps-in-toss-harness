@@ -1,0 +1,5 @@
+---
+'@apps-in-toss/debugger': patch
+---
+
+Claude Code에서 `/mcp`로 ait-devtools를 다시 연결하면 이전 데몬이 남아 `server.lock`을 잡고 있어서, 새 데몬이 말없이 종료되고 사용자에게는 `CONNECTION_CLOSED`만 보이던 문제를 고쳤다. 데몬은 SIGINT·SIGTERM·SIGHUP, stdin `end`/`close`, MCP 전송 채널 닫힘, 부모 프로세스 소멸(5초 주기 감시) 중 어느 쪽으로든 정리(배지 제거·relay/터널 종료·락 해제) 뒤 프로세스를 실제로 끝낸다. 이전에는 신호 핸들러가 정리만 하고 `process.exit`를 부르지 않아, stdin이나 대시보드 SSE 소켓이 이벤트 루프를 붙잡고 있으면 데몬이 계속 살아 있을 수 있었다. 락 파일에 `clientPid`(npm exec·npx·셸 래퍼를 건너뛴 가장 가까운 조상, 보통 `claude`)를 기록하고, 살아 있는 락 보유자가 같은 클라이언트의 잔재(같은 `clientPid`, 기록된 클라이언트가 이미 죽음, 옛 락은 조상 체인에 내 클라이언트가 있음)이면 SIGTERM으로 끝내고 최대 5초 기다린 뒤 이어받는다. 끝나지 않으면 그 PID와 기록된 터널 자식에게만 SIGKILL을 보낸다. 다른 클라이언트가 쓰는 데몬은 건드리지 않고, 대신 차단 모드로 MCP를 계속 띄워 모든 도구 호출이 "다른 Claude Code 세션(PID, 시작 시각)이 이미 사용 중이며 계속 쓰기·`kill <pid>`·닫은 뒤 `/mcp` 재연결 중 고르라"는 한국어 에러를 돌려준다(터미널에서 직접 실행한 경우는 예전처럼 에러로 종료). 락 충돌 안내(stderr 한 줄·에러 메시지)에서 relay 호스트(`wssUrl`)를 뺐고, 특정 버전의 릴리즈 URL을 박아 둔 복구 명령 대신 "같은 명령에 --force를 붙여 다시 실행"으로 바꿨다. 테스트는 vitest setup에서 `AIT_DEVTOOLS_LOCK_DIR`을 임시 디렉터리로 돌려 실제 `~/.ait-devtools`를 읽거나 쓰지 않고, 기본 대시보드 포트 테스트는 실제 8317을 bind하지 않는다.

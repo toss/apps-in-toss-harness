@@ -195,6 +195,9 @@ export function createRelayConnectionFactory(
       const { bootRelayFamily, buildRelayVerifyAuth, startAttachWatcher } = await import(
         '../mcp/debug-server.js'
       );
+      const { AttachTimeline, buildDashboardTimelineState, formatStageLabel } = await import(
+        '../mcp/attach-timeline.js'
+      );
       const { buildChiiInspectorUrl } = await import('../mcp/devtools-opener.js');
       const { generateTotp } = await import('../mcp/totp.js');
 
@@ -214,6 +217,15 @@ export function createRelayConnectionFactory(
       //   2. re-push dashboard SSE on late tunnel-up events (notifyStateChange).
       //
       // SECRET-HANDLING: onWssUrl receives the relay wss URL — never log it.
+      // attach 단계 기록기 — relay 훅·터널·오케스트레이터가 쓰고, 터미널 줄과 대시보드가
+      // 읽는다. 터미널에는 고정 라벨만 찍는다(URL·코드 없음). stdout이 아니라 stderr다.
+      const timeline = new AttachTimeline();
+      const sessionStartedAt = new Date().toISOString();
+      timeline.onStage((event) => {
+        process.stderr.write(`debugger-test: ${formatStageLabel(event)}\n`);
+        qrServer?.notifyStateChange();
+      });
+
       let resolveTunnelUp!: () => void;
       const tunnelReady = new Promise<void>((resolve) => {
         resolveTunnelUp = resolve;
@@ -239,6 +251,7 @@ export function createRelayConnectionFactory(
         onTunnelDown: () => {
           qrServer?.notifyStateChange();
         },
+        timeline,
       });
       family = booted;
 
@@ -261,6 +274,7 @@ export function createRelayConnectionFactory(
         qrHttpServer: undefined, // filled in below if web-QR server started
         onAttachUrlBuilt: undefined, // filled in below
         canOpenBrowser: () => !headless,
+        timeline,
       };
 
       // Web-QR server: reuse the same loopback HTTP dashboard that the MCP
@@ -293,6 +307,8 @@ export function createRelayConnectionFactory(
           mode: 'relay-dev' as const,
           phase, // #730 — CLI-only 'running'/'complete' transitions via onSessionPhase
           manualPrompt, // #741 — CLI-only --manual-blocking transitions via onManualPrompt
+          // 어느 프로세스가 relay를 쥐고 있는지 + 단계 타임라인 (데몬 대시보드와 같은 표면).
+          ...buildDashboardTimelineState(timeline, sessionStartedAt, 'test-runner'),
         });
 
         // devtools#772: getDirectInspectorUrl — mirrors debug-server.ts's
@@ -489,6 +505,7 @@ export function createRelayConnectionFactory(
           // FIX (a): enableDomains first — opens the page-level CDP websocket.
           await booted.connection.enableDomains();
           lastEnableError = undefined;
+          timeline.record('cdp-ready', 'ok');
           break;
         } catch (err) {
           lastEnableError = err instanceof Error ? err : new Error(String(err));
@@ -502,6 +519,7 @@ export function createRelayConnectionFactory(
       }
 
       if (lastEnableError !== undefined) {
+        timeline.record('cdp-ready', 'failed');
         booted.stop();
         family = undefined;
         // devtools#772: stop the attach watcher poller alongside the QR server
@@ -581,24 +599,27 @@ export function createRelayConnectionFactory(
     },
 
     async close(connection: CdpConnection): Promise<void> {
-      // #730: flip the on-phone badge to disconnected AND push the terminal
-      // dashboard frame BEFORE tearing anything down, so neither surface goes
-      // dark without explanation when the CLI exits (dog-food gaps #1 + #2).
+      // #730: push the terminal dashboard frame AND take the on-phone badge off
+      // the page BEFORE tearing anything down, so neither surface goes dark
+      // without explanation when the CLI exits (dog-food gaps #1 + #2).
+      // The badge is REMOVED rather than flipped to "disconnected": a leftover
+      // badge on a page that will never dial a relay again misleads (the page is
+      // not reloaded by a new QR scan while the mini-app is still open).
       // Both are best-effort over the still-open channels — the ordering
       // (before family.stop()/qrServer.close()) is load-bearing:
       //   - qrServer.notifyStateChange() writes synchronously to the still-open
       //     SSE sockets, so the 'complete' frame is on the wire before the HTTP
       //     server is closed below.
-      //   - injectDebugIndicator runs over the still-open CDP channel, so the
-      //     phone actually receives the disconnected-state update before the
-      //     relay/tunnel are torn down.
+      //   - removeDebugIndicator runs over the still-open CDP channel, so the
+      //     phone actually receives the removal before the relay/tunnel are
+      //     torn down.
       if (phase !== 'complete') {
         phase = 'complete';
         qrServer?.notifyStateChange();
       }
       try {
-        const { injectDebugIndicator } = await import('./cell.js');
-        await injectDebugIndicator(connection, { state: 'disconnected' });
+        const { removeDebugIndicator } = await import('./cell.js');
+        await removeDebugIndicator(connection);
       } catch {
         // Channel may already be down (e.g. attach never completed) — non-fatal,
         // the badge is informational UI only.

@@ -19,6 +19,8 @@
  *       __TUNNEL_STATUS__   : 로컬라이즈된 tunnel 상태 레이블
  *       __ATTACH_SECTION__  : QR img+url-box, 또는 hint 텍스트
  *       __PAGES_SECTION__   : pages <section> 블록, 또는 빈 문자열 (null → '')
+ *       __TIMELINE_SECTION__: attach 진행 단계 <section> 블록, 또는 빈 문자열 (stages 미주입 → '')
+ *       __SESSION_LINE__    : 세션 종류·시작 시각·PID 한 줄, 또는 빈 문자열 (session 미주입 → '')
  *   - inline SSE <script> → 런타임 suffix로 append (localised string 포함)
  *
  * i18n:
@@ -108,6 +110,35 @@ export interface DashboardState {
    * SECRET-HANDLING: 파일명만 담는다 — relay wss/TOTP/scheme URL 없음.
    */
   manualPrompt?: { file: string; index: number; total: number } | null;
+  /**
+   * 현재 `start_attach` 시도의 단계 기록 — `AttachTimeline`과 같은 기록(타임아웃 진단·
+   * progress·`get_debug_status`와 공유)이다. 대시보드가 "어디까지 됐는지"를 그대로 보여
+   * 준다.
+   *
+   * - 배열 — 타임라인 섹션을 렌더한다(빈 배열은 "아직 시도 없음").
+   * - `undefined`/`null` — 호출자가 단계 기록을 모른다(예: relay를 소유하지 않는 unplugin
+   *   호스트). 거짓 "시도 없음"을 보이지 않도록 섹션 자체를 숨긴다(`pages: null`과 같은 원칙).
+   *
+   * SECRET-HANDLING: 시각·단계·결과 enum만 담는다 — URL·TOTP·relay host 없음.
+   */
+  stages?: DashboardStage[] | null;
+  /**
+   * 이 대시보드를 운영하는 프로세스 표시 — 어느 세션(MCP 데몬 / 테스트 러너)이 relay를
+   * 쥐고 있는지 한눈에 알게 한다. 미지정이면 표시하지 않는다.
+   *
+   * SECRET-HANDLING: 종류 enum·시작 시각·PID뿐이다.
+   */
+  session?: { kind: 'daemon' | 'test-runner'; startedAt: string; pid: number };
+}
+
+/** {@link DashboardState.stages}의 한 줄 — `AttachStageEvent`의 표시용 부분집합. */
+export interface DashboardStage {
+  at: string;
+  stage: string;
+  result: string;
+  detail?: string;
+  /** `target-rejected-busy`에만: 거부된 앱과 붙어 있던 앱의 첫 DNS 라벨. */
+  apps?: { rejected: string; attached: string | null };
 }
 
 /**
@@ -147,8 +178,33 @@ export interface QrHttpServer {
    * `getDashboardState`가 주입돼 있지 않으면 no-op.
    */
   notifyStateChange(): void;
+  /**
+   * 현재 대시보드(`GET /events` SSE) 구독 탭이 하나라도 연결돼 있는지.
+   *
+   * `start_attach`가 매 호출마다 새 브라우저 탭을 여는 대신, 이미 열린 탭이 있으면
+   * 그 탭에 상태 refresh만 push하도록 판단하는 근거다. 브라우저는 호스트당 영속
+   * 연결을 6개로 제한(Firefox)하는데 탭마다 SSE 연결 1개를 붙들기 때문에, 탭이
+   * 쌓이면 `/qr.png`와 신규 SSE 요청이 굶는다.
+   */
+  hasActiveClients(): boolean;
   close(): Promise<void>;
 }
+
+/**
+ * 동시에 유지하는 SSE 구독 수 상한. 초과로 새 구독이 들어오면 가장 오래된
+ * 구독에 `superseded` 이벤트를 보내고 응답을 끝낸다 — 브라우저의 호스트당 영속
+ * 연결 한도(Firefox 6)를 대시보드 탭이 다 먹어 `/qr.png`가 굶는 것을 막는다.
+ */
+export const MAX_SSE_CLIENTS = 2;
+
+/**
+ * `GET /events` 구독 프로토콜 표식(`?v=2`). `superseded` 이벤트를 이해하는 클라이언트
+ * 스크립트만 이 표식을 붙인다. 표식이 없는 요청(이전 데몬이 띄운 채 남은 오래된 탭)은
+ * 204로 거절한다 — EventSource는 204를 받으면 재연결을 멈추고, 요청은 구독 슬롯도
+ * 차지하지 않는다. 안 그러면 오래된 탭들이 3초마다 재연결하며 서로를 밀어내는 핑퐁이 된다.
+ */
+export const SSE_PROTOCOL_PARAM = 'v';
+export const SSE_PROTOCOL_VERSION = '2';
 
 /** HTML 특수문자를 이스케이프한다. */
 function escapeHtml(s: string): string {
@@ -179,6 +235,52 @@ function buildLangSwitcher(
   return `<div class="lang-switcher"><a href="${switcherHref('ko')}" class="${koClass}">${koLabel}</a><a href="${switcherHref('en')}" class="${enClass}">${enLabel}</a></div>`;
 }
 
+/** 타임라인 라벨 키 → ko/en 문구. 클라이언트 스크립트(SSE 재렌더)도 같은 표를 쓴다. */
+function buildTimelineLabels(s: ReturnType<typeof resolveLocaleStrings>): Record<string, string> {
+  return {
+    'tunnel.ok': s('dashboard.timeline.tunnelUp'),
+    'tunnel.down': s('dashboard.timeline.tunnelDown'),
+    'qr-issued.mint': s('dashboard.timeline.qrIssued'),
+    'qr-issued.remint': s('dashboard.timeline.qrReissued'),
+    'device-handshake.ok': s('dashboard.timeline.handshake'),
+    'auth.script': s('dashboard.timeline.scriptServed'),
+    'auth.http-401': s('dashboard.timeline.authHttpRejected'),
+    'auth.ws-4401': s('dashboard.timeline.authWsRejected'),
+    'target-connected.ok': s('dashboard.timeline.targetConnected'),
+    'target-disconnected.ok': s('dashboard.timeline.targetDisconnected'),
+    'target-rejected-busy.rejected': s('dashboard.timeline.rejectedBusy'),
+    'matched.ok': s('dashboard.timeline.matched'),
+    'cdp-ready.ok': s('dashboard.timeline.cdpReady'),
+  };
+}
+
+/** 라벨 템플릿의 `{rejected}`/`{attached}`를 앱 라벨(첫 DNS 라벨)로 채운다. */
+function fillTimelineApps(template: string, apps: DashboardStage['apps']): string {
+  if (apps === undefined) return template.replace(/\{rejected\}|\{attached\}/g, '?');
+  return template
+    .replace(/\{rejected\}/g, apps.rejected)
+    .replace(/\{attached\}/g, apps.attached ?? '?');
+}
+
+/** 타임라인 `<li>` 목록 — 서버 렌더. SSE 클라이언트 렌더(`renderTimeline`)와 같은 구조다. */
+function buildTimelineItems(
+  stages: DashboardStage[],
+  labels: Record<string, string>,
+  emptyLabel: string,
+): string {
+  if (stages.length === 0) return `<li class="empty">${escapeHtml(emptyLabel)}</li>`;
+  const t0 = Date.parse(stages[0]?.at ?? '');
+  return stages
+    .map((e) => {
+      const template = labels[`${e.stage}.${e.detail ?? e.result}`] ?? `${e.stage} ${e.result}`;
+      const label = fillTimelineApps(template, e.apps);
+      const rel = Number.isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
+      const cls = e.result === 'ok' ? 'stage-ok' : 'stage-bad';
+      return `<li class="${cls}"><span class="stage-time">+${rel}s</span> ${escapeHtml(label)}</li>`;
+    })
+    .join('');
+}
+
 /**
  * Dashboard HTML — precompiled chrome에 per-request 동적 값을 채워 완성한다.
  *
@@ -190,7 +292,7 @@ function buildLangSwitcher(
  * 동적 파트 분류:
  *   - "token-fill": 단일 값 교체 (__NOW__, __TUNNEL_CLASS__, __TUNNEL_STATUS__,
  *     __ATTACH_SECTION__, __INSPECTOR_SECTION__)
- *   - "runtime builder": 가변 길이 구조 (__PAGES_SECTION__ — 조건부 렌더 + 가변 rows)
+ *   - "runtime builder": 가변 길이 구조 (__PAGES_SECTION__, __TIMELINE_SECTION__ — 조건부 렌더 + 가변 rows)
  *   - "suffix": inline SSE <script> (빌드 파이프라인 없는 클라이언트 스크립트, locale
  *     aware 문자열 포함)
  *
@@ -247,7 +349,8 @@ function buildDashboardHtml(
       `<div class="url-row">` +
       `<p class="url-box" id="url-box">${safeAttachUrl}</p>` +
       `<button class="copy-btn" id="copy-btn" type="button" aria-label="${copyLabel}">${copyLabel}</button>` +
-      `</div>`;
+      `</div>` +
+      `<p class="hint reopen-hint">${escapeHtml(s('dashboard.attach.reopenHint'))}</p>`;
   } else {
     attachSection = `<p class="hint">${escapeHtml(s('dashboard.attach.hint'))}</p>`;
   }
@@ -292,6 +395,35 @@ function buildDashboardHtml(
             : `<li class="empty">${escapeHtml(s('dashboard.pages.empty'))}</li>`
         }</ul></section>`;
 
+  // timelineSection — attach 진행 단계. stages가 없으면(호출자가 모름) 섹션 자체를 숨긴다.
+  const timelineLabels = buildTimelineLabels(s);
+  const timelineEmpty = s('dashboard.timeline.empty');
+  const timelineSection =
+    state.stages === undefined || state.stages === null
+      ? ''
+      : `<hr /><section id="timeline-section"><h2>${escapeHtml(s('dashboard.timeline.section'))}</h2><ul id="timeline-list">${buildTimelineItems(
+          state.stages,
+          timelineLabels,
+          timelineEmpty,
+        )}</ul></section>`;
+
+  // sessionLine — 이 대시보드를 운영하는 세션(MCP 데몬 / 테스트 러너) 한 줄.
+  let sessionLine = '';
+  if (state.session) {
+    const started = new Date(state.session.startedAt);
+    const time = Number.isNaN(started.getTime())
+      ? state.session.startedAt
+      : started.toLocaleTimeString(locale === 'ko' ? 'ko-KR' : 'en-US', { hour12: false });
+    sessionLine = escapeHtml(
+      s(
+        state.session.kind === 'test-runner'
+          ? 'dashboard.session.lineTestRunner'
+          : 'dashboard.session.lineDaemon',
+        { time, pid: state.session.pid },
+      ),
+    );
+  }
+
   // locale-aware strings for the inline SSE client script
   // watchdog timeout: server refresh 주기보다 넉넉히 크게 잡아 일시적 끊김을 오탐하지 않는다.
   //   - 기본(90s): 90s × 2 + 30s = 210s — 주기 1회 놓쳐도 정상 케이스 배제.
@@ -318,6 +450,11 @@ function buildDashboardHtml(
     completeBody: JSON.stringify(s('dashboard.session.completeBody')),
     shutdownTitle: JSON.stringify(s('dashboard.session.shutdownTitle')),
     shutdownBody: JSON.stringify(s('dashboard.session.shutdownBody')),
+    reopenHint: JSON.stringify(s('dashboard.attach.reopenHint')),
+    supersededTitle: JSON.stringify(s('dashboard.superseded.title')),
+    supersededBody: JSON.stringify(s('dashboard.superseded.body')),
+    timelineLabels: JSON.stringify(timelineLabels),
+    timelineEmpty: JSON.stringify(timelineEmpty),
   };
 
   const langSwitcher = buildLangSwitcher(path, params, locale, s);
@@ -333,7 +470,9 @@ function buildDashboardHtml(
     .replaceAll('__TUNNEL_STATUS__', escapeHtml(tunnelStatus))
     .replaceAll('__ATTACH_SECTION__', attachSection)
     .replaceAll('__INSPECTOR_SECTION__', inspectorSection)
-    .replaceAll('__PAGES_SECTION__', pagesSection);
+    .replaceAll('__PAGES_SECTION__', pagesSection)
+    .replaceAll('__TIMELINE_SECTION__', timelineSection)
+    .replaceAll('__SESSION_LINE__', sessionLine);
 
   // Append the inline SSE <script> suffix directly before </body>.
   // This keeps the client script out of the precompiled chrome (it references
@@ -394,6 +533,23 @@ interface SseScriptStrings {
   shutdownTitle: string;
   /** daemon 종료 terminal 배너 본문 (#730). */
   shutdownBody: string;
+  /**
+   * QR 아래 안내 — 토스 앱에 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지
+   * 않으니 X로 먼저 닫으라는 문구 (JSON.stringify로 이미 escape됨). dashboard 표면의
+   * SSE 재렌더가 정적 렌더와 같은 구조를 유지하는 데 쓴다.
+   */
+  reopenHint: string;
+  /** 다른 탭에 밀려난(`superseded`) 탭의 정적 안내 제목 (JSON.stringify로 이미 escape됨). */
+  supersededTitle: string;
+  /** 다른 탭에 밀려난 탭의 정적 안내 본문 (JSON.stringify로 이미 escape됨). */
+  supersededBody: string;
+  /**
+   * 타임라인 라벨 표 `{ "<stage>.<detail|result>": "<문구>" }` (JSON.stringify됨). SSE
+   * 재렌더가 서버 렌더와 같은 문구를 쓰게 한다. /attach 표면에서는 `{}`.
+   */
+  timelineLabels: string;
+  /** 타임라인이 비었을 때의 문구 (JSON.stringify로 이미 escape됨). /attach에서는 `""`. */
+  timelineEmpty: string;
 }
 
 /**
@@ -452,7 +608,35 @@ function buildSseScript(strings: SseScriptStrings): string {
       var COMPLETE_BODY = ${strings.completeBody};
       var SHUTDOWN_TITLE = ${strings.shutdownTitle};
       var SHUTDOWN_BODY = ${strings.shutdownBody};
+      var REOPEN_HINT = ${strings.reopenHint};
+      var SUPERSEDED_TITLE = ${strings.supersededTitle};
+      var SUPERSEDED_BODY = ${strings.supersededBody};
+      var TIMELINE_LABELS = ${strings.timelineLabels};
+      var TIMELINE_EMPTY = ${strings.timelineEmpty};
       var disconnectedShown = false;
+
+      // ── attach 진행 단계 타임라인 ──────────────────────────────────────────
+      // 서버 렌더(buildTimelineItems)와 같은 구조 — 라벨 표는 서버가 같은 ko/en 카탈로그로 준다.
+      function escHtml(v) {
+        return String(v).replace(/[<>&"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; });
+      }
+      function renderTimeline(stages) {
+        var tl = document.getElementById('timeline-list');
+        if (!tl) return;
+        if (!stages.length) {
+          tl.innerHTML = '<li class="empty">' + escHtml(TIMELINE_EMPTY) + '</li>';
+          return;
+        }
+        var t0 = Date.parse(stages[0].at);
+        tl.innerHTML = stages.map(function (e) {
+          var label = TIMELINE_LABELS[e.stage + '.' + (e.detail || e.result)] || (e.stage + ' ' + e.result);
+          var apps = e.apps || {};
+          label = label.replace(/{rejected}/g, apps.rejected || '?').replace(/{attached}/g, apps.attached || '?');
+          var rel = isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
+          return '<li class="' + (e.result === 'ok' ? 'stage-ok' : 'stage-bad') + '"><span class="stage-time">+' +
+            rel + 's</span> ' + escHtml(label) + '</li>';
+        }).join('');
+      }
 
       // ── 클립보드 복사 헬퍼 ────────────────────────────────────────────────
       function copyText(text) {
@@ -587,7 +771,7 @@ function buildSseScript(strings: SseScriptStrings): string {
       }, checkIntervalMs);
 
       // ── SSE 구독 ──────────────────────────────────────────────────────────
-      var src = new EventSource('/events');
+      var src = new EventSource('/events?v=2');
       src.onopen = function () {
         // 연결 복구 시 lastSeen 갱신 — 일시적 끊김이 watchdog을 발화시키지 않게.
         // watchdog이 이미 발화했으면 갱신하지 않는다(폴백 UI를 그대로 유지).
@@ -629,6 +813,8 @@ function buildSseScript(strings: SseScriptStrings): string {
               }
             }
           }
+          // attach 진행 단계 — stages가 없으면(null/undefined) 섹션을 건드리지 않는다.
+          if (s.stages !== null && s.stages !== undefined) renderTimeline(s.stages);
           // attachUrl QR + url-box 갱신
           // SECRET-HANDLING: URL 값을 로그로 출력하지 않는다.
           // 터널이 죽으면(s.tunnel.up=false) attachUrl이 남아 있어도 QR을
@@ -649,7 +835,8 @@ function buildSseScript(strings: SseScriptStrings): string {
                 '<div class=\\"url-row\\">' +
                   '<p class=\\"url-box\\" id=\\"url-box\\">' + safeUrl + '</p>' +
                   '<button class=\\"copy-btn\\" id=\\"copy-btn\\" type=\\"button\\" aria-label=\\"' + COPY_LABEL + '\\">' + COPY_LABEL + '</button>' +
-                '</div>';`
+                '</div>' +
+                '<p class=\\"hint reopen-hint\\">' + REOPEN_HINT + '</p>';`
                   : `// /attach: img src만 교체 — url-box는 별도 #url-section에서 관리해 이중 표시 방지(#458).
               // QR img src 교체: img가 있으면 src만 갱신, 없으면 img 요소 생성.
               var img = sec.querySelector('img.qr');
@@ -691,6 +878,19 @@ function buildSseScript(strings: SseScriptStrings): string {
           if (upd) upd.textContent = upd.textContent.replace(/[^ ]+$/, new Date().toISOString());
         } catch (_) { /* 파싱 오류 무시 */ }
       };
+      // 서버가 SSE 구독 상한을 맞추려고 이 탭을 밀어냈다 — EventSource를 닫아
+      // 재연결(= 다른 탭을 다시 밀어내는 핑퐁)을 막고 정적 안내만 남긴다.
+      src.addEventListener('superseded', function () {
+        src.close();
+        showTerminalBanner(SUPERSEDED_TITLE, SUPERSEDED_BODY);
+      });
+      // 탭을 떠날 때 연결을 즉시 반납한다 — 브라우저의 호스트당 영속 연결 한도
+      // (Firefox 6)를 닫힌/이동한 탭이 붙들고 있지 않게 한다.
+      window.addEventListener('pagehide', function () { src.close(); });
+      // bfcache에서 복원되면 닫아 둔 EventSource가 되살아나지 않으므로 새로 불러온다.
+      window.addEventListener('pageshow', function (e) {
+        if (e.persisted && !watchdogFired) location.reload();
+      });
       src.onerror = function () {
         // EventSource는 "재시도 중"과 "서버 종료"를 구분하지 못하므로 즉시
         // 구분되는 "연결 끊김"을 표시한다(#730). 네이티브 auto-reconnect는 그대로
@@ -790,6 +990,12 @@ function buildAttachHtml(
     completeBody: JSON.stringify(s('dashboard.session.completeBody')),
     shutdownTitle: JSON.stringify(s('dashboard.session.shutdownTitle')),
     shutdownBody: JSON.stringify(s('dashboard.session.shutdownBody')),
+    reopenHint: JSON.stringify(s('dashboard.attach.reopenHint')),
+    supersededTitle: JSON.stringify(s('dashboard.superseded.title')),
+    supersededBody: JSON.stringify(s('dashboard.superseded.body')),
+    // /attach 표면에는 타임라인 섹션이 없다 — renderTimeline은 #timeline-list가 없으면 no-op.
+    timelineLabels: '{}',
+    timelineEmpty: '""',
   };
   const sseScript = buildSseScript(sseStrings);
   return filled.replace('</body>', `${sseScript}\n</body>`);
@@ -962,9 +1168,30 @@ export async function startQrHttpServer(
       phase: state.phase ?? 'active',
       // manualPrompt: 수동-변형 모드 진행 상태 (#741) — 파일명만, 시크릿 없음.
       manualPrompt: state.manualPrompt ?? null,
+      // stages: attach 진행 단계(시각·단계·결과 enum) — 시크릿 없음. 미주입이면 null.
+      stages: state.stages ?? null,
     });
     // SSE frame: "data: <json>\n\n"
     res.write(`data: ${payload}\n\n`);
+  }
+
+  /**
+   * 새 구독이 들어오기 전에 상한({@link MAX_SSE_CLIENTS})을 맞춘다 — 가장 오래된
+   * 구독부터 `superseded` 이벤트를 보내고 응답을 끝낸다. 클라이언트는 이 이벤트를
+   * 받으면 EventSource를 닫고 재연결하지 않는다(안 닫으면 auto-reconnect가 다시
+   * 밀어내는 핑퐁이 된다).
+   */
+  function makeRoomForSseClient(): void {
+    while (sseClients.length >= MAX_SSE_CLIENTS) {
+      const oldest = sseClients.shift();
+      if (!oldest) break;
+      try {
+        oldest.write('event: superseded\ndata: {}\n\n');
+        oldest.end();
+      } catch {
+        // 이미 끊긴 연결 — 목록에서만 빠지면 된다.
+      }
+    }
   }
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -1026,7 +1253,8 @@ export async function startQrHttpServer(
 
     // ── GET /events — SSE 스트림 ──────────────────────────────────────────
     if (path === '/events') {
-      if (!getDashboardState) {
+      // 표식 없는 오래된 클라이언트는 슬롯 없이 204로 돌려보내 재연결을 멈춘다.
+      if (!getDashboardState || params.get(SSE_PROTOCOL_PARAM) !== SSE_PROTOCOL_VERSION) {
         res.writeHead(204, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end();
         return;
@@ -1041,6 +1269,7 @@ export async function startQrHttpServer(
       const initialState = getDashboardState();
       pushStateToClient(res, initialState);
 
+      makeRoomForSseClient();
       sseClients.push(res);
 
       // 연결 끊기면 목록에서 제거.
@@ -1290,6 +1519,9 @@ export async function startQrHttpServer(
     },
     notifyStateChange(): void {
       notifyStateChangeInternal();
+    },
+    hasActiveClients(): boolean {
+      return sseClients.some((c) => !c.destroyed && !c.writableEnded);
     },
     close(): Promise<void> {
       clearInterval(refreshHandle);

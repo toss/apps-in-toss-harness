@@ -26,9 +26,11 @@ vi.mock('../mcp/attach-orchestrator.js', () => ({
 
 // cell.ts
 const injectDebugIndicatorMock = vi.fn(() => Promise.resolve());
+const removeDebugIndicatorMock = vi.fn(() => Promise.resolve());
 const injectGlobalsMock = vi.fn(() => Promise.resolve());
 vi.mock('./cell.js', () => ({
   injectDebugIndicator: injectDebugIndicatorMock,
+  removeDebugIndicator: removeDebugIndicatorMock,
   injectGlobals: injectGlobalsMock,
 }));
 
@@ -120,6 +122,7 @@ const fakeQrServer = {
   buildAttachPageUrl: (url: string) => `http://127.0.0.1:49152/?u=${encodeURIComponent(url)}`,
   inspectorStableUrl: 'http://127.0.0.1:49152/inspector',
   notifyStateChange: qrServerNotifyMock,
+  hasActiveClients: () => false,
   close: qrServerCloseMock,
 };
 const startQrHttpServerMock = vi.fn(() => Promise.resolve(fakeQrServer));
@@ -286,6 +289,8 @@ describe('createRelayConnectionFactory — web-QR server (devtools#708)', () => 
         schemeUrl: SYNTHETIC_SCHEME_URL,
         wssUrl: 'wss://synthetic-placeholder',
       };
+      // open() 중 단계 기록(cdp-ready 등)도 대시보드를 깨우므로 그 호출은 비우고 센다.
+      qrServerNotifyMock.mockClear();
       deps?.onAttachUrlBuilt?.(syntheticParts);
       expect(qrServerNotifyMock).toHaveBeenCalledOnce();
     });
@@ -1271,11 +1276,11 @@ describe('createRelayConnectionFactory — phase lifecycle (#730)', () => {
     expect(qrServerNotifyMock.mock.calls.length).toBeGreaterThan(notifyCallsBefore);
   });
 
-  it('close() ordering — notifyStateChange (phase complete) and injectDebugIndicator(disconnected) fire BEFORE family.stop()/qrServer.close() (load-bearing)', async () => {
+  it('close() ordering — notifyStateChange (phase complete) and removeDebugIndicator fire BEFORE family.stop()/qrServer.close() (load-bearing)', async () => {
     const order: string[] = [];
     qrServerNotifyMock.mockImplementation(() => order.push('notifyStateChange'));
-    injectDebugIndicatorMock.mockImplementation(() => {
-      order.push('injectDebugIndicator');
+    removeDebugIndicatorMock.mockImplementation(() => {
+      order.push('removeDebugIndicator');
       return Promise.resolve();
     });
     fakeStop.mockImplementation(() => order.push('family.stop'));
@@ -1294,22 +1299,25 @@ describe('createRelayConnectionFactory — phase lifecycle (#730)', () => {
 
     await factory.close(conn);
 
-    expect(injectDebugIndicatorMock).toHaveBeenCalledWith(conn, { state: 'disconnected' });
+    // The badge is REMOVED (not flipped to "disconnected") so no stale badge is
+    // left on a page that will never dial a relay again.
+    expect(removeDebugIndicatorMock).toHaveBeenCalledWith(conn);
+    expect(injectDebugIndicatorMock).not.toHaveBeenCalledWith(conn, { state: 'disconnected' });
     expect(order.indexOf('notifyStateChange')).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf('injectDebugIndicator')).toBeLessThan(order.indexOf('family.stop'));
+    expect(order.indexOf('removeDebugIndicator')).toBeLessThan(order.indexOf('family.stop'));
     expect(order.indexOf('notifyStateChange')).toBeLessThan(order.indexOf('qrServer.close'));
   });
 
-  it('close() is non-throwing even when injectDebugIndicator rejects', async () => {
+  it('close() is non-throwing even when removeDebugIndicator rejects', async () => {
     const factory = createRelayConnectionFactory({
       schemeUrl: SYNTHETIC_SCHEME_URL,
       onQrContent,
     });
 
     // open() also calls injectDebugIndicator (attached-state badge) — let that
-    // one succeed, and only reject the disconnected-state call made by close().
+    // one succeed, and only reject the removal call made by close().
     const conn = await factory.open();
-    injectDebugIndicatorMock.mockRejectedValueOnce(new Error('CDP channel already closed'));
+    removeDebugIndicatorMock.mockRejectedValueOnce(new Error('CDP channel already closed'));
 
     await expect(factory.close(conn)).resolves.toBeUndefined();
   });
@@ -1408,5 +1416,79 @@ describe('createRelayConnectionFactory — attach env (#103)', () => {
     const args = prepareAttachMock.mock.calls[0]?.[2] as Record<string, unknown>;
     expect(args?.scheme_url).toBe(SYNTHETIC_SCHEME_URL);
     expect(capturedGetDashboardState()().mode).toBe('relay-dev');
+  });
+});
+
+describe('createRelayConnectionFactory — attach timeline (stage lines, session marker)', () => {
+  const onQrContent = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prepareAttachMock.mockResolvedValue(passingPrepResult());
+    renderAndMaybeWaitMock.mockResolvedValue(passingWaitResult());
+    bootRelayFamilyMock.mockResolvedValue({
+      connection: fakeConnection,
+      stop: fakeStop,
+      getTunnelStatus: () => fakeTunnelStatus,
+    });
+  });
+
+  type TimelineLike = {
+    record(stage: string, result: string, detail?: string): void;
+    snapshot(): { events: Array<{ stage: string; result: string }> };
+  };
+  const bootOptions = () =>
+    (bootRelayFamilyMock.mock.calls[0] as unknown as [{ timeline?: TimelineLike }])[0];
+
+  it('passes one shared timeline to the relay boot and to the attach deps', async () => {
+    const factory = createRelayConnectionFactory({ schemeUrl: SYNTHETIC_SCHEME_URL, onQrContent });
+    await factory.open();
+    const bootTimeline = bootOptions().timeline;
+    const attachDeps = prepareAttachMock.mock.calls[0]?.[0] as { timeline?: unknown } | undefined;
+    const attachTimeline = attachDeps?.timeline;
+    expect(bootTimeline).toBeDefined();
+    expect(attachTimeline).toBe(bootTimeline);
+  });
+
+  it('prints each stage as a fixed-label stderr line (no URLs, no codes) and wakes the dashboard', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const factory = createRelayConnectionFactory({
+        schemeUrl: SYNTHETIC_SCHEME_URL,
+        onQrContent,
+      });
+      await factory.open();
+      qrServerNotifyMock.mockClear();
+      const timeline = bootOptions().timeline;
+      timeline?.record('device-handshake', 'ok');
+      timeline?.record('auth', 'rejected', 'ws-4401');
+      const lines = stderrSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines).toContain('debugger-test: 폰이 이번 QR의 페이지를 열었어요\n');
+      expect(lines.some((l) => l.startsWith('debugger-test: 폰의 코드가 거부됐어요'))).toBe(true);
+      expect(qrServerNotifyMock).toHaveBeenCalledTimes(2);
+      expect(lines.join('')).not.toMatch(/wss?:\/\/|at=|\d{6}/);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('records cdp-ready after enableDomains succeeds', async () => {
+    const factory = createRelayConnectionFactory({ schemeUrl: SYNTHETIC_SCHEME_URL, onQrContent });
+    await factory.open();
+    // 오케스트레이터가 mock이라 beginAttempt가 불리지 않아 이벤트는 attempt 0에 쌓인다.
+    const events = bootOptions().timeline?.snapshot().events ?? [];
+    expect(events.some((e) => e.stage === 'cdp-ready' && e.result === 'ok')).toBe(true);
+  });
+
+  it('labels the dashboard as a test-runner session and carries the stage list', async () => {
+    const factory = createRelayConnectionFactory({ schemeUrl: SYNTHETIC_SCHEME_URL, onQrContent });
+    await factory.open();
+    const state = capturedGetDashboardState()() as unknown as {
+      session?: { kind: string; pid: number; startedAt: string };
+      stages?: unknown[];
+    };
+    expect(state.session?.kind).toBe('test-runner');
+    expect(state.session?.pid).toBe(process.pid);
+    expect(Array.isArray(state.stages)).toBe(true);
   });
 });

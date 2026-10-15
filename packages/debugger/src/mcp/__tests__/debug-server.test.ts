@@ -521,6 +521,30 @@ describe('start_attach — wait_for_attach', () => {
     expect(text).toContain('list_pages');
   });
 
+  it('timeout error tells the agent an already-open mini-app is not reloaded by a scan — close it with X first', async () => {
+    const connection = new FakeCdpConnection([]);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection,
+      waitForAttachTimeoutMs: 50,
+    });
+
+    const result = await client.callTool(
+      {
+        name: 'start_attach',
+        arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=timeout-test' },
+      },
+      undefined,
+      { timeout: 5000 },
+    );
+
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('already open in the Toss app');
+    expect(text).toContain('does NOT reload');
+    expect(text).toContain('X button');
+  });
+
   it('response includes QR and do-not-reprint instruction even when wait_for_attach is true and attach succeeds', async () => {
     // Use a target whose URL matches the deploymentId in scheme_url.
     const qrTarget: CdpTarget = {
@@ -548,9 +572,10 @@ describe('start_attach — wait_for_attach', () => {
     expect(text.split('').some((c) => c.charCodeAt(0) === 0x1b)).toBe(false);
   });
 
-  it('does not call enableDomains during wait_for_attach polling', async () => {
-    // enableDomains being called would imply an attach check via CDP domain
-    // negotiation, which is wrong — listTargets is a buffered read.
+  it('calls enableDomains only once, after the wait resolves (for the badge), not while polling', async () => {
+    // The wait itself is a buffered listTargets read — it must not negotiate CDP
+    // domains. enableDomains() runs exactly once after the attach succeeded, so
+    // the client WS exists when the "Debugger Connected" badge is injected.
     // Target URL must match the deploymentId so polling resolves immediately.
     const spyTarget: CdpTarget = {
       id: 'target-spy',
@@ -571,7 +596,7 @@ describe('start_attach — wait_for_attach', () => {
       },
     });
 
-    expect(enableDomainsSpy).not.toHaveBeenCalled();
+    expect(enableDomainsSpy).toHaveBeenCalledTimes(1);
   });
 
   // ---- deploymentId matching (#276) ----------------------------------------
@@ -1673,6 +1698,7 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
       port: 19999,
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
+      hasActiveClients: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
 
@@ -1714,6 +1740,7 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
       port: 19998,
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19998/attach?u=${encodeURIComponent(url)}`,
+      hasActiveClients: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
 
@@ -1856,6 +1883,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
+      hasActiveClients: () => false,
       close: async () => {},
     };
 
@@ -1881,6 +1909,60 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     expect(text).not.toContain('debug=1');
   });
 
+  it('when a dashboard tab is already connected, does NOT open another browser tab — pushes a refresh instead', async () => {
+    const { canOpenBrowser } = await import('../tools.js');
+    (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+
+    const { spawnSync } = await import('node:child_process');
+    const spawnMock = spawnSync as ReturnType<typeof vi.fn>;
+    spawnMock.mockReset();
+    spawnMock.mockReturnValue({ status: 0, stderr: '', error: null });
+
+    const notify = vi.fn();
+    const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
+      port: 19999,
+      inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
+      buildAttachPageUrl: () => 'http://127.0.0.1:19999/',
+      notifyStateChange: notify,
+      hasActiveClients: () => true,
+      close: async () => {},
+    };
+
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      qrHttpServer: fakeQrServer,
+      connection: attachedConn('intoss-private://aitc-sdk-example?_deploymentId=uuid'),
+    });
+
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: 'intoss-private://aitc-sdk-example?_deploymentId=uuid' },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalled();
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('reusedExistingTab');
+    expect(text).toContain('http://127.0.0.1:19999/');
+    // SECRET: raw deep-link must still stay out of the plain text result.
+    expect(text).not.toContain('debug=1');
+  });
+
+  it('tool result tells the user to close an already-open mini-app (X button) before scanning', async () => {
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: attachedConn('intoss-private://aitc-sdk-example?_deploymentId=uuid'),
+    });
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: 'intoss-private://aitc-sdk-example?_deploymentId=uuid' },
+    });
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('X 버튼');
+    expect(text).toContain('새로고침되지 않아');
+  });
+
   it('when browser open fails, falls back to text QR with HTTP URL fallback message', async () => {
     const { canOpenBrowser } = await import('../tools.js');
     (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
@@ -1896,6 +1978,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
+      hasActiveClients: () => false,
       close: async () => {},
     };
 

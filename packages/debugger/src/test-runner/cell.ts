@@ -282,7 +282,10 @@ export async function runPermissionPreflight(
   }
 }
 
-import { buildIndicatorExpression } from '../mcp/attach-orchestrator.js';
+import {
+  buildIndicatorExpression,
+  buildIndicatorRemovalExpression,
+} from '../mcp/attach-orchestrator.js';
 import type { CdpConnection } from '../mcp/cdp-connection.js';
 
 /**
@@ -314,6 +317,16 @@ export async function injectGlobals(
 }
 
 /**
+ * 배지 주입/제거 실패를 stderr에 한 줄로 남긴다. `console.debug`는 stdout으로 가는데, 데몬에서는
+ * stdout이 MCP JSON-RPC 채널이라 스택 트레이스가 섞이면 프로토콜이 깨진다. 에러 객체 대신
+ * 메시지만 쓴다(스택·에러 필드에 URL이 실려 올 수 있다).
+ */
+function logIndicatorSkipped(kind: 'inject' | 'removal', err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`[@apps-in-toss/debugger] debug indicator ${kind} skipped: ${message}\n`);
+}
+
+/**
  * Injects (or updates) the "Debugger Connected"/"Debugger Disconnected"
  * on-phone indicator via `Runtime.evaluate` (#730).
  *
@@ -327,7 +340,7 @@ export async function injectGlobals(
  *
  * **Isolation**: unlike {@link injectGlobals}, this function NEVER throws to
  * its caller. Injection failure (e.g. page detached during inject, CSS not
- * supported) is swallowed and logged as `console.debug` — the badge is
+ * supported) is swallowed and logged to stderr (never stdout) — the badge is
  * informational UI and must never block attach success or test execution.
  * This is the same fire-and-forget spirit as the in-page console mount in
  * `src/in-app/attach.ts`.
@@ -355,6 +368,28 @@ export async function injectDebugIndicator(
     });
   } catch (err) {
     // Badge injection is informational UI — swallow and log; never propagate.
-    console.debug('[@apps-in-toss/debugger] debug indicator inject skipped:', err);
+    logIndicatorSkipped('inject', err);
+  }
+}
+
+/**
+ * Removes the on-phone debug indicator badge via `Runtime.evaluate` (best
+ * effort). Called when a `debugger-test` run finishes (pass or fail), before
+ * the relay is torn down, so a stale "Debugger Connected" / "disconnected"
+ * badge is not left on a page that will never dial a relay again.
+ *
+ * Same isolation guarantee as {@link injectDebugIndicator}: NEVER throws to its
+ * caller — a detached page or already-closed channel is swallowed.
+ *
+ * @param conn - The live CDP connection (relay-attached page).
+ */
+export async function removeDebugIndicator(conn: CdpConnection): Promise<void> {
+  try {
+    await conn.send('Runtime.evaluate', {
+      expression: buildIndicatorRemovalExpression(),
+      returnByValue: true,
+    });
+  } catch (err) {
+    logIndicatorSkipped('removal', err);
   }
 }

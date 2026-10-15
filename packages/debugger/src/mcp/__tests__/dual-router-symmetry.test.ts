@@ -384,3 +384,42 @@ describe('bootRelayFamily — relay-auth baseline (#250)', () => {
 // relay-live removed (#665), relay-sandbox (#103) — 2-value exhaustive list.
 const _exhaustive: StartDebugMode[] = ['local-browser', 'relay-staging'];
 void _exhaustive;
+
+describe('DualConnectionRouter — attach watcher lifecycle records (B1/B8)', () => {
+  it('records the detach, and logs page.attached / page.detached with the env only', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      let targets: CdpTarget[] = [];
+      const conn = new FakeConn('relay');
+      conn.listTargets = () => targets;
+      const family: BootedFamily = { connection: conn, stop: () => {} };
+      const collector = new InMemoryDiagnosticsCollector();
+      const router = new DualConnectionRouter({
+        bootLazyFor: async () => family,
+        diagnosticsCollector: collector,
+        devtoolsOpener: new AutoDevtoolsOpener(),
+        attachWatcherIntervalMs: 10,
+      });
+      router.start({ sendToolListChanged: vi.fn() } as never);
+      await router.switchMode('relay-staging' as never);
+
+      targets = [{ id: 't1', title: 'x', url: 'intoss-private://app?_deploymentId=a&at=123456' }];
+      await new Promise((r) => setTimeout(r, 60));
+      expect(collector.getLastAttachAt()).not.toBeNull();
+
+      targets = [];
+      await new Promise((r) => setTimeout(r, 60));
+      expect(collector.getLastDetachAt()).not.toBeNull();
+      router.stopWatcher();
+
+      const logged = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(logged).toContain('"event":"page.attached"');
+      expect(logged).toContain('"event":"page.detached"');
+      // 페이지 URL·코드는 로그에 없다
+      expect(logged).not.toContain('123456');
+      expect(logged).not.toContain('_deploymentId');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+});

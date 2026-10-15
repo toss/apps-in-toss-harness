@@ -85,6 +85,16 @@ export interface TargetLifecycleEvent {
   detectedAt: string;
 }
 
+/** 페이지 URL(`/targets`의 `url`)에서 호스트명만 뽑는다. 파싱 실패는 `null`. */
+function extractHostFromPageUrl(pageUrl: string): string | null {
+  try {
+    const host = new URL(pageUrl).hostname.toLowerCase();
+    return host === '' ? null : host;
+  } catch {
+    return null;
+  }
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -149,6 +159,19 @@ export interface ChiiCdpConnectionOptions {
    * in the WS URL query.
    */
   totpSecret?: string;
+  /**
+   * "먼저 붙은 미니앱이 이긴다"의 안전망. relay 게이트(`shouldRejectTarget`)가 이미 다른 호스트의
+   * 새 target을 거부하지만, 어떤 이유로 목록에 들어와도 이 연결은 살아 있는 기존 target에서
+   * 다른 호스트의 target으로 갈아타지 않고 이 콜백으로 거부를 알린다(target id당 한 번).
+   *
+   * SECRET-HANDLING: 호스트명만 넘긴다(페이지 URL·target id 없음).
+   */
+  onTargetRejectedBusy?: (event: {
+    rejectedHost: string | null;
+    attachedHost: string | null;
+  }) => void;
+  /** 같은 앱의 새 target이 기존 target을 교체했을 때(새로고침·재스캔) 한 번 불린다. */
+  onTargetReplaced?: () => void;
 }
 
 /** Default per-command timeout if neither option nor env var is set. */
@@ -166,6 +189,10 @@ export class ChiiCdpConnection implements CdpConnection {
   private readonly bufferSize: number;
   private readonly commandTimeoutMs: number;
   private readonly totpSecret: string | undefined;
+  private readonly onTargetRejectedBusy: ChiiCdpConnectionOptions['onTargetRejectedBusy'];
+  private readonly onTargetReplaced: ChiiCdpConnectionOptions['onTargetReplaced'];
+  /** busy로 이미 알린 target id — 폴링마다 같은 거부를 되풀이해 알리지 않는다. */
+  private readonly busyReported = new Set<string>();
   private readonly emitter = new EventEmitter();
   private readonly buffers = new Map<CdpEventName, unknown[]>();
   private readonly targets = new Map<string, CdpTarget>();
@@ -209,6 +236,8 @@ export class ChiiCdpConnection implements CdpConnection {
     this.relayBaseUrl = options.relayBaseUrl.replace(/\/$/, '');
     this.bufferSize = options.bufferSize ?? DEFAULT_BUFFER_SIZE;
     this.totpSecret = options.totpSecret;
+    this.onTargetRejectedBusy = options.onTargetRejectedBusy;
+    this.onTargetReplaced = options.onTargetReplaced;
     const envMs = process.env.AIT_CDP_COMMAND_TIMEOUT_MS
       ? Number(process.env.AIT_CDP_COMMAND_TIMEOUT_MS)
       : undefined;
@@ -249,9 +278,37 @@ export class ChiiCdpConnection implements CdpConnection {
     // The relay may return multiple targets if the previous session did not cleanly
     // detach. We keep only the last entry (last-attach wins) and evict the previous
     // active target if it differs.
+    //
+    // First-wins guard: while the active target is still listed, a target from a
+    // DIFFERENT page host (another mini-app) is never adopted — it is reported as
+    // a busy rejection instead. Same host (reload / re-scan) still replaces the
+    // active one (newest wins). A missing `url` on either side means "unknown",
+    // which keeps the pre-guard behaviour.
+    const activeItem =
+      this.activeTargetId !== null
+        ? list.find((it) => isObject(it) && it.id === this.activeTargetId)
+        : undefined;
+    const activeHost =
+      isObject(activeItem) && typeof activeItem.url === 'string'
+        ? extractHostFromPageUrl(activeItem.url)
+        : null;
     let newestTargetId: string | null = null;
     for (const item of list) {
       if (!isObject(item) || typeof item.id !== 'string') continue;
+      if (activeHost !== null && item.id !== this.activeTargetId) {
+        const host = typeof item.url === 'string' ? extractHostFromPageUrl(item.url) : null;
+        if (host !== null && host !== activeHost) {
+          if (!this.busyReported.has(item.id)) {
+            this.busyReported.add(item.id);
+            try {
+              this.onTargetRejectedBusy?.({ rejectedHost: host, attachedHost: activeHost });
+            } catch {
+              // Observability is best-effort.
+            }
+          }
+          continue;
+        }
+      }
       newestTargetId = item.id; // last wins
     }
 
@@ -649,6 +706,12 @@ export class ChiiCdpConnection implements CdpConnection {
       waiter.reject(err);
     }
     this.pending.clear();
+
+    try {
+      this.onTargetReplaced?.();
+    } catch {
+      // Observability is best-effort.
+    }
 
     const event: TargetLifecycleEvent = { kind: 'replaced', targetId, detectedAt };
     for (const listener of this.lifecycleListeners) {

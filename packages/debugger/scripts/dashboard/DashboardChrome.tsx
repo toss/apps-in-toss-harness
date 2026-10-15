@@ -14,7 +14,8 @@
  *   - Per-request dynamic parts (tunnel status, QR, pages-section, `now`)
  *     are assembled in qr-http-server.ts with a lightweight string builder that
  *     fills `__TUNNEL_STATUS__`, `__TUNNEL_CLASS__`, `__ATTACH_SECTION__`,
- *     `__PAGES_SECTION__`, and `__NOW__` placeholders, then appends the inline
+ *     `__PAGES_SECTION__`, `__TIMELINE_SECTION__`, `__SESSION_LINE__`, and
+ *     `__NOW__` placeholders, then appends the inline
  *     <script> block.
  *
  * Locale: each locale's chrome is a separate export — rendered once per locale
@@ -112,6 +113,10 @@ li.empty { opacity: 0.4; list-style: none; padding-left: 0; }
 .page-id { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
 .page-url { word-break: break-all; }
 hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
+.session-line { font-size: 0.75rem; opacity: 0.55; margin: 0; }
+.session-line:empty { display: none; }
+li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
+li.stage-bad { color: #f85149; }
 .lang-switcher { display: flex; gap: 0.5rem; font-size: 0.75rem; }
 .lang-switcher a { color: #58a6ff; text-decoration: none; opacity: 0.6; }
 .lang-switcher a.active { font-weight: 700; text-decoration: underline; opacity: 1; }
@@ -126,6 +131,11 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
         {/* __NOW__ is filled at runtime by qr-http-server.ts */}
         <p className="updated" id="updated">
           {strings.updatedPrefix}__NOW__
+        </p>
+
+        {/* __SESSION_LINE__ filled at runtime — empty (and hidden via :empty) when no session info */}
+        <p className="session-line" id="session-line">
+          __SESSION_LINE__
         </p>
 
         <section>
@@ -151,6 +161,9 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
           {/* __INSPECTOR_SECTION__ filled at runtime (link or waiting hint, #503) */}
           {'__INSPECTOR_SECTION__'}
         </section>
+
+        {/* __TIMELINE_SECTION__ filled at runtime — attach stage history; empty string when stages is not provided */}
+        {'__TIMELINE_SECTION__'}
 
         {/* __PAGES_SECTION__ filled at runtime — empty string when pages===null */}
         {'__PAGES_SECTION__'}

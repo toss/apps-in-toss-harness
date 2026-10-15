@@ -191,6 +191,7 @@ describe('event categories', () => {
     'page.attached',
     'page.detached',
     'page.crashed',
+    'stage.changed',
     'tool.call',
     'tool.error',
   ] as const;
@@ -201,4 +202,20 @@ describe('event categories', () => {
       expect(lastLine().event).toBe(ev);
     });
   }
+});
+
+describe('stage.changed event', () => {
+  it('keeps stage/result/attempt and drops everything else', () => {
+    logInfo('stage.changed', {
+      stage: 'device-handshake',
+      result: 'ok',
+      attempt: 2,
+      url: 'wss://relay.example/at/123456/target/x',
+    });
+    const line = lastLine();
+    expect(line.stage).toBe('device-handshake');
+    expect(line.result).toBe('ok');
+    expect(line.attempt).toBe(2);
+    expect('url' in line).toBe(false);
+  });
 });

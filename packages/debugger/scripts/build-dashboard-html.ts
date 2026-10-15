@@ -170,6 +170,8 @@ async function main(): Promise<void> {
     ' *   __ATTACH_SECTION__     QR img+url-box HTML, or hint text',
     ' *   __INSPECTOR_SECTION__  inspector link <a> or waiting hint <span> (#503)',
     ' *   __PAGES_SECTION__      pages <section> block, or empty string',
+    ' *   __TIMELINE_SECTION__   attach stage timeline <section>, or empty string',
+    ' *   __SESSION_LINE__       session kind/start/PID line, or empty string',
     ' *   __NOW__                ISO timestamp of current render',
     ' *   __LANG_SWITCHER__      ko/en toggle links (href preserves existing query params)',
     ' *',
