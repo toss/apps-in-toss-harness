@@ -49,6 +49,20 @@
    없으면 첫 호출이 실패한다.
 8. 배포는 `npx wrangler deploy`.
 
+## Cloudflare 공식 plugin (선택)
+
+Worker 하나가 파트너 API를 부르는 정도면 이 문서로 충분하다. Durable Objects,
+Agents SDK, 저장소·큐 같은 다른 Cloudflare 제품을 쓰거나 그중에서 고르는 단계라면
+Cloudflare 공식 plugin을 권한다.
+
+- 설치는 사용자가 직접 한다. Claude Code라면
+  `/plugin marketplace add cloudflare/skills` 다음 `/plugin install cloudflare@cloudflare`.
+- 이 plugin은 `mtls_certificates` 바인딩을 다루지 않는다. 파트너 API 호출은 계속
+  이 문서를 따른다.
+- 함께 붙는 Cloudflare MCP의 `execute`는 Cloudflare API를 폭넓게 부를 수 있다.
+  호출마다 사용자 승인을 받고, OAuth 권한은 필요한 만큼만 준다.
+- 사용자가 이미 고른 호스팅을 Cloudflare로 바꾸자고 먼저 제안하지 않는다.
+
 ## mTLS 도달 확인
 
 상태를 바꾸지 않는 호출에 일부러 틀린 값을 보낸다(예: 식별키 검증 API에 가짜
