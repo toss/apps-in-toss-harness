@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # Build-time absence guard for the in-app debug surface (issue #647).
 #
-# The in-app debug surface — Chii target.js injection AND the eruda console it
-# pulls in — must be PHYSICALLY ABSENT (zero bytes) from a release consumer
-# bundle, not merely gated at runtime. A consumer guards its
+# The in-app debug surface — Chii target.js injection AND the on-phone status
+# banner it drives — must be PHYSICALLY ABSENT (zero bytes) from a release
+# consumer bundle, not merely gated at runtime. A consumer guards its
 # `import('@apps-in-toss/debug-console')` with `if (__DEBUG_BUILD__) { … }`; a
 # release build defines `__DEBUG_BUILD__: false`, and the bundler
 # dead-code-eliminates the whole in-app graph. This script is the mechanical
-# proof of that, plus a check that eruda never leaks into the MCP daemon bundles.
+# proof of that, plus a check that the status banner never leaks into the MCP
+# daemon bundles.
 #
 # Four checks:
-#   1. MCP daemon bundles (dist/mcp/*.js) contain no `eruda` — those run via
-#      `npx -p @ait-co/debugger debugger` and must never pull a browser console
-#      into the install/runtime graph (mirrors check-mcp-react-free.sh).
+#   1. MCP daemon bundles (dist/mcp/*.js) contain no status-banner host id —
+#      those run via `npx -p @ait-co/debugger debugger` and must never pull the
+#      browser-side banner into the install/runtime graph (mirrors
+#      check-mcp-react-free.sh). The daemon may legitimately READ the
+#      `window.__ait_debug_status` enum over CDP, so check 1 greps only the
+#      banner's DOM host id, which the daemon has no reason to name.
 #   2. RELEASE fixture build (AIT_DEBUG_BUILD unset, NODE_ENV=production,
 #      minify ON) contains no debug-surface sentinels — proves DCE works.
 #   3. POSITIVE CONTROL: DEBUG fixture build (AIT_DEBUG_BUILD=1) DOES contain
@@ -37,23 +41,27 @@
 #
 # IMPORTANT: the release build MUST be minified. With minify off, a dead
 # `if(false){ … }` husk survives as text and its identifier strings (e.g.
-# `eruda`) match the grep — a false positive. Vite production builds minify by
-# default; do not pass --minify=false here.
+# `__ait_debug_status`) match the grep — a false positive. Vite production
+# builds minify by default; do not pass --minify=false here.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Sentinels that mark the in-app debug surface. `eruda` covers the console;
-# the others are unique identifiers from the Chii injection path that survive
-# into a bundle only if the in-app graph was included.
-PATTERN="eruda|deriveTargetScriptUrl|installRelayWsObserver|maybeAttach"
+# Sentinels that mark the in-app debug surface. `__ait_debug_status` (the
+# status-enum global) and `__ait_status_banner` (the banner's DOM host id) are
+# string literals, so they survive minification and cover the status banner; the
+# others are unique identifiers from the Chii injection path that survive into a
+# bundle only if the in-app graph was included.
+PATTERN="__ait_debug_status|__ait_status_banner|deriveTargetScriptUrl|installRelayWsObserver|maybeAttach"
+# What check 1 greps in the daemon bundles: the banner's DOM host id only.
+DAEMON_PATTERN="__ait_status_banner"
 
 FIXTURE_CONFIG="scripts/debug-absence-fixture/vite.config.ts"
 OUT_DIR="scripts/debug-absence-fixture/dist/assets"
 
 fail=0
 
-# ── Check 1: MCP daemon bundles are eruda-free ───────────────────────────────
+# ── Check 1: MCP daemon bundles are status-banner-free ───────────────────────
 DAEMON_BUNDLES=("dist/mcp/cli.js" "dist/mcp/server.js")
 for bundle in "${DAEMON_BUNDLES[@]}"; do
   if [[ ! -f "$bundle" ]]; then
@@ -61,12 +69,12 @@ for bundle in "${DAEMON_BUNDLES[@]}"; do
     fail=1
     continue
   fi
-  if grep -qE "eruda" "$bundle"; then
-    echo "✗ INSTALL-GRAPH VIOLATION: $bundle references eruda" >&2
-    echo "  The MCP daemon must never import the eruda console." >&2
+  if grep -qE "$DAEMON_PATTERN" "$bundle"; then
+    echo "✗ INSTALL-GRAPH VIOLATION: $bundle references the status banner" >&2
+    echo "  The MCP daemon must never import the on-phone debug-console surface." >&2
     fail=1
   else
-    echo "✓ $bundle is eruda-free"
+    echo "✓ $bundle is status-banner-free"
   fi
 done
 
@@ -78,7 +86,7 @@ if grep -rlE "$PATTERN" "$OUT_DIR" >/dev/null 2>&1; then
   echo "✗ DEBUG-SURFACE LEAK: release bundle contains debug-surface code" >&2
   echo "  Files:" >&2
   grep -rlE "$PATTERN" "$OUT_DIR" | sed 's/^/    /' >&2
-  echo "  The in-app graph (Chii injection + eruda) must DCE in release builds." >&2
+  echo "  The in-app graph (Chii injection + status banner) must DCE in release builds." >&2
   echo "  Check the consumer's if(__DEBUG_BUILD__) guard and the define." >&2
   fail=1
 else

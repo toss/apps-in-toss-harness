@@ -3,7 +3,7 @@
  *
  * WHY A PROBE AND NOT AN IMPORT — this package is the only one in the split
  * that can end up inside a consumer's production bundle, and it ships with
- * `eruda` as its single dependency and no peer dependencies at all. A static
+ * zero runtime dependencies and no peer dependencies at all. A static
  * `import { setScreenAwakeMode } from '@apps-in-toss/web-framework'` would undo
  * both properties at once: it forces the SDK into the module graph of every
  * consumer that reaches this file, and it pins the package to whichever SDK

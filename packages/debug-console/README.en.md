@@ -4,7 +4,7 @@
 
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
-On-device attach + eruda console for Apps in Toss mini-apps. **The only package in this split that can enter a production bundle** — it has exactly one dependency, [`eruda`](https://github.com/liriliri/eruda), and zero peerDependencies, so it is completely agnostic to the SDK version (2.x/3.x) it ships alongside.
+On-device attach + an on-phone status banner for Apps in Toss mini-apps. **The only package in this split that can enter a production bundle** — it has zero dependencies and zero peerDependencies, so it is completely agnostic to the SDK version (2.x/3.x) it ships alongside.
 
 ## Install
 
@@ -44,34 +44,43 @@ Once activated, it installs two things: (1) an on-device Chii target injection (
 
 Convenient, but `/auto` is a runtime self-gate — it does not guarantee "zero bytes of code" in the release bundle (a dormant, unactivated chunk remains). The relay URL host allowlist (the `relay=` param is rejected unless its host is `*.trycloudflare.com` or localhost — `evaluateDebugGate`'s `'invalid-relay'` branch) means that dormant chunk cannot be pointed at an arbitrary relay even if it ships, so it stays harmlessly dormant. That is not the same guarantee as "zero bytes of code," though — use the build-gated entry above if you need that.
 
-### Bonus: standalone eruda console, no relay
+## On-phone status banner
 
-`mountEruda()` / `unmountEruda()` are exports you can call directly, independent of the gate above. To show only an in-page eruda console on the phone screen — no relay, no attach:
+A small bar at the bottom of the phone screen says how far the attach got and, if it stopped, why. It appears only when the page URL carries `debug=1` or `relay=` — a DEV build that auto-activates without them draws nothing. Tap it to dismiss. The TOTP code, relay address, and URLs never appear on screen or in logs.
 
-```ts
-import { mountEruda } from '@apps-in-toss/debug-console';
+| State | Meaning and what to do |
+|---|---|
+| `blocked-host` / `blocked-opt-in` / `blocked-invalid-relay` / `blocked-entry` | The gate refused. Reopen the page from the dashboard QR |
+| `blocked-auth` | The QR code (`at=`) is missing or expired. Refresh the dashboard and scan the new QR |
+| `connecting` | The script is injected; waiting for the relay connection |
+| `connected` | Connected. Hides itself after a few seconds |
+| `session-ended` | It connected, then dropped and did not come back. Close the mini-app with X and scan the QR again |
+| `code-expired` | The relay rejected the code (4401, or a 401 on the script). Scan a new QR |
+| `relay-busy` | This debugger is already attached to another mini-app (relay 4409). Close that mini-app with X, then scan the QR again from this one |
+| `server-unreachable` | The relay could not be reached. A corporate network or MDM blocking `*.trycloudflare.com` is a common cause |
 
-if (import.meta.env.DEV) {
-  mountEruda();
-}
-```
+The same value is exposed as a string on `window.__ait_debug_status`, so it can also be read over CDP. The banner only reads existing attach events and close codes; the protocol spoken with the daemon (version `1`) is unchanged.
+
+## In-phone console
+
+The previous eruda console (`mountEruda` / `unmountEruda`) is removed. To inspect the console and network on the phone, use the Toss app's official "Web Debug Tools" (웹 디버그 툴즈), opened from the more (더보기) menu on the mini-app screen. Remote CDP attach stays with this package.
 
 ## Exports
 
 | subpath | contents |
 |---|---|
-| `@apps-in-toss/debug-console` | full API — `checkDebugGate`, `maybeAttach`, `mountEruda`/`unmountEruda`, gate types/helpers |
+| `@apps-in-toss/debug-console` | full API — `checkDebugGate`, `maybeAttach`, `detachDebugSurface`, gate and `DebugStatus` types/helpers |
 | `@apps-in-toss/debug-console/auto` | side-effect-only self-gating entry (usage example above) |
 
 No bins are shipped.
 
 ## Relationship with `@apps-in-toss/devtools`
 
-`@apps-in-toss/devtools` owns the mock SDK, the DevTools panel, and the unplugin (the browser dev environment, station 2), while this package owns the in-app half of real-device attach (station 3). If `@apps-in-toss/debugger` is the host-side (PC) MCP daemon and CDP relay, `@apps-in-toss/debug-console` is the phone-side (device) target that relay attaches to — the Chii target injection and the eruda console overlay. This split breaks what used to be a single `@apps-in-toss/devtools` package holding all 8 feature surfaces into "browser dev environment" and "real-device debugging," and this package is the half that must keep the narrowest dependency surface of all — it is the only piece that can ship to production.
+`@apps-in-toss/devtools` owns the mock SDK, the DevTools panel, and the unplugin (the browser dev environment, station 2), while this package owns the in-app half of real-device attach (station 3). If `@apps-in-toss/debugger` is the host-side (PC) MCP daemon and CDP relay, `@apps-in-toss/debug-console` is the phone-side (device) target that relay attaches to — the Chii target injection and the on-phone status banner. This split breaks what used to be a single `@apps-in-toss/devtools` package holding all 8 feature surfaces into "browser dev environment" and "real-device debugging," and this package is the half that must keep the narrowest dependency surface of all — it is the only piece that can ship to production.
 
 ## Security scope
 
-**This package can genuinely end up in a production bundle** — which is exactly why its dependency is pinned to `eruda` alone with zero peerDependencies. Attach only happens after a 3-layer activation gate passes: (B) host allowlist + deployment entry param, (C) `debug=1` opt-in + a valid `wss:` relay URL + (when configured) a TOTP code. If the gate does not pass, no attach occurs, and a gate failure is only ever surfaced as one of the enum values `'host' | 'entry' | 'opt-in' | 'invalid-relay' | 'auth'` — no secret, code value, or relay URL itself ever reaches any log.
+**This package can genuinely end up in a production bundle** — which is exactly why it has zero dependencies and zero peerDependencies. Attach only happens after a 3-layer activation gate passes: (B) host allowlist (`*.tossmini.com` or localhost), (C) `debug=1` opt-in + a valid `wss:` relay URL + a TOTP code (the `at=` code is mandatory on `*.tossmini.com` hosts; `_deploymentId` is reported when present but never required). If the gate does not pass, no attach occurs, and a gate failure is only ever surfaced as one of the enum values `'host' | 'opt-in' | 'invalid-relay' | 'auth'` (`'entry'` stays in the type for compatibility but is no longer returned) — no secret, code value, or relay URL itself ever reaches any log.
 
 ## License
 

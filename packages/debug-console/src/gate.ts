@@ -26,8 +26,14 @@
  *        segment. This is the security gate against a dogfood build that
  *        somehow lands on a production entry — see the comment on
  *        {@link isPrivateAppsHost}.
- *   B2 — entry query: `_deploymentId` must be present and non-empty. Applies to
- *        the 2.x `private-apps` path only.
+ *   B2 — entry query: `_deploymentId` is REPORTED when present, never
+ *        required. Both the 2.x `private-apps` runtime and the 3.x loader
+ *        consume it to pick the bundle and do not forward it to the page URL
+ *        (confirmed on a real device with web-framework 3.7.0: the
+ *        `private-apps` page carried `debug`/`relay`/`at` but no
+ *        `_deploymentId`). Requiring it blocked every real entry, so the
+ *        security bar B2 used to provide moved to C3 (mandatory `at=` code on
+ *        every `*.tossmini.com` host).
  *
  * Layer C — opt-in + relay + optional TOTP auth:
  *   C1 — opt-in:       `debug=1` must be present.
@@ -54,31 +60,30 @@
  *
  * Decision matrix (gate only runs in a debug build — Layer A already passed):
  *
- *   host        | _deploymentId | debug=1 | relay ok | TOTP ok* | result
- *   neither     | (any)         | (any)   | (any)    | (any)    | BLOCKED (host)
- *   private-apps| absent        | (any)   | (any)    | (any)    | BLOCKED (entry)
- *   private-apps| present       | absent  | (any)    | (any)    | BLOCKED (opt-in)
- *   private-apps| present       | present | invalid  | (any)    | BLOCKED (invalid-relay)
- *   private-apps| present       | present | valid    | fail*    | BLOCKED (auth)
- *   private-apps| present       | present | valid    | pass/n/a | ATTACH
- *   tossmini(3.0)| (reported)   | absent  | (any)    | (any)    | BLOCKED (opt-in)
- *   tossmini(3.0)| (reported)   | present | invalid  | (any)    | BLOCKED (invalid-relay)
- *   tossmini(3.0)| (reported)   | present | valid    | at absent| BLOCKED (auth — TOTP mandatory, #760)
- *   tossmini(3.0)| (reported)   | present | valid    | pass/at present | ATTACH
+ *   host         | debug=1 | relay ok | TOTP / at=               | result
+ *   neither      | (any)   | (any)    | (any)                    | BLOCKED (host)
+ *   tossmini*    | absent  | (any)    | (any)                    | BLOCKED (opt-in)
+ *   tossmini*    | present | invalid  | (any)                    | BLOCKED (invalid-relay)
+ *   tossmini*    | present | valid    | verifier fails           | BLOCKED (auth)
+ *   tossmini*    | present | valid    | no verifier, at absent   | BLOCKED (auth — mandatory)
+ *   tossmini*    | present | valid    | verifier passes / at set | ATTACH
+ *   localhost    | absent  | (any)    | (any)                    | BLOCKED (opt-in)
+ *   localhost    | present | invalid  | (any)                    | BLOCKED (invalid-relay)
+ *   localhost    | present | valid    | verifier fails           | BLOCKED (auth)
+ *   localhost    | present | valid    | no verifier / pass       | ATTACH
  *
- *   * "TOTP ok" column only applies when `verifyTotpCode` is provided.
- *     When no verifier is injected, TOTP check is skipped entirely — EXCEPT
- *     on tossmini(3.0) hosts (non-private-apps), where a missing `at=` code
- *     blocks with 'auth' even without a verifier (devtools#760; the relay
- *     side remains the authoritative verifier).
+ *   tossmini* = every `*.tossmini.com` host: `*.private-apps.tossmini.com`
+ *   (dogfood / `intoss-private://`) and the 3.0 unified serving family alike.
+ *   `_deploymentId` is irrelevant to the decision on all rows; when present on
+ *   a tossmini* host it is returned as `deploymentId`, otherwise `''`.
  *
- *   tossmini(3.0) = `*.tossmini.com` hosts that are not
- *   `*.private-apps.tossmini.com` — the 3.0 unified serving family. The 3.0
- *   loader consumes `_deploymentId` natively, so B2 reports it when present
- *   but never requires it there (devtools#760).
+ *   The "no verifier, at absent" row: with no injected verifier (the in-app
+ *   path — the page has no secret), a missing `at=` code blocks with 'auth' on
+ *   any `*.tossmini.com` host (devtools#760 for the 3.0 family; extended to
+ *   `private-apps` when B2 stopped being required). Localhost with no verifier
+ *   ignores `at`. The relay stays the authoritative verifier of the code value.
  *   `*.trycloudflare.com` (the 환경 2 PWA dev tunnel) was a third allowed host
- *   family until 환경 2 was removed in harness#103. Localhost keeps the same
- *   "B2 skipped, `deploymentId: ''`" treatment that path used.
+ *   family until 환경 2 was removed in harness#103.
  */
 
 // Layer B1's host predicates are the one part of this gate the DAEMON also
@@ -90,7 +95,6 @@
 import {
   isDebugAllowedHost,
   isLocalhostHost,
-  isPrivateAppsHost,
   isRelayAllowedHost,
   isTossminiHost,
 } from '@apps-in-toss/internal-protocol/debug-host';
@@ -116,14 +120,18 @@ export interface GateResultAttach {
 export interface GateResultBlocked {
   readonly attach: false;
   /**
-   * - `'host'`          Layer B1: `hostname` is not a `*.private-apps.tossmini.com` host.
-   * - `'entry'`         Layer B2: `_deploymentId` param is absent or empty.
+   * - `'host'`          Layer B1: `hostname` is neither a `*.tossmini.com` nor a localhost host.
+   * - `'entry'`         Layer B2. @deprecated Never returned: `_deploymentId`
+   *                     is no longer required (the runtime consumes it and does
+   *                     not forward it to the page URL). Kept in the union only
+   *                     so consumers' exhaustive `switch`es keep compiling.
    * - `'opt-in'`        Layer C1: `debug=1` param is absent.
    * - `'invalid-relay'` Layer C2: `relay` param is absent, empty, not a `wss:`
    *                     URL, or its host is not `*.trycloudflare.com` /
    *                     localhost (G10 relay host allowlist).
-   * - `'auth'`          Layer C3: TOTP `at=` code is absent, invalid, or expired
-   *                     (only when a `verifyTotpCode` predicate is injected).
+   * - `'auth'`          Layer C3: TOTP `at=` code is invalid or expired
+   *                     (verifier injected), or absent on a `*.tossmini.com`
+   *                     host (mandatory even without a verifier).
    *
    * There is no `'build'` reason: Layer A is enforced by the consumer's
    * `if (__DEBUG_BUILD__)` guard, not by this function.
@@ -219,7 +227,7 @@ export function evaluateDebugGate(input: GateInput): GateResult {
   //   - Toss mini-app serving family: `*.tossmini.com`, of which
   //     `*.private-apps.tossmini.com` is the 2.x dogfood entry. A production
   //     `intoss://` entry is served from `*.apps.tossmini.com` and is refused
-  //     one layer down (TOTP is mandatory outside `private-apps`). This is what
+  //     one layer down (the `at=` code is mandatory on every tossmini host). This is what
   //     stops a dogfood build that somehow reaches a production entry from
   //     attaching: Layer A keeps debug code out of release bundles, and this
   //     layer keeps a dogfood bundle that lands on a production host from
@@ -231,26 +239,13 @@ export function evaluateDebugGate(input: GateInput): GateResult {
     return { attach: false, reason: 'host' };
   }
 
-  // Layer B2 — runtime entry query gate (2.x private-apps path only).
-  // `_deploymentId` must be present and non-empty. The `intoss-private://`
-  // scheme used for dogfood entries includes this param and the 2.x runtime
-  // propagates it to the page URL; general user entry paths do not. Localhost
-  // has no deployed bundle and therefore no `_deploymentId` — B2 is skipped
-  // there, and `deploymentId` is reported as the empty string on such attaches
-  // (no consumer reads it; see attach.ts). The 3.0 unified serving hosts are
-  // also skipped: the 3.0
-  // loader consumes `_deploymentId` natively and does NOT propagate it to
-  // the page URL (devtools#760) — requiring it there would block every 3.0
-  // entry. When it does appear it is still reported.
-  let deploymentId = '';
-  if (isPrivateAppsHost(input.hostname)) {
-    deploymentId = input.searchParams.get('_deploymentId') ?? '';
-    if (deploymentId === '') {
-      return { attach: false, reason: 'entry' };
-    }
-  } else if (!isLocal) {
-    deploymentId = input.searchParams.get('_deploymentId') ?? '';
-  }
+  // Layer B2 — `_deploymentId` is reported, never required.
+  // The Toss runtime (2.x private-apps and 3.x alike) consumes `_deploymentId`
+  // to select the bundle and does NOT forward it to the page URL, so requiring
+  // it blocked every real device entry. Localhost has no deployed bundle and
+  // reports the empty string. The security bar this layer used to add is now
+  // carried by the mandatory `at=` code in C3.
+  const deploymentId = isLocal ? '' : (input.searchParams.get('_deploymentId') ?? '');
 
   // Layer C — explicit opt-in gate.
   // Require `debug=1` so that an operator who opens a dogfood URL by accident
@@ -297,40 +292,26 @@ export function evaluateDebugGate(input: GateInput): GateResult {
   // Layer C3 — TOTP auth gate (fail-fast; the relay side stays authoritative).
   // The `at` query param carries the current TOTP code. When a verifier is
   // injected, an absent or invalid code → BLOCKED. When no verifier is
-  // provided (the in-app path — the page has no secret and cannot verify),
-  // the check is skipped for backward compatibility EXCEPT on a 3.0
-  // tossmini-family host: there the hostname no longer proves a dogfood
-  // context (devtools#760), so a missing `at=` code is refused outright to
-  // keep the #665 invariant ("no naked attach on a production-family host").
+  // provided (the in-app path — the page has no secret and cannot verify), a
+  // missing `at=` code is refused outright on every `*.tossmini.com` host:
+  // the hostname alone no longer proves a dogfood context (devtools#760), and
+  // `_deploymentId` can no longer be required as an entry proof (the runtime
+  // does not forward it), so the code is what keeps a leaked/naked URL from
+  // attaching (#665 invariant). Localhost with no verifier ignores `at`.
   // Real verification of the code value still happens relay-side (4401
-  // accept-then-close on mismatch) — this is only the fail-fast half.
+  // accept-then-close on mismatch) — this is only the fail-fast half. The
+  // relay ALWAYS enforces TOTP (`bootRelayFamily` → `assertRelayAuthConfigured`
+  // in `@apps-in-toss/debugger`), so `verifyTotpCode` is a fail-fast UX layer,
+  // not the security boundary.
   //
   // SECRET-HANDLING: we do NOT log `code`, the verifier's result, or anything
   // derived from the secret. Only the `'auth'` enum is surfaced on failure.
-  // G11 — this branch is asymmetric: a private-apps (2.x) host with no
-  // injected verifier skips the `at=` check entirely, while the `else if`
-  // below makes it mandatory on a tossmini(3.0) non-private-apps host. That
-  // asymmetry is not an oversight, it's an intentional design decision kept
-  // for 2.x backward compatibility (see the devtools#760 history in the
-  // file-level decision matrix above). It is safe under defense-in-depth
-  // because this harness's relay ALWAYS enforces TOTP as mandatory on the
-  // relay side regardless of what the client-side gate decides — the relay
-  // boot path (`bootRelayFamily` → `assertRelayAuthConfigured`, see
-  // `@apps-in-toss/debugger`'s `debug-server.ts` / `totp.ts`) refuses to boot
-  // a relay at all without a valid TOTP secret configured. `verifyTotpCode`
-  // here is therefore not a security boundary — it is a fail-fast UX layer
-  // that lets the in-app client short-circuit before ever dialing the relay.
-  // Real verification of the code value happens relay-side either way.
   const atCode = input.searchParams.get('at') ?? '';
   if (input.verifyTotpCode !== undefined) {
     if (!input.verifyTotpCode(atCode)) {
       return { attach: false, reason: 'auth' };
     }
-  } else if (
-    isTossminiHost(input.hostname) &&
-    !isPrivateAppsHost(input.hostname) &&
-    atCode === ''
-  ) {
+  } else if (isTossminiHost(input.hostname) && atCode === '') {
     return { attach: false, reason: 'auth' };
   }
 

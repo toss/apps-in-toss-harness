@@ -214,10 +214,6 @@ importers:
         version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.15)(yaml@2.9.0))
 
   packages/debug-console:
-    dependencies:
-      eruda:
-        specifier: ^3.4.3
-        version: 3.4.3
     devDependencies:
       '@apps-in-toss/web-framework':
         specifier: 3.8.0
@@ -2179,9 +2175,6 @@ packages:
   entities@8.0.0:
     resolution: {integrity: sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==}
     engines: {node: '>=20.19.0'}
-
-  eruda@3.4.3:
-    resolution: {integrity: sha512-J2TsF4dXSspOXev5bJ6mljv0dRrxj21wklrDzbvPmYaEmVoC+2psylyRi70nUPFh1mTQfIBsSusUtAMZtUN+/w==}
 
   es-define-property@1.0.1:
     resolution: {integrity: sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==}
@@ -5424,8 +5417,6 @@ snapshots:
   encodeurl@2.0.0: {}
 
   entities@8.0.0: {}
-
-  eruda@3.4.3: {}
 
   es-define-property@1.0.1: {}
 

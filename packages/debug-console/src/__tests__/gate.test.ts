@@ -37,6 +37,11 @@ const VALID_HOST = 'example-app.private-apps.tossmini.com';
 
 /** A valid dogfood gate-passing set of query params. */
 const VALID_PARAMS = params(
+  '_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com%2F&at=123456',
+);
+
+/** The same set without the TOTP `at=` code (mandatory on every tossmini host). */
+const PARAMS_NO_AT = params(
   '_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com%2F',
 );
 
@@ -58,7 +63,7 @@ describe('Layer B1 — host allowlist', () => {
     // Pre-#760 this host was blocked at B1 outright ('host'). The 3.0 loader
     // serves dogfood candidates from the same tossmini family, so B1 now
     // passes and the #665 invariant moves to C3: missing `at=` → 'auth'.
-    const result = gate(VALID_PARAMS, 'example-app.apps.tossmini.com');
+    const result = gate(PARAMS_NO_AT, 'example-app.apps.tossmini.com');
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('auth');
   });
@@ -86,7 +91,7 @@ describe('Layer B1 — host allowlist', () => {
     // No mini-app subdomain → isPrivateAppsHost is false, but the host still
     // ends in `.tossmini.com`, so B1 passes on the family filter and the
     // mandatory-TOTP C3 branch applies: VALID_PARAMS has no `at=` → 'auth'.
-    const result = gate(VALID_PARAMS, 'private-apps.tossmini.com');
+    const result = gate(PARAMS_NO_AT, 'private-apps.tossmini.com');
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('auth');
   });
@@ -126,40 +131,52 @@ describe('isPrivateAppsHost', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Layer B2 — runtime entry gate (_deploymentId)
+// Layer B2 — `_deploymentId` is reported, never required
 // ---------------------------------------------------------------------------
 
-describe('Layer B2 — runtime entry gate (_deploymentId)', () => {
-  it('blocks when _deploymentId is absent', () => {
-    const result = gate(params('debug=1&relay=wss://relay.example.com/'));
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('entry');
+describe('Layer B2 — _deploymentId is optional', () => {
+  const RELAY = 'relay=wss://abc-def-ghi.trycloudflare.com/';
+
+  // Regression (real device, web-framework 3.7.0, 2026-10-14): the runtime
+  // consumes `_deploymentId` and forwards only debug/relay/at to the page URL.
+  it('private-apps host: attaches without _deploymentId when debug, relay and at are present', () => {
+    const result = gate(params(`debug=1&${RELAY}&at=123456`));
+    expect(result.attach).toBe(true);
+    if (result.attach) expect(result.deploymentId).toBe('');
   });
 
-  it('blocks when _deploymentId is an empty string', () => {
-    const result = gate(params('_deploymentId=&debug=1&relay=wss://relay.example.com/'));
+  it('private-apps host: blocks with auth when at= is absent (the bar B2 used to provide)', () => {
+    const result = gate(params(`debug=1&${RELAY}`));
     expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('entry');
+    if (!result.attach) expect(result.reason).toBe('auth');
   });
 
-  it('blocks when query string is entirely empty', () => {
+  it('private-apps host: an empty at= is blocked the same as an absent one', () => {
+    const result = gate(params(`debug=1&${RELAY}&at=`));
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('auth');
+  });
+
+  it('private-apps host: still reports _deploymentId when present', () => {
+    const result = gate(params(`_deploymentId=abc-123&debug=1&${RELAY}&at=123456`));
+    expect(result.attach).toBe(true);
+    if (result.attach) expect(result.deploymentId).toBe('abc-123');
+  });
+
+  it('private-apps host: an empty _deploymentId no longer blocks', () => {
+    const result = gate(params(`_deploymentId=&debug=1&${RELAY}&at=123456`));
+    expect(result.attach).toBe(true);
+    if (result.attach) expect(result.deploymentId).toBe('');
+  });
+
+  it('blocks an entirely empty query string at the opt-in layer', () => {
     const result = gate(params(''));
     expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('entry');
-  });
-
-  it('passes when _deploymentId is a UUID-style value', () => {
-    const result = gate(
-      params(
-        '_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/',
-      ),
-    );
-    expect(result.attach).toBe(true);
+    if (!result.attach) expect(result.reason).toBe('opt-in');
   });
 
   it('passes the canonical valid param set', () => {
-    const result = gate(VALID_PARAMS);
-    expect(result.attach).toBe(true);
+    expect(gate(VALID_PARAMS).attach).toBe(true);
   });
 });
 
@@ -242,14 +259,14 @@ describe('Layer C — relay URL validation', () => {
 
   it('passes when relay uses wss: scheme', () => {
     const result = gate(
-      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/'),
+      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'),
     );
     expect(result.attach).toBe(true);
   });
 
   it('accepts a trycloudflare wss URL (typical Phase 1 value)', () => {
     const result = gate(
-      params('_deploymentId=019e3b40&debug=1&relay=wss://abc-def.trycloudflare.com/'),
+      params('_deploymentId=019e3b40&debug=1&relay=wss://abc-def.trycloudflare.com/&at=123456'),
     );
     expect(result.attach).toBe(true);
     if (result.attach) {
@@ -282,7 +299,7 @@ describe('Layer C — relay URL validation', () => {
 
   it('(c) passes a normal trycloudflare relay host', () => {
     const result = gate(
-      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/'),
+      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'),
     );
     expect(result.attach).toBe(true);
   });
@@ -296,7 +313,7 @@ describe('GateResultAttach field values', () => {
   it('exposes relayUrl as the normalised wss URL', () => {
     const result = gate(
       params(
-        '_deploymentId=deploy-123&debug=1&relay=wss%3A%2F%2Fabc-def-ghi.trycloudflare.com%2Fpath',
+        '_deploymentId=deploy-123&debug=1&relay=wss%3A%2F%2Fabc-def-ghi.trycloudflare.com%2Fpath&at=123456',
       ),
     );
     expect(result.attach).toBe(true);
@@ -308,7 +325,7 @@ describe('GateResultAttach field values', () => {
   it('exposes deploymentId from the _deploymentId param', () => {
     const result = gate(
       params(
-        '_deploymentId=019e3b40-the-real-id&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/',
+        '_deploymentId=019e3b40-the-real-id&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456',
       ),
     );
     expect(result.attach).toBe(true);
@@ -320,7 +337,7 @@ describe('GateResultAttach field values', () => {
   it('tolerates extra unrelated query params', () => {
     const result = gate(
       params(
-        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&foo=bar&extra=123',
+        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&foo=bar&extra=123&at=123456',
       ),
     );
     expect(result.attach).toBe(true);
@@ -339,7 +356,7 @@ describe('Layer C3 — TOTP auth gate', () => {
   /** A verifier that only accepts the literal string '123456'. */
   const acceptsOnly123456 = (code: string) => code === '123456';
 
-  it('passes when verifyTotpCode is undefined (TOTP disabled)', () => {
+  it('passes when verifyTotpCode is undefined and at= is present', () => {
     const result = gate(VALID_PARAMS);
     expect(result.attach).toBe(true);
   });
@@ -372,7 +389,7 @@ describe('Layer C3 — TOTP auth gate', () => {
   it('blocks when `at` param is absent and verifyTotpCode is provided', () => {
     // alwaysFail returns false for '' — same as any invalid code.
     const params_ = new URLSearchParams(
-      '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/',
+      '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456',
     );
     const result = evaluateDebugGate({
       hostname: VALID_HOST,
@@ -452,7 +469,7 @@ describe('Full decision matrix', () => {
   it('row: tossmini(3.0) host / at absent → BLOCKED (auth — TOTP mandatory, #760)', () => {
     // Pre-#760 this row was BLOCKED (host). The 3.0 loader serves dogfood
     // candidates from this family, so the block moved from B1 to C3.
-    const result = gate(VALID_PARAMS, 'example-app.apps.tossmini.com');
+    const result = gate(PARAMS_NO_AT, 'example-app.apps.tossmini.com');
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('auth');
   });
@@ -463,10 +480,10 @@ describe('Full decision matrix', () => {
     if (!result.attach) expect(result.reason).toBe('host');
   });
 
-  it('row: private-apps host / _deploymentId absent / any → BLOCKED (entry)', () => {
-    const result = gate(params('debug=1&relay=wss://r.example.com/'));
+  it('row: private-apps host / _deploymentId absent / debug=1 / valid relay / at absent → BLOCKED (auth)', () => {
+    const result = gate(params('debug=1&relay=wss://abc-def-ghi.trycloudflare.com/'));
     expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('entry');
+    if (!result.attach) expect(result.reason).toBe('auth');
   });
 
   it('row: private-apps host / _deploymentId present / debug absent → BLOCKED (opt-in)', () => {
@@ -481,9 +498,9 @@ describe('Full decision matrix', () => {
     if (!result.attach) expect(result.reason).toBe('invalid-relay');
   });
 
-  it('row: private-apps host / _deploymentId present / debug=1 / valid wss relay → ATTACH', () => {
+  it('row: private-apps host / _deploymentId present / debug=1 / valid wss relay / at present → ATTACH', () => {
     const result = gate(
-      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/'),
+      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'),
     );
     expect(result.attach).toBe(true);
   });
@@ -645,17 +662,15 @@ describe('3.0-family gate flow (#760)', () => {
     if (!result.attach) expect(result.reason).toBe('auth');
   });
 
-  it('private-apps hosts keep 2.x behavior — no at= required without a verifier', () => {
-    // Regression guard: the mandatory-TOTP branch must NOT leak into the
-    // 2.x private-apps path (VALID_PARAMS has no at= and must still attach).
-    const result = gate(VALID_PARAMS, VALID_HOST);
-    expect(result.attach).toBe(true);
+  it('private-apps hosts get the same mandatory at= code as the rest of the family', () => {
+    const result = gate(params(`_deploymentId=abc&debug=1&${RELAY}`), VALID_HOST);
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('auth');
   });
 
-  it('private-apps hosts still require _deploymentId (B2 unchanged for 2.x)', () => {
-    const result = gate(params(`debug=1&${RELAY}&at=123456`), VALID_HOST);
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('entry');
+  it('localhost with no verifier still ignores at=', () => {
+    const result = gate(params(`debug=1&${RELAY}`), 'localhost');
+    expect(result.attach).toBe(true);
   });
 });
 

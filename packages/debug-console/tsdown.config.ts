@@ -14,7 +14,7 @@ const define = {
 // `@apps-in-toss/web-framework` is a type-only devDependency here, reached
 // exclusively through a runtime `import()` probe (src/sdk-probe.ts). Marking it
 // external stops Rolldown from inlining the SDK into this bundle: the package
-// must keep shipping with `eruda` as its only dependency and no peers at all,
+// must keep shipping with zero runtime dependencies and no peers at all,
 // which is precisely what makes "what can end up in a production bundle?"
 // answerable from one package.json.
 const external = ['@apps-in-toss/web-framework'];

@@ -12,8 +12,8 @@
  *
  * DEPRECATED for builds that require debug code to be PHYSICALLY ABSENT from
  * the release bundle. This entry is a RUNTIME self-gate, not a build-time one:
- * the imported chunk (Chii target.js injection, the SDK bridge, and the eruda
- * console it pulls in via `maybeAttach()`) stays in the production bundle as a
+ * the imported chunk (Chii target.js injection, the SDK bridge, and the status
+ * banner `maybeAttach()` drives) stays in the production bundle as a
  * dormant chunk and is only kept asleep at runtime. If your threat model needs
  * "zero bytes of debug surface in release" (no dormant chunk to extract or
  * re-enable), do NOT use this entry. Instead guard the call site yourself:
