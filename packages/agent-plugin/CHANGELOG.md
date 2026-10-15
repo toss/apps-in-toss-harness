@@ -1,5 +1,22 @@
 # @apps-in-toss/agent-plugin
 
+## 0.2.0
+
+### Minor Changes
+
+- 플러그인이 등록하는 콘솔 MCP 서버 키를 `apps-in-toss-console`에서 `ait-console`로 줄인다(`.claude-plugin`·`.cursor-plugin` manifest 모두). 플러그인 도구 이름은 `mcp__plugin_ait_<키>__<tool>`이라 97개 도구마다 키 길이가 세션 컨텍스트에 실리기 때문이다. 주소와 OAuth 설정은 그대로고 docs MCP 키 `apps-in-toss-docs`도 그대로다. skill(`welcome`·`new-miniapp`·`design`·`plan`·`launch`·`debug`·`test-on-device`), `react-vite` 템플릿 README, 루트·패키지 README의 안내를 새 키로 맞췄다. 업데이트 후 `/mcp`에서 `ait-console`이 needs-auth로 보이면 다시 인가하고, 권한 규칙에 `mcp__plugin_ait_apps-in-toss-console__*`가 있으면 `mcp__plugin_ait_ait-console__*`로 바꿔야 한다.
+
+### Patch Changes
+
+- debug·inject: `start_attach` 실패 시 원인을 스스로 가려 안내하도록 skill을 보강했다. `debug` skill §5와 `attach-flow.md`에 attach 단계 모델, 타임아웃 진단별 사용자 조치 표, 폰 화면 상태 표시 읽는 법, 대시보드 탭 하나 원칙, 미니앱을 X로 닫은 뒤 재스캔, `debugger-test`와 데몬 동시 실행 시 `run_tests` 사용을 담았고, "재호출 불필요"는 TOTP 코드 만료에만 해당한다고 바로잡았다. `debug-console`에서 eruda가 빠지는 데 맞춰 debug·inject skill, 명령, 루트 README의 eruda 언급을 지우고 폰 안 콘솔은 공식 웹 디버그 툴즈(더보기 메뉴)로 안내한다.
+- launch: 서버 연결 레퍼런스에 Cloudflare 공식 plugin 선택 안내를 더했다. Worker 하나로 파트너 API를 부르는 정도면 권하지 않고, Durable Objects·Agents SDK·저장소·큐처럼 다른 Cloudflare 제품을 쓸 때만 권한다. 설치는 사용자가 하고, mTLS 바인딩은 계속 이 레퍼런스를 따른다.
+- `setup-debugger`·`debug` skill이 배선하는 debugger 설치 URL을 `debugger-v0.2.6`으로, `inject` skill의 debug-console 설치 URL을 `debug-console-v0.2.0` 릴리스 에셋으로 올린다. debugger 0.2.6은 `start_attach`의 단계별 진단과 대시보드 QR 안정화, 데몬 재연결 시 락 인계를 담고, debug-console 0.2.0은 폰 화면 attach 상태 표시를 더하고 eruda 콘솔(`mountEruda`·`unmountEruda`)을 제거한 버전이다.
+- launch: 클라이언트 AI 키가 잡히면 생성형 AI 표시 기준(docs 운영 정책)도 함께 보고에 올린다. 화면에서 표시를 확인하지 못하면 "확인 필요"로 둔다. 패키지 CLAUDE.md의 MCP·skill 상시 로드 설명도 tool search 기본값 기준으로 바로잡았다.
+- launch: 서버 연결 레퍼런스 `references/server-runtime.md`를 추가했다. mTLS 인증서 발급은 docs 발급 절을 읽어 안내하고, Cloudflare Workers 경로(mTLS 바인딩, `env.TOSS_MTLS.fetch`, `workers_dev`), 파트너 API 응답 봉투 처리, SDK 버전별 CORS origin, 키 파일 임시 디렉터리 정리를 담았다. new-miniapp은 서버를 함께 요청받으면 이 레퍼런스를 먼저 읽는다. debug에는 HTTP 200 + `resultType: "FAIL"` 진단 한 줄을 더했다.
+- launch: 서버 연결 레퍼런스에 응답 필드 타입은 SDK 문서 예시보다 API 레퍼런스(OpenAPI)를 따르라는 기준을 더했다. 식별키 검증 API의 `success`가 문서에는 문자열, 실제로는 boolean이라 문자열 비교 코드가 유효한 키를 모두 무효로 판정한 실기기 사례가 근거다.
+- launch: 서버 연결 레퍼런스의 순서를 고쳤다. wrangler 로그인은 `whoami`로 상태를 먼저 보고 안 돼 있을 때만 부탁하고, 인증서 zip은 계정 확인 뒤 업로드 직전에 풀며 업로드 전에 멈춰도 임시 디렉터리를 지운다.
+- test-on-device·plan: 낡은 콘솔 MCP 서술을 바로잡았다. 컴파일 확인은 `bundle_build_status`(해소됨)와 `bundle_list`로, 진입 링크는 `bundle_test_push`가 돌려주는 `privateLink`로 안내하고, repo에 없는 로컬 문서 인용과 도구 개수를 제거했다.
+
 ## 0.1.42
 
 ### Patch Changes
