@@ -398,6 +398,42 @@ describe('unbooted daemon — bootstrap tools and start_attach default', () => {
     expect(result.isError).toBe(true);
     expect(router.switchedModes).toEqual(['local-browser']);
   });
+
+  it('get_debug_status reports env none and points to start_attach before any boot', async () => {
+    const router = new UnbootedRouter();
+    const client = await makeClient(router, DUMMY_SECRET);
+    const envelope = JSON.parse(
+      getText(await client.callTool({ name: 'get_debug_status', arguments: {} })),
+    );
+    expect(envelope.meta.env).toBe('none');
+    expect(envelope.data.environment.kind).toBe('none');
+    expect(envelope.data.environment.env).toBe('none');
+    expect(envelope.data.environment.reason).toMatch(/^unbooted/);
+    expect(envelope.data.pages).toBeNull();
+    expect(envelope.data.nextRecommendedAction.tool).toBe('start_attach');
+    expect(envelope.data.nextRecommendedAction.reason).toContain('start_debug');
+    expect(router.switchedModes).toEqual([]);
+  });
+
+  it('list_pages meta.env is none before any boot', async () => {
+    const client = await makeClient(new UnbootedRouter(), DUMMY_SECRET);
+    const envelope = JSON.parse(
+      getText(await client.callTool({ name: 'list_pages', arguments: {} })),
+    );
+    expect(envelope.meta.env).toBe('none');
+  });
+
+  it('get_debug_status reports the real env once a family is booted', async () => {
+    const router = new UnbootedRouter();
+    const client = await makeClient(router, DUMMY_SECRET);
+    await client.callTool({ name: 'start_debug', arguments: { mode: 'relay-staging' } });
+    const envelope = JSON.parse(
+      getText(await client.callTool({ name: 'get_debug_status', arguments: {} })),
+    );
+    expect(envelope.meta.env).toBe('relay-dev');
+    expect(envelope.data.environment.kind).toBe('relay-dev');
+    expect(envelope.data.environment.env).toBe('relay');
+  });
 });
 
 // ---- positive-allowlist kill-switch (replaces LIVE guard) ------------------

@@ -14,7 +14,7 @@
  *   error?: { code, message, nextRecommendedAction? },
  *   meta: {
  *     tool: string,
- *     env: 'mock' | 'relay-dev',
+ *     env: 'mock' | 'relay-dev' | 'none',
  *     attached: boolean,
  *     contentType: 'json' | 'image',
  *   }
@@ -34,7 +34,13 @@ import type { McpEnvironment } from './environment.js';
  * Allowed values for `meta.env`.
  * `relay-live` (env 4) removed in #665; `relay-mobile` (env 2) in #103.
  */
-export type EnvelopeEnv = 'mock' | 'relay-dev';
+export type EnvelopeEnv = 'mock' | 'relay-dev' | 'none';
+
+/**
+ * 환경을 아직 띄우지 않은 데몬(start_debug·start_attach 전)이 보고하는 값.
+ * 이때 active connection은 자리표시용이라 `kind`로 환경을 파생하면 `mock`이 나온다.
+ */
+export type UnbootedEnv = 'none';
 
 /** The unified envelope returned by every debug MCP tool (when compat mode is off). */
 export interface ToolEnvelope<T = unknown> {
@@ -65,12 +71,11 @@ export function isCompatMode(): boolean {
 }
 
 /**
- * Maps `McpEnvironment` to `EnvelopeEnv`. These are now the same 2-value union
- * (`mock | relay-dev`; `relay-live` removed in #665, `relay-mobile` in #103),
- * so this is identity — kept as a named export for surface stability if
- * envelope env diverges in the future.
+ * Maps `McpEnvironment` (or the unbooted `'none'`) to `EnvelopeEnv`. Identity
+ * today (`relay-live` removed in #665, `relay-mobile` in #103) — kept as a named
+ * export for surface stability if envelope env diverges in the future.
  */
-export function toEnvelopeEnv(env: McpEnvironment): EnvelopeEnv {
+export function toEnvelopeEnv(env: McpEnvironment | UnbootedEnv): EnvelopeEnv {
   return env;
 }
 
@@ -79,7 +84,7 @@ export function toEnvelopeEnv(env: McpEnvironment): EnvelopeEnv {
  */
 export interface EnvelopeContext {
   tool: string;
-  env: McpEnvironment;
+  env: McpEnvironment | UnbootedEnv;
   attached: boolean;
   contentType?: 'json' | 'image';
 }

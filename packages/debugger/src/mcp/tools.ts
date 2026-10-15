@@ -46,6 +46,7 @@ import type {
   RuntimeExceptionThrownEvent,
 } from './cdp-connection.js';
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
+import type { UnbootedEnv } from './envelope.js';
 import type { McpEnvironment } from './environment.js';
 import { isRelayEnv, toLegacyEnv } from './environment.js';
 import { RESTART_CMD } from './restart-hint.js';
@@ -1846,9 +1847,10 @@ export interface DiagnosticsResult {
    *   existing callers that only distinguish mock vs relay continue to work.
    */
   environment: {
-    kind: McpEnvironment;
+    /** `'none'` — 환경을 아직 띄우지 않은 데몬(start_debug·start_attach 전). */
+    kind: McpEnvironment | UnbootedEnv;
     /** @deprecated Use `kind` instead. Kept for backward compatibility. */
-    env: 'mock' | 'relay';
+    env: 'mock' | 'relay' | UnbootedEnv;
     reason: string;
     /**
      * @deprecated Always `false` — relay-live and the LIVE guard removed (#665).
@@ -2085,6 +2087,17 @@ export function readDevtoolsVersion(): string | null {
  * SECRET-HANDLING: the auth-reject reason string carries only the count and
  * timestamp from {@link AuthRejectsSnapshot} — never a URL, code, or secret.
  */
+/** 환경을 띄우기 전 데몬의 `environment.reason`. */
+export const UNBOOTED_ENV_REASON = 'unbooted: start_debug·start_attach를 아직 호출하지 않음';
+
+/** 환경을 띄우기 전 데몬의 다음 행동 안내. */
+export const UNBOOTED_NEXT_ACTION: NextRecommendedAction = {
+  tool: 'start_attach',
+  reason:
+    '아직 디버그 환경을 띄우지 않았어요. 실기기(토스 앱)는 start_attach로 QR을 만들고, ' +
+    '로컬 브라우저는 start_debug(mode: local-browser)로 시작하세요',
+};
+
 export function computeNextRecommendedAction(
   tunnel: DiagnosticsTunnelInfo,
   pages: ListPagesResult | null,
@@ -2188,6 +2201,12 @@ export interface GetDiagnosticsInput {
   env: McpEnvironment;
   /** Human-readable reason for the env decision. */
   envReason: string;
+  /**
+   * `false`면 데몬이 아직 어떤 환경도 띄우지 않은 상태다. 이때 `env`·`connection`은
+   * 자리표시용이라 읽지 않고, 환경은 `'none'`으로 보고하며 다음 행동으로
+   * `start_attach`(실기기)·`start_debug`(로컬 브라우저)를 안내한다. 생략하면 `true`.
+   */
+  booted?: boolean;
   /** Diagnostics collector for errors / attach events. */
   collector: DiagnosticsCollector;
   /** Lock-file reader — injected so tests can override without touching the FS. */
@@ -2242,6 +2261,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     checkParentAlive = () => isPidAlive(process.ppid),
     tunnelChildPid,
     attachTimeline,
+    booted = true,
   } = input;
 
   const [mcpVersion, devtoolsVersion] = await Promise.all([
@@ -2290,7 +2310,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
   // pattern as the list_pages handler: errors are silently ignored so the
   // caller always gets *something* back, even when the relay is unreachable.
   let pages: ListPagesResult | null = null;
-  if (connection !== undefined) {
+  if (connection !== undefined && booted) {
     try {
       await connection.refreshTargets?.();
     } catch {
@@ -2330,13 +2350,9 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
         })
       : null;
 
-  const nextRecommendedAction = computeNextRecommendedAction(
-    tunnelInfo,
-    pages,
-    env,
-    authRejects,
-    attachDiagnosis,
-  );
+  const nextRecommendedAction = booted
+    ? computeNextRecommendedAction(tunnelInfo, pages, env, authRejects, attachDiagnosis)
+    : UNBOOTED_NEXT_ACTION;
 
   return {
     mcpVersion,
@@ -2349,12 +2365,14 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     authRejects,
     attachStages,
     attachDiagnosis,
-    environment: {
-      kind: env,
-      env: toLegacyEnv(env),
-      reason: envReason,
-      liveGuardActive: false, // relay-live and LIVE guard removed (#665)
-    },
+    environment: booted
+      ? {
+          kind: env,
+          env: toLegacyEnv(env),
+          reason: envReason,
+          liveGuardActive: false, // relay-live and LIVE guard removed (#665)
+        }
+      : { kind: 'none', env: 'none', reason: UNBOOTED_ENV_REASON, liveGuardActive: false },
     serverLockHolder,
     process: {
       pid: process.pid,
