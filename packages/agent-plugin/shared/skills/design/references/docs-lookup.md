@@ -11,7 +11,7 @@ MCP(`apps-in-toss-docs`) 하나다. 이 파일은 그 조회 절차와, 디자�
 |---|---|---|
 | docs MCP(`apps-in-toss-docs`) | **있음** | `tools/list` 실측: `searchDocumentation`·`getPage`·`askQuestion`·`sendFeedback` 4종 |
 | docs MCP의 "디자인 리소스 다운로드" tool | **없음** | 위 4종이 전부. 파일 배포 성격 tool 없음 |
-| 콘솔 MCP(`apps-in-toss-console`)의 디자인 가이드 조회 | **없음** | 콘솔 tool은 자기 워크스페이스 scope의 등록·번들·검수 축이다 |
+| 콘솔 MCP(`ait-console`)의 디자인 가이드 조회 | **없음** | 콘솔 tool은 자기 워크스페이스 scope의 등록·번들·검수 축이다 |
 | 토스 디자인 시스템(TDS) 조회 | **하지 않는다** | SKILL.md의 TDS 방침 — 모사·의존을 권하지 않는다 |
 
 **docs MCP는 위 4종만 쓴다.** 다른 tool 이름을 지어내지 않고, 검색 결과가 없으면

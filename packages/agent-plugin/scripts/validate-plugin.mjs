@@ -1182,7 +1182,7 @@ function extractIconComponentBlock(tsxSrc, componentName) {
 
 // 4개 command stub → 2개 skill 매핑. aitcc 전제 skill 4종(register/deploy/status/
 // setup-bundle) + 대응 facet stub(ait-register·ait-deploy·ait-status·ait-setup-bundle·
-// deploy-key·logs) 은 콘솔 MCP(`apps-in-toss-console`) 기본 포함으로 제거됐다(등록=
+// deploy-key·logs) 은 콘솔 MCP(`ait-console`) 기본 포함으로 제거됐다(등록=
 // miniapp_create, 번들 업로드=bundle_upload/bundle_upload_complete, 상태=
 // miniapp_get_status). 불필요 skill 3종(docs/auth-setup/changeset) + 대응 stub도
 // 함께 제거됐다 — docs 는 docs MCP(`apps-in-toss-docs`)가, auth-setup 은 oidc 제거
@@ -2641,7 +2641,7 @@ const ADAPTER_SKILLS_PATH = './shared/skills/';
 /**
  * Cursor 매니페스트에서 의도적으로 뺀 mcpServers 키 집합 — 기본은 빈 집합.
  * (예: 콘솔 MCP 의 인라인 auth 가 Cursor 에서 거부돼 폴백을 택하면 이
- * 집합에 'apps-in-toss-console' 을 채우고 사유를 여기 주석에 남긴다.)
+ * 집합에 'ait-console' 을 채우고 사유를 여기 주석에 남긴다.)
  */
 const CURSOR_MANIFEST_MCP_OMIT = new Set();
 

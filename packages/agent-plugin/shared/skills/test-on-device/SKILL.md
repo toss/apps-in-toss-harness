@@ -37,7 +37,7 @@ argument-hint: ''
   쓴다 — 먼저 확인한다. 없으면 구세대 `--local` 오프라인 폴백 템플릿
   (`new-miniapp` L-5)이 쓰는 `granite.config.ts`를 확인한다. 둘 다 없으면
   프로젝트 루트로 이동 안내 후 중단.
-- **콘솔 MCP(`apps-in-toss-console`) 인가가 1회 필요하다** — `/mcp`에서 승인한다.
+- **콘솔 MCP(`ait-console`) 인가가 1회 필요하다** — `/mcp`에서 승인한다.
   인가되지 않았으면 그 안내만 하고 중단한다.
 - **콘솔에 등록된 앱이 있어야 한다.** 없으면 `miniapp_create`로 1회 등록한다
   (아래 2 — 이미 있으면 절대 새로 만들지 않는다).
@@ -293,7 +293,7 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 - 짝 skill: `new-miniapp`(scaffold), `design`(화면·등록용 이미지 자산),
   `setup-debugger`·`debug`(실기기 CDP attach — 이 skill 다음 단계),
   `inject`의 debug-console facet(candidate 빌드에 attach 표면 설치).
-- 콘솔 MCP(`apps-in-toss-console`) 인가는 `/mcp` 1회. 세션이 보는 워크스페이스는
+- 콘솔 MCP(`ait-console`) 인가는 `/mcp` 1회. 세션이 보는 워크스페이스는
   인가한 계정의 멤버십을 따른다(2).
 - 번들 규격·콘솔 등록 절차·진입 스킴 등 주제별 문서는 docs
   MCP(`searchDocumentation`/`getPage`)로 조회한다.

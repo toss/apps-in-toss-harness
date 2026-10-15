@@ -195,7 +195,7 @@ argument-hint: '[screen or request]'
 
 > 이 skill은 콘솔 인증을 **요구하지 않는다**. 화면 산출·판정·자산 생성은 로컬
 > 작업이고, 등록(console MCP `miniapp_create`)이 콘솔 세션을 쓴다(1회 인가는
-> `/mcp`에서 `apps-in-toss-console` 브라우저 OAuth).
+> `/mcp`에서 `ait-console` 브라우저 OAuth).
 
 ## 입력
 
@@ -582,7 +582,7 @@ design 완료
 
   console MCP            # 이 자산으로 miniapp_create → bundle_upload →
                          # bundle_upload_complete 로 등록·업로드
-                         # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
+                         # (최초 1회 /mcp 에서 ait-console 인가 필요)
                          # 말로: "이 자산으로 콘솔에 등록하고 번들 올려줘"
 ```
 

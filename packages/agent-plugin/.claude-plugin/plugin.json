@@ -40,7 +40,7 @@
       "type": "http",
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },
-    "apps-in-toss-console": {
+    "ait-console": {
       "type": "http",
       "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
       "oauth": {

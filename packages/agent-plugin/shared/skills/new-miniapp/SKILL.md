@@ -931,7 +931,7 @@ fence를 만들지 말고 Step 3의 그 fence를 그대로 실행한다.
                      # 말로: "등록용 로고랑 스크린샷 만들어줘"
   npm run build     # tsc -b && vite build && ait build → 프로젝트 디렉터리 안에 <package_name>.ait 생성 (package.json 옆)
   console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
-                     # (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
+                     # (최초 1회 /mcp 에서 ait-console 인가 필요)
   /ait:test-on-device # 위 빌드·업로드·컴파일 확인을 한 번에 (실기기 확인의 정규 경로)
                      # 말로: "만든 미니앱을 실제 토스 앱에서 돌려보고 싶어"
 
@@ -1036,7 +1036,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 ## Out of scope (이 skill이 하지 않는 것)
 
 - ❌ 콘솔 등록·번들 업로드 — console MCP 도구(`miniapp_create`/`bundle_upload`/
-  `bundle_upload_complete`)의 역할. 인가는 `/mcp`에서 `apps-in-toss-console`
+  `bundle_upload_complete`)의 역할. 인가는 `/mcp`에서 `ait-console`
   1회 승인(브라우저 OAuth)으로 끝난다.
 - ❌ 기존 프로젝트에 devtools 주입 — `/ait:inject-devtools`
   (`inject` skill의 devtools facet).

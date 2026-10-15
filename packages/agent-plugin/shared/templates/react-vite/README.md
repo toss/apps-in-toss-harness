@@ -52,7 +52,7 @@ ait build
 ```
 
 로 `.ait` 번들을 만듭니다. 콘솔 등록·업로드는 `agent-plugin`을 설치한 에이전트 세션에서
-`/mcp`로 `apps-in-toss-console`을 1회 승인한 뒤 콘솔 MCP 도구(`miniapp_create` →
+`/mcp`로 `ait-console`을 1회 승인한 뒤 콘솔 MCP 도구(`miniapp_create` →
 `bundle_upload` → `bundle_upload_complete`)로 진행하세요.
 
 ## 다음 단계

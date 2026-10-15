@@ -193,4 +193,4 @@ docs에서 확인해 안내한다.
 - `references/server-runtime.md`: 서버 연결부 점검(mTLS, Workers, 응답 봉투, CORS)
 - 짝 skill: `test-on-device`(폰 확인), `design`(화면), `ux-writing`(문구),
   `plan`(기획)
-- console MCP가 인가되지 않았으면 `/mcp`에서 `apps-in-toss-console`을 인가한다.
+- console MCP가 인가되지 않았으면 `/mcp`에서 `ait-console`을 인가한다.

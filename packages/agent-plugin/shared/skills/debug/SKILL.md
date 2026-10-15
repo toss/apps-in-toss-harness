@@ -228,7 +228,7 @@ candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보
 `start_attach({mode:'relay-staging', scheme_url})`으로 전달한다 — 사용자에게
 URL을 복사·재입력하게 하지 않는다.**
 
-(콘솔 등록·업로드는 1회 인가가 필요하다 — `/mcp`에서 `apps-in-toss-console`을
+(콘솔 등록·업로드는 1회 인가가 필요하다 — `/mcp`에서 `ait-console`을
 승인한다. 등록·업로드가 4046 lock·약관 미체결 등으로 멈추면 scheme URL 없이
 돌아오며, 에이전트는 그 에러를 사용자에게 그대로 전달하고 5-C 진행을
 중단한다. 이 skill은 `ait deploy`(API 키 기반 직접 배포)를 Bash로 호출하지

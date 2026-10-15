@@ -41,14 +41,14 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 <details>
 <summary>단계별 설명 · 슬래시 명령이 안 먹히면 자연어로 설치하기</summary>
 
-3번에서는 `/mcp` 목록에 뜬 `apps-in-toss-console`을 선택해 OAuth 인가를 완료하세요. 4번에서는 `/plugin` 화면에서 Marketplaces를 고르고 `apps-in-toss`를 선택한 뒤 Enable auto-update를 누르세요. 서드파티 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하기 때문에 한 번은 직접 켜야 합니다. `/ait:welcome` 대신 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수도 있습니다.
+3번에서는 `/mcp` 목록에 뜬 `ait-console`을 선택해 OAuth 인가를 완료하세요. 4번에서는 `/plugin` 화면에서 Marketplaces를 고르고 `apps-in-toss`를 선택한 뒤 Enable auto-update를 누르세요. 서드파티 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하기 때문에 한 번은 직접 켜야 합니다. `/ait:welcome` 대신 바로 `/ait:new my-app`으로 첫 미니앱을 만들 수도 있습니다. 이전 버전에서 업데이트했다면 [인증](#인증)의 서버 이름 변경 안내를 확인하세요.
 
 **데스크톱 앱의 플러그인 브라우저에서 `ait`를 검색하지 마세요.** 검색 결과에는 공식 마켓플레이스 플러그인만 나오고 `ait`는 뜨지 않습니다. 설치 경로는 검색이 아니라 위 블록의 명령을 입력창에 붙여넣는 것입니다. 붙여넣었는데도 안 되면 [설치 문제 해결](./.github/install-troubleshooting.md)을 보세요.
 
 위 슬래시 명령이 동작하지 않는 환경이라면, 아래 문장을 통째로 입력창에 붙여넣으세요. 터미널을 열 필요 없이 Claude가 자기 셸에서 설치를 대신 진행합니다.
 
 ```
-앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. `~/.claude/settings.json`은 직접 고치지 마. 끝나면 남은 수동 단계 두 가지(`/mcp`에서 apps-in-toss-console 인가, `/plugin`에서 apps-in-toss 마켓플레이스의 Enable auto-update)를 알려주고, 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
+앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. `~/.claude/settings.json`은 직접 고치지 마. 끝나면 남은 수동 단계 두 가지(`/mcp`에서 ait-console 인가, `/plugin`에서 apps-in-toss 마켓플레이스의 Enable auto-update)를 알려주고, 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
 ```
 
 이 문장은 마켓플레이스 등록과 플러그인 설치까지만 에이전트에게 맡기고, 콘솔 MCP 인가와 자동 업데이트는 사람 몫으로 남깁니다. `~/.claude/settings.json`을 직접 고치라고 시키지 마세요. `extraKnownMarketplaces`의 `source`는 CLI가 소유하는 값이고(sparse 등록이면 `sparsePaths`가 들어 있습니다), 그걸 통째로 덮어쓰면 선언과 clone이 어긋나 Claude Code가 그 마켓플레이스를 아예 못 찾게 됩니다. 자동 업데이트는 `/plugin` 화면의 토글로 켜세요.
@@ -69,7 +69,7 @@ codex plugin marketplace add toss/apps-in-toss-harness
 codex plugin add ait@apps-in-toss
 
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회)
-codex mcp login apps-in-toss-console
+codex mcp login ait-console
 
 # 4) harness 진입 지도 확인
 /ait:welcome
@@ -99,7 +99,7 @@ codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~g
 ```
 
 ```
-codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
+codex mcp add ait-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
 ```
 
 이 경로에서는 `--oauth-client-id mcp-gateway`를 생략하면 안 됩니다. 인증 서버가 동적 클라이언트 등록(DCR)을 지원하지 않아 정적 client id가 필요합니다. 등록 결과는 `codex mcp list`로 확인합니다(문서 MCP는 무인증이라 `Auth`가 `Unsupported`, 콘솔 MCP는 인가 전까지 `Not logged in`으로 표시됩니다).
@@ -154,7 +154,7 @@ agent
     "apps-in-toss-docs": {
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },
-    "apps-in-toss-console": {
+    "ait-console": {
       "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
       "auth": {
         "CLIENT_ID": "mcp-gateway"
@@ -168,8 +168,8 @@ agent
 
 ```
 agent mcp enable apps-in-toss-docs
-agent mcp enable apps-in-toss-console
-agent mcp login apps-in-toss-console
+agent mcp enable ait-console
+agent mcp login ait-console
 ```
 
 인가가 끝나면 `agent mcp list`에 두 서버가 `ready`로 표시됩니다(문서 MCP는 무인증이라 enable 직후부터 `ready`, 콘솔 MCP는 인가 전까지 `requires_authentication`).
@@ -180,7 +180,14 @@ agent mcp login apps-in-toss-console
 
 ## 인증
 
-`apps-in-toss-docs`는 인증이 필요 없어 설치 즉시 연결됩니다. `apps-in-toss-console`은 OAuth로 최초 1회만 인가하면 되고, 호스트별 인가 절차는 위 [설치](#설치) 섹션의 펼침 안내에 있습니다.
+`apps-in-toss-docs`는 인증이 필요 없어 설치 즉시 연결됩니다. `ait-console`은 OAuth로 최초 1회만 인가하면 되고, 호스트별 인가 절차는 위 [설치](#설치) 섹션의 펼침 안내에 있습니다.
+
+공식 개발자센터의 수동 등록 예시는 콘솔 MCP를 `apps-in-toss-console`이라는 이름으로 적습니다. 이 플러그인은 같은 서버(주소 동일)를 `ait-console`이라는 짧은 이름으로 등록합니다. 도구 이름에 서버 이름이 붙어 매 세션 컨텍스트를 차지하기 때문입니다.
+
+이전 버전에서 업데이트했다면 두 가지를 확인하세요.
+
+- `/mcp`를 열어 `ait-console`이 needs-auth로 보이면 다시 인가합니다. 서버 이름이 바뀌어 이전 인가가 이어지지 않을 수 있습니다.
+- 권한 규칙(`settings.json`의 `permissions`)에 `mcp__plugin_ait_apps-in-toss-console__*` 형태가 있다면 `mcp__plugin_ait_ait-console__*`로 바꿉니다.
 
 ## 말로 시키기 — 자연어 예시 5종
 
@@ -235,13 +242,13 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 | 서버 | 인증 | 주요 도구 |
 |---|---|---|
 | `apps-in-toss-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | 없음 — 설치 즉시 connected | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
-| `apps-in-toss-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — `/mcp`에서 1회 인가, 인가 전에는 needs-auth | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
+| `ait-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — `/mcp`에서 1회 인가, 인가 전에는 needs-auth | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
 
 MCP 없이 문서만 읽는 경로도 있습니다. 개발자센터가 같은 문서를 에이전트가 바로 읽는 형태로도 냅니다. `https://developers-apps-in-toss.toss.im/llms.txt`가 전체 색인, `https://developers-apps-in-toss.toss.im/llms-full.txt`가 본문 전문이고, 아무 문서 페이지 URL 뒤에 `?ask=<질문>`을 붙이면 그 문서를 근거로 한 답이 출처 링크와 함께 돌아옵니다. 플러그인을 아직 설치하지 않았거나 MCP를 붙일 수 없는 환경에서 쓰는 경로입니다.
 
 ## 개발 여정
 
-1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `apps-in-toss-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
+1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `ait-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
 2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
 3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘 6종·`docs/design-guide.md`)와 이모지 서체 Tossface가 프로젝트에 들어갑니다. 에이전트가 자동으로 읽는 `AGENTS.md`에 규칙 요약이 남아, 이후 어떤 세션에서 화면을 만들어도 같은 기준이 적용됩니다 (`--no-design-guide`로 통째로, `--no-tossface`로 서체만 뺄 수 있습니다).
 4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
