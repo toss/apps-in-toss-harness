@@ -1,5 +1,13 @@
 # @apps-in-toss/agent-plugin
 
+## 0.2.1
+
+### Patch Changes
+
+- `setup-debugger`·`debug` skill이 배선하는 debugger 설치 URL을 `debugger-v0.2.7`로 올린다. debugger 0.2.7은 환경을 띄우기 전 `get_debug_status`가 환경을 `mock`으로 보고하던 문제를 고쳐, 이 상태에서 `none`과 `start_attach` 안내를 돌려준다.
+- launch: 핵심 지표는 템플릿 조회 → 콘솔 웹 등록 → `core_metric_details` 확인 순서로, 프로모션 예산은 잔액을 보여 준 뒤 콘솔 웹 비즈월렛으로 안내한다. 도구 유무는 서버 도구 목록으로 판단한다.
+- launch: console MCP에 도구가 없는 작업(핵심 지표 등록·수정, 사업자 등록, 약관 동의, 비즈월렛 충전, mTLS 인증서 발급)은 사용자가 콘솔 웹에서 직접 하도록 안내한다. 메뉴 위치는 docs로 확인한다.
+
 ## 0.2.0
 
 ### Minor Changes
