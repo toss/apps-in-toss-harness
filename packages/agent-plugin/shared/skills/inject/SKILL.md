@@ -4,7 +4,7 @@ description: |
   Patch an existing Apps in Toss mini-app's build setup. Three facets:
   `/ait:inject-devtools` adds the `@apps-in-toss/devtools` unplugin for browser dev
   ("기존 Vite 프로젝트에 devtools 붙여줘"); `/ait:inject-debug-console` installs
-  `@apps-in-toss/debug-console` (on-device attach + eruda) as a dependency;
+  `@apps-in-toss/debug-console` (on-device attach) as a dependency;
   `/ait:inject-tossface` wires the Tossface emoji web font (CDN link or subset
   bundling) into a project's entry CSS. Idempotent, minimal edits. This skill only
   INSTALLS packages/assets into a build setup — it never diagnoses a running app.
@@ -29,7 +29,7 @@ argument-hint: ''
 - **devtools facet** (`/ait:inject-devtools`): `@apps-in-toss/devtools` unplugin을 빌드 config에
   추가해 토스 앱 없이 브라우저에서 mock SDK로 개발·테스트한다. 인자 없음.
 - **debug-console facet** (`/ait:inject-debug-console`): `@apps-in-toss/debug-console`(on-device
-  attach + eruda)을 **`dependencies`**로 설치하고 `/auto` self-gating import를 진입점에
+  attach)을 **`dependencies`**로 설치하고 `/auto` self-gating import를 진입점에
   와이어업한다. 환경 3(intoss-private candidate) on-device 디버깅에 attach 표면을 남긴다.
   인자 없음.
 - **tossface facet** (`/ait:inject-tossface`): 이모지를 토스페이스 글리프로 렌더하도록
@@ -171,6 +171,6 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
 - tossface facet 상세: `<이 skill의 base directory>/references/tossface.md`
 - 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 브라우저 panel 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 디버깅), `design` (tossface facet 배선 후 화면 렌더 무결성 판정 — "토스 브랜드·UI 모방 금지" 절이 이모지 서체 정책의 정본).
 - `@apps-in-toss/devtools`(mock+panel+unplugin, 브라우저 dev 전용) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
-- `@apps-in-toss/debug-console`(on-device attach + eruda): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debug-console
+- `@apps-in-toss/debug-console`(on-device attach): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debug-console
 - `@apps-in-toss/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
 - `Tossface`(공개 배포 이모지 서체): https://github.com/toss/tossface (`LICENSE` 전문, 공개 안내 페이지 `https://toss.im/tossface/copyright`).

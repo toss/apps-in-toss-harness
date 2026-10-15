@@ -84,7 +84,7 @@ There is deliberately no root (`.`) export — this package is always reached th
 
 ## Security scope
 
-This package is **devDependency / `npx` only**. It never declares `@apps-in-toss/debug-console` as a dependency or an auto-installed peer — doing so would pull `eruda` into the daemon's install graph and silently break the invariant that the daemon carries no debug surface. The daemon bundle also never includes `react`/`react-dom`.
+This package is **devDependency / `npx` only**. It never declares `@apps-in-toss/debug-console` as a dependency or an auto-installed peer — doing so would pull the debug-console on-device code into the daemon's install graph and silently break the invariant that the daemon carries no debug surface. The daemon bundle also never includes `react`/`react-dom`.
 
 Because this package is remote-debugging infrastructure, it handles secrets. The following must never appear in any output (stdout/stderr/logs/error messages): TOTP secrets and generated codes, relay `wss://` URLs and trycloudflare tunnel hostnames, deep-links carrying an `at=` parameter, and Deploy Keys. The only address safe to log is a local `http://127.0.0.1:<port>`.
 
@@ -96,6 +96,25 @@ This ecosystem has two similarly-named but different CLIs — do not conflate th
 - **`aitcc`** (the console automation CLI) — Apps in Toss console registration, deploy, and status. This package never calls `aitcc`.
 
 ## Troubleshooting
+
+### attach does not complete (`start_attach`)
+
+When `start_attach` times out it names the last stage reached, the likely cause and what to do, plus a stage log. The same diagnosis is available from `get_debug_status` (`attachStages`, `attachDiagnosis`) and the dashboard's progress timeline. Also check the status bar at the bottom of the phone screen (`debug-console` 0.2 or later).
+
+| Symptom (diagnosis) | Cause | Action |
+|---|---|---|
+| Phone did not open this QR's page | The mini-app was already open and scanning did not reload it, the gate blocked it, or the corporate network/MDM blocks `*.trycloudflare.com` | Close the mini-app with X and scan again, read the reason in the phone status bar, switch Wi-Fi |
+| QR code expired | A long-open dashboard or an old QR was scanned | Reload the dashboard and scan the new QR |
+| Script / WebSocket connection incomplete | The page opened but the connection to the relay is blocked | Check the status bar, switch Wi-Fi, scan a new QR |
+| A different page attached | A page from an earlier deployment attached, or `_deploymentId` differs | Close the mini-app with X, scan a new QR, check `scheme_url` |
+| Another mini-app rejected (close 4409) | A relay serves one mini-app at a time: it keeps the one that attached first and rejects pages from a different host. The rejected mini-app shows a warning bar at the top of its screen, whatever its debug-console version (tap to dismiss) | Close the attached mini-app with X, call `start_attach` again, scan the new QR |
+| Attached, then dropped | The app went to the background or the network dropped | Bring the app to the front, close it with X, scan a new QR |
+| Tunnel down | cloudflared exited | Call `start_attach` again |
+| QR image missing, tunnel badge shows "disconnected" | Piled-up dashboard tabs hit the browser's per-host connection limit (6 in Firefox) | Keep a single dashboard tab and reload it |
+| relay auth (TOTP) rejected, close 4401 | `.ait_relay` secret mismatch or a skewed PC clock | Call `start_attach` again; if it repeats, sync the system clock |
+| `debugger-test` stops with "another debugger process is already running the relay" | The MCP daemon is using the relay | Run the tests with the `run_tests` tool in that session, or end it and rerun. Use `--separate-relay` if you need a second relay |
+
+Calling `start_attach` again ends the earlier wait as "superseded" and the new call takes over. Progress notifications are sent only when the client sends a `progressToken`; clients that do not receive them still get the same content in the timeout error and `get_debug_status`. For an in-phone console, use the official Apps in Toss web debug tools (More menu).
 
 ### cloudflared binary not installed
 

@@ -7,7 +7,7 @@
 `@apps-in-toss/debug-console`은 예전 `@apps-in-toss/devtools`의 `./in-app` export였다 —
 devtools의 MCP 데몬·test runner·on-device attach 표면이 별도 패키지(`debugger`)로 분리되면서
 `@apps-in-toss/debugger`(MCP 데몬, devDep/npx 전용)와 `@apps-in-toss/debug-console`(on-device
-attach + eruda) 2개 패키지로 나뉘었다.
+attach) 2개 패키지로 나뉘었다.
 
 생성·수정하는 파일에 과장·홍보성 문구를 넣지 않는다. 생성하는 주석은 배선을 설명하는 최소한으로.
 이 skill은 콘솔 인증을 요구하지 않는다 — 로컬 설치 작업이다.
@@ -142,7 +142,8 @@ debug relay deep-link로 열렸을 때만) 활성화되고, 일반 프로덕션 
   - /auto는 런타임 self-gate — DEV 빌드이거나 URL에 debug=1+relay=가 있을 때만 활성화,
     일반 프로덕션 로드에서는 no-op입니다. release 번들에서 코드 자체를 제거하려면
     __DEBUG_BUILD__ 빌드타임 게이트(방식 B, 위 §4)를 쓰세요.
-  - eruda 기반 in-app 콘솔은 attach 후 화면에서 직접 열 수 있습니다.
+  - 폰 화면 하단 막대가 연결 상태(차단 사유·연결 중·연결됨·세션 종료·코드 만료)를 알려 줍니다. 탭하면 닫힙니다.
+  - 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓰세요.
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   RELEASE_CHANNEL=dogfood npm run build  # candidate 빌드에 attach 표면 포함
@@ -158,7 +159,7 @@ debug relay deep-link로 열렸을 때만) 활성화되고, 일반 프로덕션 
 - ❌ `dependencies` 대신 `devDependencies`에 설치 — 프로덕션 번들에 포함돼야 하는
   유일한 패키지다.
 - ❌ 진입점 이외 파일에 자동 import 삽입.
-- ❌ `@apps-in-toss/devtools`·`@apps-in-toss/debugger`와 혼동 — 이 facet은 온디바이스 attach +
-  eruda 전용이다. MCP 데몬 등록은 `/ait:setup-debugger`가 처리(`/ait:debug` 참조),
+- ❌ `@apps-in-toss/devtools`·`@apps-in-toss/debugger`와 혼동 — 이 facet은 온디바이스 attach
+  전용이다. MCP 데몬 등록은 `/ait:setup-debugger`가 처리(`/ait:debug` 참조),
   브라우저 mock/panel은 `inject-devtools` facet.
 - ❌ 생성·수정하는 내용에 과장·홍보성 문구. 생성하는 주석은 배선을 설명하는 최소한으로.

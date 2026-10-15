@@ -216,7 +216,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:plan [requirements]` | Takes a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms (planning only — hands off to `/ait:new`) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | Drives `create-ait-app` non-interactively to scaffold a mini-app, then wires up devtools (mock SDK + panel) and seeds the design guide (tokens, CSS, icons, `AGENTS.md`) as post-steps (greenfield only) | 1. scaffold |
 | `/ait:inject-devtools` | Adds the devtools unplugin to an existing project's build config (brownfield) | 2. dev |
-| `/ait:inject-debug-console` | Installs `debug-console` (on-device attach + eruda) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
+| `/ait:inject-debug-console` | Installs `debug-console` (on-device attach) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
 | `/ait:inject-tossface` | Wires the Tossface emoji web font in via a CDN link (zero bundle cost) or by bundling only the subsets the project needs (deterministic, roughly 520KB–1.9MB per subset) | 2. dev |
 | `/ait:setup-debugger` | Wires the debug MCP server (`debugger`) into the project's `.mcp.json`, or `.cursor/mcp.json` on Cursor, as an opt-in | 3. debug |
 | `/ait:debug` | Debugs by branching across two environments — local browser and on-device candidate — based on what it observes | 3. debug |
@@ -313,7 +313,7 @@ Three packages managed as a pnpm workspace.
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code, Codex, and Cursor) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.2.5`) |
-| `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach + eruda console — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.7`) |
+| `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.1.7`) |
 
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
