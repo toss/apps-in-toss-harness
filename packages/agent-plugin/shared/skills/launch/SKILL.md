@@ -86,7 +86,7 @@ bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
 |---|---|
 | `viewport-zoom` | 비게임만. 확대·축소 문장과 맞춰 보되, WebView가 기본으로 막는지는 문서에 없으니 "확인 필요"로 둔다 |
 | `dark-theme` | 라이트 모드 문장과 맞춰 본다 |
-| `cors-any-origin` | docs 서버 API 문서의 허용 origin을 getPage로 확인해 정확한 origin을 권한다 |
+| `cors-any-origin` | docs 서버 API 문서의 허용 origin을 getPage로 확인해 정확한 origin을 권한다(기준은 `references/server-runtime.md`의 CORS 절) |
 | `client-ai-key` | 키가 번들에 들어가는지 본다. 키 값은 출력하지 않고, 서버로 옮기도록 권한다 |
 
 체크리스트 항목을 코드와 맞춰 나눈다. 고칠 것에는 파일:줄과 근거 문장을
@@ -97,10 +97,11 @@ bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
 - 생성형 AI를 쓰면 생성물 표시 기준을 docs 운영 정책에서 확인한다.
 - 토스 송금 화면으로 보내는 링크나 스킴은 정책 위반으로 반려되거나 게시가
   중단될 수 있다. 문서 본문에 기준이 없으니 "확인 필요"로 표시한다.
-- 파트너 API를 부르는 서버라면 mTLS 인증서는 앱인토스 콘솔에서 발급받는다.
-  메뉴 위치와 절차는 문서에 없으니 지어내지 않는다. docs "서버 API 이용하기"를
-  getPage로 확인하고, 막히면 채널톡으로 묻게 한다. 인증서와 키 파일은 repo와
-  로그에 넣지 않는다.
+- 파트너 API를 부르는 서버라면 mTLS 인증서는 앱인토스 콘솔에서 사용자가 발급받는다.
+  발급 절차는 docs "서버 API 이용하기"의 발급 절을 getPage로 확인해 안내하고,
+  막히면 채널톡으로 묻게 한다. 인증서와 키 파일은 repo와 로그에 넣지 않는다.
+- 서버 연결부(특히 Cloudflare Workers)를 점검하면 `references/server-runtime.md`를
+  읽는다. CORS origin, 파트너 API 응답 처리, 키 파일 정리 기준이 있다.
 
 ### 3. 콘솔 읽기
 
@@ -189,6 +190,7 @@ docs에서 확인해 안내한다.
 ## 참고
 
 - `references/lookup-map.md`: 상황별 docs 검색어와 경로
+- `references/server-runtime.md`: 서버 연결부 점검(mTLS, Workers, 응답 봉투, CORS)
 - 짝 skill: `test-on-device`(폰 확인), `design`(화면), `ux-writing`(문구),
   `plan`(기획)
 - console MCP가 인가되지 않았으면 `/mcp`에서 `apps-in-toss-console`을 인가한다.
