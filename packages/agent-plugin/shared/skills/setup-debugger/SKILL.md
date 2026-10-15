@@ -103,7 +103,7 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.6/apps-in-toss-debugger-0.2.6.tgz", "debugger"]
     }
   }
 }
@@ -117,7 +117,7 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
     "ait-devtools": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.6/apps-in-toss-debugger-0.2.6.tgz", "debugger"]
     }
   }
 }
@@ -128,7 +128,7 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
   로컬 `eval/e2e/driver.test.ts`(repo 미포함 — maintainer-local)가 검사한다(위
   json 블록의 키를 실제로 읽어 `STATIC_DISALLOWED_TOOLS`와 대조) — 개명하면 그
   로컬 검사가 실패한다.
-- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz debugger`
+- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.6/apps-in-toss-debugger-0.2.6.tgz debugger`
   형태를 유지한다 — `-p` 없이 bare로 쓰면
   패키지가 bin을 2개(`debugger`·`debugger-test`) 게시해 npm이 실행파일을 추론하지
   못한다. 머신 절대경로 launcher는 박지 않는다(다른 머신 clone에서 깨진다).

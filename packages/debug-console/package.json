@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/debug-console",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "On-device attach + status banner for Apps in Toss mini-apps — the only package in this split that can enter a production bundle",
   "type": "module",
   "engines": {

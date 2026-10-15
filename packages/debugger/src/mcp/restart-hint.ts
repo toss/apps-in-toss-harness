@@ -14,4 +14,4 @@
  * publishing is out of scope for this package (npm-less distribution).
  */
 export const RESTART_CMD =
-  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.5/apps-in-toss-debugger-0.2.5.tgz debugger';
+  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.6/apps-in-toss-debugger-0.2.6.tgz debugger';

@@ -1,5 +1,19 @@
 # @apps-in-toss/debug-console
 
+## 0.2.0
+
+### Minor Changes
+
+- 폰 화면에 attach 상태 표시를 추가하고 eruda 콘솔을 제거했다. attach가 실패해도 폰에는 아무 단서가 없어 원인을 알 수 없던 문제를 푼다. URL에 `debug=1` 또는 `relay=`가 있을 때만 화면 아래쪽에 작은 막대가 나타나고(DEV 빌드 자동 활성화만으로는 나타나지 않는다), 게이트 차단 사유, 연결 중, 연결됨, 세션 끝남, QR 코드 만료(4401 또는 `target.js` 401), 다른 미니앱이 이미 relay를 쓰는 중(`relay-busy`, close 4409), 서버 접속 불가를 짧은 안내와 다음 행동으로 알려 준다. 같은 값이 `window.__ait_debug_status`에 들어가 CDP로도 읽을 수 있다. 코드·relay 주소·URL은 화면과 로그에 쓰지 않는다. 데몬과의 프로토콜은 그대로(`PROTOCOL_VERSION` 1)이고 기존 이벤트와 close code만 읽는다.
+  
+  공개 API 변경: `mountEruda` / `unmountEruda` export와 `eruda` 의존성을 제거했다. 이제 런타임 의존성이 0개다. 폰 안에서 콘솔을 보려면 토스 앱의 공식 "웹 디버그 툴즈"(더보기 메뉴)를 쓴다. `detachDebugSurface`는 export와 계약을 유지하고 eruda 정리 단계만 빠진다. 상태 표시 막대는 세션이 끝난 뒤에도 이유를 보여 주려고 detach 때 지우지 않는다.
+  
+  다른 미니앱이 이미 붙어 있는 relay에 새 미니앱이 접속하면 relay가 close 코드 4409(`relay-busy`)로 거절한다. 이 페이지는 "그 미니앱을 X로 닫은 뒤 QR을 다시 스캔하세요"라는 안내를 띄우고 재연결을 멈춘다. 4401 만료나 일반 세션 종료와는 별개 상태다.
+
+### Patch Changes
+
+- 실기기 attach 게이트가 `private-apps` 호스트에서 `_deploymentId`를 요구해 web-framework 3.x 소비자는 항상 `reason: 'entry'`로 막히던 문제를 고쳤다. 토스 앱 런타임은 `_deploymentId`를 번들 선택에 쓰고 페이지 URL로는 넘기지 않는다(web-framework 3.7.0 실기기 확인). 이제 `_deploymentId`는 있으면 `deploymentId`로 보고하고 없어도 막지 않는다. B2가 하던 보안 기준은 TOTP `at=` 코드로 옮겼다. verifier를 주입하지 않은 경우에도 `at=`가 비어 있으면 모든 `*.tossmini.com` 호스트(`private-apps` 포함)에서 `'auth'`로 막는다. localhost 동작은 그대로다. `GateResultBlocked.reason`의 `'entry'`는 공개 타입이라 union에 남기되 더 이상 반환하지 않는다(`@deprecated`).
+
 ## 0.1.7
 
 ### Patch Changes

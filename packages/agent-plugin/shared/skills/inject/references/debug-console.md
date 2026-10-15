@@ -64,10 +64,10 @@ Step 2에서 이미 있으면 skip. **반드시 `dependencies`다 — `devDepend
 `package.json`의 `dependencies` 키는 `@apps-in-toss/debug-console`, 값은 이 URL이 된다:
 
 ```bash
-npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.7/apps-in-toss-debug-console-0.1.7.tgz"   # npm (기본)
-pnpm add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.7/apps-in-toss-debug-console-0.1.7.tgz"      # pnpm
-yarn add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.7/apps-in-toss-debug-console-0.1.7.tgz"       # yarn
-bun add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.7/apps-in-toss-debug-console-0.1.7.tgz"        # bun
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"   # npm (기본)
+pnpm add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"      # pnpm
+yarn add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"       # yarn
+bun add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"        # bun
 ```
 
 ※ **설치 스펙(위 URL)과 import specifier(아래 §4)는 다르다.** URL은 "어디서 받는가"를
