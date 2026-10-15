@@ -27,6 +27,10 @@
 
 ## Cloudflare Workers 경로
 
+0. 서버 프로젝트의 의존성은 `package.json`에 버전을 추측해 적지 말고
+   `npm install -D wrangler @cloudflare/workers-types typescript`로 설치한다.
+   버전을 손으로 적으면 wrangler와 workers-types의 peer 범위가 어긋나 ERESOLVE가
+   난다.
 1. wrangler가 설치돼 있지 않으면 `npx wrangler`로 쓴다.
 2. 먼저 `npx wrangler whoami`로 로그인 상태를 본다. 로그인돼 있지 않을 때만
    사용자에게 로그인을 부탁한다. 로그인은 대화형이라 사용자가 직접 한다. Claude
@@ -62,6 +66,31 @@ Cloudflare 공식 plugin을 권한다.
 - 함께 붙는 Cloudflare MCP의 `execute`는 Cloudflare API를 폭넓게 부를 수 있다.
   호출마다 사용자 승인을 받고, OAuth 권한은 필요한 만큼만 준다.
 - 사용자가 이미 고른 호스팅을 Cloudflare로 바꾸자고 먼저 제안하지 않는다.
+
+## 로컬 검증
+
+인증서가 없어도 로그인 경로는 끝까지 검증할 수 있다. 검증 대상은 서버가 파트너
+API 응답을 어떻게 처리하느냐이고, 그 코드가 가장 틀리기 쉽다.
+
+- 로그인 우회 플래그(`DEV_FAKE_AUTH` 같은 env 값으로 고정 사용자를 돌려주는 분기)를
+  서버 코드에 두지 않는다. 배포 환경에 값이 잘못 들어가면 누구나 그 사용자가 된다.
+  그리고 우회로 테스트하면 generate-token·login-me·봉투 처리 코드는 한 번도 돌지
+  않는다.
+- 대신 Worker의 `fetch(request, env)`를 테스트에서 직접 부르고, `env.TOSS_MTLS`를
+  가짜 `{ fetch }`로 바꿔 경로별로 정해 둔 봉투를 돌려준다(KV·D1 같은 다른 바인딩도
+  메모리 구현으로 바꾼다). 최소 세 경우를 확인한다: 두 호출 모두 `SUCCESS`면 세션이
+  발급되고 데이터 API가 그 사용자로 동작한다, HTTP 200에 `resultType: "FAIL"`이면
+  로그인을 거부한다, 가짜가 받은 요청의 경로·메서드·헤더(`Authorization: Bearer`)가
+  문서와 같다.
+- `wrangler dev` 스모크 테스트는 이것과 별개로 라우팅·CORS·인증 거부를 본다.
+
+## 배포와 클라이언트 빌드 순서
+
+클라이언트는 서버 주소를 빌드에 넣으므로 서버를 먼저 배포한다.
+`npx wrangler deploy` 출력의 workers.dev 주소로 클라이언트를 빌드하고, 그 주소를
+CORS 허용 목록과 함께 다시 확인한다. 서버를 아직 배포하지 않아 자리표시 주소로
+빌드했다면, 그 `.ait`는 서버에 닿지 않으니 배포 후 다시 빌드해야 한다고 보고에
+적는다.
 
 ## mTLS 도달 확인
 
