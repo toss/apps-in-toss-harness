@@ -82,7 +82,8 @@ import {
   buildDashboardTimelineState,
   createRelayStageHooks,
 } from './attach-timeline.js';
-import { startMaxAgeWatchdog, startParentWatcher } from './parent-watcher.js';
+import { installExitTriggers } from './exit-triggers.js';
+import { startMaxAgeWatchdog } from './parent-watcher.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
 import { redirectConsoleToStderr } from './stdout-guard.js';
 import { shouldRejectNewTarget } from './target-busy.js';
@@ -100,6 +101,7 @@ export {
   START_ATTACH_SEGMENT_MS,
 } from './attach-orchestrator.js';
 
+import { runBlockedServer } from './blocked-server.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { ChiiCdpConnection } from './chii-connection.js';
 import { startChiiRelay } from './chii-relay.js';
@@ -129,7 +131,12 @@ import {
 } from './qr-http-server.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
 import { RESTART_CMD } from './restart-hint.js';
-import { acquireLock, readServerLock } from './server-lock.js';
+import {
+  acquireLock,
+  type LockHandle,
+  readServerLock,
+  ServerLockConflictError,
+} from './server-lock.js';
 import {
   BOOTSTRAP_TOOL_NAMES,
   callSdk,
@@ -2227,6 +2234,27 @@ export class DualConnectionRouter implements ConnectionRouter {
 }
 
 /**
+ * Acquires the server lock. When another live client holds it and stdin is a
+ * pipe (an MCP client, not a human at a terminal), starts the blocked-mode MCP
+ * server instead of exiting so the user sees why in the tool results, and
+ * returns `null`. On a TTY the conflict error is rethrown (CLI exit code 1).
+ */
+function acquireLockOrBlock(force: boolean): LockHandle | null {
+  try {
+    return acquireLock({ force });
+  } catch (err) {
+    if (err instanceof ServerLockConflictError && !process.stdin.isTTY) {
+      void runBlockedServer(err).catch((e: unknown) => {
+        process.stderr.write(`[ait-debug] 차단 모드 시작 실패: ${String(e)}\n`);
+        process.exitCode = 1;
+      });
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
  * Boots the live debug stack and serves it over stdio:
  *   1. start the Chii relay on an OS-assigned port (with TOTP auth if
  *      AIT_DEBUG_TOTP_SECRET is set),
@@ -2241,7 +2269,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // ServerLockConflictError is thrown — the MCP host surfaces the message to
   // the agent without a relay or cloudflared ever starting.
   // `force: true` kills the existing process and takes over the lock.
-  const lockHandle = acquireLock({ force: options.force ?? false });
+  const lockHandle = acquireLockOrBlock(options.force ?? false);
+  if (lockHandle === null) return;
 
   // Dual-connection router (issues #348, #356, #378, #396): ALL families are
   // lazy-booted on the first matching `start_debug`. Nothing boots at startup —
@@ -2464,7 +2493,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // ---------------------------------------------------------------------------
 
   let closed = false;
-  let parentWatcher: { stop(): void } | null = null;
+  let exitTriggers: { stop(): void } | null = null;
   let maxAgeWatchdog: { stop(): void } | null = null;
 
   const shutdown = () => {
@@ -2480,7 +2509,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     currentPhase = 'shutdown';
     qrServer?.notifyStateChange();
 
-    parentWatcher?.stop();
+    exitTriggers?.stop();
     maxAgeWatchdog?.stop();
     if (totpRefreshHandle) clearInterval(totpRefreshHandle);
     router.stopWatcher();
@@ -2504,18 +2533,15 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     return gracefulShutdown;
   };
 
-  // Graceful termination signals.
-  process.once('SIGINT', () => void shutdownGracefully());
-  process.once('SIGTERM', () => void shutdownGracefully());
-  // SIGHUP: terminal hangup / parent process exit.
-  process.once('SIGHUP', () => void shutdownGracefully());
+  // Exit triggers (signals, stdin end/close, transport close, parent death) are
+  // installed once the server object exists — see installExitTriggers below.
 
   // Synchronous-only cleanup on process.exit (async calls are silently ignored
   // by Node at this stage — only family.stop() infra kills which are sync).
   process.on('exit', () => {
     if (!closed) {
       closed = true;
-      parentWatcher?.stop();
+      exitTriggers?.stop();
       maxAgeWatchdog?.stop();
       if (totpRefreshHandle) clearInterval(totpRefreshHandle);
       router.stopWatcher();
@@ -2550,29 +2576,12 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // swap.
   router.start(server);
 
-  // Self-terminate when the parent process (Claude Code or another AI host) has
-  // died without sending SIGTERM/SIGHUP. Without this watcher the daemon runs
-  // as a zombie, holding a stale cloudflared tunnel that silently blocks new
-  // attach attempts.
-  //
-  // AIT_DEBUG_NO_PARENT_WATCH=1 disables the watcher — useful for:
-  //   - shells / process managers that legitimately re-parent the daemon
-  //   - manual standalone invocations where ppid churn is expected
-  if (process.env.AIT_DEBUG_NO_PARENT_WATCH !== '1') {
-    parentWatcher = startParentWatcher(
-      () => {
-        void shutdownGracefully().then(() => process.exit(0));
-      },
-      { intervalMs: 5_000 },
-    );
-    // Also exit when stdin closes — the MCP host closed the pipe.
-    process.stdin.once('end', () => {
-      void shutdownGracefully().then(() => process.exit(0));
-    });
-    process.stdin.once('close', () => {
-      void shutdownGracefully().then(() => process.exit(0));
-    });
-  }
+  // Self-terminate when the MCP client goes away: stdin end/close, transport
+  // close, SIGHUP/SIGTERM/SIGINT, or the parent dying without a signal (watchdog).
+  // Without this the daemon is a zombie that holds the server lock and a stale
+  // cloudflared tunnel, so the client's next reconnect fails. See exit-triggers.ts.
+  // AIT_DEBUG_NO_PARENT_WATCH=1 disables the client-gone triggers.
+  exitTriggers = installExitTriggers({ shutdown: shutdownGracefully, server });
 
   // FIX 4 (issue #571): max-age watchdog — self-terminate after a configured
   // maximum lifetime. cloudflared quick-tunnel lifetimes are finite; a daemon
@@ -2652,7 +2661,8 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   redirectConsoleToStderr();
   // Enforce a single debug session per machine (same lock as relay mode).
   // `force: true` kills the existing process and takes over the lock.
-  const lockHandle = acquireLock({ force: options.force ?? false });
+  const lockHandle = acquireLockOrBlock(options.force ?? false);
+  if (lockHandle === null) return;
 
   const cdpPort = options.cdpPort ?? 0;
   const devUrl = options.devUrl ?? process.env.AIT_DEVTOOLS_URL ?? 'http://localhost:5173';
@@ -2871,7 +2881,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   // ---------------------------------------------------------------------------
 
   let closed = false;
-  let parentWatcher: { stop(): void } | null = null;
+  let exitTriggers: { stop(): void } | null = null;
   let maxAgeWatchdog: { stop(): void } | null = null;
 
   const shutdown = () => {
@@ -2883,7 +2893,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     currentPhase = 'shutdown';
     qrServer?.notifyStateChange();
 
-    parentWatcher?.stop();
+    exitTriggers?.stop();
     maxAgeWatchdog?.stop();
     if (totpRefreshHandle) clearInterval(totpRefreshHandle);
     router.stopWatcher();
@@ -2904,14 +2914,10 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     return gracefulShutdown;
   };
 
-  process.once('SIGINT', () => void shutdownGracefully());
-  process.once('SIGTERM', () => void shutdownGracefully());
-  process.once('SIGHUP', () => void shutdownGracefully());
-
   process.on('exit', () => {
     if (!closed) {
       closed = true;
-      parentWatcher?.stop();
+      exitTriggers?.stop();
       maxAgeWatchdog?.stop();
       if (totpRefreshHandle) clearInterval(totpRefreshHandle);
       router.stopWatcher();
@@ -2947,21 +2953,8 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   // swap.
   router.start(server);
 
-  // Self-terminate when the parent process has died without sending SIGTERM/SIGHUP.
-  if (process.env.AIT_DEBUG_NO_PARENT_WATCH !== '1') {
-    parentWatcher = startParentWatcher(
-      () => {
-        void shutdownGracefully().then(() => process.exit(0));
-      },
-      { intervalMs: 5_000 },
-    );
-    process.stdin.once('end', () => {
-      void shutdownGracefully().then(() => process.exit(0));
-    });
-    process.stdin.once('close', () => {
-      void shutdownGracefully().then(() => process.exit(0));
-    });
-  }
+  // Self-terminate when the MCP client goes away (see exit-triggers.ts).
+  exitTriggers = installExitTriggers({ shutdown: shutdownGracefully, server });
 
   // FIX 4 (issue #571): max-age watchdog.
   if (process.env.AIT_DEBUG_NO_MAX_AGE !== '1') {

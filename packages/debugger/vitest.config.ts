@@ -28,6 +28,7 @@ export default defineConfig({
     // page-side source strings this package generates and need a DOM to do it.
     environment: 'jsdom',
     restoreMocks: true,
+    setupFiles: ['./vitest.setup.ts'],
     exclude: ['node_modules/**', 'dist/**'],
     onConsoleLog(log: string) {
       // Fail-silent paths log package-prefixed debug lines on purpose; keep

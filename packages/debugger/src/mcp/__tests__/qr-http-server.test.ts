@@ -21,7 +21,7 @@
  * 동작 검증은 아래 "안정 포트 (devtools#752)" describe 블록이 개별 base
  * 포트를 명시로 override해 담당한다.
  */
-import { createServer, type Server } from 'node:net';
+import { createServer, Server } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type DashboardState, MAX_SSE_CLIENTS, startQrHttpServer } from '../qr-http-server.js';
 
@@ -2848,9 +2848,20 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
   it('옵션도 env도 없으면 DEFAULT_DASHBOARD_PORT를 base로 쓴다', async () => {
     const { DEFAULT_DASHBOARD_PORT } = await import('../qr-http-server.js');
     delete process.env.AIT_DEBUG_HTTP_PORT;
+    // 실제 8317을 점유하지 않는다 — 머신에 데몬이 떠 있어 8317이 차 있어도 통과해야 한다.
+    // 첫 listen 요청 포트만 기록하고 실제 bind는 ephemeral(0)로 바꿔 보낸다.
+    const requested: unknown[] = [];
+    const realListen = Server.prototype.listen;
+    vi.spyOn(Server.prototype, 'listen').mockImplementation(function (
+      this: Server,
+      ...args: unknown[]
+    ) {
+      requested.push(args[0]);
+      return (realListen as (...a: unknown[]) => Server).call(this, 0, args[1], args[2]);
+    } as never);
     const srv = await startQrHttpServer(undefined);
     try {
-      expect(srv.port).toBe(DEFAULT_DASHBOARD_PORT);
+      expect(requested[0]).toBe(DEFAULT_DASHBOARD_PORT);
     } finally {
       await srv.close();
     }

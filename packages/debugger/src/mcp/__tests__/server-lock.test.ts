@@ -17,7 +17,17 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acquireLock, isPidAlive, lockFilePath, ServerLockConflictError } from '../server-lock.js';
+import {
+  acquireLock,
+  findClientPid,
+  isLeftoverOfSameClient,
+  isPidAlive,
+  isWrapperCommand,
+  type LockData,
+  lockFilePath,
+  type ProcInspector,
+  ServerLockConflictError,
+} from '../server-lock.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,6 +64,42 @@ function deadPid(): number {
   }
   // Fallback: negative PID is always invalid.
   return -1;
+}
+
+/**
+ * Fake process table for client/takeover detection. `procs` maps pid → parent +
+ * command; `alive` is the set of live pids. kill() records calls and (when
+ * `dieOnTerm`) removes the pid so the wait loop ends.
+ */
+function fakeInspector(
+  procs: Record<number, { ppid: number; command: string }>,
+  opts: { alive?: number[]; dieOnTerm?: boolean } = {},
+): ProcInspector & { kills: Array<[number, string]>; alive: Set<number> } {
+  const alive = new Set(opts.alive ?? Object.keys(procs).map(Number));
+  const kills: Array<[number, string]> = [];
+  return {
+    kills,
+    alive,
+    parentOf: (pid) => procs[pid]?.ppid ?? null,
+    commandOf: (pid) => procs[pid]?.command ?? null,
+    isAlive: (pid) => alive.has(pid),
+    kill: (pid, sig) => {
+      kills.push([pid, sig]);
+      if (opts.dieOnTerm !== false || sig === 'SIGKILL') alive.delete(pid);
+    },
+    sleep: () => {},
+  };
+}
+
+/** An inspector that knows nothing: own PID counts as alive, client undeterminable. */
+function blindInspector(): ProcInspector {
+  return {
+    parentOf: () => null,
+    commandOf: () => null,
+    isAlive: (pid) => pid === process.pid,
+    kill: () => {},
+    sleep: () => {},
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +223,7 @@ describe('acquireLock — live conflict', () => {
       startedAt: new Date().toISOString(),
     });
 
-    expect(() => acquireLock()).toThrow(ServerLockConflictError);
+    expect(() => acquireLock({ inspector: blindInspector() })).toThrow(ServerLockConflictError);
   });
 
   it('error contains the existing PID, wssUrl, and startedAt', () => {
@@ -191,7 +237,7 @@ describe('acquireLock — live conflict', () => {
 
     let caught: unknown;
     try {
-      acquireLock();
+      acquireLock({ inspector: blindInspector() });
     } catch (err) {
       caught = err;
     }
@@ -202,10 +248,10 @@ describe('acquireLock — live conflict', () => {
     expect(err.existingWssUrl).toBe('wss://existing.trycloudflare.com');
     expect(err.existingStartedAt).toBe(startedAt);
     expect(err.message).toContain(String(process.pid));
-    expect(err.message).toContain('wss://existing.trycloudflare.com');
+    expect(err.message).not.toContain('trycloudflare');
   });
 
-  it('error contains null wssUrl note when wssUrl is missing', () => {
+  it('error message has no relay URL line even when wssUrl is missing', () => {
     const lockPath = lockFilePath();
     writeLockFile(lockPath, {
       pid: process.pid,
@@ -215,7 +261,7 @@ describe('acquireLock — live conflict', () => {
 
     let caught: unknown;
     try {
-      acquireLock();
+      acquireLock({ inspector: blindInspector() });
     } catch (err) {
       caught = err;
     }
@@ -223,10 +269,10 @@ describe('acquireLock — live conflict', () => {
     expect(caught).toBeInstanceOf(ServerLockConflictError);
     const err = caught as ServerLockConflictError;
     expect(err.existingWssUrl).toBeNull();
-    expect(err.message).toContain('tunnel still starting');
+    expect(err.message).not.toContain('relay URL');
   });
 
-  it('writes PID + wssUrl + recovery hint to stderr on conflict', () => {
+  it('writes PID + recovery hint (no relay host, no release URL) to stderr on conflict', () => {
     const lockPath = lockFilePath();
     const startedAt = new Date().toISOString();
     writeLockFile(lockPath, {
@@ -242,7 +288,7 @@ describe('acquireLock — live conflict', () => {
     });
 
     try {
-      acquireLock();
+      acquireLock({ inspector: blindInspector() });
     } catch {
       // expected
     } finally {
@@ -251,7 +297,9 @@ describe('acquireLock — live conflict', () => {
 
     const combined = stderrLines.join('');
     expect(combined).toContain(`PID=${process.pid}`);
-    expect(combined).toContain('wss://existing.trycloudflare.com');
+    expect(combined).not.toContain('trycloudflare');
+    expect(combined).not.toContain('wss://');
+    expect(combined).not.toContain('github.com');
     expect(combined).toContain('--force');
     expect(combined).toContain('회복:');
   });
@@ -624,5 +672,174 @@ describe('LockHandle.updateTunnelChildPid — FIX 3', () => {
     const handle = acquireLock();
     handle.release();
     expect(() => handle.updateTunnelChildPid(99999)).not.toThrow();
+  });
+});
+
+describe('findClientPid / isWrapperCommand', () => {
+  it('npm exec / npx / shells are wrappers; claude and node are not', () => {
+    expect(isWrapperCommand('npm exec debugger')).toBe(true);
+    expect(isWrapperCommand('npx -y -p /x/y.tgz debugger')).toBe(true);
+    expect(isWrapperCommand('node /usr/lib/node_modules/npm/bin/npm-cli.js exec debugger')).toBe(
+      true,
+    );
+    expect(isWrapperCommand('/bin/sh -c debugger')).toBe(true);
+    expect(isWrapperCommand('claude')).toBe(false);
+    expect(isWrapperCommand('/Users/x/.local/bin/claude --resume')).toBe(false);
+  });
+
+  it('skips npm exec and returns the claude process', () => {
+    const insp = fakeInspector({
+      300: { ppid: 200, command: 'node /x/bin/debugger' },
+      200: { ppid: 100, command: 'npm exec debugger' },
+      100: { ppid: 1, command: 'claude' },
+    });
+    expect(findClientPid(300, insp)).toBe(100);
+  });
+
+  it('returns null when only init is above (no client)', () => {
+    const insp = fakeInspector({
+      300: { ppid: 200, command: 'node /x/bin/debugger' },
+      200: { ppid: 1, command: 'npm exec debugger' },
+    });
+    expect(findClientPid(300, insp)).toBeNull();
+  });
+});
+
+describe('isLeftoverOfSameClient', () => {
+  const holder = (over: Partial<LockData> = {}): LockData => ({
+    pid: 500,
+    wssUrl: null,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
+  });
+
+  it('same recorded clientPid → leftover', () => {
+    const insp = fakeInspector({ 100: { ppid: 1, command: 'claude' } });
+    expect(isLeftoverOfSameClient(holder({ clientPid: 100 }), 100, insp)).toBe(true);
+  });
+
+  it('different live clientPid → not touched', () => {
+    const insp = fakeInspector({
+      100: { ppid: 1, command: 'claude' },
+      101: { ppid: 1, command: 'claude' },
+    });
+    expect(isLeftoverOfSameClient(holder({ clientPid: 101 }), 100, insp)).toBe(false);
+  });
+
+  it('recorded client is dead → orphan of a gone client', () => {
+    const insp = fakeInspector({ 100: { ppid: 1, command: 'claude' } });
+    expect(isLeftoverOfSameClient(holder({ clientPid: 999 }), 100, insp)).toBe(true);
+  });
+
+  it('legacy lock (no clientPid): ancestry walk decides', () => {
+    const insp = fakeInspector({
+      500: { ppid: 400, command: 'node /x/bin/debugger' },
+      400: { ppid: 100, command: 'npm exec debugger' },
+      100: { ppid: 1, command: 'claude' },
+    });
+    expect(isLeftoverOfSameClient(holder(), 100, insp)).toBe(true);
+    expect(isLeftoverOfSameClient(holder(), 777, insp)).toBe(false);
+    expect(isLeftoverOfSameClient(holder(), null, insp)).toBe(false);
+  });
+});
+
+describe('acquireLock — same-client takeover', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    ({ dir } = setupTmpLockDir());
+  });
+
+  afterEach(() => {
+    teardownTmpLockDir(dir);
+  });
+
+  // pid 500 = old daemon (child of old npm exec 400), this process = process.pid.
+  const table = () => ({
+    [process.pid]: { ppid: 450, command: 'node /x/bin/debugger' },
+    450: { ppid: 100, command: 'npm exec debugger' },
+    500: { ppid: 400, command: 'node /x/bin/debugger' },
+    400: { ppid: 100, command: 'npm exec debugger' },
+    100: { ppid: 1, command: 'claude' },
+  });
+
+  it('SIGTERMs a live holder of the same client, then writes its own lock with clientPid', () => {
+    const insp = fakeInspector(table());
+    const lockPath = lockFilePath();
+    writeLockFile(lockPath, {
+      pid: 500,
+      wssUrl: 'wss://old.example.invalid',
+      startedAt: new Date().toISOString(),
+      clientPid: 100,
+    });
+    const stderr: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((c: unknown) => {
+      stderr.push(String(c));
+      return true;
+    });
+
+    const handle = acquireLock({ inspector: insp });
+    try {
+      expect(insp.kills).toEqual([[500, 'SIGTERM']]);
+      const written = JSON.parse(readFileSync(lockPath, 'utf8'));
+      expect(written.pid).toBe(process.pid);
+      expect(written.clientPid).toBe(100);
+      expect(stderr.join('')).not.toContain('old.example.invalid');
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('falls back to SIGKILL for that PID (and its tunnel child) when SIGTERM is ignored', () => {
+    const insp = fakeInspector(
+      { ...table(), 600: { ppid: 500, command: 'cloudflared tunnel' } },
+      { dieOnTerm: false },
+    );
+    writeLockFile(lockFilePath(), {
+      pid: 500,
+      wssUrl: null,
+      startedAt: new Date().toISOString(),
+      clientPid: 100,
+      tunnelChildPid: 600,
+    });
+    const handle = acquireLock({ inspector: insp, takeoverGraceMs: 0 });
+    try {
+      expect(insp.kills).toContainEqual([500, 'SIGKILL']);
+      expect(insp.kills).toContainEqual([600, 'SIGKILL']);
+      expect(insp.kills.every(([pid]) => pid === 500 || pid === 600)).toBe(true);
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('does not touch a holder owned by a different live client', () => {
+    const insp = fakeInspector({
+      ...table(),
+      101: { ppid: 1, command: 'claude' },
+    });
+    writeLockFile(lockFilePath(), {
+      pid: 500,
+      wssUrl: 'wss://other.example.invalid',
+      startedAt: new Date().toISOString(),
+      clientPid: 101,
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    expect(() => acquireLock({ inspector: insp })).toThrow(ServerLockConflictError);
+    expect(insp.kills).toEqual([]);
+  });
+
+  it('refuses to signal a same-client PID that no longer looks like a debugger (PID reuse)', () => {
+    const insp = fakeInspector({ ...table(), 500: { ppid: 400, command: 'vim notes.txt' } });
+    writeLockFile(lockFilePath(), {
+      pid: 500,
+      wssUrl: null,
+      startedAt: new Date().toISOString(),
+      clientPid: 100,
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    expect(() => acquireLock({ inspector: insp })).toThrow(ServerLockConflictError);
+    expect(insp.kills).toEqual([]);
   });
 });
