@@ -107,7 +107,7 @@ import { ChiiCdpConnection } from './chii-connection.js';
 import { startChiiRelay } from './chii-relay.js';
 import { buildDeepLinkAttachUrl } from './deeplink.js';
 import { AutoDevtoolsOpener, buildChiiInspectorUrl } from './devtools-opener.js';
-import { wrapEnvelope } from './envelope.js';
+import { type UnbootedEnv, wrapEnvelope } from './envelope.js';
 import { deriveEnvironment, isRelayEnv, type McpEnvironment } from './environment.js';
 import {
   classifyToolError,
@@ -840,11 +840,14 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       try {
         const rawLimit = request.params.arguments?.recent_errors_limit;
         const recentErrorsLimit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : 10;
+        // 환경을 띄우기 전이면 conn·env는 자리표시용이다(kind가 local이라 mock으로 읽힌다).
+        const booted = !isUnbooted();
         const result = await getDiagnostics({
           tunnel: getTunnelStatus(),
           connection: conn,
           env,
           envReason,
+          booted,
           collector,
           readLock: readLockFn,
           recentErrorsLimit,
@@ -852,7 +855,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           attachTimeline: timeline,
         });
         const attached = conn.listTargets().length > 0;
-        return envelopeResult(result, name, env, attached);
+        return envelopeResult(result, name, booted ? env : 'none', attached);
       } catch (err) {
         return errorResult(err, name);
       }
@@ -874,7 +877,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         }
         const pagesData = listPages(conn, getTunnelStatus());
         const attached = conn.listTargets().length > 0;
-        return envelopeResult(pagesData, name, env, attached);
+        return envelopeResult(pagesData, name, isUnbooted() ? 'none' : env, attached);
       }
       // 4상태 분류: page 미attach vs crash vs relay disconnect
       return classifyEnableDomainError(err, name, pageGoneContext());
@@ -900,7 +903,12 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           }
           const listPagesData = listPages(conn, getTunnelStatus());
           const listPagesAttached = conn.listTargets().length > 0;
-          return envelopeResult(listPagesData, name, env, listPagesAttached);
+          return envelopeResult(
+            listPagesData,
+            name,
+            isUnbooted() ? 'none' : env,
+            listPagesAttached,
+          );
         }
         case 'get_dom_document':
           return jsonResult(await getDomDocument(conn));
@@ -1297,7 +1305,12 @@ function jsonResult(value: unknown) {
  * as a text content block. When `AIT_MCP_COMPAT=chrome-devtools` is set the
  * envelope is skipped and the raw value is returned — identical to `jsonResult`.
  */
-function envelopeResult(value: unknown, tool: string, env: McpEnvironment, attached: boolean) {
+function envelopeResult(
+  value: unknown,
+  tool: string,
+  env: McpEnvironment | UnbootedEnv,
+  attached: boolean,
+) {
   const wrapped = wrapEnvelope(value, { tool, env, attached });
   return { content: [{ type: 'text' as const, text: JSON.stringify(wrapped, null, 2) }] };
 }
