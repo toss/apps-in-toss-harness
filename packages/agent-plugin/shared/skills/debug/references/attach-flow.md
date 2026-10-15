@@ -47,7 +47,7 @@
 | `qr-expired` | relay가 폰의 코드를 거부(만료·지난 QR) | 대시보드를 새로고침해 새 QR을 스캔 |
 | `script-not-loaded` | 페이지는 열렸지만 `target.js` 로드·WebSocket이 끝나지 않음 | 폰 화면 상태 표시 확인, Wi-Fi 변경, 새 QR 스캔 |
 | `wrong-page` | 폰이 붙었지만 이번 배포의 미니앱이 아님 | 붙은 페이지 목록을 보여 주고, 다르면 X로 닫고 새 QR 스캔. `scheme_url`의 `_deploymentId`가 방금 올린 번들인지 확인 |
-| `rejected-busy` | 다른 미니앱이 같은 QR로 붙으려 해서 relay가 거부함(먼저 붙은 미니앱 유지, close 4409) | 진단에 나온 두 미니앱 이름을 사용자에게 알린다. 새 미니앱을 디버깅하려면 먼저 붙은 미니앱을 X로 닫고 `start_attach`를 다시 호출해 새 QR을 스캔 |
+| `rejected-busy` | 다른 미니앱이 같은 QR로 붙으려 해서 relay가 거부함(먼저 붙은 미니앱 유지, close 4409). 거부된 미니앱 화면에는 "디버거가 이미 다른 미니앱(이름)에 연결돼 있어서…" 막대가 뜬다 | 진단에 나온 두 미니앱 이름을 사용자에게 알린다. 새 미니앱을 디버깅하려면 먼저 붙은 미니앱을 X로 닫고 `start_attach`를 다시 호출해 새 QR을 스캔 |
 | `session-dropped` | 붙었다가 끊김(앱 백그라운드, 네트워크) | 앱을 앞에 두고, X로 닫은 뒤 새 QR 스캔 |
 
 relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데몬이 가진 `.ait_relay` secret이 relay와 다르거나 PC 시계가 어긋난 경우이므로, 에러 안내대로 `start_attach`를 다시 부르고 반복되면 시스템 시계를 동기화한다.
