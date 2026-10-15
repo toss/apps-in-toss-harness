@@ -34,7 +34,7 @@
 
 **순수 skills + slash commands 패키지**. 실행 레이어는 다른 repo·서비스(콘솔 MCP GW, docs GitBook MCP, devtools의 로컬 MCP 등)가 담당하고, 이 플러그인은 그것들을 **엮는 지식**만 담는다.
 
-플러그인 특성상 **idle context 비용 0**이 압도적으로 중요. MCP tool은 schema가 항상 로드되지만 skill은 호출될 때만 로드된다. CLI를 MCP로 wrapping하면 얻는 가치 없이 context만 낭비 — 이 원칙 때문에 번들러(`ait build` 등)는 여전히 skill + Bash로 다룬다.
+플러그인 특성상 **idle context 비용 0**이 압도적으로 중요. MCP tool은 tool search 기본값에서도 이름이 상시 노출되고 서버마다 연결·인증 비용이 들지만, skill은 description만 상시 로드되고 본문은 호출될 때 로드된다. CLI를 MCP로 wrapping하면 얻는 가치 없이 context만 낭비 — 이 원칙 때문에 번들러(`ait build` 등)는 여전히 skill + Bash로 다룬다.
 
 이 repo에서 MCP는 기본 tool(`Bash`/`Read`/`Write`/`Edit`/`WebFetch`)로 못 하는 일에만 — 예: live 브라우저 상태 조작(devtools 디버깅 MCP), 콘솔 등록·번들 업로드·상태 조회(콘솔 MCP — 세션 인증이 필요하고 상태가 서버에 있음), 문서 전문 검색(docs MCP). 번들 빌드·스캐폴딩은 전부 skill + Bash로.
 
