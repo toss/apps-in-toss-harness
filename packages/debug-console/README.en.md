@@ -11,7 +11,7 @@ On-device attach + an on-phone status banner for Apps in Toss mini-apps. **The o
 Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.7/apps-in-toss-debug-console-0.1.7.tgz"
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"
 ```
 
 With no peerDependency, you can add this regardless of whether `@apps-in-toss/web-framework` is installed or which version it is. The SDK bridge (`window.__sdk` below) probes for the SDK at runtime via a dynamic import and silently skips itself when the SDK is absent.
