@@ -148,7 +148,7 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
 - **인터넷 필요** — `npx -y`가 create-ait-app을 받아 파일 생성부터
   install·`ait init`까지 한 번에 수행한다. `@apps-in-toss/web-framework`의
   버전은 create-ait-app이 자기 빌드에 박아 둔 정확 버전이다(`.github/version-pins/package.json`의
-  핀을 `dependencies`에 그대로 쓴다. 0.2.8 dist 실측 `3.7.0`) — 공개 `latest`가 더 높아도 그 핀을 받고, 핀은 create-ait-app이 새로
+  핀을 `dependencies`에 그대로 쓴다. 0.2.9 dist 실측 `3.8.0`) — 공개 `latest`가 더 높아도 그 핀을 받고, 핀은 create-ait-app이 새로
   발행될 때만 움직인다. 종전 CLI는 `"latest"` 리터럴을 써서 install 시점의
   registry에 달렸었다(harness#90 항목1 — 공개 `latest`가 3.x 출시 뒤에도 한동안
   2.10.8을 가리키는 어긋남이 그때 확인됨). 오프라인이면 `--local` 폴백.
@@ -296,7 +296,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   스크립트 파일을 Read로 열어 보지 마라 — 내용을 알 필요 없이 이 호출 하나면
   된다. 출력 해석·보고 규칙은 5-B 절.
 - **이 규칙과 실제 CLI가 어긋나면 CLI 에러가 최신 규칙이다** — `@latest`가
-  여기 적힌 0.2.8보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
+  여기 적힌 0.2.9보다 새 버전을 받으면 플래그·인자 규칙이 달라질 수 있다.
   그때는 플래그를 빼고 다시 넣어 보는 식으로 우회하지 말고, 에러 문구를 그대로
   사용자에게 전하고 중단한다(그 자리에서 `--help`로 현재 규칙을 확인해 함께
   보고하는 것까지는 해도 된다).
@@ -328,7 +328,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   복구 확인).
 - **`package.json`의 `@apps-in-toss/web-framework`는 create-ait-app이 박은
   정확 버전이다**(자기 저장소 `.github/version-pins/package.json`의 핀을
-  빌드에 넣는다. 0.2.8 실측 `"3.7.0"`). 그래서 wf 버전은
+  빌드에 넣는다. 0.2.9 실측 `"3.8.0"`). 그래서 wf 버전은
   실행된 create-ait-app 버전에 따라가고, `create-ait-app@latest` 해석이 환경마다
   다르면 wf도 따라 달라진다. 종전 CLI는 `"latest"` 리터럴을 써서 install 시점마다
   달랐다(실측: 공개 `latest`가 `3.0.1`인 시점에 `3.0.0`이 설치됨). 검증·측정
@@ -1094,7 +1094,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 - 공식 스캐폴더: https://github.com/toss/create-ait-app — 번들된 create-vite에
   위임하는 템플릿(+ `--tds` 변형), IAP/IAA 샘플, brownfield `add-sample`
   서브커맨드. 이 skill의 호출 규칙·후처리 근거는 `create-ait-app` 0.2.3·0.2.8 소스
-  실측이다(0.2.8은 2026-10-14 기준 공개 latest) — `@latest`가 그보다 새 버전을 받아
+  실측이다(0.2.9는 2026-10-15 기준 공개 latest — 0.2.8과는 wf 핀·IAP 예제 주석만 다르다) — `@latest`가 그보다 새 버전을 받아
   어긋나면 CLI의 에러·`--help`를 정본으로 본다.
 - devtools (mock + panel + unplugin) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
