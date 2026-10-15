@@ -87,7 +87,7 @@ bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
 | `viewport-zoom` | 비게임만. 확대·축소 문장과 맞춰 보되, WebView가 기본으로 막는지는 문서에 없으니 "확인 필요"로 둔다 |
 | `dark-theme` | 라이트 모드 문장과 맞춰 본다 |
 | `cors-any-origin` | docs 서버 API 문서의 허용 origin을 getPage로 확인해 정확한 origin을 권한다(기준은 `references/server-runtime.md`의 CORS 절) |
-| `client-ai-key` | 키가 번들에 들어가는지 본다. 키 값은 출력하지 않고, 서버로 옮기도록 권한다 |
+| `client-ai-key` | 키가 번들에 들어가는지 본다. 키 값은 출력하지 않고, 서버로 옮기도록 권한다. 생성형 AI를 쓰는 앱이므로 생성물 표시 기준(docs 운영 정책)도 보고에 함께 올린다. 화면에서 표시를 확인하지 못했으면 "확인 필요"로 둔다 |
 
 체크리스트 항목을 코드와 맞춰 나눈다. 고칠 것에는 파일:줄과 근거 문장을
 붙인다. 앱 이름·등록 로고·카테고리처럼 코드 밖에 있는 것은 콘솔 웹 확인으로
