@@ -94,7 +94,7 @@ harness는 AI 코딩 에이전트 안에서 동작하므로, 에이전트가 어
 |---|---|
 | `/ait:*` 명령/skill이 잘못 안내하거나 에러를 낸다 | harness (agent-plugin) |
 | devtools panel·attach·debug-console 자체가 이상하게 동작한다 | harness (debugger / debug-console) |
-| 앱 등록·번들 업로드·컴파일·상태 조회(`apps-in-toss-console` MCP)가 실패한다 | 콘솔 MCP GW |
+| 앱 등록·번들 업로드·컴파일·상태 조회(`ait-console` MCP)가 실패한다 | 콘솔 MCP GW |
 | 실기기/실 SDK에서 API 동작이 문서와 다르다(harness mock이 아닌 실제 동작) | SDK (web-framework) |
 
 ## 제출 전 체크리스트

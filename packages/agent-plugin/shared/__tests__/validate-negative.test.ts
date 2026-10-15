@@ -3830,7 +3830,7 @@ function baseClaudePluginWithMcp(overrides: Record<string, unknown> = {}): Recor
         type: 'http',
         url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp',
       },
-      'apps-in-toss-console': {
+      'ait-console': {
         type: 'http',
         url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
         oauth: { clientId: 'mcp-gateway' },
@@ -3849,7 +3849,7 @@ function baseCursorPluginWithMcp(overrides: Record<string, unknown> = {}): Recor
       'apps-in-toss-docs': {
         url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp',
       },
-      'apps-in-toss-console': {
+      'ait-console': {
         url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
         auth: { CLIENT_ID: 'mcp-gateway' },
       },
@@ -3934,7 +3934,7 @@ describe('A11 negative tests', () => {
       path.join(tmpDir, '.claude-plugin', 'plugin.json'),
       JSON.stringify(baseClaudePluginWithMcp()),
     );
-    // cursor 쪽엔 apps-in-toss-console 을 뺀다.
+    // cursor 쪽엔 ait-console 을 뺀다.
     writeFile(
       path.join(tmpDir, '.cursor-plugin', 'plugin.json'),
       JSON.stringify(
@@ -3961,7 +3961,7 @@ describe('A11 negative tests', () => {
         baseCursorPluginWithMcp({
           mcpServers: {
             'apps-in-toss-docs': { url: 'https://example.invalid/different-docs-mcp' },
-            'apps-in-toss-console': {
+            'ait-console': {
               url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
               auth: { CLIENT_ID: 'mcp-gateway' },
             },
@@ -3986,7 +3986,7 @@ describe('A11 negative tests', () => {
         baseCursorPluginWithMcp({
           mcpServers: {
             'apps-in-toss-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
-            'apps-in-toss-console': {
+            'ait-console': {
               url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
               auth: { CLIENT_ID: 'some-other-client' },
             },

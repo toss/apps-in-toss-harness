@@ -68,11 +68,11 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 Claude Code:
 
 - 에이전트 자신에게 노출된 도구 목록을 훑어 서버 키 `apps-in-toss-docs`·
-  `apps-in-toss-console`가 포함된 도구가 보이는지 확인한다 — 직접 등록 형태
+  `ait-console`이 포함된 도구가 보이는지 확인한다 — 직접 등록 형태
   (`mcp__apps-in-toss-docs__searchDocumentation` 등)와 이 플러그인의 정규
   설치 경로(`/plugin install`)에서 실제로 뜨는 플러그인 경유 형태
   (`mcp__plugin_<pluginName>_apps-in-toss-docs__searchDocumentation`,
-  `mcp__plugin_<pluginName>_apps-in-toss-console__miniapp_create` 등 — 이
+  `mcp__plugin_<pluginName>_ait-console__miniapp_create` 등 — 이
   플러그인의 manifest 등록 이름은 `ait`) **둘 다** 서버 키 부분 문자열로
   잡는다(plugin 세그먼트는 마켓플레이스 설치명에 따라 달라질 수 있어 고정하지
   않는다 — `eval/e2e/driver.ts`의 `isConsoleMcpTool` 판정과 동일 관례). 앞쪽
@@ -97,7 +97,7 @@ Cursor:
 - 도구 이름에 서버 접두사가 없을 수 있다(실측: marketplace 설치분은
   `searchDocumentation` 등 bare 이름으로 노출) — 개별 도구명 대조 대신, 도구
   목록에서 `apps-in-toss-docs` 서버에서 온 도구가 **하나라도** 보이면 docs
-  MCP 연결로 본다. 콘솔 MCP도 같은 방식으로 `apps-in-toss-console` 서버 도구
+  MCP 연결로 본다. 콘솔 MCP도 같은 방식으로 `ait-console` 서버 도구
   존재 여부만 확인한다 — 미인가 상태에서는 그 서버 도구가 `mcp_auth` 1종뿐이다
   (그게 미인가 신호다).
 - 콘솔 MCP 도구가 안 보이거나 `mcp_auth`뿐이면 인가를 권유한다 — 플러그인
@@ -105,7 +105,7 @@ Cursor:
   `mcp_auth`를 호출하면 "Interactive MCP authentication is only available in
   the Cursor desktop IDE"가 돌아온다 — 실측). CLI 세션에서 콘솔 MCP를 쓰려면
   `.cursor/mcp.json`에 서버를 직접 등록한 뒤
-  `agent mcp login apps-in-toss-console` 으로 인가한다(루트 README Cursor 절
+  `agent mcp login ait-console` 으로 인가한다(루트 README Cursor 절
   참고).
 - cwd에 `package.json`이 있으면 `.cursor/mcp.json`을 `Read`해
   `mcpServers.ait-devtools` 항목이 있는지 확인한다. 없으면 Claude Code와
@@ -143,7 +143,7 @@ skill §5 adapter-note와 동일 패턴).
   ✅ node v24.3.0 / npm 10.8.2 / npx 10.8.2
   ⚠️ node 미검출 — https://nodejs.org 에서 설치 후 다시 시도해주세요
   ✅ 현재 디렉토리: 기존 프로젝트(package.json 있음)
-  ⚠️ 콘솔 MCP(apps-in-toss-console) 도구가 안 보입니다 — 1회 인가가 필요합니다:
+  ⚠️ 콘솔 MCP(ait-console) 도구가 안 보입니다 — 1회 인가가 필요합니다:
      /mcp   # 말로: "콘솔 MCP 인가 화면을 열어줘"
   ✅ 문서 MCP(apps-in-toss-docs) 연결됨
   ⚠️ 이 프로젝트 .mcp.json에 ait-devtools 배선이 없습니다 — 온디바이스 디버깅이
@@ -196,7 +196,7 @@ Apps in Toss 플러그인이 설치됐습니다.
   /ait:new <app-name>   # 말로: "앱인토스 미니앱 새로 하나 만들어줘"
 
 콘솔 도구를 쓰려면 먼저 1회 인가가 필요합니다:
-  /mcp                  # Claude Code — apps-in-toss-console 서버를 승인(브라우저 OAuth)
+  /mcp                  # Claude Code — ait-console 서버를 승인(브라우저 OAuth)
                         #    Cursor는 데스크톱 에디터에서 승인한다 (위 1-c 참고)
 
 기존 프로젝트에 들어가려면:

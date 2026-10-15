@@ -177,7 +177,7 @@ npm --prefix ./<package_name> install
                      #   무관한 정상 경로다)
   (L-5로 번들 설정 추가) → ait build → console MCP(miniapp_create →
   bundle_upload → bundle_upload_complete)로 등록·업로드
-  (최초 1회 /mcp 에서 apps-in-toss-console 인가 필요)
+  (최초 1회 /mcp 에서 ait-console 인가 필요)
 
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```

@@ -41,14 +41,14 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 <details>
 <summary>Step-by-step details · plain-language install if slash commands don't work</summary>
 
-For step 3, pick `apps-in-toss-console` from the `/mcp` list and complete the OAuth authorization. For step 4, `/plugin` opens the plugin manager: choose Marketplaces, select `apps-in-toss`, and press Enable auto-update. Third-party marketplaces start with auto-update off, so you have to turn it on once. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app.
+For step 3, pick `ait-console` from the `/mcp` list and complete the OAuth authorization. For step 4, `/plugin` opens the plugin manager: choose Marketplaces, select `apps-in-toss`, and press Enable auto-update. Third-party marketplaces start with auto-update off, so you have to turn it on once. Instead of `/ait:welcome`, you can also jump straight to `/ait:new my-app` to scaffold your first mini-app. If you are updating from an earlier version, see the server-name note under [Authentication](#authentication).
 
 **Don't search for `ait` in the desktop app's plugin browser.** Search results only surface plugins from the official marketplace, so `ait` won't show up there. Installation goes through pasting the commands above into the chat input, not through search. If pasting the commands still doesn't work, see [install troubleshooting](./.github/install-troubleshooting.en.md).
 
 If the slash commands above don't work in your environment, paste the whole sentence below into the chat input instead. Claude runs the install from its own shell, so you never have to open a terminal.
 
 ```
-Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`. Do not edit `~/.claude/settings.json` by hand. When done, tell me the two manual steps left (authorize apps-in-toss-console under `/mcp`, and turn on Enable auto-update for the apps-in-toss marketplace under `/plugin`), and tell me to open a new session and run /ait:welcome.
+Install the Apps in Toss mini-app dev plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` then `claude plugin install ait@apps-in-toss`. Do not edit `~/.claude/settings.json` by hand. When done, tell me the two manual steps left (authorize ait-console under `/mcp`, and turn on Enable auto-update for the apps-in-toss marketplace under `/plugin`), and tell me to open a new session and run /ait:welcome.
 ```
 
 That sentence hands only marketplace registration and plugin installation to the agent; console MCP authorization and auto-update stay with you. Don't ask an agent to edit `~/.claude/settings.json` by hand: the `source` under `extraKnownMarketplaces` belongs to the CLI (a sparse registration keeps `sparsePaths` in there), and overwriting it wholesale makes the declaration disagree with the on-disk clone, after which Claude Code stops finding that marketplace at all. Turn auto-update on from the `/plugin` screen instead.
@@ -69,7 +69,7 @@ codex plugin marketplace add toss/apps-in-toss-harness
 codex plugin add ait@apps-in-toss
 
 # 3) Authorize the console MCP (OAuth, one time)
-codex mcp login apps-in-toss-console
+codex mcp login ait-console
 
 # 4) See the harness entry map
 /ait:welcome
@@ -99,7 +99,7 @@ codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~g
 ```
 
 ```
-codex mcp add apps-in-toss-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
+codex mcp add ait-console --url https://mcp.toss.im/adapters/apps-in-toss-console/mcp --oauth-client-id mcp-gateway
 ```
 
 On that path, don't drop `--oauth-client-id mcp-gateway`: the auth server doesn't support dynamic client registration (DCR), so a static client id is required. Check the result with `codex mcp list` (the docs MCP shows `Auth` as `Unsupported` since it needs none; the console MCP shows `Not logged in` until you authorize).
@@ -154,7 +154,7 @@ If you want **only the MCP servers** without the plugin, create `.cursor/mcp.jso
     "apps-in-toss-docs": {
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },
-    "apps-in-toss-console": {
+    "ait-console": {
       "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
       "auth": {
         "CLIENT_ID": "mcp-gateway"
@@ -168,8 +168,8 @@ On that path, don't drop `auth.CLIENT_ID`: the auth server doesn't support dynam
 
 ```
 agent mcp enable apps-in-toss-docs
-agent mcp enable apps-in-toss-console
-agent mcp login apps-in-toss-console
+agent mcp enable ait-console
+agent mcp login ait-console
 ```
 
 Once authorized, `agent mcp list` shows both servers as `ready` (the docs MCP needs no auth, so it turns `ready` right after enable; the console MCP shows `requires_authentication` until then).
@@ -180,7 +180,14 @@ The commands in this section were verified against Cursor CLI `2026.08.25-3e8eec
 
 ## Authentication
 
-`apps-in-toss-docs` needs no auth and connects as soon as it's installed. `apps-in-toss-console` needs a one-time OAuth authorization; the per-host steps are in the collapsed details inside the [Install](#install) section above.
+`apps-in-toss-docs` needs no auth and connects as soon as it's installed. `ait-console` needs a one-time OAuth authorization; the per-host steps are in the collapsed details inside the [Install](#install) section above.
+
+The official developer docs show the manual registration of the console MCP under the name `apps-in-toss-console`. This plugin registers the same server (same URL) under the shorter name `ait-console`, because the server name is part of every tool name and takes up context in each session.
+
+If you are updating from an earlier version, check two things.
+
+- Open `/mcp`. If `ait-console` shows needs-auth, authorize it again. The server name changed, so the earlier authorization may not carry over.
+- If a permission rule in `settings.json` (`permissions`) uses `mcp__plugin_ait_apps-in-toss-console__*`, rename it to `mcp__plugin_ait_ait-console__*`.
 
 ## Just ask for it — five kinds of plain-language examples
 
@@ -235,13 +242,13 @@ Installing the plugin registers two MCP servers, in Claude Code, Codex, and Curs
 | Server | Auth | Key tools |
 |---|---|---|
 | `apps-in-toss-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | None — connected as soon as it's installed | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
-| `apps-in-toss-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — one-time authorization from `/mcp`; needs-auth until then | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
+| `ait-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — one-time authorization from `/mcp`; needs-auth until then | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
 
 The docs are also readable without MCP. The developer center publishes the same documentation in a form agents can read directly: `https://developers-apps-in-toss.toss.im/llms.txt` is the full index, `https://developers-apps-in-toss.toss.im/llms-full.txt` is the complete text, and appending `?ask=<question>` to any docs page URL returns an answer grounded in that documentation, with source links. Use this path when the plugin isn't installed yet or MCP can't be attached.
 
 ## Development journey
 
-1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `apps-in-toss-console` from `/mcp`, then turn on auto-update from `/plugin`.
+1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `ait-console` from `/mcp`, then turn on auto-update from `/plugin`.
 2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
 3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
 4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.

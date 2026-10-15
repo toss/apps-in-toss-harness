@@ -38,7 +38,7 @@
     "apps-in-toss-docs": {
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },
-    "apps-in-toss-console": {
+    "ait-console": {
       "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
       "auth": {
         "CLIENT_ID": "mcp-gateway"
