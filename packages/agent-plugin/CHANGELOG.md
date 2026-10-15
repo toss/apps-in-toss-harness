@@ -1,5 +1,12 @@
 # @apps-in-toss/agent-plugin
 
+## 0.2.2
+
+### Patch Changes
+
+- new-miniapp: create-ait-app 0.2.9 기준으로 `web-framework` 핀(`3.8.0`)과 공개 latest 표기를 갱신한다.
+- 서버 연결 레퍼런스에 서버 의존성 설치 방법, 인증서 없이 로그인 경로를 검증하는 방법(가짜 mTLS 바인딩, 우회 플래그 금지), 서버 배포 후 클라이언트를 빌드하는 순서를 더했다.
+
 ## 0.2.1
 
 ### Patch Changes
