@@ -1,5 +1,13 @@
 # @apps-in-toss/agent-plugin
 
+## 0.2.6
+
+### Patch Changes
+
+- docs(agent-plugin): 로고·앱 정보는 검토 요청 때 필요하다고 안내 — debug 5-B는 자산이 없으면 콘솔 웹에서 앱 이름·appName·앱 유형만으로 앱을 만들고 업로드·테스트부터 하게 하고, design은 등록 자산이 테스트가 아니라 검토 요청(출시)에 필요하다고 명시한다.
+- docs(agent-plugin): server skill에 BaaS·식별 경계 추가 — Supabase·Firebase는 사용자별 데이터를 서버 경유로, 클라이언트 직결은 공용 데이터만, secret key는 서버에만 두고 자체 로그인은 붙이지 않는다. 교환으로 받은 키만 `x-anon-key` API에 쓰고, CORS 표는 server-api 페이지를 정본으로 삼으며, `generate-token`의 OAuth 형식 실패 응답을 실패로 처리하게 한다.
+- server skill description에 BaaS(Supabase·Firebase)를 넣어, Supabase나 Firebase에 사용자 기록을 저장하는 요청에서도 server skill이 먼저 불리게 한다.
+
 ## 0.2.5
 
 ### Patch Changes
