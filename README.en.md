@@ -25,7 +25,7 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 # 1) Register the harness plugin marketplace
 /plugin marketplace add toss/apps-in-toss-harness
 
-# 2) Install the ait plugin (registers 10 skills + 2 MCP servers)
+# 2) Install the ait plugin (registers 11 skills + 2 MCP servers)
 /plugin install ait@apps-in-toss
 
 # 3) Authorize the console MCP (OAuth, one time) — the docs MCP (apps-in-toss-docs) connects automatically, no auth required
@@ -65,7 +65,7 @@ The same plugin **installs in Codex as-is.** Codex reads this repo's plugin mani
 # 1) Register the harness plugin marketplace
 codex plugin marketplace add toss/apps-in-toss-harness
 
-# 2) Install the ait plugin (registers 10 skills + 2 MCP servers, no ~/.codex/config.toml edits)
+# 2) Install the ait plugin (registers 11 skills + 2 MCP servers, no ~/.codex/config.toml edits)
 codex plugin add ait@apps-in-toss
 
 # 3) Authorize the console MCP (OAuth, one time)
@@ -130,7 +130,7 @@ agent
 <details>
 <summary>Activation scope · authorizing the console MCP · differences from Claude Code · non-interactive notes · MCP-servers-only path</summary>
 
-The install is **activated per project.** Installing from `/plugins` records it in the current project's `.cursor/settings.json`, and other projects need their own activation. Sessions in an activated project expose all ten skills and the four docs-MCP tools right away. Plugin-provided MCP servers do not appear in `agent mcp list`; that command only covers servers registered in `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global).
+The install is **activated per project.** Installing from `/plugins` records it in the current project's `.cursor/settings.json`, and other projects need their own activation. Sessions in an activated project expose all eleven skills and the four docs-MCP tools right away. Plugin-provided MCP servers do not appear in `agent mcp list`; that command only covers servers registered in `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global).
 
 **Authorize the console MCP from the desktop editor.** While unauthorized, the plugin's console MCP exposes a single `mcp_auth` tool, and calling it from the CLI returns "Interactive MCP authentication is only available in the Cursor desktop IDE". Authorizing from the editor opens the full console toolset (102 tools) to that project's editor sessions. The authorization does not carry over to CLI sessions, so to use the console MCP from a CLI session, register the servers directly in `.cursor/mcp.json` (the plugin-less path below) and authorize there.
 
@@ -202,6 +202,7 @@ A `/ait:<verb>` slash command and a plain-language request **reach the same skil
 | 3. Build and ship | "Create a new Apps in Toss mini-app called my-shop" | `/ait:new` |
 | | "Scaffold an Apps in Toss mini-app project from scratch in an empty directory" | `/ait:new` |
 | | "This screen looks ugly. Make it look good." | `/ait:design` |
+| | "Save the votes on a server so they show up on my other devices too. Use Cloudflare Workers for the server." | `/ait:server` |
 | 4. Testing | "I want to run the mini-app I built in the real Toss app — upload the bundle so I can check it on my phone" | `/ait:test-on-device` |
 | | "The mini-app behaves oddly on my phone and I want to debug its live state" | `/ait:debug` |
 | | "Take a look before I submit it for review" | `/ait:launch` |
@@ -229,6 +230,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:debug` | Debugs by branching across two environments — local browser and on-device candidate — based on what it observes | 3. debug |
 | `/ait:test-on-device` | Builds the bundle, uploads it via console MCP, confirms the compile, and hands over the entry link the tools returned so you can check it in the real Toss app (never submits for review, releases, or promotes) | 5. register+ship |
 | `/ait:launch [rejection reason]` | Pre-launch check and rejection handling. Sorts findings into fixes and console checks using the official checklist (docs MCP) and a code scan; matches a rejection reason to the documented criteria and fixes it, or drafts an inquiry when the cause isn't in the code. Submits for review only after you approve that request (never releases, rolls back, or promotes) | 5. register+ship |
+| `/ait:server [request]` | Writes or fixes server code. Reads the criteria for user identification (anonymous-key exchange or Toss login), mTLS partner API calls, the response envelope, and exact CORS origins first, then applies them. Follows the hosting you chose and deploys only when asked (no console calls) | 3. dev |
 | `/ait:design [screen or request]` | Creates or fixes screens — from scratch, diagnosing and auto-fixing existing ones, mapping a Figma design (Figma is optional), and producing the registration image assets. Hard-rule violations are fixed in the code, not just reported (does not register or upload) | 8. design |
 | `/ait:ux-writing [screen or files]` | Checks screen copy against UX writing principles and proposes before/after rewrites — the rewrite counterpart to design's G6 (copy) grading (never applies without user confirmation) | 8. design counterpart |
 | `ait build` (terminal command) | Generates a `.ait` native bundle from `granite.config.ts`. Fails if `brand.icon` is empty | 5. register+ship |
@@ -261,7 +263,7 @@ The docs are also readable without MCP. The developer center publishes the same 
 ## Limitations
 
 - Only `/ait:launch` submits for review (`bundle_submit_review`), and only after it shows you the full request and you approve it; it never submits on its own. The first-registration review, the `review_*` tools, releasing, rolling back, and promoting are not things the harness does, so handle them directly in the console.
-- Station 4 (auth) only covers the client-side `appLogin()` mock. The server side of mini-app user login (backend token verification) is deliberately out of scope for the harness. The focus is on getting a working mini-app (client) done first; server-related knowledge and skills will be added in later stages. That's why the development journey has no dedicated login-wiring step.
+- The station 4 (auth) journey stops at the client-side `appLogin()` mock. `/ait:server` writes and fixes server code against the user identification, mTLS, response envelope and CORS rules, but it doesn't lay down a server framework template and deploys only when you ask. That's why the development journey has no dedicated login-wiring step.
 - The harness's standard registration and upload flow uses only the console MCP's OAuth session. It doesn't use a Deploy Key (the workspace-scoped credential the console UI calls an "API key") path, since the related skill has already been removed. The Deploy Key term and its auth model are still an open question being tracked, not yet finalized.
 - At a desktop browser's default width, the mini-app layout looks different from the real thing. Check it at mobile width from the AIT panel's Viewport tab (or your browser's responsive mode). The real Toss app's WebView runs on WebKit (Safari's engine) on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari too before shipping, or verify it with `/ait:test-on-device` on a real device.
 

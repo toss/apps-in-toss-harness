@@ -1052,7 +1052,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
   프롬프트로 빠지므로 비대화형 호출에는 항상 명시한다. 이 skill은 greenfield
   전용이라 자동 호출하지 않는다.
 - ❌ 서버 스캐폴드. 다만 사용자가 파트너 API를 부르는 서버(mTLS, Cloudflare
-  Workers 등)를 함께 요청하면, 서버 코드를 쓰기 전에 **`<이 skill의 base
+  Workers 등)를 함께 요청하면, 서버 코드 작업은 `/ait:server`로 넘기며, 직접 쓸 때도 서버 코드를 쓰기 전에 **`<이 skill의 base
   directory>/../launch/references/server-runtime.md`**를 읽고 그 기준(인증서는
   사용자가 콘솔에서 발급, 키 임시 디렉터리 정리, 정확한 CORS origin, 응답 가공,
   우회 플래그 없이 가짜 mTLS 바인딩으로 로그인 경로 테스트, 서버 배포 후 클라이언트

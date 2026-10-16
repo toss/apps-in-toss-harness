@@ -6,8 +6,8 @@ description: |
   reference, then map it to the needed SDK domains, the runtime permissions
   they prompt for, and console terms (약관) that gate registration. Use when
   the user asks "미니앱 만들고 싶은데 뭘 만들지 모르겠어" or "미니앱 만들 건데
-  필요한 SDK 도메인/권한/약관 먼저 정리해줘" — requirements work, not a docs
-  lookup. Writes at most one file (`PRD.md`); no CLI, no console calls.
+  필요한 SDK 도메인/권한/약관 먼저 정리해줘", or asks for a PRD ("출시 일정이랑
+  범위 정리한 PRD 써줘") — requirements work, not a docs lookup. Writes at most one file (`PRD.md`); no CLI, no console calls.
   Hands off to `/ait:new`. Triggered by `/ait:plan [requirements]`.
 argument-hint: '[requirements]'
 ---
