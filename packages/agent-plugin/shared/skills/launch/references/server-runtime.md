@@ -112,8 +112,9 @@ CORS 허용 목록과 함께 다시 확인한다. 서버를 아직 배포하지 
 - 클라이언트는 `User.createAnonymousKeyAuthCode()`로 일회용 `code`를 받아 바로 서버로
   보낸다. 서버는 그 코드를 파트너 API의 익명 사용자 인증 코드 교환 API로 키로 바꾼다.
   경로와 스키마는 docs의 API 레퍼런스(사용자 식별 키)를 getPage로 확인한다.
-- 결과 필드 이름이 문서마다 다르다. API 명세는 `anonKey`, SDK 주석은 `hash`라고
-  부른다. 둘 다 받게 쓴다.
+- 교환 결과는 `success.anonKey`다. SDK 주석에 `hash`라고 적힌 것은 값을 가리킨
+  말이고 응답 필드 이름이 아니다. 그 값은 같은 사용자의 `getAnonymousKey()` `hash`와
+  같다.
 - 클라이언트가 `getAnonymousKey()`로 얻은 키를 서버가 그대로 믿게 하지 않는다. 그
   값은 요청자가 그 사용자임을 증명하지 않는다. 서버가 교환 API로 직접 받은 키만 쓴다.
 
