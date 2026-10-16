@@ -25,7 +25,7 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 # 1) harness 플러그인 마켓플레이스 등록
 /plugin marketplace add toss/apps-in-toss-harness
 
-# 2) ait 플러그인 설치 (skill 10종 + MCP 서버 2개 자동 등록)
+# 2) ait 플러그인 설치 (skill 11종 + MCP 서버 2개 자동 등록)
 /plugin install ait@apps-in-toss
 
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회) — 문서 MCP(apps-in-toss-docs)는 인증 없이 자동 연결됨
@@ -65,7 +65,7 @@ Codex에도 같은 플러그인이 그대로 설치됩니다. Codex는 이 repo�
 # 1) harness 플러그인 마켓플레이스 등록
 codex plugin marketplace add toss/apps-in-toss-harness
 
-# 2) ait 플러그인 설치 (skill 10종 + MCP 서버 2개 자동 등록, ~/.codex/config.toml 무수정)
+# 2) ait 플러그인 설치 (skill 11종 + MCP 서버 2개 자동 등록, ~/.codex/config.toml 무수정)
 codex plugin add ait@apps-in-toss
 
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회)
@@ -130,7 +130,7 @@ agent
 <details>
 <summary>활성화 범위 · 콘솔 MCP 인가 · Claude Code와 다른 점 · 비대화형 참고 · MCP 서버만 등록하기</summary>
 
-설치는 **프로젝트 단위로 활성화**됩니다. `/plugins`에서 설치하면 현재 프로젝트의 `.cursor/settings.json`에 기록됩니다. 다른 프로젝트에서 쓰려면 거기서도 활성화해야 합니다. 활성화된 프로젝트의 세션에는 skill 10종과 문서 MCP 도구 4종이 바로 노출됩니다. 플러그인이 제공하는 MCP 서버는 `agent mcp list`에는 나오지 않습니다 — 그 명령은 `.cursor/mcp.json`(프로젝트)·`~/.cursor/mcp.json`(전역)에 등록된 서버 전용입니다.
+설치는 **프로젝트 단위로 활성화**됩니다. `/plugins`에서 설치하면 현재 프로젝트의 `.cursor/settings.json`에 기록됩니다. 다른 프로젝트에서 쓰려면 거기서도 활성화해야 합니다. 활성화된 프로젝트의 세션에는 skill 11종과 문서 MCP 도구 4종이 바로 노출됩니다. 플러그인이 제공하는 MCP 서버는 `agent mcp list`에는 나오지 않습니다 — 그 명령은 `.cursor/mcp.json`(프로젝트)·`~/.cursor/mcp.json`(전역)에 등록된 서버 전용입니다.
 
 **콘솔 MCP 인가는 데스크톱 에디터에서 합니다.** 플러그인이 제공하는 콘솔 MCP는 미인가 상태에서 `mcp_auth` 도구 1종만 노출되는데, CLI에서 이걸 호출하면 "Interactive MCP authentication is only available in the Cursor desktop IDE"가 돌아옵니다. 에디터에서 인가하면 그 프로젝트의 에디터 세션에 콘솔 도구 전체(102종)가 열립니다. 이 인가는 CLI 세션에는 전파되지 않으므로, CLI 세션에서 콘솔 MCP를 쓰려면 아래 "플러그인 없이 MCP 서버만" 경로로 `.cursor/mcp.json`에 직접 등록한 뒤 인가하세요.
 
@@ -202,6 +202,7 @@ agent mcp login ait-console
 | 3. 개발·배포 | "앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로." | `/ait:new` |
 | | "빈 디렉토리에서 앱인토스 미니앱 프로젝트를 처음부터 스캐폴드하고 싶어" | `/ait:new` |
 | | "화면이 좀 구려 보여. 예쁘게 고쳐줘." | `/ait:design` |
+| | "투표한 기록을 서버에 저장해서 다른 기기에서도 보이게 해줘. 서버는 Cloudflare Workers로." | `/ait:server` |
 | 4. 테스트 | "만든 미니앱을 실제 토스 앱에서 돌려보고 싶어. 번들 올려서 폰에서 확인하게 해줘" | `/ait:test-on-device` |
 | | "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어" | `/ait:debug` |
 | | "검수 넣기 전에 한번 봐줘" | `/ait:launch` |
@@ -229,6 +230,7 @@ agent mcp login ait-console
 | `/ait:debug` | 로컬 브라우저·on-device candidate 두 환경을 관측 결과에 따라 분기해 디버깅 | 3. debug |
 | `/ait:test-on-device` | 번들을 빌드해 콘솔 MCP로 업로드하고 컴파일을 확인한 뒤, 도구가 돌려준 링크로 실제 토스 앱에서 확인 (검수 제출·릴리즈·프로모션은 하지 않음) | 5. register+ship |
 | `/ait:launch [반려 사유]` | 출시 전 점검과 반려 대응. 공식 체크리스트(docs MCP)와 코드 스캔으로 고칠 것과 콘솔 확인 항목을 나눔. 반려 사유는 문서 항목과 맞춰 고치거나 원인을 못 찾으면 문의 초안을 만듦. 검수 요청은 사용자가 그 건을 승인한 뒤에만 보냄 (출시·롤백·프로모션은 하지 않음) | 5. register+ship |
+| `/ait:server [요청]` | 서버 코드를 쓰거나 고침. 사용자 식별(익명 식별키 교환 또는 토스 로그인)·mTLS 파트너 API 호출·응답 봉투·정확한 CORS origin 기준을 먼저 읽고 맞춤. 사용자가 고른 호스팅을 따르며 배포는 요청할 때만 함 (콘솔 호출 없음) | 3. dev |
 | `/ait:design [화면 또는 요청]` | 화면을 만들거나 고침 — 제로베이스 생성, 기존 화면 진단과 자동 수정, Figma 매핑(Figma는 선택), 등록용 이미지 자산 산출. 하드 규칙 위반은 코드를 직접 고쳐 해소 (등록·업로드는 하지 않음) | 8. design |
 | `/ait:ux-writing [화면 또는 파일]` | 화면 카피를 문구 원칙으로 점검해 before/after를 제안 — design skill의 G6(카피) 판정 재작성 조력 (사용자 확인 없이는 적용하지 않음) | 8. design 짝 |
 | `ait build` (터미널 명령) | `granite.config.ts` 기반으로 `.ait` 네이티브 번들을 생성. `brand.icon`이 비어 있으면 실패합니다 | 5. register+ship |
@@ -261,7 +263,7 @@ MCP 없이 문서만 읽는 경로도 있습니다. 개발자센터가 같은 �
 ## 제약사항
 
 - 검수 요청(`bundle_submit_review`)은 `/ait:launch`만 보냅니다. 보낼 내용 전체를 보여 준 뒤 사용자가 그 건을 승인해야 보냅니다. 자동으로 부르지 않습니다. 최초 등록 심사 제출, `review_*` 도구, 출시·롤백·프로모션은 harness가 하지 않으니 콘솔에서 직접 진행하세요.
-- station 4(auth)는 클라이언트 `appLogin()` mock까지만 다룹니다. 미니앱 사용자 로그인의 서버 측(백엔드 토큰 검증 연동)은 의도적으로 harness 범위 밖입니다. 작동하는 미니앱(클라이언트)을 완성하는 데 먼저 집중하고 서버 관련 knowledge·skill은 이후 단계적으로 추가할 예정입니다. 그래서 개발 여정에는 별도 로그인 배선 단계가 없습니다.
+- station 4(auth)의 개발 여정은 클라이언트 `appLogin()` mock까지입니다. 서버 코드는 `/ait:server`가 사용자 식별·mTLS·응답 봉투·CORS 기준에 맞춰 쓰고 고치지만, 서버 프레임워크 템플릿을 깔아 주지는 않고 배포도 요청할 때만 합니다. 그래서 개발 여정에는 별도 로그인 배선 단계가 없습니다.
 - 이 harness의 정규 등록·업로드 흐름은 콘솔 MCP의 OAuth 세션만 사용하며 Deploy Key(콘솔 UI가 "API 키"로 부르는 워크스페이스-scope 자격증명) 경로는 쓰지 않습니다. 관련 skill은 이미 제거되었습니다. Deploy Key 용어·인증 모델 자체는 아직 정합이 확정되지 않은 open question으로 추적 중입니다.
 - 데스크탑 브라우저 기본 폭에서는 미니앱 레이아웃이 실제와 다르게 보입니다. AIT 패널의 Viewport 탭(또는 브라우저 반응형 모드)에서 모바일 폭으로 확인하세요. 실기기 토스 앱 WebView는 iOS에서 WebKit(Safari) 엔진을 씁니다. Chromium 기반 로컬 브라우저와 렌더링이 다를 수 있으니 출시 전 Safari로도 열어보거나 `/ait:test-on-device`로 실기기에서 확인하세요.
 

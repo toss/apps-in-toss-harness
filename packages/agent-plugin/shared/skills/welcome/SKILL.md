@@ -191,6 +191,8 @@ Apps in Toss 플러그인이 설치됐습니다.
                         #    bundle_upload / bundle_upload_complete / miniapp_get_status)
   /ait:launch           # 7. 출시 전 점검·검수 요청·반려 대응
                         #    말로: "검수 넣기 전에 한번 봐줘"
+  /ait:server           # 서버 코드 쓰기·고치기 (사용자 식별·mTLS·CORS 기준)
+                        #    말로: "투표한 기록을 서버에 저장해서 다른 기기에서도 보이게 해줘. 서버는 Cloudflare Workers로."
 
 지금 시작:
   /ait:new <app-name>   # 말로: "앱인토스 미니앱 새로 하나 만들어줘"

@@ -169,7 +169,7 @@ window.__ait?.state  // 현재 상태 스냅샷 (AitDevtoolsState getter — 메
 서버가 파트너 API 결과를 실패로 처리하면 HTTP 상태만 보지 않는다. HTTP 200에
 `resultType: "FAIL"`이면 mTLS는 통과한 것이고, 실패 사유는 응답의 error 필드와
 docs 서버 API 문서의 응답 스키마로 본다. TLS 오류나 연결 실패는 인증서 바인딩 쪽이다
-(`../launch/references/server-runtime.md`).
+(`../launch/references/server-runtime.md`). 서버 코드를 쓰거나 고치는 일은 `/ait:server`로 넘긴다.
 
 가설이 하나 서면 거기서 멈추지 말고 §6의 루프로 이어간다 — 관측·수정·재검증을 에이전트가
 반복하고, 탈출 조건에 걸릴 때만 사용자에게 넘긴다.

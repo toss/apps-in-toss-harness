@@ -101,7 +101,8 @@ bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
   발급 절차는 docs "서버 API 이용하기"의 발급 절을 getPage로 확인해 안내하고,
   막히면 채널톡으로 묻게 한다. 인증서와 키 파일은 repo와 로그에 넣지 않는다.
 - 서버 연결부(특히 Cloudflare Workers)를 점검하면 `references/server-runtime.md`를
-  읽는다. CORS origin, 파트너 API 응답 처리, 키 파일 정리 기준이 있다.
+  읽는다. CORS origin, 파트너 API 응답 처리, 키 파일 정리 기준이 있다. 서버 코드를
+  쓰거나 고치는 일은 `/ait:server`로 넘긴다.
 
 ### 3. 콘솔 읽기
 
