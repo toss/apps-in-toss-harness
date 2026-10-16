@@ -200,8 +200,8 @@ CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
 cold-load되므로 출시 전 실기기 개발 루프로 쓴다.
 
 candidate scheme URL이 없으면 5-B에서 빌드 → console MCP
-(`miniapp_create`/`bundle_upload`/`bundle_upload_complete`)로 candidate를
-만들도록 안내한다.
+(앱 등록 + `bundle_upload`/`bundle_upload_complete`)로 candidate를
+만들도록 안내한다. 로고·앱 정보가 없으면 콘솔 웹에서 최소 항목으로 앱을 만든다.
 
 `start_debug`/`start_attach`의 mode 값·내부 동작(dual-connection 라우터, lazy-boot relay, 수동 `/mcp` 재구성 fallback)은 정상 경로에서는 몰라도 되는 세부다 — **상세가 필요하면 Read <이 skill의 base directory>/references/mode-switching.md**. attach까지 한 번에 처리하려면 바로 아래 5-B·5-C 순서를 따른다(`start_attach`가 환경 전환+QR 발급을 1호출로).
 
@@ -219,8 +219,14 @@ candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보
    한 줄로 둘 다 처리한다. 2.x 폴백(`granite.config.ts`)이면
    `RELEASE_CHANNEL=dogfood npm run bundle:ait`을 쓴다 — 그쪽 `ait build`는
    `web.commands.build`를 스스로 실행한다. (CLI `2.10.8`·`3.0.5` 소스 확인)
-2. 아직 콘솔에 등록되지 않은 앱이면 console MCP `miniapp_create`로 등록한다
-   (이미 등록돼 있으면 건너뛴다).
+2. 아직 콘솔에 등록되지 않은 앱이면 등록부터 한다(이미 등록돼 있으면 건너뛴다).
+   `miniapp_create`는 앱 생성과 앱 정보 검토 요청을 한 호출로 묶어 로고·부제·
+   상세 설명·키워드·카테고리를 미리 요구한다. 그 자산이 이미 준비돼 있으면
+   `miniapp_create`를 쓴다. 아직 없으면 자산부터 만들게 하지 말고, 콘솔 웹에서
+   앱 이름·appName·앱 유형만으로 앱을 만들게 안내한 뒤 3단계로 간다 — 로고와
+   앱 정보는 검토 요청 전까지 채우면 되고 번들 업로드·QR 테스트에는 필요 없다
+   (공식 문서 `/guide/operation/console-workspace`). `granite.config.ts`의
+   `appName`은 콘솔 appName과 같아야 한다.
 3. console MCP `bundle_upload` → `bundle_upload_complete`로 번들을 업로드한다.
 4. 업로드 완료 응답에서 `intoss-private://…?_deploymentId=<uuid>` scheme URL을 받는다.
 
@@ -393,8 +399,8 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   올라간다: 5-B에서 `ait build` → console MCP로 등록·업로드해 scheme URL을 받아 바로
   `start_attach({mode:'relay-staging', scheme_url})`으로 QR attach (복사 없음 — 5-B 참조).
 - **candidate scheme URL이 아직 없음** → 5-B로 `ait build` → console MCP
-  (`miniapp_create` → `bundle_upload` → `bundle_upload_complete`)로 candidate를
-  만든 뒤 다시 `/ait:debug`.
+  (앱 등록 → `bundle_upload` → `bundle_upload_complete`; 로고·앱 정보가 없으면
+  콘솔 웹에서 최소 항목으로 앱을 먼저 만든다)로 candidate를 만든 뒤 다시 `/ait:debug`.
 - **`start_attach` 스캔 대기 중** → 폰 카메라로 QR 스캔.
   attach 후 `list_pages`로 확인 → 페이지가 보이면 5-D의 13종 도구로 디버깅 시작.
 - **attach 후 미니앱에 `*.ait.test.ts` 테스트가 있으면** → `run_tests({ files: ["**/*.ait.test.ts"], projectRoot: "<프로젝트 루트>" })`로 실기기에서 실행 (5-E). env별 결과를 대조하면 SDK 버전·플랫폼 거동 차이를 잡는다.
