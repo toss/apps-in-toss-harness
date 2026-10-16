@@ -4,9 +4,10 @@ description: |
   Write or review the server side of an Apps in Toss mini-app: any backend
   that stores per-user data or calls the Apps in Toss partner API (Toss
   login token exchange, anonymous-key exchange, other partner calls), on
-  Cloudflare Workers, Node or any other hosting. Use it right away, before
-  writing server code, for "서버에 저장해서 다른 기기에서도 보이게 해줘",
-  "서버 붙여줘", "Workers로 서버 만들어줘", "토스 로그인 붙여줘" (even
+  Cloudflare Workers, Node, a BaaS (Supabase, Firebase) or any other hosting.
+  Use it right away, before writing server code, for "서버에 저장해서 다른
+  기기에서도 보이게 해줘", "서버 붙여줘", "Supabase·Firebase에 내 기록
+  저장해줘", "Workers로 서버 만들어줘", "토스 로그인 붙여줘" (even
   client side only — login needs console setup and a server exchange),
   "서버에서 사용자 구분은 어떻게 해?", or "getAnonymousKey 값을 서버에서
   그대로 써도 돼?" — even when the user only names the feature. It decides how the server
