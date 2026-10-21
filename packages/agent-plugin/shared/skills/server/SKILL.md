@@ -7,7 +7,8 @@ description: |
   Cloudflare Workers, Node, a BaaS (Supabase, Firebase) or any other hosting.
   Use it right away, before writing server code, for "서버에 저장해서 다른
   기기에서도 보이게 해줘", "서버 붙여줘", "Supabase·Firebase에 내 기록
-  저장해줘", "Workers로 서버 만들어줘", "토스 로그인 붙여줘" (even
+  저장해줘", "Workers로 서버 만들어줘", "토스페이 결제 서버 붙여줘" (server
+  calls to create, approve or refund a payment), "토스 로그인 붙여줘" (even
   client side only — login needs console setup and a server exchange),
   "서버에서 사용자 구분은 어떻게 해?", or "getAnonymousKey 값을 서버에서
   그대로 써도 돼?" — even when the user only names the feature. It decides how the server
@@ -24,9 +25,9 @@ argument-hint: '[request]'
 ## 목적
 
 미니앱이 쓰는 서버 코드를 쓰거나 고칠 때 앱인토스 고유의 판단과 연결부를 맡는다.
-사용자별 저장, 파트너 API 호출(토스 로그인 토큰 교환, 익명 식별키 교환 등)이
-대상이다. 프레임워크 템플릿을 새로 깔지 않고, 사용자가 고른 호스팅과 기존 코드를
-따른다. 사실(경로, 스키마, 허용 origin)은 docs MCP로 읽는 개발자센터 문서가
+사용자별 저장, 파트너 API 호출(토스 로그인 토큰 교환, 익명 식별키 교환, 토스페이
+결제 생성·승인·환불 등)이 대상이다. 프레임워크 템플릿을 새로 깔지 않고, 사용자가
+고른 호스팅과 기존 코드를 따른다. 사실(경로, 스키마, 허용 origin)은 docs MCP로 읽는 개발자센터 문서가
 정본이고, 이 skill은 판단 기준과 점검 순서를 더한다.
 
 ## 실행 순서
@@ -42,7 +43,7 @@ argument-hint: '[request]'
 
 `../launch/references/server-runtime.md`를 처음부터 끝까지 `Read`로 읽는다.
 서버 코드를 한 줄이라도 쓰기 전에 읽는다. 사용자 식별, mTLS 인증서, Workers 경로,
-응답 봉투, CORS, 로컬 검증 기준이 모두 거기 있다. 경로와 스키마는 그 문서가
+응답 봉투, 토스페이 결제, CORS, 로컬 검증 기준이 모두 거기 있다. 경로와 스키마는 그 문서가
 가리키는 docs 페이지를 getPage로 읽어 맞춘다.
 
 ### 2. 사용자 식별 정하기
@@ -67,6 +68,9 @@ server-runtime.md의 기준대로 쓴다. 최소한 다음을 지킨다.
 - 파트너 API 호출에는 mTLS 클라이언트 인증서를 싣는다. Workers는
   `mtls_certificates` 바인딩과 `env.<BINDING>.fetch`.
 - 성공 판정은 HTTP 상태가 아니라 `resultType`이고, 데이터는 `success` 안에 있다.
+- 토스페이 결제를 다루면 결제 건마다 `isTestPayment`를 저장해 승인·조회·환불에 같은
+  값을 쓰고, 성공은 `resultType`으로 판정한다. 응답을 못 받았거나 승인이 거절되면
+  재시도 전에 상태 조회로 복구한다(승인은 멱등이 아니다).
 - CORS는 `*`가 아니라 앱의 SDK 버전에 맞는 정확한 origin만 허용한다.
 - 인증서·키·토큰 값은 코드, 커밋, 로그, 응답에 넣지 않는다. 경로와 바인딩 이름만
   다룬다.
@@ -102,5 +106,5 @@ server-runtime.md의 기준대로 쓴다. 최소한 다음을 지킨다.
 ## 참고
 
 - `../launch/references/server-runtime.md`: 서버 연결 기준(식별, mTLS, Workers,
-  응답 봉투, CORS, 로컬 검증)
+  응답 봉투, 토스페이 결제, CORS, 로컬 검증)
 - 짝 skill: `launch`(출시 전 점검), `test-on-device`(폰 확인), `design`(화면)
