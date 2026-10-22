@@ -33,7 +33,10 @@ argument-hint: '[rejection reason]'
    요약으로 판정하지 않는다.
 3. 설치된 SDK부터 본다(web-framework 버전, 설정 파일은 3.x
    `apps-in-toss.config.ts`·2.x `granite.config.ts`). 설치된 `.d.ts`에 없는 키나
-   API는 권하지 않고, 2.x용 문단을 3.x에 쓰지 않는다.
+   API는 권하지 않고, 2.x용 문단을 3.x에 쓰지 않는다. Unity나 엔진 프로젝트는
+   `Packages/manifest.json`의 SDK 항목과 패키지 안 문서로 버전과 API를 확인한다.
+   스택을 가정하지 말고 프로젝트의 `package.json` scripts·설정 파일·README에서
+   읽는다. 모호하면 사용자에게 묻는다.
 4. 쓰지 않는 기능의 항목은 해당 없음이다. '(선택 사항)' 항목, '~하는 경우' 항목,
    기능 절(토스 로그인, 인앱 결제, 토스페이, 인앱 광고, 웹보드 게임)이 여기에 든다.
    '사용자 식별키 발급' 절은 조건 없이 공통 절 사이에 있으니 모든 앱에 적용한다.
@@ -66,13 +69,18 @@ argument-hint: '[rejection reason]'
   덧붙인다.
 
 ```bash
-ls -la; cat package.json apps-in-toss.config.ts granite.config.ts 2>/dev/null
+ls -la; cat package.json apps-in-toss.config.ts granite.config.ts Packages/manifest.json 2>/dev/null
 grep '"version"' node_modules/@apps-in-toss/web-framework/package.json 2>/dev/null
-find . \( -name node_modules -o -name .git -o -name dist \) -prune -o -type f -print | head -100
+find . \( -name node_modules -o -name .git -o -name dist -o -name build -o -name Library -o -name Temp \) -prune -o -type f -print | head -100
 bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
 ```
 
-`package.json`이 없으면 위치를 묻고 멈춘다. 스캔 마지막 줄이 규칙별 건수다.
+`package.json`도 `Packages/manifest.json`도 없고 미니앱 프로젝트로 보이는 파일이
+없으면 위치를 묻고 멈춘다. 스캔 마지막 줄이 규칙별 건수다. 스캔은 `node_modules`·
+`dist`·`build`·`.git`·`Library`·`Temp` 같은 제외 목록을 뺀 프로젝트 전체를 본다.
+클라이언트 키 규칙은 최상위의 `server`·`worker`·`functions`·`api` 같은 서버
+디렉터리와 숨김 디렉터리를 건너뛴다. 서버 코드가 다른 이름의 디렉터리에 있어
+후보로 올라오면 번들에 들어가는지 열어서 확인한다.
 
 ### 2. 둘째 턴: 체크리스트 원문과 코드
 
@@ -84,7 +92,7 @@ bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
 
 | 스캔 규칙 | 다루는 법 |
 |---|---|
-| `viewport-zoom` | 비게임만. 확대·축소 문장과 맞춰 보되, WebView가 기본으로 막는지는 문서에 없으니 "확인 필요"로 둔다 |
+| `viewport-zoom` | 비게임만. 확대·축소 문장과 맞춰 보되, WebView가 기본으로 막는지는 문서에 없으니 "확인 필요"로 둔다. 엔진 프로젝트는 WebGL 템플릿 HTML도 대상이다 |
 | `dark-theme` | 라이트 모드 문장과 맞춰 본다 |
 | `cors-any-origin` | docs 서버 API 문서의 허용 origin을 getPage로 확인해 정확한 origin을 권한다(기준은 `references/server-runtime.md`의 CORS 절) |
 | `client-ai-key` | 키가 번들에 들어가는지 본다. 키 값은 출력하지 않고, 서버로 옮기도록 권한다. 생성형 AI를 쓰는 앱이므로 생성물 표시 기준(docs 운영 정책)도 보고에 함께 올린다. 화면에서 표시를 확인하지 못했으면 "확인 필요"로 둔다 |

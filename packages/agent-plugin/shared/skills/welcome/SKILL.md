@@ -40,6 +40,7 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
   echo "npm: $(npm --version 2>&1)"; \
   echo "npx: $(npx --version 2>&1)"; \
   echo "package.json: $(test -f package.json && echo 있음 || echo 없음)"; \
+  echo "Packages/manifest.json: $(test -f Packages/manifest.json && echo 있음 || echo 없음)"; \
   echo ".git: $(test -d .git && echo 있음 || echo 없음)"; \
   echo "cwd entries: $(ls -A | wc -l | tr -d ' ')"; \
   echo "config: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; \
@@ -55,11 +56,28 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 재확인된다). 이 skill 단계에서는 실행 실패 시 설치/업그레이드를 권유하는
 수준으로만 안내한다.
 
-**b. cwd 상태** — 위 출력의 `package.json`/`.git`/`cwd entries`로 판단한다:
+**b. cwd 상태** — 위 출력의 `cwd entries`·`.git`과 프로젝트 표지 파일로 판단한다.
+스택을 미리 가정하지 않는다. 기존 프로젝트면 루트의 `package.json`(scripts·
+의존성)이나 프로젝트 파일, 있으면 README를 읽어 어떤 종류의 프로젝트인지 파악하고,
+모호하면 사용자에게 묻는다. 여기서 정한 종류는 안내 문구를 고르는 데만 쓰고 파일은
+쓰지 않는다.
 
 - `cwd entries`가 0(빈 디렉토리) → 다음 제안은 `/ait:new`.
-- `package.json` 있음(기존 프로젝트) → 다음 제안은 `/ait:inject-devtools`
-  (devtools 미배선 시) 또는 `/ait:setup-debugger`(디버깅 계획 시).
+- 웹 번들러 기반 프로젝트(`package.json`이 있고 dev·build 스크립트나 번들러 설정이
+  보임) → 다음 제안은 `/ait:inject-devtools`(devtools 미배선 시) 또는
+  `/ait:setup-debugger`(디버깅 계획 시). 번들러가 무엇이든 배선 방법은 `inject`가
+  패키지 README에서 읽어 정한다.
+- 기능을 붙이려는 기존 프로젝트 → `/ait:feature`. 실기기 확인은 스택과 무관하게
+  `/ait:test-on-device`다.
+- Unity 프로젝트(`Packages/manifest.json`에 Apps in Toss Unity SDK 항목이 있음)
+  → 웹 번들러용 `inject`의 devtools·debug-console facet 대상이 아니다. 기능 구현은
+  `/ait:feature`, 빌드한 결과의 실기기 확인은 `/ait:test-on-device`로 안내한다.
+  Unity 쪽 빌드 메뉴와 `.ait` 산출 경로는 웹과 달라서 `feature`가 읽는
+  `../feature/references/stack-pitfalls.md`와 docs MCP를 기준으로 삼는다.
+- Godot 같은 엔진의 HTML5 빌드 프로젝트 → 공식 SDK나 연동 가이드를 확인하지 못한
+  스택이다. 같은 이유로 `inject` 대상이 아니며, 기능 구현은 `/ait:feature`, 실기기
+  확인은 `/ait:test-on-device`로 안내하되 엔진별 제약은 단정하지 말고 docs MCP로
+  확인한다고 알린다.
 - `.git` 없음 → git 저장소가 아니라는 사실만 알린다(초기화는 사용자 결정 —
   이 skill은 `git init`을 실행하지 않는다).
 
@@ -80,7 +98,7 @@ Claude Code:
   않는다, 목록 존재 여부만 본다.
 - 콘솔 MCP 도구가 안 보이면(설치 직후 기본 상태 — 미인가) `/mcp`에서 1회
   인가를 권유한다. 문서 MCP는 무인증이라 보통 바로 보인다.
-- cwd에 `package.json`이 있으면 프로젝트 `.mcp.json`을 `Read`해
+- cwd가 기존 프로젝트(스택 무관)면 프로젝트 `.mcp.json`을 `Read`해
   `mcpServers.ait-devtools` 항목이 있는지 확인한다(파일이 없으면 "미배선"으로
   본다). 없으면 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에
   넣는다 — 강제하지 않는다(디버깅 계획이 없는 세션도 많다).
@@ -107,7 +125,7 @@ Cursor:
   `.cursor/mcp.json`에 서버를 직접 등록한 뒤
   `agent mcp login ait-console` 으로 인가한다(루트 README Cursor 절
   참고).
-- cwd에 `package.json`이 있으면 `.cursor/mcp.json`을 `Read`해
+- cwd가 기존 프로젝트(스택 무관)면 `.cursor/mcp.json`을 `Read`해
   `mcpServers.ait-devtools` 항목이 있는지 확인한다. 없으면 Claude Code와
   동일하게 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에 넣는다.
 - 항목이 있으면 Claude Code와 같은 방식으로 `args`의 debugger Release URL 버전만
@@ -142,7 +160,7 @@ skill §5 adapter-note와 동일 패턴).
   ✅ git 2.43.0
   ✅ node v24.3.0 / npm 10.8.2 / npx 10.8.2
   ⚠️ node 미검출 — https://nodejs.org 에서 설치 후 다시 시도해주세요
-  ✅ 현재 디렉토리: 기존 프로젝트(package.json 있음)
+  ✅ 현재 디렉토리: 기존 프로젝트(웹 번들러 기반 / Unity / 엔진 빌드 중 관측된 것)
   ⚠️ 콘솔 MCP(ait-console) 도구가 안 보입니다 — 1회 인가가 필요합니다:
      /mcp   # 말로: "콘솔 MCP 인가 화면을 열어줘"
   ✅ 문서 MCP(apps-in-toss-docs) 연결됨
@@ -177,7 +195,8 @@ Apps in Toss 플러그인이 설치됐습니다.
                         #    말로: "미니앱 만들 건데 필요한 SDK 도메인이랑 권한부터 정리해줘"
   /ait:new <app-name>   # 1. 빈 프로젝트 생성 (scaffold)
                         #    말로: "앱인토스 미니앱 새로 하나 만들어줘. 이름은 my-shop 으로."
-  npm run dev           # 2. 브라우저에서 개발 (devtools mock + panel —
+  dev 서버              # 2. 브라우저에서 개발 (프로젝트 package.json scripts의 dev 명령,
+                        #    기본 템플릿은 npm run dev — devtools mock + panel,
                         #    AIT 버튼 → Viewport 탭에서 모바일 폭으로 확인)
                         #    말로: "브라우저에서 개발 서버 띄워줘"
   /ait:debug            # 3. 라이브 상태 디버깅 (회귀 진단)
@@ -204,8 +223,10 @@ Apps in Toss 플러그인이 설치됐습니다.
                         #    Cursor는 데스크톱 에디터에서 승인한다 (위 1-c 참고)
 
 기존 프로젝트에 들어가려면:
-  /ait:inject-devtools  # 기존 프로젝트에 devtools 주입
+  /ait:inject-devtools  # 기존 웹 프로젝트에 devtools 주입 (번들러는 프로젝트에서 읽어 정함)
                         #    말로: "이미 있는 Vite 프로젝트에 앱인토스 devtools 패널을 붙이고 싶어"
+  /ait:feature          # Unity·엔진 HTML5 빌드를 포함한 어떤 스택이든 SDK 기능 구현
+  /ait:test-on-device   # 빌드한 결과를 토스 앱에서 확인
 
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
@@ -242,7 +263,9 @@ Apps in Toss 플러그인이 설치됐습니다.
 자리에서 해당 전담 skill로 이어간다:
 
 - 빈 디렉토리 + scaffold 동의 → `/ait:new`(`new-miniapp` skill)를 그대로 부른다.
-- 기존 프로젝트 + devtools 배선 동의 → `/ait:inject-devtools`(`inject` skill).
+- 기존 웹 프로젝트 + devtools 배선 동의 → `/ait:inject-devtools`(`inject` skill).
+- Unity·엔진 빌드 프로젝트 + 기능 구현 동의 → `/ait:feature`, 확인 동의 →
+  `/ait:test-on-device`. 이 프로젝트에는 `inject` facet을 제안하지 않는다.
 - 디버깅 계획 + `.mcp.json` 미배선 동의 → `/ait:setup-debugger`.
 - `ait-devtools`가 옛 버전이라는 안내에 동의 → `/ait:setup-debugger`(3단계가
   `references/upgrade-check.md`로 old→new를 보여 주고 URL 한 줄을 바꾼다).

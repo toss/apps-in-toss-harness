@@ -6,11 +6,14 @@
 # 사용: launch-scan.sh [<proj-dir>]   (기본 .)
 #
 # 규칙 4개 (id: 대상):
-#   viewport-zoom    루트 *.html·public/**/*.html의 viewport meta에 확대·축소 제한이 없다
+#   viewport-zoom    HTML 문서의 viewport meta에 확대·축소 제한이 없다. 대상은 루트 *.html,
+#                    public/**/*.html, 그 밖의 위치에서는 완전한 문서(<html·<head·<!doctype)뿐이다
+#                    (컴포넌트 조각 HTML과 엔진 WebGL 템플릿 HTML을 가른다)
 #   dark-theme       다크 모드 스타일(prefers-color-scheme: dark, color-scheme: … dark,
 #                    meta color-scheme)이 있다
 #   cors-any-origin  js/ts/py 코드가 모든 origin을 허용한다
-#   client-ai-key    클라이언트 코드(루트 src/·public/·*.html)에서 AI 키가 새거나 샌다
+#   client-ai-key    클라이언트 코드(프로젝트 최상위 디렉터리 중 제외 목록과 서버·도구
+#                    디렉터리를 뺀 것 + 루트 *.html)에서 AI 키가 새거나 샌다
 #                    (a) AI 키 환경변수 참조 (b) 루트 .env* 정의 (c) AI API 직접 호출
 #                    (d) 키 형태 문자열 — 이것만 dist/(빌드 산출물)도 본다
 #
@@ -24,8 +27,13 @@
 # 규칙 4는 키 값을 출력하지 않는다. 찍는 것은 고정 설명과 변수 이름·API 호스트·키 접두사
 # 라벨뿐이고, 매치된 원문은 파이프 안에서 버린다.
 #
-# 제외 디렉터리(어느 깊이든): node_modules .git dist build .wrangler .next .turbo .vercel
-# .output coverage out .cache. 예외는 규칙 4(d)가 dist/를 추가로 보는 것 하나다.
+# 제외 디렉터리(어느 깊이든): node_modules .git dist build Build Builds out coverage .cache
+# .wrangler .next .turbo .vercel .output .svelte-kit .nuxt .expo .parcel-cache .venv
+# __pycache__ (엔진: Library Temp Logs obj UserSettings). 예외는 규칙 4(d)가 dist/를 추가로 보는
+# 것 하나다.
+# 클라이언트 코드 범위(규칙 4)는 위 제외 목록에 더해 최상위의 서버·도구 디렉터리(server worker
+# workers functions api backend scripts test tests e2e)와 숨김 디렉터리를 건너뛴다. 서버 코드가
+# 다른 이름의 디렉터리에 있으면 후보로 올라올 수 있고, 번들에 들어가는지는 호출자가 연다.
 #
 # fail-soft 계약: set -e 없음 — 규칙마다 따로 돌아서 하나가 실패해도 나머지는 돈다. 항상
 # exit 0으로 끝난다. 프로젝트 디렉터리가 없으면 `launch-scan:proj=missing(<경로>)` 한 줄만
@@ -64,10 +72,12 @@ D4D='키 형태 문자열({})이 있다. 값은 출력하지 않는다'
 # ---------------------------------------------------------------------------
 # grep 인자: 제외 디렉터리 · 확장자 · 클라이언트 대상
 # ---------------------------------------------------------------------------
+EXCL_NAMES="node_modules .git dist build Build Builds out coverage .cache .wrangler .next .turbo .vercel .output .svelte-kit .nuxt .expo .parcel-cache .venv __pycache__ Library Temp Logs obj UserSettings"
+NONCLIENT_NAMES="server worker workers functions api backend scripts test tests e2e"
 EXCL=()      # 모든 규칙
 EXCL_DIST=() # 규칙 4(d)의 dist/ 스캔 — dist 자신은 빼고 나머지만 제외
 FIND_PRUNE=('(')
-for d in node_modules .git dist build .wrangler .next .turbo .vercel .output coverage out .cache; do
+for d in $EXCL_NAMES; do
   EXCL+=("--exclude-dir=$d")
   if [ "$d" != dist ]; then EXCL_DIST+=("--exclude-dir=$d"); fi
   if [ "${#FIND_PRUNE[@]}" -gt 1 ]; then FIND_PRUNE+=(-o); fi
@@ -80,16 +90,28 @@ for e in css scss sass less html js jsx ts tsx mjs cjs vue svelte; do INC_STYLE+
 INC_CORS=()   # 규칙 3
 for e in js jsx ts tsx mjs cjs py; do INC_CORS+=("--include=*.$e"); done
 INC_CLIENT=() # 규칙 4 — src/·public/ 안에서 보는 파일
-for e in js jsx ts tsx mjs cjs mts cts vue svelte astro html htm json; do INC_CLIENT+=("--include=*.$e"); done
+for e in js jsx ts tsx mjs cjs mts cts vue svelte astro html htm json cs; do INC_CLIENT+=("--include=*.$e"); done
 INC_DIST=()   # 규칙 4(d)의 dist/
 for e in js mjs cjs html htm json; do INC_DIST+=("--include=*.$e"); done
 
-# 클라이언트 코드 = 루트 src/ · public/ + 루트 *.html (worker/ server/ functions/ api/ 등은 아니다)
+# 클라이언트 코드 = 최상위 디렉터리 중 제외 목록·서버/도구 디렉터리를 뺀 것 + 루트 *.html.
+# 숨김 디렉터리는 글롭(./*/)에 잡히지 않는다.
+in_list() { # $1 = 이름, $2 = 공백으로 구분한 목록
+  local x
+  for x in $2; do if [ "$x" = "$1" ]; then return 0; fi; done
+  return 1
+}
 CLIENT_DIRS=()
-if [ -d src ]; then CLIENT_DIRS+=(src); fi
-if [ -d public ]; then CLIENT_DIRS+=(public); fi
+for d in ./*/; do
+  [ -d "$d" ] || continue
+  d="${d%/}"
+  d="${d#./}"
+  if in_list "$d" "$EXCL_NAMES" || in_list "$d" "$NONCLIENT_NAMES"; then continue; fi
+  CLIENT_DIRS+=("$d")
+done
 
-# 규칙 1의 대상: 루트 *.html + public/**/*.html (줄바꿈으로 구분한 목록)
+# 규칙 1의 대상 (줄바꿈으로 구분한 목록): 루트 *.html + public/**/*.html + 그 밖의 위치의
+# 완전한 HTML 문서. 완전한 문서 = <html·<head·<!doctype 중 하나가 있는 파일.
 ROOT_HTML=()
 HTML_FILES=""
 for f in ./*.html; do
@@ -101,6 +123,21 @@ done
 if [ -d public ]; then
   PUB_HTML="$(find public "${FIND_PRUNE[@]}" -type f -name '*.html' -print 2>/dev/null | sort)"
   if [ -n "$PUB_HTML" ]; then HTML_FILES="$HTML_FILES$PUB_HTML"$'\n'; fi
+fi
+OTHER_HTML="$(find . "${FIND_PRUNE[@]}" -type f -name '*.html' -print 2>/dev/null | sort)"
+if [ -n "$OTHER_HTML" ]; then
+  while IFS= read -r f; do
+    case "$f" in
+      ./*/*) ;;
+      *) continue ;; # 루트 파일은 위에서 담았다
+    esac
+    case "$f" in
+      ./public/* | ./.*) continue ;; # public은 위에서 담았고, 숨김 디렉터리는 대상이 아니다
+    esac
+    if grep -qiE '<html|<head|<!doctype' "$f" 2>/dev/null; then HTML_FILES="$HTML_FILES$f"$'\n'; fi
+  done <<EOF_OTHER_HTML
+$OTHER_HTML
+EOF_OTHER_HTML
 fi
 
 # ---------------------------------------------------------------------------

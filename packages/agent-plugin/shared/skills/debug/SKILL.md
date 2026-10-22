@@ -57,7 +57,8 @@ launcher)은 2026-08-10 결정으로 제거됐고 남은 두 단의 번호는 �
 - **`@apps-in-toss/devtools`가 devDependencies에 있어야** floating panel을 쓸 수 있다.
   없으면 `/ait:inject-devtools`를 먼저 안내한다 (없어도 브라우저 기본 DevTools
   가이드는 진행 가능).
-- **`package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동 안내.
+- **웹 프로젝트면 `package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동 안내.
+  Unity처럼 `package.json`이 없는 스택은 아래 1단계를 따른다.
 - **환경 1**: 에이전트가 필요 시 dev 서버를 자동 기동한다(아래 2-A 사전 기동 블록).
 - **환경 3**: `ait-devtools` MCP 서버(`@apps-in-toss/debugger`)가 세션에 로드돼 있어야 한다 —
   프로젝트 `.mcp.json`에 배선돼 있지 않으면 `/ait:setup-debugger`를 먼저 안내한다(opt-in).
@@ -79,14 +80,22 @@ launcher)은 2026-08-10 결정으로 제거됐고 남은 두 단의 번호는 �
 ls package.json
 ```
 
-없으면 중단:
+없으면 프로젝트 루트가 아닌 곳에서 실행했을 수 있다. 하위 디렉터리에 프로젝트가 있는지 보고,
+없으면 알린다:
 
 ```
 package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실행해주세요.
 예: cd <project-root> && /ait:debug
 ```
 
-`package.json`을 `Read`로 읽어 `@apps-in-toss/devtools`가 `devDependencies`에 있는지
+Unity나 엔진 HTML5 빌드처럼 `package.json`이 없는 스택이면 중단하지 않는다. 그 스택의
+dev 실행 방식(Unity는 Dev Server 빌드 프로필 — `../feature/references/stack-pitfalls.md`)과
+빌드 절차는 프로젝트 문서와 SDK 패키지 문서를 읽어 정하고, 모호하면 사용자에게 묻는다. devtools
+panel은 `@apps-in-toss/devtools` 전제라 2-A는 건너뛰고 2-B 이후를 쓴다. 환경 3의
+`@apps-in-toss/debug-console` 설치는 `package.json` 기반이라 이 스택에서 어떻게 넣는지는 이
+skill이 확인하지 못했다 — 환경 3으로 올라갈 때 사용자에게 알리고 어떻게 할지 묻는다.
+
+`package.json`이 있으면 `Read`로 읽어 `@apps-in-toss/devtools`가 `devDependencies`에 있는지
 확인한다.
 
 - **있으면**: floating panel 경로(아래 2-A)를 우선 안내.
@@ -99,34 +108,34 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 
 에이전트는 패널 안내 전에 dev 서버가 이미 기동 중인지 확인하고, 아닐 경우 자동으로 띄운다.
 
-1. **dev 명령 + 기본 포트 확인**: `package.json`의 `scripts.dev`를 읽어 실제 명령을 확인한다. 포트는 다음 순서로 결정한다 — devtools는 Vite뿐 아니라 Next.js·Rspack·Webpack 프로젝트에도 주입될 수 있으므로 5173을 가정하지 않는다:
-   - `scripts.dev`에 `--port <n>`(또는 Next.js `-p <n>`)가 있으면 그 값.
-   - 없으면 config 파일로 빌드 도구를 판별해 기본 포트: `vite.config.*` → 5173, `next.config.*` → 3000, `rspack.config.*`/`webpack.config.*` → 8080.
+1. **dev 명령 확인**: `package.json`의 `scripts`를 읽어 dev 서버를 띄우는 스크립트(보통 `dev`,
+   없으면 `start`·`serve` 등)와 그 스크립트가 부르는 명령을 확인한다. 패키지 매니저는 lockfile로
+   판별한다. 후보가 여럿이거나 어느 것이 브라우저용 dev 서버인지 모호하면 추측하지 말고 사용자에게 묻는다.
+   포트는 가정하지 않는다. 스크립트 인자(`--port`·`-p`)나 프로젝트 설정 파일, 패키지 README가 포트를
+   명시하면 그 값을 쓰고, 명시가 없으면 기동 후 출력에서 읽는다.
 
-2. **기동 여부 확인**: 위에서 결정한 포트(`$PORT`)가 응답하는지 확인한다:
+2. **기동 여부 확인**: 위에서 포트가 확정됐으면 응답하는지 확인한다.
 
    ```bash
-   # 포트가 이미 열려 있으면 dev 서버가 기동 중 ($PORT = 위 1단계에서 결정)
+   # $PORT = 1단계에서 확정한 포트
    curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PORT/" || true
    ```
 
-   200 응답이면 이미 기동 중 — 기동 단계를 건너뛴다. 연결 거부(exit code ≠ 0 또는 000)이면 아직 미기동.
+   200 응답이면 이미 기동 중이다. 기동 단계를 건너뛴다. 연결 거부(exit code ≠ 0 또는 000)이면 아직
+   미기동이다. 포트가 확정되지 않았으면 묻지 않고 3단계로 간다. 기동 출력이 포트가 사용 중이라 다른
+   포트로 떴다고 알리면, 사용자가 이미 띄운 서버가 있을 수 있다고 4단계 안내에 함께 적는다.
 
-3. **미기동 시 백그라운드 기동**: `run_in_background: true`로 dev 서버를 시작한다:
+3. **미기동 시 백그라운드 기동**: `run_in_background: true`로 1단계의 dev 스크립트를 실행한다
+   (`<패키지 매니저> run <dev 스크립트>`).
 
-   ```bash
-   # run_in_background: true 로 실행
-   npm run dev
+4. **URL 출력**: 서버가 stdout에 찍는 로컬 주소(`http://localhost:<port>` 형태의 줄)를 읽어
+   사용자에게 URL을 명시적으로 알린다. 출력 형식은 도구마다 다르다. 주소를 찾지 못하면 출력
+   원문을 근거로 사용자에게 묻는다.
+
    ```
-
-4. **URL 출력**: Vite가 stdout에 `Local: http://localhost:<port>/`를 출력한다. 에이전트는 이 줄을 파싱해 포트를 확인하고 사용자에게 URL을 명시적으로 알린다:
-
-   ```
-   dev 서버가 기동됐습니다: http://localhost:5173/
+   dev 서버가 기동됐습니다: http://localhost:<port>/
    브라우저에서 이 주소를 열어주세요. (브라우저는 직접 여세요 — 에이전트는 URL만 알려드립니다.)
    ```
-
-   stdout의 `Local: http://localhost:<port>/` 줄을 파싱해 실제 포트를 확인한다(빌드 도구마다 출력 형식이 조금씩 다르다). 파싱 전 예상 포트는 위 1단계에서 결정한 값(Vite 5173 / Next.js 3000 / Rspack·Webpack 8080, 또는 `--port` 명시값)이다.
 
 브라우저에서 연 뒤 화면 하단의 **AIT** 버튼을 누르면 패널이 열린다. 증상별로 어느 탭을 볼지는 `references/panel-tabs.md`에 정리돼 있다 — **상세가 필요하면 Read <이 skill의 base directory>/references/panel-tabs.md**.
 
@@ -161,7 +170,7 @@ window.__ait?.state  // 현재 상태 스냅샷 (AitDevtoolsState getter — 메
 
 ```
 증상: swipe로 뒤로 가면 앱이 종료됨
-가설: BrowserRouter의 history.length === 1이라 native swipe가 미니앱 종료로 빠짐
+가설: 라우팅이 replace라 history.length === 1로 남아 native swipe가 미니앱 종료로 빠짐
 관찰: 브라우저 콘솔에서 `window.history.length` 확인 → 메뉴 진입 후에도 1이면 가설 성립
 검증: 라우팅을 history depth가 쌓이는 구조로 바꾸거나 swipe gesture 비활성화 후 재현
 ```
@@ -211,14 +220,19 @@ candidate scheme URL이 없으면 5-B에서 빌드 → console MCP
 
 candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보 빌드→등록→업로드를 진행한다:
 
-1. `RELEASE_CHANNEL=dogfood npm run build`로 candidate 번들을 만든다.
+1. 프로젝트의 빌드 절차로 candidate 번들을 `RELEASE_CHANNEL=dogfood`를 붙여 만든다.
+   웹 프로젝트는 `package.json`의 `scripts.build`를 읽어 웹 빌드와 `ait build`(.ait 포장)를
+   모두 거치는지 확인하고 그 스크립트를 실행한다. 어느 스크립트인지 모호하면 사용자에게 묻는다.
    **`ait build`를 단독으로 부르지 않는다** — 3.x(`apps-in-toss.config.ts`)의
-   `ait build`는 이미 만들어진 `dist/`를 포장만 하므로 웹 빌드 없이 부르면
+   `ait build`는 이미 만들어진 웹 빌드 산출물을 포장만 하므로 웹 빌드 없이 부르면
    `웹 빌드 디렉토리(dist)가 존재하지 않습니다`로 종료하고, 환경 변수도 웹
-   빌드에 닿지 못한다. 3.x의 `build` 스크립트가 `vite build && ait build`라
-   한 줄로 둘 다 처리한다. 2.x 폴백(`granite.config.ts`)이면
-   `RELEASE_CHANNEL=dogfood npm run bundle:ait`을 쓴다 — 그쪽 `ait build`는
+   빌드에 닿지 못한다. create-ait-app 3.x scaffold는 `build` 스크립트가
+   `vite build && ait build`라 한 줄로 둘 다 처리한다. 2.x 폴백(`granite.config.ts`)이면
+   `ait build`를 부르는 스크립트(예: `bundle:ait`)를 쓴다 — 그쪽 `ait build`는
    `web.commands.build`를 스스로 실행한다. (CLI `2.10.8`·`3.0.5` 소스 확인)
+   Unity나 엔진 HTML5 빌드는 위 `package.json` 스크립트 경로를 가정하지 않는다. 그 스택의 .ait
+   산출 절차는 SDK 패키지 문서와 docs MCP로 확인하고(`../feature/references/stack-pitfalls.md`,
+   확인되지 않은 엔진은 단정하지 않는다) 번들이 나온 뒤의 등록·업로드는 같다.
 2. 아직 콘솔에 등록되지 않은 앱이면 등록부터 한다(이미 등록돼 있으면 건너뛴다).
    `miniapp_create`는 앱 생성과 앱 정보 검토 요청을 한 호출로 묶어 로고·부제·
    상세 설명·키워드·카테고리를 미리 요구한다. 그 자산이 이미 준비돼 있으면
@@ -321,8 +335,8 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   필요 여부를 함께 제시한다.
 - **환경 1에서 재현 안 됨 + 실 SDK·네이티브 브리지 의심** → 루프를 환경 3으로 옮긴다(5-B → 5-C).
 
-**루프 경계**: 미니앱 소스 편집·임시 계측·dev 서버 재기동·로컬 테스트·`run_tests`·`ait build`
-재빌드는 루프 안에서 한다. **검수 제출(`review_*`·`bundle_submit_review`)·릴리즈/롤백·
+**루프 경계**: 미니앱 소스 편집·임시 계측·dev 서버 재기동·로컬 테스트·`run_tests`·프로젝트
+빌드 스크립트(`ait build` 포함) 재실행은 루프 안에서 한다. **검수 제출(`review_*`·`bundle_submit_review`)·릴리즈/롤백·
 프로모션·푸시 발송, 그 밖의 콘솔 상태 변이, 의존성 변경, git commit·push는 사용자 명시
 승인 없이는 하지 않는다.** 유일한 예외는 5-B의 candidate 등록·업로드(환경 3 진입에 필요,
 디버깅 목적 한정 — 사용자가 환경 3 승급에 동의한 뒤).
@@ -334,7 +348,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
 ```
 디버깅 루프 종료 (사이클 3/5, 환경 1)
 가설: 라우팅이 replace라 history depth가 안 쌓임
-수정: src/pages/Menu.tsx 라우팅 1건을 push 로 변경
+수정: 메뉴 화면의 라우팅 호출 1건을 replace에서 push로 변경
 재검증: 원 재현 절차 재실행 - 스와이프 후 앱 유지됨 (통과)
 임시 계측: 전부 제거함
 

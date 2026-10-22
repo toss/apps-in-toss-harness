@@ -22,21 +22,22 @@ argument-hint: ''
 
 | 원하는 것 | 경로 |
 |---|---|
-| 브라우저에서 mock으로 개발 | `npm run dev` + `/ait:debug` 환경 1 (토스 앱 불필요) |
+| 브라우저에서 mock으로 개발 | 프로젝트의 dev 스크립트(`package.json` scripts) + `/ait:debug` 환경 1 (토스 앱 불필요) |
 | **실기기에서 동작 확인** | **이 skill** — 번들을 콘솔에 올려 토스 앱에서 연다 |
 | 실기기에서 CDP로 관측·디버깅 | `/ait:setup-debugger` 배선 후 `/ait:debug` 환경 3(QR attach) |
 
-이 경로는 React Native 전용이 아니다 — 전제는 `ait build`가 만드는 `.ait` 번들
-하나뿐이라, create-ait-app으로 만든 web-framework 프로젝트도 같은 절차를 그대로
-탄다.
+이 경로는 특정 스택 전용이 아니다 — 전제는 `.ait` 번들 하나뿐이라, web-framework
+프로젝트, React Native, Unity·엔진 HTML5 빌드 모두 업로드부터는 같은 절차를 탄다.
+스택마다 다른 것은 빌드 방법과 산출물 위치뿐이고, 이는 프로젝트를 읽어 정한다(3).
 
 ## 의존
 
-- **cwd에 `package.json`과 번들 설정 파일이 있어야 한다.** 정본 scaffold
-  (create-ait-app 0.2.x, `new-miniapp` skill)는 `apps-in-toss.config.ts`를
-  쓴다 — 먼저 확인한다. 없으면 구세대 `--local` 오프라인 폴백 템플릿
-  (`new-miniapp` L-5)이 쓰는 `granite.config.ts`를 확인한다. 둘 다 없으면
-  프로젝트 루트로 이동 안내 후 중단.
+- **cwd가 미니앱 프로젝트 루트여야 한다.** 웹·RN 프로젝트는 `package.json`과 번들
+  설정 파일이 있다. 정본 scaffold(create-ait-app 0.2.x, `new-miniapp` skill)는
+  `apps-in-toss.config.ts`를 쓰고, 구세대 `--local` 오프라인 폴백 템플릿
+  (`new-miniapp` L-5)은 `granite.config.ts`를 쓴다. Unity는 `Packages/manifest.json`
+  이나 `Assets/`에 SDK가 있다. 프로젝트 표지가 하나도 없으면 프로젝트 루트로 이동
+  안내 후 중단.
 - **콘솔 MCP(`ait-console`) 인가가 1회 필요하다** — `/mcp`에서 승인한다.
   인가되지 않았으면 그 안내만 하고 중단한다.
 - **콘솔에 등록된 앱이 있어야 한다.** 없으면 `miniapp_create`로 1회 등록한다
@@ -60,20 +61,22 @@ argument-hint: ''
 ### 1. 사전 확인 — appName 일치 가드
 
 ```bash
-ls package.json apps-in-toss.config.ts granite.config.ts 2>/dev/null
+ls package.json apps-in-toss.config.ts granite.config.ts Packages/manifest.json 2>/dev/null
 ```
 
-`package.json`이 없거나, `apps-in-toss.config.ts`·`granite.config.ts` 둘 다
-없으면 중단:
+프로젝트 표지가 하나도 없으면 중단:
 
 ```
-package.json과 번들 설정 파일(apps-in-toss.config.ts 또는 granite.config.ts)을
-찾을 수 없습니다. 미니앱 프로젝트 루트에서 다시 실행해주세요. 예: cd
-<project-root> && /ait:test-on-device
+미니앱 프로젝트 파일(package.json과 apps-in-toss.config.ts·granite.config.ts, 또는
+Unity의 Packages/manifest.json)을 찾을 수 없습니다. 미니앱 프로젝트 루트에서
+다시 실행해주세요. 예: cd <project-root> && /ait:test-on-device
 ```
 
-발견된 번들 설정 파일(`apps-in-toss.config.ts`가 있으면 그것을, 없으면
+웹·RN은 발견된 번들 설정 파일(`apps-in-toss.config.ts`가 있으면 그것을, 없으면
 `granite.config.ts`를 — 의존 절 참고)을 `Read`로 읽어 `appName`을 확인한다.
+Unity·엔진 프로젝트는 SDK의 설정 화면이나 패키지 문서에서 앱 이름을 정하는 곳을
+찾아 읽고, 어디인지 모르면 사용자에게 묻는다. Deploy Key가 든 설정 파일은
+열지 않는다.
 **이 값이 콘솔에 등록된 앱의 appName과 정확히 같아야 한다.** 불일치 번들은
 업로드 자체는 성공하지만 컴파일에서 `BUILD_FAILED`로 끝난다(에러 메시지: "콘솔에
 등록된 앱 ID와 granite.config.ts의 appName이 일치하지 않아요" — 콘솔 쪽 메시지
@@ -83,7 +86,9 @@ package.json과 번들 설정 파일(apps-in-toss.config.ts 또는 granite.confi
 
 ### 1-b. 결제·서버 사전 경고 (콘솔 상태와 무관하게 먼저 말한다)
 
-`src/`에서 `IAP.`(인앱 결제) 호출을 찾는다. 있으면 업로드·콘솔 확인보다 먼저,
+프로젝트 소스에서 인앱 결제 호출(웹 SDK는 `IAP.`, 엔진은 해당 SDK의 결제 API)을
+찾는다. `node_modules`·`dist`·`build`·`.git`·`Library`·`Temp` 같은 제외 목록을 빼고
+프로젝트 전체를 grep한다. 있으면 업로드·콘솔 확인보다 먼저,
 콘솔 MCP를 쓸 수 없어 중간에 멈추게 되더라도 사용자에게 이렇게 알린다.
 
 - 토스 앱에서 하는 결제 테스트는 실제로 결제(과금)된다고 가정한다.
@@ -109,62 +114,59 @@ API 문서의 CORS 절을 getPage로 읽어 맞춘다. 서버 코드 자체를 �
 
 ### 3. 번들 빌드
 
-1에서 확인한 형상에 따라 명령이 다르다.
+빌드 방법은 스택마다 다르다. 가정하지 말고 프로젝트를 읽어 정한다. 모호하면
+사용자에게 묻는다.
 
-**`apps-in-toss.config.ts`(정본 scaffold)인 경우:**
+- **웹·RN**: `package.json` scripts를 읽는다. `build` 스크립트가 `ait build`까지
+  포함하면 그 스크립트 하나로 `.ait`가 생긴다(정본 scaffold가 이 형태다). 포함하지
+  않으면 번들 단계 스크립트가 따로 있는지 본다. 구세대 `--local` 폴백 템플릿은
+  `build`가 `tsc -b && vite build`뿐이라 `new-miniapp` L-5가 추가하는 `bundle:ait`
+  스크립트(`"ait build"`)를 이어서 실행해야 한다(`shared/templates/react-vite/package.json`
+  확인). 그 스크립트가 없으면 L-5 절차가 아직 안 된 것이므로 먼저 그것부터 안내한다.
+  실행은 프로젝트가 쓰는 패키지 매니저로 한다(락파일로 확인한다).
+- **Unity·엔진 HTML5 빌드**: 프로젝트 스크립트가 아니라 엔진 절차를 따른다. Unity는
+  앱인토스 SDK의 빌드 메뉴(빌드 프로필)로 빌드한다. 메뉴 이름·산출물 확장자와 위치는
+  docs MCP `getPage`로 `/documentation/unity/build/build-process`를 확인하고,
+  스택별 주의점은 `../feature/references/stack-pitfalls.md`를 본다. 빌드 메뉴는
+  에이전트가 누르지 못하므로 사용자에게 실행을 안내하고, 끝났다는 답을 받은 뒤 다음으로
+  간다.
 
-```bash
-npm run build   # tsc -b && vite build && ait build → .ait 번들 생성
-```
-
-이 형상은 `build` 스크립트 자체에 `ait build`가 포함돼 있어 한 번에 끝난다.
-
-**`granite.config.ts`(구세대 `--local` 폴백)인 경우:**
-
-```bash
-npm run build && npm run bundle:ait   # vite build → ait build → .ait 번들 생성
-```
-
-이 템플릿의 `build` 스크립트는 `tsc -b && vite build`뿐이고 `ait build`를
-포함하지 않는다(`shared/templates/react-vite/package.json` 확인) — `npm run build`
-단독으로는 `.ait`가 생기지 않는다. `new-miniapp` skill L-5가 번들 설정과 함께
-추가하는 `bundle:ait` 스크립트(`"ait build"`)를 이어서 실행해야 한다.
-`bundle:ait` 스크립트가 없으면 L-5 절차가 아직 안 된 것이므로 먼저 그것부터
-안내한다.
-
-**단독 실행 가능 여부는 형상마다 다르다** (CLI `2.10.8`·`3.0.5` 소스 확인):
+**단독 실행 가능 여부는 web-framework 형상마다 다르다** (CLI `2.10.8`·`3.0.5`
+소스 확인):
 
 - **3.x** — `ait build`는 이미 만들어진 `webBundleDir`(기본 `dist/`)를 포장만
   한다. 없으면 `웹 빌드 디렉토리(dist)가 존재하지 않습니다. 웹 빌드를 먼저
-  실행해주세요.`로 종료한다 — 항상 `vite build` 이후에 돌린다.
+  실행해주세요.`로 종료한다 — 항상 웹 빌드 이후에 돌린다.
 - **2.x 폴백** — `ait build`가 `web.commands.build`를 **스스로 실행**하므로 단독
-  실행이 성립한다. 오히려 기존 `dist/`를 먼저 지우고 다시 빌드하므로, 위
-  `npm run build && npm run bundle:ait`에서 앞의 `npm run build`는 버려지는 중복 작업이다
-  (해가 되지는 않는다).
+  실행이 성립한다. 오히려 기존 `dist/`를 먼저 지우고 다시 빌드하므로, 웹 빌드 뒤에
+  `bundle:ait`를 이어 돌리면 앞의 웹 빌드는 버려지는 중복 작업이다(해가 되지는
+  않는다).
 
-**산출물은 프로젝트 디렉터리 바로 아래의 `<appName>.ait`다** — `package.json`
-옆이다. `dist/` 안도 아니고, **프로젝트의 상위 디렉터리도 아니다**(정본 scaffold
-실측: 프로젝트 `timer` → `timer/timer.ait`. appName 기본값은 package 이름과
-동일). 확인은 한 호출이면 된다 — **현재 위치가 프로젝트 밖인지 안인지 먼저
-판단하지 말고** 두 후보를 함께 조회한다:
+**산출물 `.ait`는 고정 경로를 가정하지 말고 glob으로 찾는다.** 웹 scaffold는 보통
+프로젝트 디렉터리 바로 아래에 `<appName>.ait`를 만든다(`package.json` 옆. `dist/`
+안도 아니고 프로젝트의 상위 디렉터리도 아니다. 실측: 프로젝트 `timer` →
+`timer/timer.ait`). 엔진 빌드는 위치가 다를 수 있다. **현재 위치가 프로젝트 밖인지
+안인지 먼저 판단하지 말고** 한 호출로 찾는다:
 
 ```bash
-ls ./<package_name>/*.ait ./*.ait 2>/dev/null
+find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name Temp \) -prune -o -name '*.ait' -type f -exec ls -t {} + 2>/dev/null
 ```
 
-나오는 쪽 경로가 산출물이다. 도구 셸의 cwd가 호출 사이에 리셋되는지 유지되는지는
-실행 환경마다 달라 위치 추측이 자주 빗나간다(실측 — 빗나간 추측이 `find`·`pwd`
-방황이나 불필요한 재빌드로 번진 사례가 여럿이다). 둘 다 안 나오면 빌드 로그가
-찍은 산출 경로를 따른다 — 상위·하위 디렉터리를 `find`로 뒤지거나 빌드를
-다시 돌리는 것부터 하지 않는다. 빌드 명령이 오래 걸려 백그라운드로 전환됐다면
-**완료(exit code)를 확인한 뒤에** 이 확인을 한다 — 완료 전 조기 탐색으로
-"`.ait`가 없다"고 판단해 재빌드하는 것이 낭비의 전형이다(실측 사례 있음).
+여러 개가 나오면 수정 시각이 가장 최근인 것이 방금 빌드한 산출물이다. 오래된
+`.ait`를 올리지 않도록 시각을 확인한다. 도구 셸의 cwd가 호출 사이에 리셋되는지
+유지되는지는 실행 환경마다 달라 위치 추측이 자주 빗나간다(실측 — 빗나간 추측이
+`find`·`pwd` 방황이나 불필요한 재빌드로 번진 사례가 여럿이다). 아무것도 안
+나오면 빌드 로그가 찍은 산출 경로를 따른다. 빌드 설정의 출력 디렉터리가 깊으면
+`-maxdepth`를 늘린다. 빌드를 다시 돌리는 것부터 하지 않는다. 빌드 명령이 오래
+걸려 백그라운드로 전환됐다면 **완료(exit code)를 확인한 뒤에** 이 확인을 한다 —
+완료 전 조기 탐색으로 "`.ait`가 없다"고 판단해 재빌드하는 것이 낭비의 전형이다(실측
+사례 있음).
 
 빌드 산출물의 `deploymentId`는 4에서 그대로 쓴다.
 
 실기기에서 CDP attach까지 하려는 경우라면 이 skill이 아니라
-`/ait:inject-debug-console` + `RELEASE_CHANNEL=dogfood npm run build` candidate 경로가
-필요하다 — 그건 `/ait:debug` 환경 3의 절차다. 이 skill은 동작 확인용 일반
+`/ait:inject-debug-console` + `RELEASE_CHANNEL=dogfood`를 준 빌드(프로젝트 build
+스크립트) candidate 경로가 필요하다 — 그건 `/ait:debug` 환경 3의 절차다. 이 skill은 동작 확인용 일반
 번들만 다룬다.
 
 ### 4. 업로드 — `bundle_upload` → `bundle_upload_complete`
@@ -176,7 +178,7 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
 3. `bundle_upload_complete` — 업로드 완료를 콘솔에 알린다. 여기서 컴파일이 걸린다.
 
 인자는 **세션에 노출된 도구 스키마를 그대로** 따른다. `deploymentId`는 3의
-`ait build` 산출값을 전달한다 — 임의 UUID를 지어내지 않는다. 어느 단계든 에러가
+빌드 산출값을 전달한다 — 임의 UUID를 지어내지 않는다. 어느 단계든 에러가
 나면 응답을 가공 없이 사용자에게 전달하고 다음 단계로 넘어가지 않는다.
 
 ### 5. 컴파일 상태 확인 — `miniapp_get_status`
@@ -297,7 +299,7 @@ ls ./<package_name>/*.ait ./*.ait 2>/dev/null
   `deploymentId`가 빠졌는지로 판정한다(5).
 - ❌ `bundle_test_push` 성공(`isTested=true`)을 테스트 완료로 간주해 검수 제출로
   이어감(6-A).
-- ❌ 브라우저에서 재현되는 문제를 실기기 업로드로 확인. 그건 `npm run dev` +
+- ❌ 브라우저에서 재현되는 문제를 실기기 업로드로 확인. 그건 프로젝트 dev 스크립트 +
   `/ait:debug` 환경 1이 훨씬 빠르다.
 - ❌ 시크릿·인증 코드·업로드 presigned URL의 서명 파라미터를 stdout·로그·메시지에
   출력.
