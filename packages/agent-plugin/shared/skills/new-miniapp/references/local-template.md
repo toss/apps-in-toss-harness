@@ -1,5 +1,9 @@
 # `--local` 폴백 — 내장 react-vite 템플릿 복사 절차
 
+> **React 전용 오프라인 폴백 — 단계적 폐지 예정.** 스택을 고를 수 없고(React 19 + Vite
+> 고정) wf 2.x 기반 구세대 형상이다. Vue·Svelte 등 다른 스택은 이 경로가 아니라
+> 온라인 create-ait-app 프리셋(SKILL.md "스택 선택")으로 만든다.
+
 `/ait:new`의 정본 경로는 create-ait-app 비대화형 호출(SKILL.md Step 2~6)이다.
 이 문서는 **오프라인·네트워크 제한·create-ait-app 실행 불가** 상황의 폴백
 절차다 — plugin에 동봉된 `react-vite` 템플릿(React 19 + Vite 8 + TS +

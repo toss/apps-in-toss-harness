@@ -2,11 +2,13 @@
 name: inject
 description: |
   Patch an existing Apps in Toss mini-app's build setup. Three facets:
-  `/ait:inject-devtools` adds the `@apps-in-toss/devtools` unplugin for browser dev
-  ("기존 Vite 프로젝트에 devtools 붙여줘"); `/ait:inject-debug-console` installs
-  `@apps-in-toss/debug-console` (on-device attach) as a dependency;
-  `/ait:inject-tossface` wires the Tossface emoji web font (CDN link or subset
-  bundling) into a project's entry CSS. Idempotent, minimal edits. This skill only
+  `/ait:inject-devtools` adds the `@apps-in-toss/devtools` unplugin for browser dev,
+  registered for whichever bundler the project uses ("기존 Vite 프로젝트에 devtools
+  붙여줘", "Rspack 쓰는 기존 프로젝트에 devtools 붙여줘");
+  `/ait:inject-debug-console` installs `@apps-in-toss/debug-console` (on-device
+  attach) as a dependency; `/ait:inject-tossface` wires the Tossface emoji web font
+  (CDN link or subset bundling) into the project's global stylesheet. Idempotent,
+  minimal edits. This skill only
   INSTALLS packages/assets into a build setup — it never diagnoses a running app.
   "폰에서 이상하게 동작하는데 디버깅하고 싶어" / "라이브 상태를 보고 싶어" is
   `debug`, not this.
@@ -33,19 +35,22 @@ argument-hint: ''
   와이어업한다. 환경 3(intoss-private candidate) on-device 디버깅에 attach 표면을 남긴다.
   인자 없음.
 - **tossface facet** (`/ait:inject-tossface`): 이모지를 토스페이스 글리프로 렌더하도록
-  CDN 링크 또는 서체 subset 번들을 프로젝트 진입 CSS에 와이어업한다. `design` skill의
+  CDN 링크 또는 서체 subset 번들을 프로젝트 전역 스타일시트에 와이어업한다. `design` skill의
   서체 정책상 본문 서체는 금지 대상이지만 이모지 서체(Tossface)는 권장 대상이다. 인자 없음.
 
 ## devtools facet — `/ait:inject-devtools`
 
-빌드 도구(Vite / Next.js / Rspack / Webpack)를 감지하고, lockfile로 패키지 매니저를 감지해
-`@apps-in-toss/devtools`를 devDep으로 설치한 뒤, config 파일을 멱등하게 패치한다
-(`aitDevtools.<bundler>({ panel: true })`). 이미 설정이 있으면 skip. 콘솔 인증 불필요 — 로컬
-dev 전용이다.
+번들러는 스택을 가정하지 않고 프로젝트의 `package.json` scripts와 번들러 설정 파일에서 읽는다.
+lockfile로 패키지 매니저를 감지해 `@apps-in-toss/devtools`를 devDep으로 설치한 뒤,
+설치된 패키지 README(`node_modules/@apps-in-toss/devtools/README.md`)에서 그 번들러의 배선
+절을 찾아 그대로 등록한다. 번들러별 코드는 이 skill이 들고 있지 않다. README가 다루지 않는
+번들러면 사용자에게 알리고 묻는다. 이미 설정이 있으면 skip. 콘솔 인증 불필요 — 로컬 dev
+전용이고, production 번들에는 넣지 않는다.
 
-핵심 절차: (1) `package.json` 확인 → (2) 빌드 도구 감지 → (3) PM 감지 → (4) idempotency
-확인 → (5) devDep 설치 → (6) 번들러별 config 패치(Vite `optimizeDeps.exclude` 포함) →
-(7) 완료 seam. 번들러별 정확한 패치 패턴·경고 처리·하지 말아야 할 것은 —
+핵심 절차: (1) `package.json` 확인 → (2) 번들러 확인 → (3) PM 감지 → (4) idempotency
+확인 → (5) devDep 설치 → (6) README의 해당 번들러 절대로 최소 변경 등록 → (6-1) dev 서버·빌드로
+사후 검증 → (7) 완료 seam. README 읽는 법·지원 범위 밖 처리·유지할 앱인토스 고유 사실·하지
+말아야 할 것은 —
 
 **상세가 필요하면 Read `<이 skill의 base directory>/references/devtools.md`.**
 
@@ -67,7 +72,7 @@ tarball URL — npm 미발행), 진입점에 self-gating `import '@apps-in-toss/
 원할 때 참고할 대안으로 `references/debug-console.md`에 안내한다.
 
 핵심 절차: (1) `package.json` 확인 → (2) 기존 설치 확인(idempotency) → (3) `dependencies`로
-설치 → (4) 진입점 감지 + `/auto` import 삽입 → (5) 완료 seam. 하지 말아야 할 것은 —
+설치 → (4) 진입점 감지(`index.html`의 module script → 번들러 `entry` → 관례 이름 순) + `/auto` import 삽입 → (5) 완료 seam. 하지 말아야 할 것은 —
 
 **상세가 필요하면 Read `<이 skill의 base directory>/references/debug-console.md`.**
 
@@ -103,7 +108,7 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
 @apps-in-toss/devtools 설정 완료 · <config-file> 패치
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  npm run dev               # 브라우저에서 앱 실행 (하단에 AIT DevTools 패널)
+  npm run dev               # 브라우저에서 앱 실행 (프로젝트의 dev 스크립트, 하단에 AIT DevTools 패널)
                             #   말로: "브라우저에서 개발 서버 띄워줘"
   /ait:debug                # 브라우저 패널·window.__ait 상태로 디버깅
                             #   말로: "브라우저에서 앱 상태가 이상한데 디버깅해줘"
@@ -143,8 +148,9 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
   `bundle_upload_complete`)의 역할.
 - ❌ 번들 설정(`apps-in-toss.config.ts`) 최초 생성 — 정본 경로(create-ait-app)는
   `/ait:new`에 기본 포함, `--local` 폴백만 `new-miniapp`의 L-5 절차로 추가.
-- ❌ (devtools) panel 마운트 E2E 검증 — 사용자가 직접 `npm run dev`로 확인.
-- ❌ (devtools) Rollup/esbuild 라이브러리 빌드에 mock 주입 — 앱(미니앱) 전용.
+- ❌ (devtools) 브라우저에서 panel이 실제로 뜨는지의 E2E 검증 — 사용자가 직접 `npm run dev`로 확인. (dev 서버·빌드가 에러 없이 도는지까지만 이 skill이 확인한다.)
+- ❌ (devtools) 라이브러리 빌드에 mock 주입 — 앱(미니앱) 전용.
+- ❌ (devtools) README에 없는 번들러에 추측으로 배선 — 사용자에게 알리고 묻는다.
 - ❌ **실행 중인 앱을 진단하는 것** — 이 skill은 패키지를 *설치*할 뿐이다. "폰에서 이상하게 동작한다", "라이브 상태를 보고 싶다"는 `/ait:debug`(`debug` skill). debug-console facet은 그 진단을 *가능하게 하는 준비물*이지 진단 자체가 아니다.
 - ❌ (debug-console) MCP 데몬 등록 — `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선(`/ait:debug` §5 참조).
 - ❌ (debug-console) `devDependencies` 설치 — 프로덕션 번들 포함이 목적이라 반드시 `dependencies`.

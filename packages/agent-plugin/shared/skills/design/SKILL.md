@@ -191,8 +191,8 @@ argument-hint: '[screen or request]'
   ImageMagick(`magick`/`convert`)이나 `sips`(macOS), 또는 다른 로컬 이미지
   도구가 있으면 활용한다. 없으면 사용자에게 디자인 export 규격을 안내해 직접
   채우게 한다(절벽이 아니라 seam — 콘솔 등록과 동일한 규격을 그대로 전달).
-- **진입점을 탐지할 수 있는 프로젝트 형상 (선택)**: `src/main.tsx` 같은 JS
-  진입점이 있으면 스타일 배선이 그 파일 한 줄로 끝난다. 후보가 전부 없으면
+- **진입점을 탐지할 수 있는 프로젝트 형상 (선택)**: `index.html`이 가리키는
+  JS 진입점(React의 `src/main.tsx`, Vue·Svelte의 `src/main.ts` 등)이 있으면 스타일 배선이 그 파일 한 줄로 끝난다. 후보가 전부 없으면
   `index.html`의 `<link>` 폴백으로 내려간다 — 어느 쪽이든 동작하므로 전제가
   아니라 분기다.
 

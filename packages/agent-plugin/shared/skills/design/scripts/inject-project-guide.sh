@@ -181,14 +181,29 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
       elif cp -n "$SRC/icons/"*.svg "$PROJ/src/assets/icons/" 2>/dev/null; then R="$R icons=new"
       else R="$R icons=FAIL"; fi
     fi
+    # 진입점 탐지(프레임워크 무관): src/index.css → index.html 이 가리키는 모듈
+    # 스크립트(React·Vue·Svelte·vanilla 어디든 엔트리 이름을 가정하지 않는다) →
+    # 알려진 이름 순서. 첫 번째로 실재하는 파일 하나만 쓴다.
+    HE=""
+    if [ -f "$PROJ/index.html" ]; then
+      HE="$(grep -o '<script[^>]*>' "$PROJ/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"
+    fi
     E=""
-    for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
-      if [ -f "$PROJ/$C" ]; then E="$PROJ/$C"; break; fi
+    for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
+      if [ -n "$C" ] && [ -f "$PROJ/$C" ]; then E="$PROJ/$C"; break; fi
     done
+    # JS import 가능 여부: .js 계열은 그대로, .ts 계열은 vite/client 앰비언트 타입이 있을 때만.
+    JSOK=0
+    case "$E" in
+      *.js|*.jsx|*.mjs) JSOK=1 ;;
+      *.ts|*.tsx|*.mts)
+        if [ -f "$PROJ/src/vite-env.d.ts" ] || grep -q '"vite/client"' "$PROJ"/tsconfig*.json 2>/dev/null; then JSOK=1; fi
+        ;;
+    esac
     if { [ -n "$E" ] && grep -q 'styles/base.css' "$E"; } || grep -qs 'styles/base.css' "$PROJ/index.html"; then R="$R entry=skip"
     elif [ -n "$E" ] && [ "${E%index.css}" != "$E" ]; then
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=index.css" || R="$R entry=FAIL"
-    elif [ -n "$E" ] && { [ -f "$PROJ/src/vite-env.d.ts" ] || grep -q '"vite/client"' "$PROJ"/tsconfig*.json 2>/dev/null; }; then
+    elif [ -n "$E" ] && [ "$JSOK" = 1 ]; then
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=js" || R="$R entry=FAIL"
     elif [ -f "$PROJ/index.html" ] && ! grep -q 'styles/base.css' "$PROJ/index.html"; then
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/<\/head>/&&!d{print "    <link rel=\"stylesheet\" href=\"/src/styles/base.css\" />";d=1}{print}' "$PROJ/index.html" > "$T2" && mv "$T2" "$PROJ/index.html" && R="$R entry=index.html" || R="$R entry=FAIL"

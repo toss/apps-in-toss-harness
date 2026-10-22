@@ -25,7 +25,7 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 # 1) Register the harness plugin marketplace
 /plugin marketplace add toss/apps-in-toss-harness
 
-# 2) Install the ait plugin (registers 11 skills + 2 MCP servers)
+# 2) Install the ait plugin (registers 12 skills + 2 MCP servers)
 /plugin install ait@apps-in-toss
 
 # 3) Authorize the console MCP (OAuth, one time) — the docs MCP (apps-in-toss-docs) connects automatically, no auth required
@@ -65,7 +65,7 @@ The same plugin **installs in Codex as-is.** Codex reads this repo's plugin mani
 # 1) Register the harness plugin marketplace
 codex plugin marketplace add toss/apps-in-toss-harness
 
-# 2) Install the ait plugin (registers 11 skills + 2 MCP servers, no ~/.codex/config.toml edits)
+# 2) Install the ait plugin (registers 12 skills + 2 MCP servers, no ~/.codex/config.toml edits)
 codex plugin add ait@apps-in-toss
 
 # 3) Authorize the console MCP (OAuth, one time)
@@ -208,13 +208,13 @@ A `/ait:<verb>` slash command and a plain-language request **reach the same skil
 | | "Take a look before I submit it for review" | `/ait:launch` |
 | 5. By feature | "I want to identify users with Toss login" (`auth`) | `/ait:plan` → development |
 | | "I want to sort nearby stores by current location" (`location`) | `/ait:plan` → development |
-| | "I want to sell in-app digital goods" (`iap`) | `/ait:plan` → development |
-| | "I want to show in-app ads" (`ads`) | `/ait:plan` → development |
-| | "I want to store favorites locally" (`storage`) | `/ait:plan` → development |
+| | "I want to sell in-app digital goods" (`iap`) | `/ait:feature` |
+| | "I want to show in-app ads" (`ads`) | `/ait:feature` |
+| | "I want to store favorites locally" (`storage`) | `/ait:feature` |
 
 Rows 1–4 are English renderings of utterances verified by routing regression measurement: "say this and that skill triggers" has been confirmed empirically for those cases.
 
-The names in parentheses in row 5 are domains from the SDK domain catalog the `plan` skill carries (18 in total). Which runtime permissions and console terms each domain drags in is what `/ait:plan` maps out, and the exact APIs and permission constants are confirmed through the docs MCP (`searchDocumentation` / `getPage`); do not invent feature names that are not in the catalog. These five rows are examples drawn from the catalog, not routing-gate cases (a feature request on its own does not pin one skill; while you are still planning it leads to `plan`).
+The names in parentheses in row 5 are domains from the SDK domain catalog the `plan` skill carries (18 in total). Which runtime permissions and console terms each domain drags in is what `/ait:plan` maps out, and the exact APIs and permission constants are confirmed through the docs MCP (`searchDocumentation` / `getPage`); do not invent feature names that are not in the catalog. These five rows are examples drawn from the catalog, not routing-gate cases (a feature request on its own does not pin one skill; while you are still planning it leads to `plan`, and when you are adding it to an existing project it leads to `feature`).
 
 ## Commands
 
@@ -232,6 +232,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:launch [rejection reason]` | Pre-launch check and rejection handling. Sorts findings into fixes and console checks using the official checklist (docs MCP) and a code scan; matches a rejection reason to the documented criteria and fixes it, or drafts an inquiry when the cause isn't in the code. Submits for review only after you approve that request (never releases, rolls back, or promotes) | 5. register+ship |
 | `/ait:server [request]` | Writes or fixes server code. Reads the criteria for user identification (anonymous-key exchange or Toss login), mTLS partner API calls, the response envelope, and exact CORS origins first, then applies them. Follows the hosting you chose and deploys only when asked (no console calls) | 3. dev |
 | `/ait:design [screen or request]` | Creates or fixes screens — from scratch, diagnosing and auto-fixing existing ones, mapping a Figma design (Figma is optional), and producing the registration image assets. Hard-rule violations are fixed in the code, not just reported (does not register or upload) | 8. design |
+| `/ait:feature [request]` | Implements an SDK feature (ads, in-app purchase, share, leaderboard, haptics, storage, …) in your project. Reads the project to pick the call form (web, Unity, engine HTML5 build, React Native) and the SDK version, confirms the API against the docs MCP page, then writes it in that stack's idiom. Applies the ad policy and IAP grant rules and tells you what to set up in the console first, without writing to the console | 4. dev |
 | `/ait:ux-writing [screen or files]` | Checks screen copy against UX writing principles and proposes before/after rewrites — the rewrite counterpart to design's G6 (copy) grading (never applies without user confirmation) | 8. design counterpart |
 | `ait build` (terminal command) | Generates a `.ait` native bundle from `granite.config.ts`. Fails if `brand.icon` is empty | 5. register+ship |
 
@@ -253,7 +254,7 @@ The docs are also readable without MCP. The developer center publishes the same 
 1. **install** — Enter the harness via `/plugin marketplace add` → `/plugin install`, authorize `ait-console` from `/mcp`, then turn on auto-update from `/plugin`.
 2. **plan (optional)** — Run `/ait:plan [requirements]` to take a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms.
 3. **scaffold** — Run `/ait:new <app-name>` to create the mini-app. Post-processing wires in devtools and also seeds a design guide: tokens, hard rules, six icons, `docs/design-guide.md`, and the Tossface emoji font. A summary lands in `AGENTS.md`, which agents read automatically, so any later session that builds a screen works to the same standard (`--no-design-guide` skips all of it, `--no-tossface` skips just the font).
-4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app.
+4. **dev** — Run `npm run dev` to see the mock SDK and devtools panel in your local browser, the first environment where you can develop without a Toss app. To add an SDK feature such as ads or in-app purchase to the project, use `/ait:feature`.
 5. **on-device check** — Run `/ait:test-on-device` to upload the bundle to the console and check it **in the real Toss app**. This is the standard path for "I want to run it on my phone": build the bundle, upload it, confirm the compile, then open the entry link the tools returned. It is not a React Native-only path: every project that produces an `.ait` bundle follows the same procedure. (`ait build` requires `brand.icon`, so run step 7's `/ait:design` first if you don't have the assets yet.)
 6. **debug (optional)** — When a problem only reproduces on the phone, run `/ait:setup-debugger` to wire up the debug MCP, then `/ait:debug` to inspect local and on-device state.
 7. **design** — Run `/ait:design [screen or request]` to create and fix screens: from scratch when the project has none, or by diagnosing existing ones and editing the code to clear hard-rule violations (body text size floor, 44px touch targets, bottom CTA safe area). The same command maps a Figma design (optional input) and produces the registration assets — logo, thumbnail, screenshots. Also needed to fill in the `brand.icon` field required by `ait build`.

@@ -76,8 +76,21 @@ bun add "https://github.com/toss/apps-in-toss-harness/releases/download/debug-co
 
 ## 4. 진입점 와이어업 (멱등)
 
-진입점(`--entry` 없음 — 자동 감지 순서: `src/main.tsx` → `src/main.ts` → `src/index.tsx` →
-`src/index.ts` → `index.tsx` → `index.ts`)을 `Read`로 열어 `@apps-in-toss/debug-console`이 이미
+진입점은 프레임워크 이름을 가정하지 않고 아래 순서로 찾는다. 첫 번째로 실재하는 파일 하나를 쓴다
+(`design` skill의 `scripts/inject-project-guide.sh`와 같은 규칙이다).
+
+1. 프로젝트 루트 `index.html`의 `<script type="module" src="...">`가 가리키는 파일
+   (React·Vue·Svelte·vanilla 어디든 같다. 쿼리·해시와 앞의 `./`·`/`는 뗀다).
+2. `index.html`이 없거나 스크립트를 안 가리키면 번들러·프레임워크 설정의 `entry`
+   (webpack·Rspack 계열의 `entry`, 프레임워크가 정한 클라이언트 엔트리 파일).
+3. 그래도 없으면 관례 이름: `src/main.{ts,tsx,js,jsx}` → `src/index.{ts,tsx,js,jsx}` →
+   루트 `index.{ts,tsx}`.
+
+서버 렌더링 프레임워크처럼 브라우저 전용 엔트리 하나로 좁혀지지 않거나(서버에서 실행되는
+모듈에 넣으면 `window` 접근으로 깨진다) 후보가 둘 이상이면 추측하지 말고 사용자에게 어느
+파일이 브라우저에서 먼저 실행되는지 묻는다.
+
+고른 진입점을 `Read`로 열어 `@apps-in-toss/debug-console`이 이미
 import되어 있는지 확인. 있으면:
 
 ```
