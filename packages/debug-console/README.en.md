@@ -44,6 +44,20 @@ Once activated, it installs two things: (1) an on-device Chii target injection (
 
 Convenient, but `/auto` is a runtime self-gate — it does not guarantee "zero bytes of code" in the release bundle (a dormant, unactivated chunk remains). The relay URL host allowlist (the `relay=` param is rejected unless its host is `*.trycloudflare.com` or localhost — `evaluateDebugGate`'s `'invalid-relay'` branch) means that dormant chunk cannot be pointed at an arbitrary relay even if it ships, so it stays harmlessly dormant. That is not the same guarantee as "zero bytes of code," though — use the build-gated entry above if you need that.
 
+## Wiring per bundler
+
+This package ships no bundler plugin. On any bundler, wiring means importing one of the two entries above; the only part that differs per bundler is how you inject the `__DEBUG_BUILD__` constant used by the build-gated entry. The devtools column below lists the unplugin adapter you register when the same project also uses `@apps-in-toss/devtools`; it is unrelated to debug-console itself.
+
+| Bundler | debug-console wiring | Injecting `__DEBUG_BUILD__` | devtools adapter (optional) |
+|---|---|---|---|
+| Vite | `import` in the entry (build-gated or `/auto`) | `define` in the config (DCE confirmed on Vite 8/rolldown) | `aitDevtools.vite()` |
+| webpack | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.webpack()` |
+| Rspack | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.rspack()` |
+| esbuild | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.esbuild()` |
+| Rollup | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.rollup()` |
+
+With `/auto` alone you do not need `__DEBUG_BUILD__`, so the bundler config stays untouched. Import the devtools adapter with `import aitDevtools from '@apps-in-toss/devtools/unplugin'`. Vite 8 is the only bundler where this repo has confirmed that folding `__DEBUG_BUILD__` removes the debug-console graph; whether the same works on the others has not been checked here.
+
 ## On-phone status banner
 
 A small bar at the bottom of the phone screen says how far the attach got and, if it stopped, why. It appears only when the page URL carries `debug=1` or `relay=` — a DEV build that auto-activates without them draws nothing. Tap it to dismiss. The TOTP code, relay address, and URLs never appear on screen or in logs.

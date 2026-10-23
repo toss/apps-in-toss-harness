@@ -44,6 +44,20 @@ import '@apps-in-toss/debug-console/auto';
 
 간편하지만, `/auto`는 런타임 self-gate라 release 번들에서 "코드가 물리적으로 0바이트"를 보장하지는 않는다 — 활성화되지 않은 채로 잠들어(dormant) 있는 청크가 release 번들에 남는다. 다만 relay URL host allowlist(`relay=` 파라미터가 `*.trycloudflare.com` 또는 localhost가 아니면 거부 — `evaluateDebugGate`의 `'invalid-relay'` 분기)가 있어, 그 잠든 청크가 남아 있어도 임의의 relay에는 attach되지 않는다. 그 자체가 "코드 0바이트"를 대체하지는 않으므로, 그 보장이 필요하면 위 build-gated 엔트리를 쓴다.
 
+## 번들러별 배선
+
+이 패키지는 번들러 플러그인이 없다. 어느 번들러에서든 배선은 위 두 엔트리 중 하나를 import하는 것뿐이고, 번들러마다 달라지는 부분은 build-gated 엔트리의 `__DEBUG_BUILD__` 상수를 주입하는 방법이다. 아래 표의 devtools 열은 같은 프로젝트에서 `@apps-in-toss/devtools`를 함께 쓸 때 등록하는 unplugin 어댑터로, debug-console 자체와는 무관하다.
+
+| 번들러 | debug-console 배선 | `__DEBUG_BUILD__` 주입 | devtools 어댑터 (선택) |
+|---|---|---|---|
+| Vite | 엔트리에서 `import` (build-gated 또는 `/auto`) | 설정의 `define` (Vite 8/rolldown에서 DCE 확인) | `aitDevtools.vite()` |
+| webpack | 같음 | 번들러의 상수 치환 설정에 직접 추가 | `aitDevtools.webpack()` |
+| Rspack | 같음 | 번들러의 상수 치환 설정에 직접 추가 | `aitDevtools.rspack()` |
+| esbuild | 같음 | 번들러의 상수 치환 설정에 직접 추가 | `aitDevtools.esbuild()` |
+| Rollup | 같음 | 번들러의 상수 치환 설정에 직접 추가 | `aitDevtools.rollup()` |
+
+`/auto`만 쓰면 `__DEBUG_BUILD__`가 필요 없어 번들러 설정을 건드리지 않는다. devtools 어댑터는 `import aitDevtools from '@apps-in-toss/devtools/unplugin'`으로 가져온다. 이 repo에서 `__DEBUG_BUILD__` 접힘으로 debug-console 그래프가 제거되는 것을 확인한 번들러는 Vite 8뿐이다. 나머지는 같은 방식이 통하는지 이 repo에서 확인하지 않았다.
+
 ## 폰 화면 상태 표시
 
 attach가 어디까지 됐는지, 안 됐다면 왜인지를 폰 화면 아래쪽 작은 막대로 알려준다. URL에 `debug=1` 또는 `relay=`가 있을 때만 나타난다 — DEV 빌드라서 자동 활성화됐을 뿐이면 아무것도 그리지 않는다. 탭하면 닫힌다. 연결 코드·relay 주소·URL은 화면에도 로그에도 나오지 않는다.
