@@ -39,9 +39,11 @@ adapter-note: 'Host-branched MCP registration — Claude Code writes project `.m
 
 ## 의존
 
-- **`package.json`이 cwd에 있어야 한다** — MCP 설정 파일은 두 호스트 모두
-  프로젝트 루트 스코프다. 없으면 프로젝트 루트로 이동을 안내하고 중단.
+- **cwd가 프로젝트 루트여야 한다** — MCP 설정 파일은 두 호스트 모두
+  프로젝트 루트 스코프다. 루트가 아니면 이동을 안내하고 중단한다. 이 skill은 앱 코드나
+  진입점을 건드리지 않으므로 프로젝트가 웹이든 Unity든 엔진 HTML5 빌드든 같은 절차다.
 - npx가 Release tarball(`@apps-in-toss/debugger`)을 내려받아 실행하므로 전역 설치는 필요 없다.
+  다만 Node와 npx가 이 머신에 있어야 한다. 앱 스택과는 무관하게 MCP 서버를 띄우는 데만 쓴다.
 
 > 이 skill은 콘솔 인증을 요구하지 않는다. 로컬 설정 파일 하나만 만진다.
 
@@ -53,10 +55,13 @@ adapter-note: 'Host-branched MCP registration — Claude Code writes project `.m
 ls package.json
 ```
 
-없으면 중단:
+있으면 루트다. 없으면 `package.json`이 없는 스택일 수 있으니 바로 중단하지 않는다. cwd가
+프로젝트 루트인지 확인한다. Unity는 `Assets/`와 `Packages/manifest.json`이 있는 디렉터리가
+루트다. 엔진 HTML5 빌드 등 그 밖의 스택은 프로젝트 설정 파일이 있는 디렉터리를 찾고, 확신이
+없으면 사용자에게 어느 디렉터리에 `.mcp.json`을 둘지 묻는다. 루트가 아닌 곳이면 중단하고 안내한다:
 
 ```
-package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실행해주세요.
+프로젝트 루트를 찾지 못했습니다. 프로젝트 루트 디렉토리에서 다시 실행해주세요.
 예: cd <project-root> && /ait:setup-debugger
 ```
 

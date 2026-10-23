@@ -20,7 +20,7 @@
 | 1 | devtools panel 탭(`references/panel-tabs.md`) | 아니오 — 어느 탭의 무엇을 볼지 지정하고 사용자 관측 결과를 받는다 | 패널 미설치면 `/ait:inject-devtools` 안내 후 브라우저 기본 DevTools만으로 진행 |
 | 1 | 브라우저 콘솔·Network·예외 스택 | Playwright MCP가 붙어 있으면 일부(`browser_evaluate`), 아니면 아니오 | 에이전트가 콘솔에 붙여넣을 스니펫을 인쇄하고 사용자가 출력을 붙여넣는다 — 루프는 계속 돈다(관측 단계만 사람 경유) |
 | 1 | `window.__ait?.state` (mock 런타임 상태) | Playwright MCP `browser_evaluate`로 읽음 | 위와 동일한 붙여넣기 경로 |
-| 1 | 백그라운드 dev 서버 출력(빌드 에러·HMR 로그) | 예 | — |
+| 1 | 백그라운드 dev 서버 출력(빌드 에러·핫 리로드 로그) | 예 | — |
 | 1·3 | 프로젝트 소스·테스트 파일 | 예 (`Read`/`Grep`) | — |
 | 3 | attach 후 도구 13종(`references/attach-tools.md`) | 예 — attach가 완료된 세션에서 | `ait-devtools` MCP 미배선이면 환경 3 관측 자체가 불가. `/ait:setup-debugger`를 안내하고, 그 전까지는 환경 1 안에서만 루프를 돈다 |
 | 3 | `run_tests` 실기기 실행 결과 | 예 | 테스트 파일이 없으면 재현 절차를 수동으로 반복 |
@@ -60,7 +60,7 @@
 
 - 미니앱 소스 편집(가설 하나를 흔드는 최소 변경), 임시 계측 추가·제거
 - dev 서버 재기동, HMR 반영 대기
-- 로컬 테스트·`run_tests` 실행, `ait build` 재빌드
+- 로컬 테스트·`run_tests` 실행, 프로젝트 빌드 스크립트(`ait build` 포함) 재실행
 
 **금지** (사용자 명시 승인 없이는 하지 않는다):
 
@@ -83,7 +83,7 @@
 증상: 로그인 버튼을 눌러도 authorizationCode가 안 옴
 가설: appLogin() mock이 권한 미승인 상태에서 reject되는데 호출부가 catch를 삼킨다
 관측: window.__ait?.state 의 권한 필드 (Playwright browser_evaluate)
-수정: src/pages/Login.tsx 의 catch 블록에서 에러를 콘솔로 노출 (1파일, 임시 계측)
+수정: 로그인 호출부 catch 블록에서 에러를 콘솔로 노출 (1파일, 임시 계측)
 재검증: 로그인 버튼 재클릭 -> 콘솔에 mock reject 사유 출력됨
 판정: 가설 성립 - 다음 사이클에서 권한 요청 선행 호출을 추가해 본검증
 ```

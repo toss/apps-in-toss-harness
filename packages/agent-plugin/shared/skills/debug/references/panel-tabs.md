@@ -14,7 +14,9 @@
 | device API 모드 | Device / Environment | mock / web / prompt 모드 전환 |
 | 모바일 뷰포트 | Viewport | iPhone/Galaxy 프리셋 + orientation |
 
-패널이 안 보이면 진입점(`main.ts`/`index.ts`)에 아래가 있는지 확인:
+패널이 안 보이면 브라우저 진입점에 아래가 있는지 확인한다. 진입점은 프로젝트 루트 `index.html`의
+`<script type="module" src="...">`가 가리키는 파일에서 찾고, 없으면 번들러·프레임워크 설정의 `entry`를
+본다. 후보가 여럿이거나 서버에서도 실행되는 모듈이면 추측하지 말고 사용자에게 묻는다.
 
 ```ts
 import '@apps-in-toss/devtools/panel';
