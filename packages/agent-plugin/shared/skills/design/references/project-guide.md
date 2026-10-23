@@ -135,9 +135,12 @@ append하고, 없으면 다이제스트만 담은 새 파일을 만든다.
 
 1. `src/vite-env.d.ts` 존재 또는 tsconfig `types`에 `vite/client` 포함
    여부를 확인한다.
-2. 있으면 진입점(`src/main.tsx` 등, 탐지 순서는 `render-rules.md` 부록과
-   동일)의 첫 import 줄에 `import './styles/base.css';`를 추가한다 —
-   추가 전에 `styles/base.css` grep으로 이미 배선됐는지 먼저 확인한다.
+2. 진입점은 `src/index.css` → `index.html`의 `<script type="module" src>`가
+   가리키는 파일 → 관례 이름(`src/main.tsx` 등, 순서는 `render-rules.md` 부록과
+   동일) 순으로 첫 번째 실재 파일을 쓴다(프레임워크·엔트리 이름을 가정하지 않는다
+   — Vue의 `main.ts`, vanilla JS의 `main.js` 모두 같은 규칙). `.js` 계열은 바로,
+   `.ts` 계열은 위 1번이 참일 때 첫 import 줄에 `import './styles/base.css';`를
+   추가한다 — 추가 전에 `styles/base.css` grep으로 이미 배선됐는지 먼저 확인한다.
 3. `vite/client` 앰비언트 타입이 없거나 진입점 후보가 전부 없으면 JS
    import를 포기하고 `index.html`의 `</head>` 앞에
    `<link rel="stylesheet" href="/src/styles/base.css" />`를 추가한다.

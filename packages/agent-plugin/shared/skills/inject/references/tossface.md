@@ -15,15 +15,31 @@
 - **인터넷 연결 필요**: 모드 A는 런타임에 브라우저가 CDN에서 CSS/폰트를 내려받고,
   모드 B는 절차 중 `curl`로 공식 `dist/tossface.css`와 subset 원본 `.woff2` 파일을
   받는다.
-- 프로젝트 진입 CSS 또는 HTML 파일의 위치 — 프로젝트마다 다르므로 먼저 구조를
-  확인한다.
+- 프로젝트 전역 스타일시트 또는 HTML 파일의 위치 — 프로젝트마다 다르므로 먼저
+  아래 "진입 CSS 찾기"로 확인한다.
+
+### 진입 CSS 찾기
+
+프레임워크 이름을 가정하지 않고 아래 순서로 찾는다(`design` skill의
+`scripts/inject-project-guide.sh`의 진입점 탐지와 같은 순서다). 첫 번째로 실재하는 것을 쓴다.
+
+1. 전역 스타일시트로 관례상 쓰는 파일: `src/index.css`, `src/styles/*.css` 중 앱 루트에서 불리는 것.
+2. 프로젝트 루트 `index.html`이 `<script type="module" src="...">`로 가리키는 엔트리 모듈이
+   최상단에서 import하는 CSS (React·Vue·Svelte·vanilla 어디든 같다).
+3. 프레임워크가 전역 CSS 자리로 정한 파일(프레임워크 문서·기존 import 관계로 확인).
+4. 위에서 못 찾으면 `index.html`의 `<head>`에 `<link>`를 넣는다(모드 A) 또는 별도
+   CSS 파일을 만들어 엔트리 모듈 최상단에서 import한다(모드 B, 해당 엔트리가 CSS import를
+   지원할 때).
+
+전역 스타일시트가 둘 이상이거나 서버 렌더링 레이아웃처럼 위치가 갈리면 추측하지 말고
+사용자에게 어느 파일이 앱 전체에 적용되는지 묻는다.
 
 ## 0. 기존 배선 확인 (idempotency)
 
 절차를 시작하기 전에 프로젝트에 이미 Tossface가 배선돼 있는지 먼저 훑는다:
 
 ```bash
-grep -rn "Tossface" --include="*.css" --include="*.html" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" .
+grep -rn "Tossface" --include="*.css" --include="*.scss" --include="*.html" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.vue" --include="*.svelte" --include="*.astro" --exclude-dir=node_modules --exclude-dir=dist .
 ```
 
 `@import`·`<link>`·`@font-face`·`font-family` 중 어디서든 `Tossface`가 잡히면 이미

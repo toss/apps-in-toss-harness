@@ -330,13 +330,15 @@ Product Ethics가 상위다. 관련성 없는 강매, 기만, 사행성 과장�
 (idempotent).
 
 1. **탐지 순서** — 아래 순서로 첫 번째로 존재하는 파일을 진입점으로 본다:
-   `src/main.tsx` → `src/main.ts` → `src/index.tsx` → `src/index.ts` →
-   `index.tsx` → `index.ts`.
+   `src/index.css` → `index.html`의 `<script type="module" src>`가 가리키는
+   파일(프레임워크·엔트리 이름을 가정하지 않는다) → `src/main.tsx` →
+   `src/main.ts` → `src/index.tsx` → `src/index.ts` → `index.tsx` → `index.ts`.
 2. **idempotency 확인** — 그 파일과 `index.html` 양쪽에서 `styles/base.css`를
    grep한다. 어느 한쪽에라도 잡히면 skip(`index.html`의 `<link>`로 이미 걸려
    있는데 진입점에 import를 더하면 두 번 로드된다).
-3. **vite/client 가드** — `src/vite-env.d.ts` 존재 또는 tsconfig `types`에
-   `vite/client` 포함 여부를 확인한다. 있으면 진입점 첫 import 줄에
+3. **vite/client 가드** — 진입점이 `.ts` 계열일 때 `src/vite-env.d.ts` 존재 또는
+   tsconfig `types`에 `vite/client` 포함 여부를 확인한다(`.js` 계열 진입점은 가드
+   없이 import한다). 있으면 진입점 첫 import 줄에
    `import './styles/base.css';`를 추가한다.
 4. **`index.html` 폴백** — 진입점 후보가 전부 없거나 `vite/client` 앰비언트
    타입이 없으면 JS import를 포기하고 `index.html`의 `</head>` 앞에

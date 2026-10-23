@@ -5,9 +5,12 @@ description: |
   `create-ait-app` CLI non-interactively (`--inline`, always `@latest`), then
   verifying the `@apps-in-toss/devtools` wiring (mock SDK + panel) the CLI
   performs so `npm run dev` runs in a plain browser immediately — falling back to
-  manual wiring only when the CLI did not do it. Supports `--tds` and
-  `--sample iap,iaa` passthrough. Falls back to the bundled react-vite template
-  with `--local` (offline); `--no-devtools` un-wires devtools afterwards.
+  manual wiring only when the CLI did not do it. Stack-neutral: defaults to
+  `react-ts`, and when the user names a stack ("Vue로", "Svelte + TS") picks the
+  matching preset from `create-ait-app --list-templates`. Supports `--tds` and
+  `--sample iap,iaa` passthrough. `--local` is a React-only offline fallback
+  (bundled react-vite template, being phased out); `--no-devtools` un-wires
+  devtools afterwards.
   The freshly scaffolded project also gets a design guide seeded into it
   (tokens, hard rules, icon set, Tossface emoji font wiring) so later sessions
   build screens against the same standard — `--no-design-guide` and
@@ -33,11 +36,12 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
 
 - scaffold는 **`toss/create-ait-app`**(공식 스캐폴더 CLI)을 비대화형(`--inline`)으로
   호출해 만든다 — **버전은 항상 `@latest`**(명시 핀 없음, maintainer 결정
-  2026-08-10). 템플릿은 번들된 create-vite 프리셋에 위임한다(기본
-  `react-ts`, 별칭 `js`→`vanilla`·`ts`→`vanilla-ts`, 전체 목록은
-  `--list-templates`), `--tds`(TDS 컴포넌트 홈 + provider, `--template`과
-  동시 지정 불가 — 아래 참조), `--sample iap,iaa`(인앱결제·인앱광고 예제)를
-  그대로 쓸 수 있다.
+  2026-08-10). 템플릿은 번들된 create-vite 프리셋에 위임한다. 스택(프레임워크·언어)은
+  사용자가 정한다 — 말하지 않았으면 기본 `react-ts`, 말했으면
+  `--list-templates` 출력에서 그 스택의 프리셋을 고른다(아래 "스택 선택").
+  `--tds`(TDS 컴포넌트 홈 + provider, React 18 전용, `--template`과 동시 지정
+  불가 — 아래 참조), `--sample iap,iaa`(인앱결제·인앱광고 예제)를 그대로 쓸 수
+  있다.
 - **`@apps-in-toss/devtools` 배선과 번들 설정은 CLI가 한다** — create-ait-app이
   scaffold 직후 `ait init`을 호출해 devtools를 devDependency로 넣고 번들러 설정에
   unplugin을 주입하며, `apps-in-toss.config.ts`와 `build`/`build:vite`/`deploy`
@@ -56,8 +60,8 @@ argument-hint: '<app-name> [--template <name>] [--tds] [--sample <ids>] [--local
   Tossface가 들어간다. 나중에 어떤 세션이 화면을 만들어도 같은 기준(글자 크기
   하한·터치 44px·하단 CTA safe area)을 따르게 하려는 것이다.
   `--no-design-guide`(전체)·`--no-tossface`(서체만)로 뺀다.
-- 다음 단계(`npm run dev` → 코드 수정 → `/ait:design` → `npm run build`(=
-  `tsc -b && vite build && ait build`)로 번들 생성 → console MCP 도구로
+- 다음 단계(`npm run dev` → 코드 수정 → `/ait:design` → `npm run build`(프로젝트
+  `build` 스크립트 — 끝이 `ait build`)로 번들 생성 → console MCP 도구로
   등록·업로드)가 명확히 안내된다.
 
 이 skill은 **scaffold 호출 + 후처리(설치 상태 확인 · 형상 가드 · devtools 배선
@@ -71,9 +75,9 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
 - `<app-name>` (필수): 사람이 읽는 이름 후보. 디렉토리/패키지 이름으로
   슬러그화된다 (kebab-case, 소문자). 공백·특수문자 포함 가능.
 - `--template <name>` (선택, default `react-ts`): 지원 목록은 create-ait-app이
-  번들한 create-vite에서 **동적으로 산출**된다(`getSupportedViteTemplates()` —
-  index.html 존재 + vite dep + dev/build 스크립트 + 비-SSR 필터 기준). 별칭
-  `js`→`vanilla`, `ts`→`vanilla-ts`. 실제 목록은 실행 시점에 확인한다:
+  번들한 create-vite에서 **동적으로 산출**된다(index.html 존재 + vite dep +
+  dev/build 스크립트 + 비-SSR 필터 기준). 별칭 `js`→`vanilla`, `ts`→`vanilla-ts`.
+  **목록은 이 문서에 적지 않는다** — 실행 시점의 CLI가 정본이다:
 
   ```bash
   npx -y create-ait-app@latest --list-templates
@@ -81,7 +85,18 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
 
   JSON 배열로 지원 템플릿과 `"tds"`가 함께 나온다(단 `"tds"`는 `--template`이
   아니라 아래 `--tds` 플래그로 지정 — 혼동 금지).
-- `--tds` (선택): TDS(토스 디자인 시스템) 통합 변형. **`--template`과 동시
+
+  **스택 선택** — 사용자가 스택을 말하지 않았으면 이 조회 없이 Step 2 fence의
+  기본값(`react-ts`)을 그대로 쓴다(왕복을 늘리지 않는다). 사용자가 스택을 말했으면
+  ("Vue로", "Svelte + TS", "바닐라 JS로") 위 명령을 **한 번** 실행해 그 출력에서
+  고른다: 프레임워크 이름이 같은 항목을 찾고, 언어는 사용자가 JS를 명시했을 때만
+  접미사 없는 항목, 그 밖에는 `-ts` 항목이다. 요청한 스택이 목록에 없으면 비슷해
+  보이는 다른 프리셋으로 바꿔 넣지 말고 목록을 보여 주며 되묻는다. 선택한 이름을
+  Step 2 fence의 `react-ts` 자리에 넣는다. 스택별 파일 구조·엔트리·빌드 스크립트는
+  이 문서가 가정하지 않는다 — 생성된 프로젝트의 `package.json` `scripts`와 설정
+  파일, 그리고 패키지 README를 읽고 판단한다.
+- `--tds` (선택): TDS(토스 디자인 시스템) 통합 변형(React 18 전용 — 다른 스택
+  요청과는 함께 쓸 수 없다). **`--template`과 동시
   지정 불가** — CLI는 `--template`과 `--tds`를 함께 주면 즉시 거부한다
   (`"--template과 --tds는 함께 사용할 수 없어요."`, `assertNonInteractiveArgs`
   실측). `--tds`는 **단독**으로 지정한다.
@@ -95,8 +110,10 @@ README/UI/주석에 과장·홍보성 문구를 넣지 않는다.
 - `--sample <ids>` (선택): `iap`, `iaa` 콤마 구분 — 인앱결제·인앱광고 예제
   페이지를 scaffold에 포함.
 - `--local` (선택): create-ait-app을 쓰지 않고 plugin 내장 `react-vite` 템플릿을
-  복사한다. 오프라인/네트워크 제한 환경 폴백 — wf 2.x 기반 **구세대 폴백**이라
-  정본 3.x와 형상이 다르다(상세는 `references/local-template.md`). 이 경로에서만
+  복사한다. **React 전용 오프라인 폴백이며 단계적으로 폐지될 예정이다** — 스택을
+  고를 수 없다(Vue 등을 요청했다면 `--local`로 대신하지 말고 온라인 CLI 경로를
+  쓴다). wf 2.x 기반 **구세대 폴백**이라 정본 3.x와 형상이 다르다(상세는
+  `references/local-template.md`). 이 경로에서만
   `--no-install`을 지원한다(react-vite 템플릿 고유 옵션 — create-ait-app에는
   install을 떼어내는 플래그가 없어 정본 호출은 install까지 수행하고, 이 skill이
   그 결과를 §2-1에서 확인·수렴시킨다).
@@ -213,7 +230,7 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
 
 위 fence는 기본값 `--template react-ts`가 이미 채워진 **그대로 실행되는 명령**이다 —
 템플릿 요청이 없으면 한 글자도 바꾸지 않고 실행한다. 바꿔 넣는 자리는 셋뿐이다:
-사용자가 다른 템플릿을 지정했으면 `react-ts` 자리에 그 이름, `--tds`면
+사용자가 다른 스택을 지정했으면 `react-ts` 자리에 `--list-templates`에서 고른 이름, `--tds`면
 `--template react-ts`를 통째로 `--tds`로 교체(둘을 같이 주면 CLI가 거부한다 —
 이때 주입 스크립트 인자에도 `--tds`를 붙인다), `--sample`을 요구했으면
 `--template react-ts` 뒤에 `--sample iap,iaa`를 덧붙인다. **"템플릿 얘기가 없었으니
@@ -434,7 +451,7 @@ else
 touch "$P/.ait-design-guide-failed" 2>/dev/null
 if [ "$T" = 1 ] && [ "$N" = 1 ]; then set -- --tds --no-tossface; elif [ "$T" = 1 ]; then set -- --tds; elif [ "$N" = 1 ]; then set -- --no-tossface; else set --; fi
 dgico() { if node -e "process.exit(require(require('node:path').resolve('$P','package.json')).dependencies?.react?0:1)" 2>/dev/null; then [ -s "$P/src/components/icons.tsx" ]; else [ -s "$P/src/assets/icons/close.svg" ]; fi; }
-dgent() { for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do grep -qs 'styles/base.css' "$P/$C" && return 0; done; for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -f "$P/$C" ] && return 1; done; return 0; }
+dgent() { HE="$(grep -o '<script[^>]*>' "$P/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"; for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -n "$C" ] && grep -qs 'styles/base.css' "$P/$C" && return 0; done; for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -n "$C" ] && [ -f "$P/$C" ] && return 1; done; return 0; }
 dgok() { grep -qs "<!-- $MK v" "$P/AGENTS.md" && grep -qs "<!-- $MK v" "$P/CLAUDE.md" && [ -s "$P/docs/design-guide.md" ] && { [ "$T" = 1 ] || { [ -s "$P/src/styles/tokens.css" ] && [ -s "$P/src/styles/base.css" ] && dgico && dgent; }; }; }
 if dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(이미 있음)"
 else
@@ -481,15 +498,18 @@ for I in chevron-down chevron-left chevron-right chevron-up close search; do
 done
 [ "$IF" = 0 ] || { OK=0; R="$R icons=FAIL"; }
 fi
+HE="$(grep -o '<script[^>]*>' "$P/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"
 E=""
-for C in src/index.css src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
-[ -f "$P/$C" ] && { E="$P/$C"; break; }
+for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
+[ -n "$C" ] && [ -f "$P/$C" ] && { E="$P/$C"; break; }
 done
+JSOK=0
+case "$E" in *.js|*.jsx|*.mjs) JSOK=1;; *.ts|*.tsx|*.mts) if [ -f "$P/src/vite-env.d.ts" ] || [ -n "$(find "$P" -maxdepth 1 -name 'tsconfig*.json' -exec grep -l '"vite/client"' {} + 2>/dev/null)" ]; then JSOK=1; fi;; esac
 if [ ! -f "$P/src/styles/base.css" ]; then R="$R entry=skip"
 elif [ -n "$E" ] && grep -q 'styles/base.css' "$E" 2>/dev/null; then R="$R entry=skip"
 elif [ -n "$E" ] && [ "${E%index.css}" != "$E" ]; then
 TE="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$TE" && mv "$TE" "$E" && R="$R entry=index.css" || { OK=0; R="$R entry=FAIL"; }
-elif [ -n "$E" ] && { [ -f "$P/src/vite-env.d.ts" ] || [ -n "$(find "$P" -maxdepth 1 -name 'tsconfig*.json' -exec grep -l '"vite/client"' {} + 2>/dev/null)" ]; }; then
+elif [ -n "$E" ] && [ "$JSOK" = 1 ]; then
 TE="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "import './styles/base.css';" | cat - "$E" > "$TE" && mv "$TE" "$E" && R="$R entry=js" || { OK=0; R="$R entry=FAIL"; }
 elif [ -f "$P/index.html" ] && ! grep -q 'styles/base.css' "$P/index.html" 2>/dev/null; then
 TE="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/<\/head>/&&!d{print "    <link rel=\"stylesheet\" href=\"/src/styles/base.css\" />";d=1}{print}' "$P/index.html" > "$TE" && mv "$TE" "$P/index.html" && R="$R entry=index.html" || { OK=0; R="$R entry=FAIL"; }
@@ -626,7 +646,7 @@ ls ./<package_name>/node_modules/.bin/ait
 
 `있음`은 **캐리어 마커와 산출물이 전부 자리에 있을 때만** 찍힌다 — `AGENTS.md`와
 `CLAUDE.md`의 마커, `docs/design-guide.md`, 그리고 비-TDS면 `tokens.css`·`base.css`·
-프로젝트 계열에 맞는 아이콘(React면 `icons.tsx`, vanilla면 svg)·entry 배선까지 실재를
+프로젝트 계열에 맞는 아이콘(`react` 의존성이 있으면 `icons.tsx`, 그 밖의 프레임워크는 svg)·entry 배선까지 실재를
 본다. 정본 스크립트는 개별 항목이 실패해도 마커를 붙이므로 마커만으로는 성공이
 아니고, fence가 그걸 알고 산출물 실재로 다시 판정한다. 파일 몇 개만 들어갔는데 성공으로
 보고되는 경로는 없고, 그렇게 걸린 형상은 그 자리에서 폴백이 채워 복구한다 — entry
@@ -665,7 +685,11 @@ v2가 아닌 버전이 찍히면(`agents=skip(ait:design-guide v0)`) 덮어쓰�
 들어가는 본문은 `memory-digest.md` 원문 그대로다(한 글자도 고쳐 쓰지 않는다).
 `CLAUDE.md`에는 `@AGENTS.md` 한 줄만 넣는다 — 같은 본문을 두 파일에 넣으면 세션마다
 두 배로 실린다. entry 배선 우선순위는 `src/index.css` 최상단 `@import` → JS entry 첫
-import → `index.html`의 `<link>`이고, 첫 번째로 해당되는 하나만 쓴다.
+import → `index.html`의 `<link>`이고, 첫 번째로 해당되는 하나만 쓴다. JS entry는
+엔트리 파일명을 가정하지 않고 `index.html`의 `<script type="module" src>`가 가리키는
+파일을 먼저 찾는다(없을 때만 `main.ts(x)`·`index.ts(x)` 같은 관례 이름) —
+`.ts` 계열 entry는 `vite/client` 타입이 있을 때만 import를 더하고, 아니면
+`index.html`의 `<link>`로 내려간다.
 
 이 판정은 Step 2가 백그라운드로 넘어갔다 끝난 경우에도 건너뛰지 않는다 — 출력
 줄(`5-B:`)을 놓쳤어도 파일 실재가 최종 판정이다. 스크립트는 멱등이라 이미 주입된
@@ -688,15 +712,17 @@ import → `index.html`의 `<link>`이고, 첫 번째로 해당되는 하나만 
 
 ```bash
 node -e "const p=require('./<package_name>/package.json'); console.log('devDep:', p.devDependencies?.['@apps-in-toss/devtools'] ?? '(없음)')"
-ls ./<package_name>/vite.config.*
+ls ./<package_name>/*.config.* 2>/dev/null
 node -e "require.resolve('@apps-in-toss/devtools/unplugin', { paths: ['./<package_name>'] })" && echo "실물: 있음" || echo "실물: 없음"
 ```
 
-두 번째로 나온 그 설정 파일을 `Read`해 `@apps-in-toss/devtools/unplugin` import와
-`plugins` 배열의 `aitDevtools.vite(...)` 항목이 있는지 확인한다(실측 2026-08-07
-산출물: devDependencies에 `"@apps-in-toss/devtools": "^3.0.2"`, `vite.config.ts`에
+두 번째로 나온 목록에서 번들러 설정 파일(create-ait-app 프리셋은 전부 Vite라
+`vite.config.*`)을 `Read`해 `@apps-in-toss/devtools/unplugin` import와 `plugins`
+배열의 `aitDevtools.vite(...)` 항목이 있는지 확인한다(실측 2026-08-07 React 산출물:
+devDependencies에 `"@apps-in-toss/devtools": "^3.0.2"`, `vite.config.ts`에
 `import aitDevtools from "@apps-in-toss/devtools/unplugin";` +
-`plugins: [aitDevtools.vite(), react()]`).
+`plugins: [aitDevtools.vite(), react()]` — 뒤쪽은 프레임워크 플러그인이라 스택마다
+다르다).
 
 - **devDep·unplugin·실물이 셋 다 있으면 이 단계는 끝이다** — 아무것도 바꾸지 않고
   Step 5로 넘어간다. CLI가 만든 형태(`aitDevtools.vite()` 인자 없음 등)를 취향으로
@@ -758,7 +784,7 @@ Step 5로 넘어가고, unplugin 배선만 빠져 있으면 아래 4-a로 간다
 #### 4-a. 폴백 — CLI가 배선하지 않았을 때
 
 `inject` skill의 devtools facet과 같은 패턴을 이 자리에서 수행한다 (idempotent —
-이미 된 부분은 건드리지 않는다). 상세 패치 패턴이 필요하면 **Read <이 skill의 base
+이미 된 부분은 건드리지 않는다). 번들러 확인·README 기반 등록 절차가 필요하면 **Read <이 skill의 base
 directory>/../inject/references/devtools.md**.
 
 > `@apps-in-toss/devtools`(공개 npm 발행본, 2026-08-04부터 `@apps-in-toss/*`)는
@@ -771,25 +797,14 @@ directory>/../inject/references/devtools.md**.
    ```bash
    npm --prefix ./<package_name> install -D @apps-in-toss/devtools
    ```
-2. vite.config 파일을 수정한다. **실제 존재하는 파일을 먼저 확인**한다:
-
-   ```bash
-   ls ./<package_name>/vite.config.*
-   ```
-
-   확장자는 템플릿의 **TypeScript 여부**로 갈린다 — TS 계열(`react-ts`·`ts`·
-   `--tds`) → `vite.config.ts`, JS 계열(`react`·`js`) → `vite.config.js`.
-   **존재하지 않는 확장자로 새 파일을 만들지 않는다**: Vite는 `.js`를 `.ts`보다
-   먼저 탐색하므로 `vite.config.js`가 있는 프로젝트에 `.ts`를 새로 만들면 그
-   파일이 조용히 무시돼 배선이 침묵 실패한다. 둘 다 없으면 중단하고 산출물 목록을
-   보고한다.
-
-   확인된 그 파일에:
-   - `import aitDevtools from '@apps-in-toss/devtools/unplugin';`
-   - `plugins` 배열에 `aitDevtools.vite({ panel: true })` 추가 (배열이 없으면 생성 —
-     vanilla `js`/`ts` 템플릿도 Vite이므로 동일하게 적용된다).
-   - `optimizeDeps.exclude`에 `@apps-in-toss/web-framework` 계열 추가
-     (내장 react-vite 템플릿의 vite.config.ts와 같은 형태).
+2. 번들러 설정 파일에 `@apps-in-toss/devtools/unplugin` import와 plugin 항목을
+   추가한다. **번들러별 형태·옵션은 `@apps-in-toss/devtools` README의 해당 번들러
+   절("번들러 배선", `node_modules/@apps-in-toss/devtools/README.md`)을 따른다** —
+   여기서 번들러별 코드를 외워 쓰지 않는다(위에서 가리킨 `inject` 참조 문서에도 패턴 요약이
+   있다). **실제 존재하는 설정 파일만 고친다** — `ls ./<package_name>/*.config.*`로
+   확인하고, 없는 확장자로 새 파일을 만들지 않는다(Vite는 `.js`를 `.ts`보다 먼저
+   탐색하므로 새로 만든 파일이 조용히 무시돼 배선이 침묵 실패한다). 설정 파일이
+   없으면 중단하고 산출물 목록을 보고한다.
 
 이 배선이 환경 1(브라우저 + mock SDK + panel)을 여는 것이다 — 없으면
 `--sample`로 넣은 IAP/IAA 예제가 브라우저에서 "샌드박스앱/토스앱에서
@@ -806,9 +821,9 @@ directory>/../inject/references/devtools.md**.
    ```bash
    npm --prefix ./<package_name> uninstall @apps-in-toss/devtools
    ```
-2. 확인된 vite.config 파일에서 `@apps-in-toss/devtools/unplugin` import 줄과
-   `plugins` 배열의 `aitDevtools.vite(...)` 항목을 `Edit`으로 제거한다. 배열
-   자체나 다른 플러그인(`react()` 등)은 그대로 둔다.
+2. 확인된 번들러 설정 파일에서 `@apps-in-toss/devtools/unplugin` import 줄과
+   `plugins` 배열의 `aitDevtools.*(...)` 항목을 `Edit`으로 제거한다. 배열
+   자체나 다른 플러그인(프레임워크 플러그인 등)은 그대로 둔다.
 
 해제한 경우 Step 6 완료 안내에서 `npm run dev` 줄의 설명을 조정하고
 `/ait:inject-devtools` seam을 알린다.
@@ -929,7 +944,7 @@ fence를 만들지 말고 Step 3의 그 fence를 그대로 실행한다.
 배포 준비가 되면 (번들 설정은 템플릿에 이미 포함):
   /ait:design       # 등록용 로고·썸네일·스크린샷 산출
                      # 말로: "등록용 로고랑 스크린샷 만들어줘"
-  npm run build     # tsc -b && vite build && ait build → 프로젝트 디렉터리 안에 <package_name>.ait 생성 (package.json 옆)
+  npm run build     # 프로젝트 build 스크립트(끝이 ait build) → 프로젝트 디렉터리 안에 <package_name>.ait 생성 (package.json 옆)
   console MCP       # miniapp_create → bundle_upload → bundle_upload_complete 로 등록·업로드
                      # (최초 1회 /mcp 에서 ait-console 인가 필요)
   /ait:test-on-device # 위 빌드·업로드·컴파일 확인을 한 번에 (실기기 확인의 정규 경로)
@@ -945,14 +960,16 @@ fence를 만들지 말고 Step 3의 그 fence를 그대로 실행한다.
 참고: 브라우저 mock은 web-framework 2.x(flat 함수)·3.x(네임스페이스,
   Clipboard.* 등) 표면을 모두 지원하며, 이 프로젝트(wf 3.x)에서는 자동
   감지(sdkVersion: 'auto')로 3.x 표면이 선택됩니다. 모노레포 등 자동 감지가
-  어긋나는 환경이면 vite.config의 sdkVersion을 명시적으로 지정하세요.
+  어긋나는 환경이면 번들러 설정(vite.config 등)의 sdkVersion을 명시적으로 지정하세요.
 
 문서가 필요하면 docs MCP(searchDocumentation/getPage)로 조회하세요.
 ```
 
 첫 줄 뒤의 `디자인 가이드 포함:` 줄은 **5-B가 실제로 넣은 것만** 나열한다 —
 `--tds`면 CSS·아이콘이, `--no-tossface`면 서체 항목이 빠지고, `--no-design-guide`
-면 줄 자체를 인쇄하지 않는다. 5-B 요약에서 실패한 항목도 빼고 적는다. 단,
+면 줄 자체를 인쇄하지 않는다. 5-B 요약에서 실패한 항목도 빼고 적는다. 아이콘은
+React 프로젝트면 `src/components/icons.tsx`, 그 밖의 스택이면
+`src/assets/icons/*.svg`로 적는다. 단,
 **바로 앞 Step 5의 fence가 `완료 블록에 그대로 넣을 줄:`을 찍었으면 이 줄을
 생략하는 게 아니라 그 콜론 뒤의 문장(`디자인 가이드: 주입 실패 — /ait:design으로
 나중에 넣을 수 있습니다`)으로 바꿔 인쇄한다** — 닫힘 규칙 ③이다. 몇 턴 전 판정을
@@ -1003,8 +1020,8 @@ fence를 만들지 말고 Step 3의 그 fence를 그대로 실행한다.
 npm --prefix <project_abs_path> run dev
 ```
 
-`run_in_background: true`로 실행한다. `dev` 스크립트는 순정 create-vite 그대로
-`vite`라 stdout에 표준 배너(`VITE v… ready` + `Local: http://localhost:<port>`)가
+`run_in_background: true`로 실행한다. `dev` 스크립트는 프리셋이 정한 그대로(`package.json`의 `scripts.dev` —
+지금 프리셋은 전부 `vite`)라 stdout에 표준 배너(`VITE v… ready` + `Local: http://localhost:<port>`)가
 뜬다 — 그 패턴을 파싱해 URL을 알린다(기본 포트 5173, 형식이 다르면 포트 폴백):
 
 ```
@@ -1101,4 +1118,5 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 - 브라우저 mock dev 환경 등 주제별 가이드는 docs MCP(searchDocumentation/
   getPage)로 조회한다.
 - `--local` 폴백 템플릿 정책: `shared/templates/README.md` (react-vite는 wf
-  2.x 기반 구세대 오프라인 폴백으로 유지, 단계적 폐기 예정).
+  2.x 기반 **React 전용** 구세대 오프라인 폴백으로 유지, 단계적 폐기 예정 —
+  새 스택 지원은 이 폴백이 아니라 create-ait-app 프리셋으로 한다).

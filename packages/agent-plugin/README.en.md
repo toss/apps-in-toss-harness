@@ -18,6 +18,7 @@ Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a
 - `/ait:test-on-device` — upload the bundle to the console and check it in the real Toss app (build → upload → confirm compile → hand over the link)
 - `/ait:launch` — pre-launch check, rejection handling, and a review request you approve
 - `/ait:server` — write or fix server code, applying the user-identification, mTLS, response-envelope and CORS criteria it reads first
+- `/ait:feature` — implement an SDK feature (ads, in-app purchase, share, leaderboard, …) in your project, confirming the docs page first and matching your stack
 
 You do not have to memorize the commands — the same skills answer to plain language, and every skill
 prints its next step on **both surfaces**: the slash command and its plain-language equivalent. Five

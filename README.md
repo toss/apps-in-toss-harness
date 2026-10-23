@@ -25,7 +25,7 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 # 1) harness 플러그인 마켓플레이스 등록
 /plugin marketplace add toss/apps-in-toss-harness
 
-# 2) ait 플러그인 설치 (skill 11종 + MCP 서버 2개 자동 등록)
+# 2) ait 플러그인 설치 (skill 12종 + MCP 서버 2개 자동 등록)
 /plugin install ait@apps-in-toss
 
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회) — 문서 MCP(apps-in-toss-docs)는 인증 없이 자동 연결됨
@@ -65,7 +65,7 @@ Codex에도 같은 플러그인이 그대로 설치됩니다. Codex는 이 repo�
 # 1) harness 플러그인 마켓플레이스 등록
 codex plugin marketplace add toss/apps-in-toss-harness
 
-# 2) ait 플러그인 설치 (skill 11종 + MCP 서버 2개 자동 등록, ~/.codex/config.toml 무수정)
+# 2) ait 플러그인 설치 (skill 12종 + MCP 서버 2개 자동 등록, ~/.codex/config.toml 무수정)
 codex plugin add ait@apps-in-toss
 
 # 3) 콘솔 MCP 인가 (OAuth, 최초 1회)
@@ -130,7 +130,7 @@ agent
 <details>
 <summary>활성화 범위 · 콘솔 MCP 인가 · Claude Code와 다른 점 · 비대화형 참고 · MCP 서버만 등록하기</summary>
 
-설치는 **프로젝트 단위로 활성화**됩니다. `/plugins`에서 설치하면 현재 프로젝트의 `.cursor/settings.json`에 기록됩니다. 다른 프로젝트에서 쓰려면 거기서도 활성화해야 합니다. 활성화된 프로젝트의 세션에는 skill 11종과 문서 MCP 도구 4종이 바로 노출됩니다. 플러그인이 제공하는 MCP 서버는 `agent mcp list`에는 나오지 않습니다 — 그 명령은 `.cursor/mcp.json`(프로젝트)·`~/.cursor/mcp.json`(전역)에 등록된 서버 전용입니다.
+설치는 **프로젝트 단위로 활성화**됩니다. `/plugins`에서 설치하면 현재 프로젝트의 `.cursor/settings.json`에 기록됩니다. 다른 프로젝트에서 쓰려면 거기서도 활성화해야 합니다. 활성화된 프로젝트의 세션에는 skill 12종과 문서 MCP 도구 4종이 바로 노출됩니다. 플러그인이 제공하는 MCP 서버는 `agent mcp list`에는 나오지 않습니다 — 그 명령은 `.cursor/mcp.json`(프로젝트)·`~/.cursor/mcp.json`(전역)에 등록된 서버 전용입니다.
 
 **콘솔 MCP 인가는 데스크톱 에디터에서 합니다.** 플러그인이 제공하는 콘솔 MCP는 미인가 상태에서 `mcp_auth` 도구 1종만 노출되는데, CLI에서 이걸 호출하면 "Interactive MCP authentication is only available in the Cursor desktop IDE"가 돌아옵니다. 에디터에서 인가하면 그 프로젝트의 에디터 세션에 콘솔 도구 전체(102종)가 열립니다. 이 인가는 CLI 세션에는 전파되지 않으므로, CLI 세션에서 콘솔 MCP를 쓰려면 아래 "플러그인 없이 MCP 서버만" 경로로 `.cursor/mcp.json`에 직접 등록한 뒤 인가하세요.
 
@@ -208,13 +208,13 @@ agent mcp login ait-console
 | | "검수 넣기 전에 한번 봐줘" | `/ait:launch` |
 | 5. 기능별 | "토스 로그인으로 사용자를 식별하고 싶어" (`auth`) | `/ait:plan` → 개발 |
 | | "현재 위치로 주변 매장을 정렬하고 싶어" (`location`) | `/ait:plan` → 개발 |
-| | "인앱 디지털 재화를 결제로 팔고 싶어" (`iap`) | `/ait:plan` → 개발 |
-| | "인앱 광고를 넣고 싶어" (`ads`) | `/ait:plan` → 개발 |
-| | "즐겨찾기를 로컬에 저장하고 싶어" (`storage`) | `/ait:plan` → 개발 |
+| | "인앱 디지털 재화를 결제로 팔고 싶어" (`iap`) | `/ait:feature` |
+| | "인앱 광고를 넣고 싶어" (`ads`) | `/ait:feature` |
+| | "즐겨찾기를 로컬에 저장하고 싶어" (`storage`) | `/ait:feature` |
 
 1~4의 발화는 라우팅 회귀 측정으로 검증된 문장입니다. "이렇게 말하면 그 skill이 뜬다"가 실측으로 확인됐다는 뜻입니다.
 
-5(기능별)의 괄호 안은 `plan` skill이 들고 있는 SDK 도메인 카탈로그의 도메인 이름입니다(전체 18개). 어떤 도메인이 어떤 런타임 권한·콘솔 약관을 끌고 오는지는 `/ait:plan`이 매핑해 주고 정확한 API·권한 상수는 docs MCP(`searchDocumentation`/`getPage`)로 확인합니다. 카탈로그에 없는 기능 이름은 지어내지 마세요. 이 다섯 줄은 라우팅 게이트가 재는 케이스가 아니라 카탈로그에서 뽑은 예시입니다(기능 발화는 단독으로 특정 skill을 확정하지 않고 기획 중이면 `plan`으로 이어집니다).
+5(기능별)의 괄호 안은 `plan` skill이 들고 있는 SDK 도메인 카탈로그의 도메인 이름입니다(전체 18개). 어떤 도메인이 어떤 런타임 권한·콘솔 약관을 끌고 오는지는 `/ait:plan`이 매핑해 주고 정확한 API·권한 상수는 docs MCP(`searchDocumentation`/`getPage`)로 확인합니다. 카탈로그에 없는 기능 이름은 지어내지 마세요. 이 다섯 줄은 라우팅 게이트가 재는 케이스가 아니라 카탈로그에서 뽑은 예시입니다(기능 발화는 단독으로 특정 skill을 확정하지 않습니다. 기획 중이면 `plan`으로, 이미 있는 프로젝트에 붙이는 요청이면 `feature`로 이어집니다).
 
 ## 명령
 
@@ -232,6 +232,7 @@ agent mcp login ait-console
 | `/ait:launch [반려 사유]` | 출시 전 점검과 반려 대응. 공식 체크리스트(docs MCP)와 코드 스캔으로 고칠 것과 콘솔 확인 항목을 나눔. 반려 사유는 문서 항목과 맞춰 고치거나 원인을 못 찾으면 문의 초안을 만듦. 검수 요청은 사용자가 그 건을 승인한 뒤에만 보냄 (출시·롤백·프로모션은 하지 않음) | 5. register+ship |
 | `/ait:server [요청]` | 서버 코드를 쓰거나 고침. 사용자 식별(익명 식별키 교환 또는 토스 로그인)·mTLS 파트너 API 호출·응답 봉투·정확한 CORS origin 기준을 먼저 읽고 맞춤. 사용자가 고른 호스팅을 따르며 배포는 요청할 때만 함 (콘솔 호출 없음) | 3. dev |
 | `/ait:design [화면 또는 요청]` | 화면을 만들거나 고침 — 제로베이스 생성, 기존 화면 진단과 자동 수정, Figma 매핑(Figma는 선택), 등록용 이미지 자산 산출. 하드 규칙 위반은 코드를 직접 고쳐 해소 (등록·업로드는 하지 않음) | 8. design |
+| `/ait:feature [요청]` | SDK 기능(광고·인앱결제·공유·리더보드·햅틱·저장소 등)을 내 프로젝트에 구현. 프로젝트를 읽어 웹·Unity·엔진 HTML5 빌드·React Native 중 호출 형태와 SDK 버전을 정하고, API는 docs MCP 원문을 확인한 뒤 그 스택의 관용구로 씀. 광고 정책과 결제 지급 규약을 적용하고 콘솔에서 먼저 할 설정은 알려 줄 뿐 콘솔에는 쓰지 않음 | 4. dev |
 | `/ait:ux-writing [화면 또는 파일]` | 화면 카피를 문구 원칙으로 점검해 before/after를 제안 — design skill의 G6(카피) 판정 재작성 조력 (사용자 확인 없이는 적용하지 않음) | 8. design 짝 |
 | `ait build` (터미널 명령) | `granite.config.ts` 기반으로 `.ait` 네이티브 번들을 생성. `brand.icon`이 비어 있으면 실패합니다 | 5. register+ship |
 
@@ -253,7 +254,7 @@ MCP 없이 문서만 읽는 경로도 있습니다. 개발자센터가 같은 �
 1. **install** — `/plugin marketplace add` → `/plugin install`로 harness에 진입하고, `/mcp`에서 `ait-console`을 인가한 뒤 `/plugin`에서 자동 업데이트를 켭니다.
 2. **plan (선택)** — `/ait:plan [요구사항]`으로 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리합니다.
 3. **scaffold** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘 6종·`docs/design-guide.md`)와 이모지 서체 Tossface가 프로젝트에 들어갑니다. 에이전트가 자동으로 읽는 `AGENTS.md`에 규칙 요약이 남아, 이후 어떤 세션에서 화면을 만들어도 같은 기준이 적용됩니다 (`--no-design-guide`로 통째로, `--no-tossface`로 서체만 뺄 수 있습니다).
-4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다.
+4. **dev** — `npm run dev`로 로컬 브라우저에서 mock SDK와 devtools panel을 확인합니다. 토스 앱 없이 개발할 수 있는 첫 환경입니다. 광고·인앱결제 같은 SDK 기능을 프로젝트에 붙일 때는 `/ait:feature`를 씁니다. 광고·인앱결제 같은 SDK 기능을 프로젝트에 붙일 때는 `/ait:feature`를 씁니다.
 5. **실기기 확인** — `/ait:test-on-device`로 번들을 콘솔에 올려 **실제 토스 앱에서** 확인합니다. "폰에서 돌려보고 싶다"의 정규 경로가 이것입니다 — 번들 빌드 → 콘솔 업로드 → 컴파일 확인 → 도구가 돌려준 링크로 열기. React Native 전용 경로가 아니라 `.ait` 번들을 만드는 모든 프로젝트가 같은 절차를 씁니다. (`ait build`가 `brand.icon`을 요구하므로 자산이 없으면 7의 `/ait:design`을 먼저 돌립니다.)
 6. **debug (선택)** — 폰에서만 재현되는 문제를 코드 레벨로 파고들 때 `/ait:setup-debugger`로 디버그 MCP를 배선한 뒤 `/ait:debug`로 로컬·실기기 상태를 분석합니다.
 7. **design** — `/ait:design [화면 또는 요청]`으로 화면을 만들고 고칩니다. 화면이 하나도 없는 프로젝트에서 처음부터 그려 내는 것, 이미 있는 화면을 진단하고 코드를 고치는 것, Figma 디자인을 반영하는 것(Figma는 선택 입력), 등록용 로고·썸네일·스크린샷을 산출하는 것이 전부 한 명령에 있습니다. 본문 글자 크기 하한·터치 44px·하단 CTA safe-area 같은 하드 규칙에 걸리면 지적으로 끝내지 않고 코드를 직접 고칩니다. `ait build`가 요구하는 `brand.icon`을 채우는 데도 이 단계가 필요합니다.
