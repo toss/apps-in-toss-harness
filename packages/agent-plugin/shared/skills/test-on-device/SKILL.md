@@ -162,6 +162,11 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 완료 전 조기 탐색으로 "`.ait`가 없다"고 판단해 재빌드하는 것이 낭비의 전형이다(실측
 사례 있음).
 
+업로드할 번들은 `NODE_ENV=production`으로 빌드한다. devtools unplugin이 이 값으로 활성화를 판단해,
+없으면 일부 번들러(webpack CLI, esbuild, Rollup)가 mock과 패널을 번들에 남긴다. 웹 빌드 출력
+디렉터리에서 `grep -rlE '__aitDevtoolsStateSingleton__|ait-panel-toggle' <출력 디렉터리>`가 0건인지
+확인한 뒤 올린다(`../feature/references/stack-pitfalls.md`의 "번들러" 절).
+
 빌드 산출물의 `deploymentId`는 4에서 그대로 쓴다.
 
 실기기에서 CDP attach까지 하려는 경우라면 이 skill이 아니라

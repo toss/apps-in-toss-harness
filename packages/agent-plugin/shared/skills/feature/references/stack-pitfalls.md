@@ -23,6 +23,28 @@
   진입 직후 호출은 게임 프로필 화면과 겹칠 수 있고, 열면 미니앱이 백그라운드로 전환되니 게임 상태를
   보존한다. 출처: `/documentation/common/growth/game-center`.
 
+## 번들러 (Vite 외)
+
+2026-10-23 실측. `@apps-in-toss/devtools`·`web-framework`·`cli` 3.9.0, vite 8.3.5, webpack 5.112.1,
+@rspack/core 2.2.9, esbuild 0.28.2, rollup 4.65.0로 같은 앱을 빌드해 번들 내용을 확인했다.
+JS 소스만 쟀고 TS 로더, dev 서버, 실기기는 미확인이다.
+
+- devtools unplugin은 `process.env.NODE_ENV !== "production"`으로 활성화를 판단한다. Vite는 mode를
+  따로 봐서 영향이 없지만, `NODE_ENV` 없이 `webpack --mode production`, esbuild, Rollup으로 빌드하면
+  production 번들에 mock과 패널이 들어간다. Rspack CLI는 같은 조건에서 비활성이었다. release 빌드는
+  `NODE_ENV=production`을 명시하고, 산출물에서 `__aitDevtoolsStateSingleton__`와 `ait-panel-toggle`을
+  grep해 0건인지 확인한다. 이 조건은 devtools README의 "production 빌드에서 비활성" 설명과 어긋난다.
+- devtools `initialState` 옵션은 Vite에서만 반영된다. 다른 번들러에서는 경고 없이 무시된다. `mcp: true`는
+  Vite dev 서버에서만 동작하고, 다른 번들러와 `vite build`에서는 경고 후 꺼진다(esbuild는 경고도 없었다).
+- `ait build`는 번들러 종류를 보지 않는다. `apps-in-toss.config.*`의 `webBundleDir`(기본 `dist`)를 그대로
+  패킹하고, 디렉터리나 그 안의 `index.html`이 없으면 에러로 끝난다. 기본 출력이 `dist`인 Vite, webpack,
+  Rspack은 설정이 필요 없다. esbuild와 Rollup은 출력 디렉터리를 `dist`로 맞추거나 `webBundleDir`를 바꾼다.
+- debug-console `/auto`의 DEV 판정은 `process.env.NODE_ENV` 치환에 기댄다. webpack과 Rspack은 mode만으로
+  치환되지만, esbuild와 Rollup은 `process.env.NODE_ENV`를 직접 define(replace)해야 한다. 치환이 없으면
+  `/auto`가 예외를 잡고 휴면하는 것으로 코드상 읽히나 이 경로는 실행해 보지 못했다(미확인).
+- debug-console의 build-gate(`__DEBUG_BUILD__`) 방식은 다섯 번들러 모두 `false` 빌드에서 attach 코드가
+  번들에서 사라지는 것을 센티넬 문자열로 확인했다. 실기기 attach는 미확인이다.
+
 ## Unity
 
 - Unity SDK 패키지가 있으면 `AIT.*` C# API를 쓴다. 최소 Unity 2021.3, 6 이상 권장. 반환형이 Unity
