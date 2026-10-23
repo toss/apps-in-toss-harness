@@ -44,19 +44,14 @@ Once activated, it installs two things: (1) an on-device Chii target injection (
 
 Convenient, but `/auto` is a runtime self-gate — it does not guarantee "zero bytes of code" in the release bundle (a dormant, unactivated chunk remains). The relay URL host allowlist (the `relay=` param is rejected unless its host is `*.trycloudflare.com` or localhost — `evaluateDebugGate`'s `'invalid-relay'` branch) means that dormant chunk cannot be pointed at an arbitrary relay even if it ships, so it stays harmlessly dormant. That is not the same guarantee as "zero bytes of code," though — use the build-gated entry above if you need that.
 
-## Wiring per bundler
+## Bundlers
 
-This package ships no bundler plugin. On any bundler, wiring means importing one of the two entries above; the only part that differs per bundler is how you inject the `__DEBUG_BUILD__` constant used by the build-gated entry. The devtools column below lists the unplugin adapter you register when the same project also uses `@apps-in-toss/devtools`; it is unrelated to debug-console itself.
+This package has no bundler plugin. With any bundler, importing one of the two entries above is all it takes. Bundler config matters in two places.
 
-| Bundler | debug-console wiring | Injecting `__DEBUG_BUILD__` | devtools adapter (optional) |
-|---|---|---|---|
-| Vite | `import` in the entry (build-gated or `/auto`) | `define` in the config (DCE confirmed on Vite 8/rolldown) | `aitDevtools.vite()` |
-| webpack | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.webpack()` |
-| Rspack | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.rspack()` |
-| esbuild | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.esbuild()` |
-| Rollup | same | add it to the bundler's constant-replacement setting yourself | `aitDevtools.rollup()` |
+- The build-gated entry needs `__DEBUG_BUILD__` injected through the bundler's constant replacement (Vite `define`, webpack `DefinePlugin`, and so on). Building with `false` removes the debug-console code from the output.
+- `/auto` detects a DEV build through replacement of `process.env.NODE_ENV === 'development'`. Vite, webpack, and Rspack replace it from their mode setting; with esbuild and Rollup you replace `process.env.NODE_ENV` yourself.
 
-With `/auto` alone you do not need `__DEBUG_BUILD__`, so the bundler config stays untouched. Import the devtools adapter with `import aitDevtools from '@apps-in-toss/devtools/unplugin'`. Vite 8 is the only bundler where this repo has confirmed that folding `__DEBUG_BUILD__` removes the debug-console graph; whether the same works on the others has not been checked here.
+Both entries build, and a `false` build drops the code, on Vite 8, webpack 5, Rspack 2, esbuild 0.28, and Rollup 4 (checked 2026-10-23).
 
 ## On-phone status banner
 
