@@ -145,7 +145,11 @@ README만으로 판단이 서면 그 절을 제안한다. 그 외에는 이렇�
 배선 후 실제로 도는지 확인한다. dev 서버를 띄우는 스크립트가 있으면 짧게 실행해 시작 에러가
 없는지 보고 종료한다(백그라운드 프로세스를 남기지 않는다). dev 서버를 띄우기 어려우면
 dev 모드 빌드(`NODE_ENV=development`)로 대체한다. production 빌드는 devtools가 번들에 들어가지
-않았는지(산출물에서 `@apps-in-toss/devtools` 문자열 검색) 확인하는 용도다. 확인하지 못한
+않았는지 확인하는 용도다. release 빌드는 반드시 `NODE_ENV=production`으로 돌린다. unplugin이
+번들러 mode가 아니라 `NODE_ENV`로 판단하므로, 이 값 없이 webpack `--mode production`, esbuild,
+Rollup으로 빌드하면 mock과 패널이 production 번들에 남는다(Vite와 Rspack CLI는 영향 없음).
+빌드 뒤 산출 디렉터리에서 `grep -rlE '__aitDevtoolsStateSingleton__|ait-panel-toggle' <출력 디렉터리>`가
+0건이어야 한다. 번들러별 세부는 `../../feature/references/stack-pitfalls.md`의 "번들러" 절을 본다. 확인하지 못한
 항목은 완료 보고에 "확인 못 함"으로 적는다.
 
 ## 7. devtools facet 완료 seam
