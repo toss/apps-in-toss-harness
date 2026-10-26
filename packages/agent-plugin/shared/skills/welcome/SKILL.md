@@ -7,7 +7,7 @@ description: |
   install` itself prints no next step. Station-0→1 hand-off. Triggered by
   `/ait:welcome`, no args.
 argument-hint: ''
-adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface. Step 1-d is Claude Code-only — it reads the Claude Code plugin state directory (CLAUDE_CONFIG_DIR or ~/.claude); other targets skip it entirely.'
+adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface. Step 1-d is Claude Code-only — it reads the Claude Code plugin state directory and user settings.json (CLAUDE_CONFIG_DIR or ~/.claude); other targets skip it entirely, including the step-3 auto-update write.'
 ---
 
 # welcome skill
@@ -46,6 +46,7 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
   echo "config: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; \
   echo "plugin cache: $(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/apps-in-toss/ait" 2>/dev/null | tr '\n' ' ')"; \
   echo "marketplace clone: $(test -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/apps-in-toss" && echo 있음 || echo 없음)"; \
+  echo "auto-update: $(node -e 'try{const m=(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).extraKnownMarketplaces||{})["apps-in-toss"];console.log(!m?"항목 없음":m.autoUpdate===true?"켜짐":"꺼짐")}catch(e){console.log(e.code==="ENOENT"?"파일 없음":"읽기 실패")}' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>&1)"; \
 } 2>&1
 ```
 
@@ -123,7 +124,7 @@ Cursor:
   `mcp_auth`를 호출하면 "Interactive MCP authentication is only available in
   the Cursor desktop IDE"가 돌아온다 — 실측). CLI 세션에서 콘솔 MCP를 쓰려면
   `.cursor/mcp.json`에 서버를 직접 등록한 뒤
-  `agent mcp login ait-console` 으로 인가한다(루트 README Cursor 절
+  `agent mcp login ait-console` 으로 인가한다(`.github/other-hosts.md` Cursor 절
   참고).
 - cwd가 기존 프로젝트(스택 무관)면 `.cursor/mcp.json`을 `Read`해
   `mcpServers.ait-devtools` 항목이 있는지 확인한다. 없으면 Claude Code와
@@ -150,6 +151,21 @@ skill §5 adapter-note와 동일 패턴).
 없음이다. 정상이면 아무것도 인쇄하지 않는다. 부분·없음일 때만 설치 문제
 해결 런북을 가리킨다.
 
+같은 출력의 `auto-update` 줄은 사용자 설정(`settings.json`)의
+`extraKnownMarketplaces["apps-in-toss"].autoUpdate`다. 직접 추가한 마켓플레이스는
+자동 업데이트가 꺼진 채로 시작하므로, 켜 두지 않으면 새 버전을 받지 못한다.
+이 키는 Claude Code 설정 문서에 있는 공개 설정이고(`source` 옆에 두면 시작 후
+백그라운드에서 마켓플레이스를 새로 받고 설치된 플러그인을 갱신한다), 설정
+파일 값이 `/plugin` 토글보다 우선한다.
+
+- `켜짐` → 인쇄하지 않는다.
+- `꺼짐` → 켤지 묻는 ⚠️ 줄을 인쇄한다(2단계 예시). 동의하면 3단계에서 켠다.
+- `항목 없음`·`파일 없음` → 이 사용자 설정에는 마켓플레이스 선언이 없다(다른
+  scope로 추가했거나 설정 디렉터리가 다르다). `source`는 CLI가 소유하는 값이라
+  welcome이 항목을 새로 만들지 않는다 — `/plugin` → Marketplaces →
+  `apps-in-toss` → Enable auto-update를 안내한다.
+- `읽기 실패`(JSON이 깨졌거나 node가 없다) → 같은 `/plugin` 안내로 대신한다.
+
 ### 2. 결과 인쇄
 
 점검 결과 블록을 **먼저** 인쇄한다. 항목별로 상태와 권장 조치를 한 줄로 담는다
@@ -171,6 +187,8 @@ skill §5 adapter-note와 동일 패턴).
   ⚠️ .mcp.json의 ait-devtools가 옛 debugger 버전에 고정돼 있습니다 — 업그레이드
      여부를 확인하려면:
      /ait:setup-debugger
+  ⚠️ 플러그인 자동 업데이트가 꺼져 있습니다 — 켜 둘까요? (사용자 설정의
+     apps-in-toss 마켓플레이스에 autoUpdate: true 한 줄만 더합니다)
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
      https://github.com/toss/apps-in-toss-harness/blob/main/.github/install-troubleshooting.md
 ```
@@ -181,7 +199,7 @@ skill §5 adapter-note와 동일 패턴).
 분기대로 바뀐다.)
 
 이어서 **station map 블록과 자연어 예시 5종 블록을 아래 그대로** 인쇄한다.
-(이 두 블록은 루트 README ko/en의 노출 예시 5종과 결합돼 있다 — 문구를 바꿀
+(이 두 블록은 루트 README ko/en "쓰는 법"의 노출 예시와 결합돼 있다 — 문구를 바꿀
 땐 루트 `README.md`·`README.en.md`와 같은 PR에서 함께 고친다. 발화는 지어내지
 말고 라우팅 게이트가 재는 문장을 쓴다.)
 
@@ -258,9 +276,9 @@ Apps in Toss 플러그인이 설치됐습니다.
 
 ### 3. 제안의 실행
 
-1·2단계는 점검·안내일 뿐이다 — **welcome 자체는 어떤 파일도 쓰지 않는다**
-(mutation은 항상 전담 skill의 몫). 사용자가 점검 결과의 권유에 동의하면 그
-자리에서 해당 전담 skill로 이어간다:
+1·2단계는 점검·안내일 뿐이다 — **welcome은 아래 자동 업데이트 키 하나를
+빼면 어떤 파일도 쓰지 않는다** (나머지 mutation은 전담 skill의 몫). 사용자가
+점검 결과의 권유에 동의하면 그 자리에서 해당 전담 skill로 이어간다:
 
 - 빈 디렉토리 + scaffold 동의 → `/ait:new`(`new-miniapp` skill)를 그대로 부른다.
 - 기존 웹 프로젝트 + devtools 배선 동의 → `/ait:inject-devtools`(`inject` skill).
@@ -270,6 +288,19 @@ Apps in Toss 플러그인이 설치됐습니다.
 - `ait-devtools`가 옛 버전이라는 안내에 동의 → `/ait:setup-debugger`(3단계가
   `references/upgrade-check.md`로 old→new를 보여 주고 URL 한 줄을 바꾼다).
 - 콘솔 MCP 인가 동의 → `/mcp` 안내(직접 실행은 사용자 몫 — 브라우저 OAuth).
+- 자동 업데이트 `꺼짐` + 켜기 동의 → welcome이 직접 켠다(Claude Code 전용,
+  유일한 쓰기). 기존 항목에 `autoUpdate: true`만 더하고 `source`를 비롯한
+  다른 키는 건드리지 않는다. 바꾸기 전 파일을 `settings.json.bak-ait`로
+  남긴다:
+
+  ```bash
+  node -e 'const fs=require("fs"),p=process.argv[1],s=JSON.parse(fs.readFileSync(p,"utf8")),m=(s.extraKnownMarketplaces||{})["apps-in-toss"];if(!m)throw new Error("apps-in-toss 항목 없음");if(m.autoUpdate===true){console.log("이미 켜짐");process.exit(0)}fs.copyFileSync(p,p+".bak-ait");m.autoUpdate=true;fs.writeFileSync(p+".tmp",JSON.stringify(s,null,2)+"\n");fs.renameSync(p+".tmp",p);console.log("켰습니다")' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+  ```
+
+  실패하면 파일을 고치려 들지 말고 `/plugin` 토글을 안내한다. 성공하면 다음
+  세션부터 시작할 때마다 백그라운드에서 새 버전을 받고, 갱신되면
+  `/reload-plugins` 안내가 뜬다고 알린다. 프로젝트 `.claude/settings.json`에
+  같은 이름의 마켓플레이스 선언이 있으면 그 폴더에서는 그쪽이 이긴다.
 
 동의 없이 임의로 실행하지 않는다 — 2단계 인쇄까지가 이 skill의 기본 종료
 지점이고, 3단계는 사용자 응답이 있을 때만 이어진다.
@@ -279,8 +310,8 @@ Apps in Toss 플러그인이 설치됐습니다.
 - 프로젝트 생성·파일 변경 — 그건 `/ait:new`(`new-miniapp` skill), 기존
   프로젝트 패치는 `/ait:inject-devtools`/`/ait:inject-debug-console`(`inject`
   skill), MCP 배선은 `/ait:setup-debugger`. **이 skill은 점검·안내·hand-off까지만
-  하고 어떤 파일도 스스로 쓰지 않는다** — mutation은 전부 위 전담 skill에
-  위임한다.
+  하고, 사용자가 동의한 자동 업데이트 키 하나 말고는 어떤 파일도 스스로 쓰지
+  않는다** — 나머지 mutation은 전부 위 전담 skill에 위임한다.
 - 콘솔 등록·상태 조회 — console MCP 도구(`miniapp_create`, `miniapp_get_status`
   등)가 직접 담당한다. welcome은 그 존재와 인가 경로(`/mcp`)만 안내한다.
 - 실 디버깅 실행·라이브 상태 관측 — `/ait:debug`. welcome의 MCP 점검은 도구

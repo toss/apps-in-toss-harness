@@ -46,7 +46,7 @@ find "$CFG/plugins/cache/apps-in-toss" -maxdepth 3
 |---|---|---|---|
 | C1 | 데스크톱 앱의 플러그인 화면에서 `ait`를 검색해도 결과가 없다 | `plugin-catalog-cache.json`의 `catalog.plugins` 키가 전부 `@claude-plugins-official`로 끝나고 `apps-in-toss` 항목이 0건 | 없음 — 클라이언트에서 수리 불가. 설치는 입력창 붙여넣기 경로로 한다. 상류: anthropics/claude-code#38008, #52147 |
 | C2 | `/plugin`에 새 버전이 안 뜬다. 데스크톱에서는 Update 버튼이 회색 | `known_marketplaces.json`의 `apps-in-toss.lastUpdated`가 며칠 이상 과거이고, clone의 `git log -1 --format=%cd`가 upstream 최신보다 뒤 | R2 → 안 되면 R3. 상류: anthropics/claude-code#72089 |
-| C3 | 며칠이 지나도 버전이 그대로인데 C2의 clone 고착 징후는 없다 | `known_marketplaces.json`의 `apps-in-toss` 항목에 `autoUpdate: true`가 없다 | `/plugin` → Marketplaces → apps-in-toss → Enable auto-update. 즉시 올리려면 R2 |
+| C3 | 며칠이 지나도 버전이 그대로인데 C2의 clone 고착 징후는 없다 | `settings.json`의 `extraKnownMarketplaces.apps-in-toss`에 `autoUpdate: true`가 없고, `known_marketplaces.json`의 같은 항목에도 없다(설정 파일 값이 우선한다) | `/ait:welcome`을 실행해 자동 업데이트를 켜겠다고 답한다. 안 되면 `/plugin` → Marketplaces → apps-in-toss → Enable auto-update. 즉시 올리려면 R2 |
 | C4 | 세션에 `/ait:*`가 아예 안 뜬다. `plugin list`에는 보인다 | `installed_plugins.json`의 `plugins["ait@apps-in-toss"]` 항목이 가리키는 `installPath` 디렉터리가 실재하지 않는다 | R4. 상류: anthropics/claude-code#48985 |
 | C5 | 플러그인은 enabled인데 skill 목록이 비어 보인다 | `installPath` 디렉터리는 있으나 `.claude-plugin/`이 없거나 `shared/skills/`가 비었다 | R4 → 안 되면 R5. 상류: anthropics/claude-code#64763(Windows 데스크톱) |
 | C6 | 디스크상 버전은 새것인데 세션의 skill은 옛것. 데스크톱에서 특히 | 캐시의 최신 버전 디렉터리와 `plugin list`의 Version은 일치하는데 세션 동작만 다르다 | R1. 상류: anthropics/claude-code#52967 |
