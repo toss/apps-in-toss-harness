@@ -44,6 +44,15 @@ Once activated, it installs two things: (1) an on-device Chii target injection (
 
 Convenient, but `/auto` is a runtime self-gate — it does not guarantee "zero bytes of code" in the release bundle (a dormant, unactivated chunk remains). The relay URL host allowlist (the `relay=` param is rejected unless its host is `*.trycloudflare.com` or localhost — `evaluateDebugGate`'s `'invalid-relay'` branch) means that dormant chunk cannot be pointed at an arbitrary relay even if it ships, so it stays harmlessly dormant. That is not the same guarantee as "zero bytes of code," though — use the build-gated entry above if you need that.
 
+## Bundlers
+
+This package has no bundler plugin. With any bundler, importing one of the two entries above is all it takes. Bundler config matters in two places.
+
+- The build-gated entry needs `__DEBUG_BUILD__` injected through the bundler's constant replacement (Vite `define`, webpack `DefinePlugin`, and so on). Building with `false` removes the debug-console code from the output.
+- `/auto` detects a DEV build through replacement of `process.env.NODE_ENV === 'development'`. Vite, webpack, and Rspack replace it from their mode setting; with esbuild and Rollup you replace `process.env.NODE_ENV` yourself.
+
+Both entries build, and a `false` build drops the code, on Vite 8, webpack 5, Rspack 2, esbuild 0.28, and Rollup 4 (checked 2026-10-23).
+
 ## On-phone status banner
 
 A small bar at the bottom of the phone screen says how far the attach got and, if it stopped, why. It appears only when the page URL carries `debug=1` or `relay=` — a DEV build that auto-activates without them draws nothing. Tap it to dismiss. The TOTP code, relay address, and URLs never appear on screen or in logs.
