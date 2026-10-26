@@ -52,7 +52,7 @@
 
 | Skill | 책임 | command (facet) | 의존 |
 |---|---|---|---|
-| `welcome` | harness 진입 안내 — station 0 install 완료 확인 + 환경·연동 점검(git·Node/npm/npx, cwd 형상, docs·콘솔 MCP 노출, 프로젝트 `.mcp.json` `ait-devtools` 배선) + 점검 결과에 따른 권유·제안 + 동의 시 전담 skill로 hand-off | `/ait:welcome` | `Bash`, `Read` |
+| `welcome` | harness 진입 안내 — station 0 install 완료 확인 + 환경·연동 점검(git·Node/npm/npx, cwd 형상, docs·콘솔 MCP 노출, 프로젝트 `.mcp.json` `ait-devtools` 배선, Claude Code 사용자 설정의 마켓플레이스 `autoUpdate`) + 점검 결과에 따른 권유·제안 + 동의 시 전담 skill로 hand-off(유일한 자체 쓰기: 동의 시 `autoUpdate: true` 한 키) | `/ait:welcome` | `Bash`, `Read` |
 | `new-miniapp` | `toss/create-ait-app` 비대화형(`--inline`) 호출 wrapper + 후처리(형상 가드·devtools 배선·.gitignore). `--local` 폴백은 내장 react-vite 복사 + 번들 설정 인라인 절차(L-5, `references/local-template.md`) | `/ait:new` | `Bash`, create-ait-app(dlx), `templates/`(폴백) |
 | `plan` | 기획 station 7 — 아이데이션(발산→실현성 필터→수렴) → 경량 PRD 9섹션(`PRD.md`) → SDK 도메인/권한/약관 매핑. 참고 사례는 docs MCP로 조회 | `/ait:plan` | `Read`, `Write`(`PRD.md` 한 파일), docs MCP |
 | `design` | 디자인 station 8 — 화면 생성·개선·진단을 담당하는 생성형 skill. 3층 렌더 규칙(1층 하드=완료 차단·자동 수정, 2층 권장, 과잉지적 금지)과 기본 토큰은 `references/render-rules.md`(값의 정본은 `assets/project/tokens.css`), 요청 무게 분류·리스크 점검·화면 명세는 `references/build-mode.md`, 프로젝트 가이드 주입 절차는 `references/project-guide.md`, 사후 채점 기준은 `references/quality-bar.md`(G0~G8 항목별 등급). 등록용 이미지 에셋 산출(콘솔 MCP `miniapp_create` 규격과 일치)도 계속 담당. Figma MCP는 선택 입력이다. 존중 모드: 기성 디자인 시스템을 감지하면 기본 토큰·전역 CSS를 주입하지 않고 프로젝트 시스템을 따르며, 플랫폼·안전 하드 규칙만 강제한다. 출력 원칙은 "가르치지 않는다" — 규칙은 조용히 적용하고 판정표는 점검 요청 시에만 낸다 | `/ait:design` | `Write`, `Edit`, Figma MCP(선택), docs MCP |
@@ -69,7 +69,7 @@
 
 설치 형상(`/plugin install`)에서 **플러그인 이름이 네임스페이스**가 된다. 그래서 사용자가 실제로 치는 형태는 `/ait:<verb>`이고, 공백 형태 `/ait <verb>`는 어떤 형상에서도 존재한 적이 없다(`Unknown command: /ait`). 문서·skill seam은 전부 콜론 형태로 인쇄한다 — 검증기 A8이 공백 형태를 하드 실패로 잡는다.
 
-**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)나 애초에 manifest에 `commands` 필드를 안 갖는 에이전트(Cursor — `.cursor-plugin/plugin.json`에 미탑재)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`·`plan`은 Codex 변환에서 아예 빠진다 — 루트 `README.md` "Codex에서 쓰기"·"Cursor에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시 5종(루트 README ko/en + `welcome` 출력)이 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
+**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)나 애초에 manifest에 `commands` 필드를 안 갖는 에이전트(Cursor — `.cursor-plugin/plugin.json`에 미탑재)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`는 Codex 변환에서 아예 빠진다 — `.github/other-hosts.md` "Codex에서 쓰기"·"Cursor에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시(루트 README ko/en "쓰는 법" + `welcome` 출력)가 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
 
 같은 목록에 두 종류가 함께 오른다:
 
