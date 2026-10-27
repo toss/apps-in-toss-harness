@@ -3,8 +3,10 @@
 서버가 앱인토스 파트너 API를 부르는 코드를 만들거나 점검할 때만 읽는다. 수치,
 정책 문구, origin 문자열은 여기 옮기지 않는다. 아래에서 "문서로 확인"이라고 한
 것은 docs MCP `getPage`로 `/documentation/integration/server-api`를 읽어 그
-원문에 맞춘다. 이 문서에 적힌 절차는 Workers 한 경로를 끝까지 돌려 본 것이고,
-그 밖의 런타임은 확인된 만큼만 적었다.
+원문에 맞춘다. 이 문서에 적힌 절차는 Workers 한 경로를 실제 파트너 API까지 끝까지
+돌려 본 것이다. Supabase Edge Functions와 Firebase Cloud Functions는 클라이언트
+인증서를 실어 보내는 데까지만 확인했고(아래 BaaS 절), 그 밖의 런타임은 확인하지
+않았다.
 
 ## mTLS 인증서
 
@@ -97,7 +99,9 @@ CORS 허용 목록과 함께 다시 확인한다. 서버를 아직 배포하지 
 상태를 바꾸지 않는 호출에 일부러 틀린 값을 보낸다(예: 식별키 검증 API에 가짜
 키). HTTP 200에 `resultType: "FAIL"` 봉투가 오면 TLS 클라이언트 인증은 통과한
 것이다. 값이 틀렸다는 답이 돌아왔다는 뜻이다. TLS 오류나 연결 실패가 나면 바인딩
-또는 인증서 문제로 본다.
+또는 인증서 문제로 본다. Workers에서 인증서 없이(전역 `fetch`로) 파트너 API를 부르면
+봉투 없이 HTTP 520이 왔다(실측 2026-10). 520이 보이면 바인딩을 거치지 않은
+호출부터 찾는다.
 
 ## 사용자 식별: 토스 로그인 대 익명 식별키
 
@@ -127,10 +131,21 @@ CORS 허용 목록과 함께 다시 확인한다. 서버를 아직 배포하지 
 사용자가 Supabase나 Firebase를 골랐을 때의 경계다. 개발자센터 연동 가이드는
 클라이언트가 BaaS에 직접 붙는 구성을 보여 준다.
 
-- 토스 신원(`userKey`, 익명 식별키)은 mTLS 서버만 파트너 API로 얻는다. BaaS의
-  RLS·보안 규칙은 BaaS가 검증한 사용자 신원이 있어야 사용자별로 동작하는데, 클라이언트
-  직결에는 그 신원이 없다. 그래서 사용자별 데이터는 서버를 거친다. 서버가 교환으로
-  받은 신원으로 사용자를 정하고, 그 사용자의 행만 읽고 쓴다.
+- 토스 신원(`userKey`, 익명 식별키)은 mTLS 인증서를 싣는 서버 코드만 파트너 API로
+  얻는다. BaaS의 RLS·보안 규칙은 BaaS가 검증한 사용자 신원이 있어야 사용자별로
+  동작하는데, 클라이언트 직결에는 그 신원이 없다. 그래서 사용자별 데이터는 서버
+  코드를 거친다. 서버 코드가 교환으로 받은 신원으로 사용자를 정하고, 그 사용자의
+  행만 읽고 쓴다.
+- 그 서버 코드는 BaaS 자체의 함수로 둘 수 있다. 별도 서버를 따로 세우라고 하지
+  않는다. 두 함수 모두 클라이언트 인증서를 요구하는 테스트 서버에 인증서를 실으면
+  200, 빼면 400을 받았다(실측 2026-10). 실제 파트너 API까지 부른 것은 Workers뿐이다.
+  - Supabase Edge Functions: 인증서와 키를 secret(`supabase secrets set`)에 넣고
+    `Deno.createHttpClient({ cert, key })`로 만든 client를 `fetch(url, { client })`에
+    넘긴다. client 없이 부르면 인증서가 실리지 않는다.
+  - Firebase Cloud Functions(2nd gen, Node): 인증서와 키를 Secret Manager에 두고
+    (`defineSecret`, 함수 옵션 `secrets`) `node:https`의
+    `new https.Agent({ cert, key })`로 요청한다. 전역 `fetch`에는 이 agent가 들어가지
+    않는다. Cloud Functions와 Secret Manager는 Blaze 요금제여야 배포된다.
 - 클라이언트 직결은 사용자 구분이 없는 공용 데이터에만 쓴다. 그 테이블에도 RLS를
   켠다. publishable key는 클라이언트에 둬도 되는 공개 키다.
 - secret·service key는 서버에만 둔다. 클라이언트 번들, `VITE_` 같은 클라이언트 노출
@@ -162,6 +177,96 @@ SDK 문서에 문자열 `"true"`로 적혀 있었지만 실제 응답과 명세�
 넘기지 않는다. 실패 사유는 서버 로그에 남기고, 클라이언트에는 화면이 쓸 만큼만
 돌려준다.
 
+## 토스페이 결제
+
+서버가 토스페이 결제를 만들고 승인하고 환불하는 코드를 쓰거나 점검할 때 읽는다.
+파트너 API의 결제 생성(`make-payment`), 승인(`execute-payment`), 상태 조회
+(`get-payment-status`), 환불(`refund-payment`) 네 호출이 대상이다. 경로와 스키마는
+docs MCP `getPage`로 읽어 맞춘다. 아래는 실기기에서 100원 결제로 돌려 본 관찰이다
+(실측 2026-10, web-framework 3.x). mTLS와 사용자 헤더(`x-toss-user-key` 또는
+`x-anon-key`)는 위 절들을 따른다.
+
+### 테스트 결제와 실결제: isTestPayment
+
+- 요청마다 `isTestPayment`를 보낸다. 값이 없으면 400으로 거절된다.
+- `true`면 테스트 결제다. 콘솔 설정 없이, 토스페이 청약 전에도 할 수 있다. 콘솔에
+  테스트 키를 등록하는 경로는 없다.
+- `false`는 실결제다. 앱인토스 토스페이 청약은 일반 토스페이 청약과 별도이고, 청약하면
+  실결제 키를 받는다. 실결제는 그 키를 콘솔에 연동 등록해야 한다. 등록 전에 `false`로
+  부르면 생성·승인·환불 모두 `resultType: "FAIL"`, errorCode `5001`("토스페이 청약이
+  되어 있지 않습니다.")로 실패하고 결제는 일어나지 않는다. 사용자에게 콘솔 등록이
+  필요하다고 알린다.
+- 테스트 결제도 결제창 인증, 승인, 조회, 환불까지 전 과정이 된다. 생성에서 끝나지
+  않는다. 승인·조회 응답의 `mode`가 `TEST`이므로, 테스트 건인지는 이 값으로 확인한다.
+- 테스트 결제의 결제창과 승인 응답에는 사용자의 실제 결제수단 정보가 표시된다.
+  테스트 화면 캡처나 로그를 공유하기 전에 확인한다.
+
+### isTestPayment는 결제 건마다 저장하고 이후 호출에 그대로 쓴다
+
+- 생성에 쓴 `isTestPayment`를 주문(결제 건) 레코드에 저장하고 승인·조회·환불에 같은
+  값을 보낸다. 환경 변수 하나로 전 호출을 정하지 않는다. 호출마다 값이 갈리면 아래처럼
+  거절된다.
+- 생성 때와 다른 `isTestPayment`로 승인·조회·환불을 부르면 실패한다. 실패한 호출은
+  결제 상태를 바꾸지 않았고, 같은 건을 올바른 값으로 다시 부르니 이어서 진행됐다.
+  이런 실패를 만나면 먼저 저장된 `isTestPayment`와 보낸 값이 같은지 본다. 결제 건
+  자체를 실패 처리하지 않는다. 청약 전 앱에서는 테스트 건을 `false`로 부른 실수가
+  5001(청약 없음)로 보인다. 5001을 보고 청약부터 안내하기 전에 보낸 값을 확인한다.
+- 클라이언트가 보낸 금액과 `isTestPayment`를 그대로 믿지 않는다. 서버가 주문에서
+  금액을 계산하고 `isTestPayment`도 서버 설정과 주문 환경으로 정한다. 클라이언트가
+  `true`를 보내 실결제를 건너뛰거나 금액을 낮추는 길을 열지 않는다.
+
+### orderNo와 payToken은 서버가 관리한다
+
+- `orderNo`는 서버에서 주문마다 새로 만들어 중복되지 않게 한다. 같은 `orderNo`로
+  생성을 두 번 부르면 `payToken`이 둘 나오고, `orderNo`로 조회하면 어느 건인지 알 수
+  없다.
+- `payToken`은 주문 레코드에 저장하고, 승인·조회·환불은 `orderNo`가 아니라 저장해 둔
+  `payToken`으로 부른다. 승인 요청이 온 사용자와 `payToken`이 속한 주문이 같은지도
+  서버가 확인한다.
+- 결제 완료는 서버의 승인 호출 결과와 상태 조회로 확정한다. 결제 웹훅에 기대지 않는다.
+
+### 승인과 복구
+
+상태는 `PAY_STANDBY`(생성) → `PAY_APPROVED`(클라이언트 결제창에서 인증 성공) →
+`PAY_COMPLETE`(서버 승인 완료) → `REFUND_SUCCESS`(환불, 부분 환불 포함)로 간다.
+
+- 클라이언트의 `TossPay.authorize`가 끝나면 서버가 승인(`execute-payment`)을 부른다.
+  인증을 취소했거나 인증 없이 승인을 부르면 `EXECUTE_PAY_NOT_APPROVED`로 거절되고
+  상태는 `PAY_STANDBY`에 그대로 있다.
+- 클라이언트의 `authorize` 반환값만으로 인증 성공을 판정하지 않는다. 결제창에서
+  취소했을 때 반환값이 `{ reason: "결제가 취소되었습니다.", false: true }` 모양이어서
+  SDK 타입(`{ success: boolean, reason?: string }`)과 달랐다. `success` 키만 보면
+  취소가 성공으로 읽히거나 판정이 흔들린다. 서버가 상태 조회로 `PAY_APPROVED`를 확인한
+  뒤 승인하거나, 승인 호출의 응답 코드로 판정한다.
+- 승인은 멱등이 아니다. 같은 건에 두 번째 승인을 부르면 `PAY_ALREADY_COMPLETED`다.
+  타임아웃이나 연결 오류로 응답을 못 받았으면 재시도 전에 상태를 조회한다.
+  `PAY_COMPLETE`이면 이미 끝난 것이다. `PAY_APPROVED`일 때만 승인을 다시 부른다.
+- 상태 조회에서 `COMMON_PAY_NOT_FOUND`는 그 `payToken`이 없다는 뜻이다. 저장한
+  `payToken` 값과 생성 때 쓴 `isTestPayment`로 부르는지 먼저 본다.
+
+### 환불
+
+- `amount`를 생략하면 남은 금액 전액을 환불한다. 부분 환불 뒤에 생략하면 남은 만큼만
+  나간다. `reason`은 선택이고 55자 이하다.
+- 환불 성공 응답의 `refundedAmount`·`refundedPaidAmount`는 음수다(100원 환불이
+  `-100`). 환불 누계에 그대로 더하지 말고 부호를 맞춘다.
+- 부분 환불은 성공 응답에 `refundableAmount`(남은 환불 가능액)가 오고, 이 시점에 상태가
+  이미 `REFUND_SUCCESS`다. 부분 환불 뒤에도 `REFUND_SUCCESS`이므로 상태만 보고 전액
+  환불로 판정하지 않는다. 남은 금액은 `refundableAmount`로 본다.
+- 남은 금액을 넘는 `amount`는 `REFUND_AMOUNT_EXCEED_REFUNDABLE_AMOUNT`, 전액 환불이
+  끝난 건에 다시 부르면 `REFUND_ALREADY_REFUNDED`다. 둘 다 서버에서 먼저 막을 수
+  있게 환불 누계를 주문에 기록한다. 환불도 재시도 전에 상태를 조회한다.
+
+### 응답 판정
+
+- 실패는 HTTP 200에 `resultType: "FAIL"`, `error.errorCode`, `error.reason`으로 온다.
+  HTTP 상태만 보면 실패를 놓친다. 위 응답 봉투 절의 판정을 그대로 쓴다.
+- 토스페이가 FAIL로 답한 것은 그대로 전달된다. 그 밖의 상류 실패는 HTTP 500에
+  errorCode 50000, 인증 실패는 4010으로 온다. 500은 결제 상태가 불명이므로 재시도
+  전에 상태를 조회한다.
+- 클라이언트에는 결제 결과만 가공해서 넘기고, `error.reason`이나 상류 응답 본문을
+  그대로 보여 주지 않는다.
+
 ## CORS
 
 - `*`로 열지 않는다. `launch-scan.sh`의 `cors-any-origin`이 잡는 패턴이다.
@@ -177,7 +282,8 @@ SDK 문서에 문자열 `"true"`로 적혀 있었지만 실제 응답과 명세�
 
 ## 다른 런타임
 
-Workers 밖(Vercel, AWS Lambda 등)은 이 경로로 확인하지 않았다. 그 런타임이 클라이언트
+Workers, Supabase Edge Functions, Firebase Cloud Functions 밖(Vercel, AWS Lambda
+등)은 확인하지 않았다. 그 런타임이 클라이언트
 인증서를 보낼 수 있는지 그 런타임의 문서로 먼저 확인한다. 보낼 수 없으면 Node
 서버나 mTLS를 지원하는 프록시를 쓰도록 안내한다. 확인하지 못한 런타임에 대해
 된다/안 된다를 단정하지 않는다.
