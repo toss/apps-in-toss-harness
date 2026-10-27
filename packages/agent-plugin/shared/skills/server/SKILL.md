@@ -57,8 +57,9 @@ argument-hint: '[request]'
 - 클라이언트가 `getAnonymousKey()`로 얻은 값을 서버가 그대로 믿게 짜지 않는다.
   사용자가 그렇게 해 달라고 해도 이유(그 값은 요청자를 증명하지 않는다)를 말하고
   교환 방식으로 짠다.
-- 사용자가 Supabase·Firebase를 골랐으면 사용자별 데이터는 서버를 거치게 하고, 클라이언트
-  직결은 공용 데이터에만 쓴다. secret key는 서버에만 두고 `supabase.auth` 같은 자체
+- 사용자가 Supabase·Firebase를 골랐으면 사용자별 데이터는 mTLS 인증서를 싣는 서버
+  코드를 거치게 한다. 그 코드는 Supabase Edge Functions·Firebase Cloud Functions에
+  둬도 된다. 클라이언트 직결은 공용 데이터에만 쓴다. secret key는 서버에만 두고 `supabase.auth` 같은 자체
   로그인은 붙이지 않는다. 자세한 경계는 server-runtime.md의 BaaS 절.
 
 ### 3. 코드 쓰기·고치기
