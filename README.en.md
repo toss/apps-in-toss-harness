@@ -25,6 +25,8 @@ The desktop app's plugin search won't find `ait`. If slash commands don't work w
 Install the Apps in Toss mini-app plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` and then `claude plugin install ait@apps-in-toss`. Don't edit `~/.claude/settings.json` directly. When you're done, tell me the remaining manual step (authorize ait-console in `/mcp`), and tell me to open a new session and type /ait:welcome.
 ```
 
+Once it finishes, you can run `claude mcp list` in the same session to see whether both MCP servers are connected.
+
 To install in Codex or Cursor, see [Using it from Codex and Cursor](./.github/other-hosts.en.md).
 
 ## How to use it

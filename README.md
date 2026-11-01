@@ -25,6 +25,8 @@ Claude Code를 이미 쓰고 있다면 Node 24 이상과 git을 준비하고 입
 앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. `~/.claude/settings.json`은 직접 고치지 마. 끝나면 남은 수동 단계(`/mcp`에서 ait-console 인가)를 알려주고, 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
 ```
 
+설치가 끝나면 같은 세션에서 `claude mcp list`로 두 MCP 서버가 연결됐는지 확인할 수 있습니다.
+
 Codex와 Cursor에서 설치하는 방법은 [Codex·Cursor에서 쓰기](./.github/other-hosts.md)에 있습니다.
 
 ## 쓰는 법
