@@ -139,6 +139,10 @@ debug relay deep-link로 열렸을 때만) 활성화되고, 일반 프로덕션 
 임의의 relay에 attach되는 일은 없지만, 코드 자체를 물리적으로 지우는 것과는 다른 보장이다
 — 그 보장이 필요하면 방식 B를 쓴다.
 
+`/auto`의 DEV 판정은 `process.env.NODE_ENV` 치환에 기댄다. webpack·Rspack은 mode로 치환되지만
+esbuild·Rollup은 `process.env.NODE_ENV`를 직접 define(replace)해야 한다. 번들러별 세부는
+`../../feature/references/stack-pitfalls.md`의 "번들러" 절을 본다.
+
 ## 5. debug-console facet 완료 seam
 
 ```
