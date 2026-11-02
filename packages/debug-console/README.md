@@ -44,6 +44,15 @@ import '@apps-in-toss/debug-console/auto';
 
 간편하지만, `/auto`는 런타임 self-gate라 release 번들에서 "코드가 물리적으로 0바이트"를 보장하지는 않는다 — 활성화되지 않은 채로 잠들어(dormant) 있는 청크가 release 번들에 남는다. 다만 relay URL host allowlist(`relay=` 파라미터가 `*.trycloudflare.com` 또는 localhost가 아니면 거부 — `evaluateDebugGate`의 `'invalid-relay'` 분기)가 있어, 그 잠든 청크가 남아 있어도 임의의 relay에는 attach되지 않는다. 그 자체가 "코드 0바이트"를 대체하지는 않으므로, 그 보장이 필요하면 위 build-gated 엔트리를 쓴다.
 
+## 번들러
+
+이 패키지에는 번들러 플러그인이 없다. 어느 번들러에서든 위 두 엔트리 중 하나를 import하면 된다. 번들러 설정에 손이 가는 곳은 두 군데다.
+
+- build-gated 엔트리는 `__DEBUG_BUILD__`를 번들러의 상수 치환(Vite `define`, webpack `DefinePlugin` 등)으로 넣어야 한다. `false`로 빌드하면 debug-console 코드가 산출물에서 빠진다.
+- `/auto`가 DEV 빌드를 알아보는 신호는 `process.env.NODE_ENV === 'development'` 치환이다. Vite·webpack·Rspack은 mode 설정으로 치환되고, esbuild·Rollup은 `process.env.NODE_ENV`를 직접 치환해야 한다.
+
+Vite 8, webpack 5, Rspack 2, esbuild 0.28, Rollup 4에서 두 엔트리의 빌드와 `false` 빌드의 코드 제거를 확인했다(2026-10-23).
+
 ## 폰 화면 상태 표시
 
 attach가 어디까지 됐는지, 안 됐다면 왜인지를 폰 화면 아래쪽 작은 막대로 알려준다. URL에 `debug=1` 또는 `relay=`가 있을 때만 나타난다 — DEV 빌드라서 자동 활성화됐을 뿐이면 아무것도 그리지 않는다. 탭하면 닫힌다. 연결 코드·relay 주소·URL은 화면에도 로그에도 나오지 않는다.
