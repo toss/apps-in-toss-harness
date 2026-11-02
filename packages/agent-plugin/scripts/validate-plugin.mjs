@@ -442,9 +442,8 @@ function checkA1(root) {
 
 // seam 검사 면제 skill: harness 외부 메인테이너 도구 (next-station seam 없음이 정상)
 // aitcc 전제 skill 제거(register/deploy/status/setup-bundle) + 불필요 skill 제거
-// (docs/auth-setup/changeset) + 환경 2 제거로 setup-phone-preview까지 빠진 뒤
-// `test-on-device` 신설(harness#98)까지 반영한 8개는 전부 next-station seam을
-// 갖는다 — 면제 대상 없음.
+// (docs/auth-setup/changeset) + 환경 2 제거로 setup-phone-preview까지 빠진 뒤에도
+// shared/skills/ 의 모든 skill 은 next-station seam을 갖는다 — 면제 대상 없음.
 const SEAM_EXEMPT_SKILLS = new Set();
 
 // fence 여는 줄 — **선행 공백을 허용한다**. 리스트 아이템 안의 코드블록은
@@ -2345,12 +2344,101 @@ function checkDesignGuideTemplateDrift(root) {
       }
     }
   }
+  violations.push(...checkDesignGuideFallbackMarker(root, mvMatch ? mvMatch[1] : null));
+  return violations;
+}
+
+// 자산 폴백(new-miniapp 등 skill 문서 안의 인라인 셸)은 마커를 직접 printf 로
+// 쓴다: `printf '<!-- %s v<N> -->`. 이 N 이 MV 와 다르면 폴백으로 만든 프로젝트가
+// 다음 design 주입에서 버전 불일치로 보인다. 구버전을 일부러 보여 주는 예시
+// (`agents=skip(ait:design-guide v0)` 등)는 printf 형태가 아니라 대상이 아니다.
+/** @param {string} root @param {string | null} mv @returns {Violation[]} */
+function checkDesignGuideFallbackMarker(root, mv) {
+  const violations = [];
+  const skillsDir = path.join(root, 'shared', 'skills');
+  if (!mv || !fs.existsSync(skillsDir)) return violations;
+  for (const file of walkFiles(skillsDir)) {
+    if (!file.endsWith('.md')) continue;
+    readFile(file)
+      .split('\n')
+      .forEach((line, i) => {
+        for (const m of line.matchAll(/printf '<!-- %s v(\d+) -->/g)) {
+          if (m[1] === mv) continue;
+          violations.push(
+            mkv(
+              path.relative(root, file),
+              i + 1,
+              'A3/design-guide-template-drift',
+              `폴백 printf 마커 v${m[1]} 이 inject-project-guide.sh 의 MV=${mv} 와 다름 (fix: v${mv} 으로 고쳐라)`,
+            ),
+          );
+        }
+      });
+  }
+  return violations;
+}
+
+// A3/bug-report-commands — .github/ISSUE_TEMPLATE/bug_report.yml 의 "관련 skill /
+// 명령" 드롭다운 선택지가 README 명령 표(`| \`/ait:<verb> ...`)와 같은 집합인지
+// 확인한다. 명령을 추가하고 드롭다운을 빠뜨리면 사용자가 그 명령을 고를 수 없다.
+// 명령이 아닌 선택지('특정 명령과 무관…' 등)는 대상이 아니다. repo 루트(README.md,
+// bug_report.yml)가 없는 레이아웃에서는 검사하지 않는다.
+/** @param {string} root @returns {Violation[]} */
+function checkBugReportCommands(root) {
+  const violations = [];
+  const repoRoot = path.resolve(root, '..', '..');
+  const readmePath = path.join(repoRoot, 'README.md');
+  const ymlPath = path.join(repoRoot, '.github', 'ISSUE_TEMPLATE', 'bug_report.yml');
+  if (!fs.existsSync(readmePath) || !fs.existsSync(ymlPath)) return violations;
+  const RULE = 'A3/bug-report-commands';
+  const relYml = path.relative(root, ymlPath);
+
+  const readmeVerbs = new Set(
+    [...readFile(readmePath).matchAll(/^\|\s*`\/ait:([a-z0-9-]+)/gm)].map((m) => m[1]),
+  );
+  const yml = readFile(ymlPath).split('\n');
+  const labelIdx = yml.findIndex((l) => /label:\s*관련 skill \/ 명령\s*$/.test(l));
+  const optStart =
+    labelIdx < 0 ? -1 : yml.findIndex((l, i) => i > labelIdx && /^\s*options:\s*$/.test(l));
+  if (optStart < 0) {
+    violations.push(mkv(relYml, 1, RULE, `'관련 skill / 명령' 드롭다운 options 를 찾지 못함`));
+    return violations;
+  }
+  const options = [];
+  for (let i = optStart + 1; i < yml.length && /^\s*-\s/.test(yml[i]); i++) {
+    options.push(yml[i].replace(/^\s*-\s+/, '').trim());
+  }
+  const optionVerbs = new Set(
+    options.map((o) => o.match(/^\/ait:([a-z0-9-]+)$/)?.[1]).filter(Boolean),
+  );
+  for (const v of readmeVerbs) {
+    if (optionVerbs.has(v)) continue;
+    violations.push(
+      mkv(
+        relYml,
+        optStart + 1,
+        RULE,
+        `README 명령 표의 /ait:${v} 가 버그 리포트 드롭다운에 없음 (fix: options 에 '- /ait:${v}' 를 추가하라)`,
+      ),
+    );
+  }
+  for (const v of optionVerbs) {
+    if (readmeVerbs.has(v)) continue;
+    violations.push(
+      mkv(
+        relYml,
+        optStart + 1,
+        RULE,
+        `드롭다운의 /ait:${v} 가 README 명령 표에 없음 (fix: 선택지를 지우거나 README 표에 등재하라)`,
+      ),
+    );
+  }
   return violations;
 }
 
 /** @param {string} root @returns {Violation[]} */
 function checkA3(root) {
-  const violations = [...checkDesignGuideTemplateDrift(root)];
+  const violations = [...checkDesignGuideTemplateDrift(root), ...checkBugReportCommands(root)];
 
   // 1. 템플릿 검증
   const templatesDir = path.join(root, 'shared', 'templates');
