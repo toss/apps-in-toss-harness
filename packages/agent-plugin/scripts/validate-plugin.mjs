@@ -2345,6 +2345,37 @@ function checkDesignGuideTemplateDrift(root) {
       }
     }
   }
+  violations.push(...checkDesignGuideFallbackMarker(root, mvMatch ? mvMatch[1] : null));
+  return violations;
+}
+
+// 자산 폴백(new-miniapp 등 skill 문서 안의 인라인 셸)은 마커를 직접 printf 로
+// 쓴다: `printf '<!-- %s v<N> -->`. 이 N 이 MV 와 다르면 폴백으로 만든 프로젝트가
+// 다음 design 주입에서 버전 불일치로 보인다. 구버전을 일부러 보여 주는 예시
+// (`agents=skip(ait:design-guide v0)` 등)는 printf 형태가 아니라 대상이 아니다.
+/** @param {string} root @param {string | null} mv @returns {Violation[]} */
+function checkDesignGuideFallbackMarker(root, mv) {
+  const violations = [];
+  const skillsDir = path.join(root, 'shared', 'skills');
+  if (!mv || !fs.existsSync(skillsDir)) return violations;
+  for (const file of walkFiles(skillsDir)) {
+    if (!file.endsWith('.md')) continue;
+    readFile(file)
+      .split('\n')
+      .forEach((line, i) => {
+        for (const m of line.matchAll(/printf '<!-- %s v(\d+) -->/g)) {
+          if (m[1] === mv) continue;
+          violations.push(
+            mkv(
+              path.relative(root, file),
+              i + 1,
+              'A3/design-guide-template-drift',
+              `폴백 printf 마커 v${m[1]} 이 inject-project-guide.sh 의 MV=${mv} 와 다름 (fix: v${mv} 으로 고쳐라)`,
+            ),
+          );
+        }
+      });
+  }
   return violations;
 }
 
