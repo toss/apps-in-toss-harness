@@ -1,5 +1,17 @@
 # @apps-in-toss/agent-plugin
 
+## 0.3.0
+
+### Minor Changes
+
+- SDK 기능(광고·인앱결제·공유·리더보드·햅틱·저장소 등)을 사용자 프로젝트에 구현하는 `feature` skill 신설(`/ait:feature`). 프로젝트 스택(웹·Unity·엔진 HTML5 빌드·React Native)과 SDK 버전을 읽고, API는 docs MCP 원문을 확인한 뒤 쓴다. 광고 정책·결제 지급 규약은 `references/conventions.md`, 스택별 주의점은 `references/stack-pitfalls.md`.
+  
+  `new-miniapp`·`inject`·`design`의 스택별 분기를 줄였다. 템플릿은 create-ait-app `--list-templates`에서 고르고, 번들러 배선은 devtools·debug-console README를 따르며, 디자인 가이드 주입은 `src/index.css`가 없는 프로젝트에서도 엔트리를 찾아 연결한다.
+
+### Patch Changes
+
+- `debug`·`setup-debugger`·`test-on-device`·`launch`·`welcome`에서 스택 가정을 걷어냈다. dev 서버 포트와 빌드 명령은 `package.json` scripts와 실행 출력에서 읽고, `.ait`는 glob으로 찾는다. `launch-scan.sh`는 `src/`·`public/` 고정 대신 제외 목록 기반으로 스캔한다. Unity 프로젝트일 때의 안내를 더했다.
+
 ## 0.2.6
 
 ### Patch Changes
