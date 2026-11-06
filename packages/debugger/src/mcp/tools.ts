@@ -60,6 +60,43 @@ import { lookupSignature, warnPassthrough } from './sdk-signatures.js';
 import { MAX_LISTED_OTHER_SESSIONS, type SessionsSnapshot } from './session-registry.js';
 import { mintRelayCode, RELAY_CODE_MIN_AGE_SECONDS } from './totp.js';
 
+/**
+ * Where the cloudflared tunnel is in its life cycle.
+ * - `starting`: the first attempt is in flight (the binary may still be downloading).
+ * - `up`: the tunnel answers.
+ * - `retrying`: an attempt failed; the next one is in flight or scheduled.
+ * - `down`: no tunnel and no attempt scheduled (no relay environment booted, or retrying is paused).
+ */
+export type TunnelState = 'starting' | 'up' | 'retrying' | 'down';
+
+/**
+ * Why the last tunnel attempt failed.
+ * - `rate-limited`: Cloudflare answered the quick-tunnel request with 429.
+ * - `exited`: cloudflared exited before it assigned a URL.
+ * - `timeout`: cloudflared ran but reported no URL in time.
+ * - `download`: the cloudflared binary could not be downloaded or verified.
+ * - `dropped`: a tunnel that had been up stopped answering and could not be reissued.
+ */
+export type TunnelErrorKind = 'rate-limited' | 'exited' | 'timeout' | 'download' | 'dropped';
+
+/** Short Korean label for a tunnel failure class, for status text and error messages. */
+export function tunnelErrorLabel(kind: TunnelErrorKind | null | undefined): string {
+  switch (kind) {
+    case 'rate-limited':
+      return 'Cloudflare 요청 한도(429)에 걸렸어요';
+    case 'download':
+      return 'cloudflared 바이너리 내려받기 실패';
+    case 'timeout':
+      return 'cloudflared가 제한 시간 안에 주소를 못 받았어요';
+    case 'dropped':
+      return '뜨던 터널이 끊겼어요';
+    case 'exited':
+      return 'cloudflared가 주소를 받기 전에 종료됐어요';
+    default:
+      return '원인 확인 중';
+  }
+}
+
 /** Tunnel state surfaced by `list_pages`. */
 export interface TunnelStatus {
   /** Whether the cloudflared quick tunnel is up. */
@@ -79,6 +116,16 @@ export interface TunnelStatus {
    * (3) before the probe gives up and enters the permanent-error state.
    */
   reissueAttempts?: number;
+  /** Life-cycle state. Absent on callers that predate the retry loop (treated as `up ? 'up' : 'down'`). */
+  state?: TunnelState;
+  /** Failed attempts in a row since the tunnel was last up (0 while up). */
+  attempts?: number;
+  /** ISO timestamp of the next scheduled attempt, or `null` when none is scheduled. */
+  nextRetryAt?: string | null;
+  /** Reason class of the last failed attempt, or `null` when none failed since the tunnel was last up. */
+  lastErrorKind?: TunnelErrorKind | null;
+  /** PID of the live cloudflared child, or `null` when no child runs. A plain integer, not a secret. */
+  childPid?: number | null;
 }
 
 /**
@@ -916,7 +963,7 @@ export function buildAttachUrl(
   if (!tunnel.up || tunnel.wssUrl === null) {
     throw new Error(
       'tunnel-down: cloudflared 터널이 안 떠 있습니다. ' +
-        'MCP 서버를 재시작하거나 잠시 후 list_pages로 터널 상태를 다시 확인하세요.',
+        '잠시 후 start_attach를 다시 호출하거나 list_pages로 터널 상태를 확인하세요.',
     );
   }
   const authorityWarning = validateSchemeAuthority(schemeUrl) ?? undefined;
@@ -1755,8 +1802,8 @@ export interface DiagnosticsTunnelInfo {
   /** Public `wss://*.trycloudflare.com` relay URL, or `null`. */
   wssUrl: string | null;
   /**
-   * PID of this MCP server process (from its session registry entry), or `null`
-   * when the registry is not available.
+   * PID of the cloudflared child process, or `null` when no child runs (the
+   * tunnel is starting, retrying or down). Not the daemon's own PID.
    */
   pid: number | null;
   /**
@@ -1775,6 +1822,14 @@ export interface DiagnosticsTunnelInfo {
    * 0 when no drop has occurred.
    */
   reissueAttempts: number;
+  /** `starting` | `up` | `retrying` | `down`. */
+  state?: TunnelState;
+  /** Failed attempts in a row since the tunnel was last up. */
+  attempts?: number;
+  /** ISO timestamp of the next scheduled retry, or `null`. */
+  nextRetryAt?: string | null;
+  /** Reason class of the last failed attempt, or `null`. */
+  lastErrorKind?: TunnelErrorKind | null;
 }
 
 /**
@@ -2183,9 +2238,28 @@ export function computeNextRecommendedAction(
   attachDiagnosis: AttachDiagnosis | null = null,
   tunnelRotations: TunnelRotationsSnapshot | null = null,
 ): NextRecommendedAction | null {
-  // Rule 0: permanent tunnel drop — highest priority, beats crash / empty-pages rules.
-  // droppedAt is set by the health probe after exhausting all reissue attempts.
-  if (tunnel.droppedAt != null) {
+  // Rule 0a: the tunnel is coming up or being retried automatically. Restarting
+  // the server would only throw the retry loop away; start_attach waits for it.
+  if (
+    !tunnel.up &&
+    isRelayEnv(env) &&
+    (tunnel.state === 'starting' || tunnel.state === 'retrying')
+  ) {
+    const kind = tunnel.lastErrorKind ?? null;
+    const when = tunnel.nextRetryAt != null ? `, 다음 재시도 ${tunnel.nextRetryAt}` : '';
+    return {
+      tool: 'start_attach',
+      reason:
+        tunnel.state === 'starting'
+          ? 'cloudflared 터널이 뜨는 중이에요 — start_attach를 호출하면 터널이 뜰 때까지 최대 45초 기다려요'
+          : `cloudflared 터널을 자동으로 다시 시도하고 있어요 (${tunnelErrorLabel(kind)}, 연속 실패 ${tunnel.attempts ?? 0}회${when}) — ` +
+            '서버 재시작은 필요 없어요. start_attach를 호출하면 터널이 뜰 때까지 최대 45초 기다려요',
+    };
+  }
+
+  // Rule 0: tunnel gone with no retry loop behind it — highest priority, beats crash / empty-pages rules.
+  // droppedAt is set when a tunnel that had been up could not be reissued.
+  if (tunnel.droppedAt != null && tunnel.state !== 'starting' && tunnel.state !== 'retrying') {
     return {
       tool: 'restart',
       reason:
@@ -2408,13 +2482,31 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     effectiveUp = false;
   }
 
+  // The supervisor's own child pid wins (null while no child runs). Callers that
+  // predate it fall back to the registry pid, and only while the tunnel is up.
+  const reportedChildPid =
+    tunnel.childPid !== undefined
+      ? tunnel.childPid
+      : effectiveUp && typeof effectiveTunnelChildPid === 'number'
+        ? effectiveTunnelChildPid
+        : null;
+  // A child that died under a cached `up` must not be reported as up.
+  const state: TunnelState = effectiveUp
+    ? 'up'
+    : tunnel.state === undefined || tunnel.state === 'up'
+      ? 'down'
+      : tunnel.state;
   const tunnelInfo: DiagnosticsTunnelInfo = {
     up: effectiveUp,
     wssUrl: maskRelayUrl(tunnel.wssUrl),
-    pid: selfEntry?.pid ?? null,
+    pid: reportedChildPid,
     startedAt: selfEntry?.startedAt ?? null,
     droppedAt: tunnel.droppedAt ?? null,
     reissueAttempts: tunnel.reissueAttempts ?? 0,
+    state,
+    attempts: tunnel.attempts ?? 0,
+    nextRetryAt: tunnel.nextRetryAt ?? null,
+    lastErrorKind: tunnel.lastErrorKind ?? null,
   };
 
   // list_pages — non-fatal; null on any error.

@@ -44,9 +44,9 @@ import type { McpEnvironment } from './environment.js';
 import {
   attachSupersededError,
   attachTimeoutMessage,
-  classifyToolError,
   mcpError,
   protocolVersionMismatchError,
+  tunnelUnavailableError,
 } from './errors.js';
 import { logInfo } from './log.js';
 import type { QrHttpServer } from './qr-http-server.js';
@@ -66,6 +66,7 @@ import {
   relayCodeStep,
 } from './totp.js';
 import { renderQr } from './tunnel.js';
+import { ATTACH_TUNNEL_WAIT_MS } from './tunnel-supervisor.js';
 
 /**
  * Why a QR scan can silently do nothing: when the mini-app is ALREADY open in
@@ -310,6 +311,11 @@ export interface AttachDeps {
   /** relay 터널 up/wssUrl. CLI는 bootRelayFamily().getTunnelStatus를 그대로 넘긴다. */
   getTunnelStatus(): TunnelStatus;
   /**
+   * 터널이 뜨는 중이거나 곧 재시도될 때 최대 `maxMs`까지 기다린 뒤 상태를 돌려준다.
+   * 없으면 기다리지 않는다.
+   */
+  waitForTunnel?(maxMs: number): Promise<TunnelStatus>;
+  /**
    * Late-bound TOTP secret accessor (issue #396) — read from env AT CALL TIME so
    * the project-local `.ait_relay` secret loaded by `switchMode` is visible.
    * SECRET-HANDLING: the returned value is used only for the `at=` code, never logged.
@@ -503,9 +509,18 @@ export async function prepareAttach(
 
   // Tunnel-down check (the old buildAttachUrl threw here; we fail-fast with a
   // structured error to keep prepareAttach side-effect-free).
-  const tunnelForBuild = getTunnelStatus();
+  // 터널이 막 뜨는 중이거나(첫 실행이면 바이너리를 내려받느라 20~30초) 곧 재시도될 때는
+  // 바로 실패시키지 않고 정해진 시간까지 기다린다.
+  let tunnelForBuild = getTunnelStatus();
+  const waitStartedAt = Date.now();
+  if ((!tunnelForBuild.up || tunnelForBuild.wssUrl === null) && deps.waitForTunnel !== undefined) {
+    tunnelForBuild = await deps.waitForTunnel(ATTACH_TUNNEL_WAIT_MS);
+  }
   if (!tunnelForBuild.up || tunnelForBuild.wssUrl === null) {
-    return { ok: false, error: classifyToolError(new Error('tunnel-down:'), 'start_attach') };
+    return {
+      ok: false,
+      error: tunnelUnavailableError(tunnelForBuild, Date.now(), Date.now() - waitStartedAt),
+    };
   }
   const authorityWarning = validateSchemeAuthority(schemeUrl) ?? undefined;
 

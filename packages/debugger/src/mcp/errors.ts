@@ -5,7 +5,7 @@
  * debug-server.ts · tools.ts의 거부 응답 호출부가 이 헬퍼를 통해 생성된다.
  *
  * 4가지 상태 (진단 메시지 차별화):
- *   - tunnel-down  : cloudflared 터널 미가동 — 서버 재시작 필요
+ *   - tunnel-down  : cloudflared 터널 미가동 — 자동 재시도 중이면 start_attach 재호출
  *   - page-missing : 페이지가 attach 안 됨 — start_attach → QR 스캔
  *   - page-crash   : 페이지 crash 감지 — 앱 재실행 후 재attach
  *   - sdk-absent   : window.__sdkCall 미주입 — dog-food 채널로 재배포
@@ -20,6 +20,7 @@ import {
 } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
 import { UNTRUSTED_DATA_NOTE } from './envelope.js';
+import { type TunnelStatus, tunnelErrorLabel } from './tools.js';
 
 /** MCP tool-result 에러 응답 형식. */
 export interface McpErrorResult {
@@ -125,8 +126,50 @@ export function tierRejectionError(
 export function tunnelDownError(): McpErrorResult {
   return mcpError(
     'cloudflared 터널이 안 떠 있습니다. ' +
-      'MCP 서버를 재시작하거나 잠시 후 list_pages로 터널 상태를 다시 확인하세요.',
+      '잠시 후 start_attach를 다시 호출하거나 list_pages로 터널 상태를 확인하세요.',
   );
+}
+
+/**
+ * 터널을 기다렸는데도 안 떴을 때의 `start_attach` 에러. `waitedMs`는 실제로 기다린 시간이다. 원인 종류와 다음 재시도 시각을 말하고,
+ * 서버 재시작이 아니라 `start_attach` 재호출을 안내한다.
+ *
+ * SECRET-HANDLING: 상태 이름, 횟수, 초 단위 시간, 원인 종류만 싣는다. 터널 호스트·relay URL은 없다.
+ */
+export function tunnelUnavailableError(
+  tunnel: TunnelStatus,
+  nowMs: number,
+  waitedMs: number,
+): McpErrorResult {
+  if (tunnel.state === undefined || tunnel.state === 'down') return tunnelDownError();
+  const waited = Math.round(waitedMs / 1000);
+  const head =
+    waited >= 1
+      ? `cloudflared 터널이 ${waited}초를 기다려도 안 떴어요`
+      : 'cloudflared 터널이 아직 안 떴어요';
+  const parts: string[] = [];
+  if (tunnel.state === 'starting') {
+    parts.push(
+      `${head}. 아직 뜨는 중이에요 (처음 실행이면 cloudflared 바이너리를 내려받느라 더 걸려요).`,
+    );
+  } else {
+    parts.push(`${head}: ${tunnelErrorLabel(tunnel.lastErrorKind)}.`);
+    if (tunnel.lastErrorKind === 'rate-limited') {
+      parts.push(
+        '짧은 시간에 요청이 몰려 Cloudflare가 막은 거라 재시도 간격을 1분 이상으로 늘렸어요.',
+      );
+    }
+    const retryAt = tunnel.nextRetryAt != null ? Date.parse(tunnel.nextRetryAt) : Number.NaN;
+    parts.push(
+      Number.isNaN(retryAt)
+        ? `지금 재시도하는 중이에요(연속 실패 ${tunnel.attempts ?? 0}회).`
+        : `연속 실패 ${tunnel.attempts ?? 0}회, 다음 재시도는 약 ${Math.max(0, Math.round((retryAt - nowMs) / 1000))}초 뒤예요.`,
+    );
+  }
+  parts.push(
+    '자동으로 계속 재시도하니 서버를 재시작하지 말고, 잠시 후 start_attach를 다시 호출하세요.',
+  );
+  return mcpError(parts.join(' '));
 }
 
 /**

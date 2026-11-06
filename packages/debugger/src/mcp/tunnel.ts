@@ -29,7 +29,7 @@ import { withoutRelaySecretEnv } from './child-env.js';
 import { ensureVerifiedCloudflaredBin } from './cloudflared-binary.js';
 import { redactRelayText } from './relay-redact.js';
 import { RESTART_CMD } from './restart-hint.js';
-import type { TunnelStatus } from './tools.js';
+import type { TunnelErrorKind, TunnelStatus } from './tools.js';
 
 /** Generates a 32-byte hex attach token shown as a pairing hint (relay-side validation is a later phase). */
 export function generateAttachToken(): string {
@@ -86,6 +86,42 @@ export function sanitizeCloudflaredOutput(line: string): string {
  */
 const URL_TIMEOUT_MS = 20_000;
 
+/** How long to keep reading stderr after cloudflared exits, before the failure is classified. */
+const EXIT_STDERR_GRACE_MS = 100;
+
+/**
+ * A failed quick-tunnel start, with the reason class the retry loop and the
+ * user-facing messages need. The message itself stays the sanitized diagnostic
+ * text; `kind` is what callers branch on.
+ */
+export class TunnelStartError extends Error {
+  readonly kind: TunnelErrorKind;
+  constructor(message: string, kind: TunnelErrorKind, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'TunnelStartError';
+    this.kind = kind;
+  }
+}
+
+/**
+ * Cloudflare answers a quick-tunnel request it rate limits with
+ * `quick tunnel provisioning failed with status 429`; cloudflared then exits
+ * before it assigns a URL.
+ */
+const RATE_LIMIT_RE = /\b429\b|too many requests|rate[ -]?limit/i;
+
+/** Reads the reason class off an error from a failed tunnel start. */
+export function classifyTunnelError(err: unknown): TunnelErrorKind {
+  if (err instanceof TunnelStartError) return err.kind;
+  const message = err instanceof Error ? err.message : String(err);
+  return RATE_LIMIT_RE.test(message) ? 'rate-limited' : 'exited';
+}
+
+export interface StartQuickTunnelOptions {
+  /** Aborting stops the cloudflared child (if any) and rejects, so no process outlives a shutdown. */
+  signal?: AbortSignal;
+}
+
 export interface QuickTunnel {
   /** Public `https://*.trycloudflare.com` URL the tunnel exposes. */
   url: string;
@@ -122,10 +158,11 @@ async function ensureCloudflaredBin(): Promise<void> {
   try {
     await ensureVerifiedCloudflaredBin(bin);
   } catch (err) {
-    throw new Error(
+    throw new TunnelStartError(
       `[@apps-in-toss/debugger] cloudflared binary download or verification failed: ${
         err instanceof Error ? err.message : String(err)
       }. See README "Troubleshooting → cloudflared binary not installed" for pnpm allowBuilds / pre-cache options.`,
+      'download',
       { cause: err },
     );
   }
@@ -147,8 +184,17 @@ async function ensureCloudflaredBin(): Promise<void> {
  * timeout error and a premature-exit error. This benefits the relay path
  * (env 3, `debug-server.ts`) that calls this function.
  */
-export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> {
+export async function startQuickTunnel(
+  localPort: number,
+  options: StartQuickTunnelOptions = {},
+): Promise<QuickTunnel> {
+  const { signal } = options;
+  const abortError = () =>
+    new TunnelStartError('[@apps-in-toss/debugger] tunnel start aborted', 'exited');
+  if (signal?.aborted) throw abortError();
   await ensureCloudflaredBin();
+  // The download can take 20-30 s; a shutdown during it must not spawn a child afterwards.
+  if (signal?.aborted) throw abortError();
 
   // Origin uses `localhost`, not `127.0.0.1`: cloudflared is a Go binary, and
   // Go's dialer tries every resolved address of `localhost` (both v4 and v6)
@@ -179,20 +225,24 @@ export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> 
   };
 
   const url = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      // The cloudflared child is likely still alive (it just hasn't reported a
-      // URL yet) — stop it so a timed-out tunnel doesn't leak an orphan process.
+    const stopChild = () => {
       try {
         tunnel.stop();
       } catch {
         // Ignore — the process may already be gone.
       }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      // The cloudflared child is likely still alive (it just hasn't reported a
+      // URL yet) — stop it so a timed-out tunnel doesn't leak an orphan process.
+      stopChild();
       reject(
-        new Error(
+        new TunnelStartError(
           `[@apps-in-toss/debugger] cloudflared did not report a tunnel URL within ${
             URL_TIMEOUT_MS / 1000
           }s. Check your network connection, or run \`cloudflared tunnel --url http://localhost:${localPort}\` manually.${stderrTail()}`,
+          RATE_LIMIT_RE.test(stderrLines.join('')) ? 'rate-limited' : 'timeout',
         ),
       );
     }, URL_TIMEOUT_MS);
@@ -204,26 +254,44 @@ export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> 
     const onError = (err: Error) => {
       clearTimeout(timer);
       cleanup();
-      reject(err);
+      stopChild();
+      reject(new TunnelStartError(err.message, 'exited', { cause: err }));
     };
     const onExit = (code: number | null) => {
       clearTimeout(timer);
+      tunnel.off('url', onUrl);
+      tunnel.off('error', onError);
+      tunnel.off('exit', onExit);
+      signal?.removeEventListener('abort', onAbort);
+      // The child's last stderr lines (the 429 notice among them) can still be in
+      // flight when 'exit' fires; keep collecting for a moment before classifying.
+      setTimeout(() => {
+        tunnel.off('stderr', pushStderr);
+        reject(
+          new TunnelStartError(
+            `[@apps-in-toss/debugger] cloudflared exited before assigning a URL (code ${code}).${stderrTail()}`,
+            RATE_LIMIT_RE.test(stderrLines.join('')) ? 'rate-limited' : 'exited',
+          ),
+        );
+      }, EXIT_STDERR_GRACE_MS);
+    };
+    const onAbort = () => {
+      clearTimeout(timer);
       cleanup();
-      reject(
-        new Error(
-          `[@apps-in-toss/debugger] cloudflared exited before assigning a URL (code ${code}).${stderrTail()}`,
-        ),
-      );
+      stopChild();
+      reject(abortError());
     };
     const cleanup = () => {
       tunnel.off('url', onUrl);
       tunnel.off('error', onError);
       tunnel.off('exit', onExit);
       tunnel.off('stderr', pushStderr);
+      signal?.removeEventListener('abort', onAbort);
     };
     tunnel.once('url', onUrl);
     tunnel.once('error', onError);
     tunnel.once('exit', onExit);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 
   // FIX 1: watch for unexpected child death AFTER URL is resolved.

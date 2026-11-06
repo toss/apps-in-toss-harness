@@ -134,11 +134,9 @@ import {
 import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
-import { redactRelayText } from './relay-redact.js';
 import { relayRunId } from './relay-run-id.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
 import { attachSignature, relayCertDocument } from './relay-signing.js';
-import { RESTART_CMD } from './restart-hint.js';
 import { listOtherSessions, registerSession, type SessionsSnapshot } from './session-registry.js';
 import { redirectConsoleToStderr } from './stdout-guard.js';
 import { shouldRejectNewTarget } from './target-busy.js';
@@ -175,14 +173,9 @@ import {
   mintRelayCode,
   RELAY_QR_REFRESH_INTERVAL_MS,
 } from './totp.js';
-import {
-  makeTunnelStatus,
-  printAttachBanner,
-  type QuickTunnel,
-  startQuickTunnel,
-  startTunnelHealthProbe,
-} from './tunnel.js';
+import { printAttachBanner } from './tunnel.js';
 import { createTunnelRotationPolicy, type TunnelRotationOptions } from './tunnel-rotation.js';
+import { createTunnelSupervisor, type TunnelSupervisor } from './tunnel-supervisor.js';
 
 /**
  * The result of a `start_debug` mode switch (issue #348). Reported back to the
@@ -304,6 +297,12 @@ export interface DebugServerDeps {
   aitSource: AitSource;
   /** Returns current tunnel status (URL changes per spawn). */
   getTunnelStatus(): TunnelStatus;
+  /**
+   * Waits up to `maxMs` for the relay tunnel to come up when it is starting or a
+   * retry is about to run, then returns the status. Absent: `start_attach` does
+   * not wait.
+   */
+  waitForTunnel?(maxMs: number): Promise<TunnelStatus>;
   /**
    * Maximum time in ms to wait for a page to attach when `wait_for_attach=true`.
    * Default 60 000 ms. Exposed for testing so tests can use a small value without
@@ -561,6 +560,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // ──────────────────────────────────────────────────────────────────────────
   const attachDeps: AttachDeps = {
     getTunnelStatus,
+    waitForTunnel: deps.waitForTunnel,
     getTotpSecret,
     qrHttpServer,
     onAttachUrlBuilt,
@@ -1780,6 +1780,17 @@ export interface BootedFamily {
    */
   getTunnelStatus?: () => TunnelStatus;
   /**
+   * Waits up to `maxMs` for the tunnel to come up (it is starting or a retry is
+   * about to run), then returns the status. Relay family only.
+   */
+  waitForTunnel?: (maxMs: number) => Promise<TunnelStatus>;
+  /**
+   * Told whether this family is the active one. The relay family stops retrying
+   * its tunnel while another family is active, so a session that left the relay
+   * environment does not keep calling Cloudflare. Relay family only.
+   */
+  setActive?: (active: boolean) => void;
+  /**
    * Local HTTP base URL of the Chii relay (e.g. `http://127.0.0.1:9100` for
    * the intoss relay). Used to build the Chii self-hosted inspector URL
    * (`<relayHttpUrl>/front_end/chii_app.html`). `undefined` for the local-
@@ -1935,11 +1946,11 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
   // URL and is guessing codes. See tunnel-rotation.ts for the policy.
   const rotationPolicy = createTunnelRotationPolicy(options.tunnelRotation);
   const relayRef: { current: ChiiRelay | null } = { current: null };
-  let tunnelProbe: { stop(): void; rotate(): Promise<boolean> } | null = null;
+  let supervisor: TunnelSupervisor | null = null;
   const rotateTunnel = async (): Promise<void> => {
-    if (tunnelProbe === null) return;
+    if (supervisor === null) return;
     logWarn('tunnel.rotation', { reason: 'rotate' });
-    await tunnelProbe.rotate();
+    await supervisor.rotate();
   };
 
   let lastOriginRejectLogAt = 0;
@@ -1990,82 +2001,54 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
   logInfo('server.start', { port: relay.port });
 
-  let tunnel: QuickTunnel | null = null;
-  let tunnelStatus: TunnelStatus = makeTunnelStatus(false, null);
   // Bring the cloudflared tunnel up in the background so the MCP stdio transport
   // can answer `initialize` immediately. cloudflared has to lazy-download a
   // ~38 MB binary on first run; awaiting it here pushes the initialize response
-  // past Claude Code's MCP connection timeout. Tools that need the tunnel
-  // (`start_attach`) already gate on `getTunnelStatus()` and return a clear
-  // "tunnel not up" message when it isn't ready yet, so dropping the await is
-  // safe — the agent retries once the banner prints.
-  const tunnelReady = startQuickTunnel(relay.port).then(
-    (t) => {
-      tunnel = t;
-      tunnelStatus = makeTunnelStatus(true, t.wssUrl);
+  // past Claude Code's MCP connection timeout. The supervisor retries failed
+  // attempts with a growing delay and `start_attach` waits for it (bounded), so
+  // a tunnel that is slow or rate limited does not need a daemon restart.
+  supervisor = createTunnelSupervisor({
+    localPort: relay.port,
+    onUp: (t, { reissued, reason }) => {
       options.onWssUrl?.(t.wssUrl);
-      // Notify the caller of the cloudflared child PID so it can be recorded in
-      // the session registry for orphan reaping.
+      // Record the cloudflared child PID (the reissued one after a reissue, not
+      // the dead original) so an orphan reaper later finds the right process.
       // childPid is a plain integer — not a secret.
       if (t.childPid !== undefined) {
         options.onTunnelChildPid?.(t.childPid);
       }
-      // SECRET-HANDLING: wssUrl contains the relay host — do not log it directly.
-      logInfo('tunnel.up', {});
       options.timeline?.record('tunnel', 'ok');
-
-      // Start the health probe now that the tunnel URL is known.
-      // The probe runs every 60 s and attempts up to 3 reissues on drop.
-      tunnelProbe = startTunnelHealthProbe(t, relay.port, {
-        onReissue: (newTunnel, reason) => {
-          tunnel = newTunnel;
-          tunnelStatus = makeTunnelStatus(true, newTunnel.wssUrl, null, 0);
-          options.onWssUrl?.(newTunnel.wssUrl);
-          options.timeline?.record('tunnel', 'ok');
-          // The failures came through a URL that no longer answers, whatever
-          // replaced it: a rotation or a drop. The new address starts clean.
-          relay.resetAuthLock('tunnel');
-          if (reason === 'rotation') {
-            options.onTunnelRotated?.();
-          }
-          // Record the reissued tunnel's child PID (not the original dead one) so an
-          // orphan reaper later finds the right process.
-          // childPid is a plain integer — not a secret.
-          if (newTunnel.childPid !== undefined) {
-            options.onTunnelChildPid?.(newTunnel.childPid);
-          }
-          // Reprint the notice; the new URL + QR come from start_attach / the dashboard.
-          void printAttachBanner().then(() => {
-            logInfo('tunnel.up', { reissued: true });
-          });
-        },
-        onPermanentDrop: (droppedAt) => {
-          tunnelStatus = makeTunnelStatus(false, null, droppedAt, 3);
-          options.timeline?.record('tunnel', 'down');
-          logError('tunnel.down', {
-            msg: `tunnel permanently dropped (${droppedAt}). Restart: ${RESTART_CMD}`,
-          });
-          // Wake open dashboard SSE clients immediately so the render gate
-          // swaps the now-dead QR for the tunnel-down error state (issue #631).
-          // Mirrors the onWssUrl path — without it the page shows a scannable
-          // dead QR until the next periodic refresh push (up to 10s later).
-          options.onTunnelDown?.();
-        },
+      if (reissued) {
+        // The failures came through a URL that no longer answers, whatever
+        // replaced it: a rotation or a drop. The new address starts clean.
+        relay.resetAuthLock('tunnel');
+        if (reason === 'rotation') {
+          options.onTunnelRotated?.();
+        }
+      }
+      // SECRET-HANDLING: wssUrl contains the relay host — do not log it directly.
+      // The new URL + QR come from start_attach / the dashboard.
+      void printAttachBanner().then(() => {
+        logInfo('tunnel.up', reissued ? { reissued: true } : {});
       });
-
-      return printAttachBanner();
     },
-    (err) => {
-      const message = err instanceof Error ? err.message : String(err);
+    onFailure: (failure) => {
       options.timeline?.record('tunnel', 'down');
       logError('tunnel.down', {
-        msg: `Failed to open cloudflared quick tunnel: ${redactRelayText(message)}. The relay is up locally; attach over the public URL is unavailable until the tunnel starts.`,
+        msg:
+          `cloudflared tunnel ${failure.afterUp ? 'dropped' : 'failed to open'} ` +
+          `(${failure.kind}, attempt ${failure.attempts})` +
+          `${failure.message === '' ? '' : `: ${failure.message}`}. ` +
+          `Retrying in ${Math.round(failure.delayMs / 1000)}s; the relay is up locally, ` +
+          'attach over the public URL waits for the tunnel.',
       });
+      // Wake open dashboard SSE clients so the render gate swaps a dead QR for
+      // the tunnel-down state immediately (issue #631).
+      options.onTunnelDown?.();
     },
-  );
-  // Reference the promise to placate the linter — actual completion is observed
-  // via the side-effects on `tunnelStatus` from inside `.then`.
-  void tunnelReady;
+  });
+  supervisor.start();
+  const tunnelSupervisor = supervisor;
 
   const connection = createRelayConnection(relay.baseUrl, options.timeline);
 
@@ -2074,11 +2057,13 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     // Local HTTP base of the Chii relay — used by AutoDevtoolsOpener to build
     // the self-hosted inspector URL. SECRET-HANDLING: not logged.
     relayHttpUrl: relay.baseUrl,
-    getTunnelStatus: () => tunnelStatus,
+    getTunnelStatus: () => tunnelSupervisor.status(),
+    waitForTunnel: (maxMs) => tunnelSupervisor.waitForUp(maxMs),
+    setActive: (active) => tunnelSupervisor.setRetryEnabled(active),
     stop() {
-      tunnelProbe?.stop();
-      // tunnel.stop() is synchronous (child process kill) — safe from exit handler.
-      tunnel?.stop();
+      // Stops the retry timer, an attempt in flight and the live tunnel. All
+      // synchronous (child process kill) — safe from exit handler.
+      tunnelSupervisor.stop();
       connection.close();
       // relay.close() is async — fine for signal/exit handlers.
       void relay.close();
@@ -2273,6 +2258,15 @@ export class DualConnectionRouter implements ConnectionRouter {
    * until any relay family is booted (any session before the first relay
    * start_debug) — the correct signal for `start_attach` (no tunnel yet).
    */
+  /** Waits for the relay tunnel like {@link BootedFamily.waitForTunnel}; the status as is when none is booted. */
+  async waitForRelayTunnel(maxMs: number): Promise<TunnelStatus> {
+    const family =
+      this.activeFamily?.waitForTunnel !== undefined
+        ? this.activeFamily
+        : this.bootedFamilies().find((f) => f.waitForTunnel !== undefined);
+    return family?.waitForTunnel ? family.waitForTunnel(maxMs) : this.relayTunnelStatus();
+  }
+
   relayTunnelStatus(): TunnelStatus {
     if (this.activeFamily?.getTunnelStatus) return this.activeFamily.getTunnelStatus();
     for (const family of this.bootedFamilies()) {
@@ -2398,6 +2392,8 @@ export class DualConnectionRouter implements ConnectionRouter {
       // (3) Flip the active pointer. The MCP Server reads through `active` per
       // request, so no re-handshake / restart is needed.
       this.activeFamily = target;
+      // Only the active family keeps retrying its tunnel.
+      for (const family of this.bootedFamilies()) family.setActive?.(family === target);
 
       // (4) Re-arm the attach watcher on the new connection (self-clearing).
       this.stopWatcher();
@@ -2640,6 +2636,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     aitSource,
     // Tunnel status follows the active relay family once one is lazy-booted (#356).
     getTunnelStatus: () => router.relayTunnelStatus(),
+    waitForTunnel: (maxMs) => router.waitForRelayTunnel(maxMs),
     // FIX (issue #572 review): expose the live cloudflared child PID (source a)
     // so get_debug_status can feed it into getDiagnostics for the FIX 2 probe.
     getTunnelChildPid: () => activeTunnelChildPid,
