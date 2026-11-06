@@ -6,7 +6,7 @@ description: |
   registered for whichever bundler the project uses ("기존 Vite 프로젝트에 devtools
   붙여줘", "Rspack 쓰는 기존 프로젝트에 devtools 붙여줘");
   `/ait:inject-debug-console` installs `@apps-in-toss/debug-console` (on-device
-  attach) as a dependency; `/ait:inject-tossface` wires the Tossface emoji web font
+  attach) as a devDependency behind an opt-in build flag so release builds do not contain it; `/ait:inject-tossface` wires the Tossface emoji web font
   (CDN link or subset bundling) into the project's global stylesheet. Idempotent,
   minimal edits. This skill only
   INSTALLS packages/assets into a build setup — it never diagnoses a running app.
@@ -31,8 +31,11 @@ argument-hint: ''
 - **devtools facet** (`/ait:inject-devtools`): `@apps-in-toss/devtools` unplugin을 빌드 config에
   추가해 토스 앱 없이 브라우저에서 mock SDK로 개발·테스트한다. 인자 없음.
 - **debug-console facet** (`/ait:inject-debug-console`): `@apps-in-toss/debug-console`(on-device
-  attach)을 **`dependencies`**로 설치하고 `/auto` self-gating import를 진입점에
-  와이어업한다. 환경 3(intoss-private candidate) on-device 디버깅에 attach 표면을 남긴다.
+  attach)을 **`devDependencies`**로 설치하고, 빌드 타임 `__DEBUG_BUILD__` 게이트 import를
+  진입점에, 그 값을 정하는 `define`을 번들러 설정에 와이어업한다. 기본 빌드는 값이 `false`라
+  번들에 attach 코드가 들어가지 않고, `AIT_DEBUG_BUILD=1`을 명시한 디버그 빌드만
+  `true`가 되어 환경 3(intoss-private) on-device 디버깅에 attach 표면을 남긴다.
+  디버그 빌드는 검수·출시에 올리지 않는다.
   인자 없음.
 - **tossface facet** (`/ait:inject-tossface`): 이모지를 토스페이스 글리프로 렌더하도록
   CDN 링크 또는 서체 subset 번들을 프로젝트 전역 스타일시트에 와이어업한다. `design` skill의
@@ -56,23 +59,41 @@ lockfile로 패키지 매니저를 감지해 `@apps-in-toss/devtools`를 devDep�
 
 ## debug-console facet — `/ait:inject-debug-console`
 
-`@apps-in-toss/debug-console`을 **runtime dependency**로 설치하고(harness GitHub Release
-tarball URL — npm 미발행), 진입점에 self-gating `import '@apps-in-toss/debug-console/auto'`를
-멱등하게 삽입한다. 이 패키지는 예전
-`@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP 데몬·on-device attach
-표면이 `debugger` 패키지(`@apps-in-toss/debugger` + `@apps-in-toss/debug-console`)로
-분리되면서 나뉘었다.
-**보안 스코프**: 두 패키지 중 프로덕션 미니앱 번들에 실제로 들어갈 수 있는 유일한
-패키지라 `dependencies`로 설치한다(devtools는 devDep 전용) — 설치돼 있지
-않으면 attach 코드가 번들에 구조적으로 들어갈 수 없다.
-패키지 README는 프로덕션 하드닝 관점에서 build-time `__DEBUG_BUILD__` 게이트(방식 B)를
-권장 순서상 먼저 제시하지만, 이 skill이 진입점에 실제로 자동 삽입하는 것은 여전히
-`/auto`(방식 A)다 — consumer 번들러 `define` 배선이 프로젝트마다 달라 이 skill이
-방식 B를 강제 적용하면 기존 빌드 설정과 충돌할 수 있기 때문이다. 방식 B는 사용자가
-원할 때 참고할 대안으로 `references/debug-console.md`에 안내한다.
+`@apps-in-toss/debug-console`을 **`devDependencies`**로 설치하고(harness GitHub Release
+tarball URL — npm 미발행), 진입점에 빌드 타임 게이트 import를 멱등하게 삽입한다.
 
-핵심 절차: (1) `package.json` 확인 → (2) 기존 설치 확인(idempotency) → (3) `dependencies`로
-설치 → (4) 진입점 감지(`index.html`의 module script → 번들러 `entry` → 관례 이름 순) + `/auto` import 삽입 → (5) 완료 seam. 하지 말아야 할 것은 —
+```ts
+declare const __DEBUG_BUILD__: boolean;
+
+if (__DEBUG_BUILD__) {
+  import('@apps-in-toss/debug-console').then((m) =>
+    m.startDebugConsole({ relayPublicKeys: ['<debugger relay-key 출력>'] }),
+  );
+}
+```
+
+`<debugger relay-key 출력>`은 프로젝트 폴더에서 `npx debugger relay-key`(설치한 bin이면 `debugger relay-key`)를
+실행해 얻는 공개키다. 값은 stdout에 한 줄로만 나온다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지
+않는다. 팀원은 자기 키를 배열에 추가하고 다시 빌드한다. QR 테스트 호스트에서는 이 키로 attach URL의
+서명을 확인하므로 키가 없으면 연결되지 않는다(`blocked-relay-key`).
+
+`__DEBUG_BUILD__`는 번들러 `define`이 환경 변수 `AIT_DEBUG_BUILD`에서 읽어 정한다. 기본(release)
+빌드는 `false`로 접혀 번들러가 패키지 그래프를 통째로 지우므로 배포 번들에 attach 코드가
+남지 않는다. `AIT_DEBUG_BUILD=1`을 명시한 디버그 빌드만 `true`가 되고, 설정 파일에
+`'true'`를 고정으로 쓰지 않는다. 릴리즈 빌드는 `npm run build`, 디버그 빌드는
+`AIT_DEBUG_BUILD=1 npm run build`다. 디버그 빌드는 검수·출시에 올리지 않는다. 번들러는 `package.json`과
+설정 파일에서 읽고, 하나로 좁혀지지 않으면 추측하지 않고 사용자에게 묻는다.
+런타임 self-gate만 있는 `/auto` import는 코드가 번들에 남으므로 삽입하지 않는다.
+프로젝트에 이미 `/auto` import가 있으면 사용자에게 알린 뒤 게이트 import로 바꾼다.
+
+이 패키지는 예전 `@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP
+데몬·on-device attach 표면이 `debugger` 패키지(`@apps-in-toss/debugger` +
+`@apps-in-toss/debug-console`)로 분리되면서 나뉘었다.
+
+핵심 절차: (1) `package.json` 확인 → (2) 기존 설치·와이어업 확인(idempotency, 게이트 없는
+`/auto` 발견 포함) → (3) 번들러 감지 → (4) `devDependencies`로 설치 → (5) 진입점 감지 +
+게이트 import 삽입 → (6) 번들러 `define` 추가 → (7) 빌드 두 번으로 검증(기본 빌드에서 마커
+0건, 마지막 빌드는 릴리즈 빌드로 남김) → (8) 완료 seam. 하지 말아야 할 것은 —
 
 **상세가 필요하면 Read `<이 skill의 base directory>/references/debug-console.md`.**
 
@@ -117,11 +138,11 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
 **debug-console facet** 완료 후:
 
 ```
-@apps-in-toss/debug-console 설정 완료 · <진입점>에 /auto import 삽입
+@apps-in-toss/debug-console 설정 완료 · <진입점>에 __DEBUG_BUILD__ 게이트 import, <설정 파일>에 define 추가
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
-  RELEASE_CHANNEL=dogfood npm run build  # candidate 빌드에 attach 표면 포함
-                                      #   (2.x 폴백은 npm run bundle:ait)
+  AIT_DEBUG_BUILD=1 npm run build  # 디버그 빌드에만 attach 표면 포함 (기본 빌드에는 없음, 검수·출시에 올리지 않음)
+                                   #   (2.x 폴백은 AIT_DEBUG_BUILD=1 npm run bundle:ait)
   /ait:debug                          # 환경 3 QR attach로 on-device 디버깅
                                       #   말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
 ```
@@ -153,7 +174,8 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
 - ❌ (devtools) README에 없는 번들러에 추측으로 배선 — 사용자에게 알리고 묻는다.
 - ❌ **실행 중인 앱을 진단하는 것** — 이 skill은 패키지를 *설치*할 뿐이다. "폰에서 이상하게 동작한다", "라이브 상태를 보고 싶다"는 `/ait:debug`(`debug` skill). debug-console facet은 그 진단을 *가능하게 하는 준비물*이지 진단 자체가 아니다.
 - ❌ (debug-console) MCP 데몬 등록 — `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선(`/ait:debug` §5 참조).
-- ❌ (debug-console) `devDependencies` 설치 — 프로덕션 번들 포함이 목적이라 반드시 `dependencies`.
+- ❌ (debug-console) 게이트 없는 `import '@apps-in-toss/debug-console/auto'` 삽입 — 배포 번들에 코드가 남는다.
+- ❌ (debug-console) 번들러가 불확실한 채로 `define`을 추측해 쓰는 것 — 사용자에게 묻는다.
 - ❌ (tossface) 재-subsetting·포맷 변환 — 원본 파일을 그대로만 배치한다
   (`references/tossface.md`의 "tossface facet 하지 말아야 할 것" 절 참조).
 - ❌ (tossface) 본문 서체로 사용 — 이모지 서체다. 본문 서체 금지는 `design` skill의

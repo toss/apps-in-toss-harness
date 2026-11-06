@@ -1,5 +1,26 @@
 # @apps-in-toss/debug-console
 
+## 0.3.0
+
+### Minor Changes
+
+디버거 0.3.0 이상과 함께 써야 한다(프로토콜 버전 2). 이전 버전의 디버거와는 붙지 않는다.
+
+- QR 링크로 처음 붙을 때 폰 화면에 확인 창을 띄운다. 창에는 연결될 relay 호스트와 허용되는 내용이 나온다. "연결"을 눌러야만 진행하고, "취소"·Escape·창 바깥 탭은 아무것도 보내지 않으며 URL과 history의 attach 값을 지운다. 서명이나 인증서 확인이 실패해도 같은 값을 지운다. 같은 페이지 새로고침은 묻지 않고, 연결이 검증되면 24시간 동안 같은 relay로 다시 붙을 때 묻지 않는다.
+- attach가 읽은 뒤 페이지 URL에서 `at`과 `relay`를 지우고 history 항목에 보관한다.
+- attach마다 무작위 기기 id를 만들어 relay 경로에 코드와 함께 싣는다. 같은 페이지 새로고침과 같은 탭의 다른 페이지는 같은 id를 쓴다.
+- attach 전에 URL의 `sig`를 검증한다. 번들에 등록한 relay 공개키가 서명한 인증서만 받고, 키는 `startDebugConsole({ relayPublicKeys })`나 전역 `__AIT_DEBUG_RELAY_KEYS__`로 넘긴다. 키가 없거나 서명이 맞지 않으면 `blocked-relay-key` / `blocked-relay-signature` 상태로 멈추고, 이 검증이 끝나기 전에는 relay로 요청을 보내거나 스크립트를 넣지 않는다. `blocked-relay-signature`가 반복되면 폰 시계를 확인한다.
+- 게이트의 `verifyTotpCode` 입력을 없앴다. relay 비밀은 번들에 넣지 않으며, 코드는 relay만 검증한다.
+- 릴리스 빌드에서는 빌드 게이트로 debug-console이 빠진다. 디버그 빌드에서만 포함한다.
+
+### Patch Changes
+
+- `/auto` 진입점과 `startDebugConsole`은 attach가 받아들여진 뒤에만 SDK 브리지(`window.__sdk`, `window.__sdkCall`)를 설치한다. `@apps-in-toss/web-framework`는 계속 런타임에서만 찾는다.
+- attach를 허용하는 호스트는 localhost와 QR 테스트 호스트(`*.private-apps.tossmini.com`, `*.private-web.tossmini.com`)다.
+- relay가 코드 확인을 잠시 잠근 경우(close 4429 / HTTP 429)를 코드 만료와 구분해 다시 시도하라는 안내(`relay-locked`)를 보여 준다.
+- 폰 상태 막대 문구를 짧고 같은 형식으로 줄였다. 원인은 상태 값(`window.__ait_debug_status`)과 데몬에서 확인한다. 테스트 호스트가 아니면 막대, 상태 값, 콘솔 출력을 만들지 않는다.
+- README에 번들러 배선 안내를 추가했다.
+
 ## 0.2.0
 
 ### Minor Changes

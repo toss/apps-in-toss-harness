@@ -28,6 +28,43 @@ import type { AitCaptureLine } from './capture.js';
 import type { RelayRunReport } from './relay-worker.js';
 import type { TestResult } from './runtime.js';
 
+/**
+ * 아티팩트 파일명에 들어가는 조각(category/sdkLine/platform)의 허용 형식.
+ * 폰 콘솔(`__AIT_CAPTURE__`)과 CLI 옵션이 정하는 값이라 신뢰할 수 없다 — `../`·절대 경로·
+ * 경로 구분자가 파일명에 섞이면 `reportDir` 밖에 쓰게 된다.
+ */
+const SAFE_ARTIFACT_SEGMENT = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** 파일명 조각으로 쓸 수 있는지: 허용 문자 1~64자이고 `.`/`..` 자체가 아니다. */
+export function isSafeArtifactSegment(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    SAFE_ARTIFACT_SEGMENT.test(value) &&
+    value !== '.' &&
+    value !== '..'
+  );
+}
+
+/** `file`이 `dir` 안(자기 자신 제외)에 있는지 — 해석된 절대 경로 기준. */
+function isInsideDir(dir: string, file: string): boolean {
+  const rel = path.relative(path.resolve(dir), path.resolve(file));
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+/** 아티팩트 경로를 만든다. 조각이 안전하지 않거나 `dir` 밖으로 나가면 throw. */
+function safeArtifactPath(dir: string, segments: string[], suffix: string): string {
+  for (const seg of segments) {
+    if (!isSafeArtifactSegment(seg)) {
+      throw new Error(`unsafe artifact name segment: ${JSON.stringify(String(seg).slice(0, 64))}`);
+    }
+  }
+  const file = path.join(dir, `${segments.join('.')}${suffix}`);
+  if (!isInsideDir(dir, file)) {
+    throw new Error('artifact path escapes output directory');
+  }
+  return file;
+}
+
 /** The cell axes a report is stamped with — the test-matrix coordinates. */
 export interface ReportCellMeta {
   /** SDK line under test (e.g. `'2.x'` / `'3.x'`). */
@@ -224,7 +261,7 @@ export async function writeReportArtifact(
   // whole run is empty (preserves the pre-#741 "always write one file"
   // behavior for a run with zero files, e.g. an empty glob match).
   if (regularFiles.length > 0 || serialised.files.length === 0) {
-    const outFile = path.join(dir, `${meta.sdkLine}.${meta.platform}.json`);
+    const outFile = safeArtifactPath(dir, [meta.sdkLine, meta.platform], '.json');
     await writeFile(
       outFile,
       `${JSON.stringify({ ...serialised, files: regularFiles }, null, 2)}\n`,
@@ -234,7 +271,7 @@ export async function writeReportArtifact(
   }
 
   if (manualFiles.length > 0) {
-    const manualOutFile = path.join(dir, `${meta.sdkLine}.${meta.platform}.manual.json`);
+    const manualOutFile = safeArtifactPath(dir, [meta.sdkLine, meta.platform], '.manual.json');
     await writeFile(
       manualOutFile,
       `${JSON.stringify({ ...serialised, files: manualFiles }, null, 2)}\n`,
@@ -244,7 +281,7 @@ export async function writeReportArtifact(
   }
 
   if (stubbedFiles.length > 0) {
-    const stubbedOutFile = path.join(dir, `${meta.sdkLine}.${meta.platform}.stubbed.json`);
+    const stubbedOutFile = safeArtifactPath(dir, [meta.sdkLine, meta.platform], '.stubbed.json');
     await writeFile(
       stubbedOutFile,
       `${JSON.stringify(
@@ -287,12 +324,58 @@ export async function writeCaptureArtifacts(
   dir: string,
   cell: { sdkLine: string; platform: string },
 ): Promise<string[]> {
-  if (captures.length === 0) return [];
+  const { written, skipped } = await writeCaptureArtifactsDetailed(captures, dir, cell);
+  for (const note of skipped) {
+    process.stderr.write(`debugger-test: skipped capture: ${note}\n`);
+  }
+  return written;
+}
+
+/** {@link writeCaptureArtifactsDetailed}의 결과. */
+export interface CaptureWriteResult {
+  /** 쓴 파일의 경로(카테고리 순). */
+  written: string[];
+  /** 건너뛴 캡처의 사유. 값은 JSON 인용·64자 제한을 거친 것이라 한 줄로 안전하다. */
+  skipped: string[];
+}
+
+/**
+ * {@link writeCaptureArtifacts}와 같되, 건너뛴 캡처를 호출자에게 돌려준다.
+ *
+ * 파일명은 `category`(폰 콘솔이 정함)·`sdkLine`·`platform`(CLI 옵션)으로 만든다. 셋 다
+ * `/^[A-Za-z0-9._-]{1,64}$/`이고 `.`/`..`이 아니어야 하며, 최종 경로도 `dir` 안이어야 한다.
+ * 어긋난 카테고리는 쓰지 않고 `skipped`에 사유를 남긴다. `sdkLine`/`platform`이 어긋나면
+ * 전체가 건너뛰어진다(파일명 접미사를 만들 수 없다).
+ */
+export async function writeCaptureArtifactsDetailed(
+  captures: ReadonlyArray<AitCaptureLine>,
+  dir: string,
+  cell: { sdkLine: string; platform: string },
+): Promise<CaptureWriteResult> {
+  const skipped: string[] = [];
+  if (captures.length === 0) return { written: [], skipped };
+
+  if (!isSafeArtifactSegment(cell.sdkLine) || !isSafeArtifactSegment(cell.platform)) {
+    skipped.push(
+      `unsafe cell name (sdkLine=${JSON.stringify(String(cell.sdkLine).slice(0, 64))}, ` +
+        `platform=${JSON.stringify(String(cell.platform).slice(0, 64))}); ${captures.length} line(s) dropped`,
+    );
+    return { written: [], skipped };
+  }
 
   // Group payloads by category, preserving harvest order. Each payload is an
   // opaque JSON array string; concatenate parsed arrays under the same category.
   const byCategory = new Map<string, unknown[]>();
+  const reportedBad = new Set<string>();
   for (const { category, json } of captures) {
+    if (!isSafeArtifactSegment(category)) {
+      // 같은 카테고리의 반복 줄은 사유를 한 번만 남긴다.
+      if (!reportedBad.has(category)) {
+        reportedBad.add(category);
+        skipped.push(`unsafe category name ${JSON.stringify(category.slice(0, 64))}`);
+      }
+      continue;
+    }
     let merged = byCategory.get(category);
     if (!merged) {
       merged = [];
@@ -307,12 +390,14 @@ export async function writeCaptureArtifacts(
     }
   }
 
+  if (byCategory.size === 0) return { written: [], skipped };
+
   await mkdir(dir, { recursive: true });
   const written: string[] = [];
   for (const [category, records] of byCategory) {
-    const outFile = path.join(dir, `${category}.${cell.sdkLine}.${cell.platform}.json`);
+    const outFile = safeArtifactPath(dir, [category, cell.sdkLine, cell.platform], '.json');
     await writeFile(outFile, `${JSON.stringify(records, null, 2)}\n`, 'utf8');
     written.push(outFile);
   }
-  return written;
+  return { written, skipped };
 }

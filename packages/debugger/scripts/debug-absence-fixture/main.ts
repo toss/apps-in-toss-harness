@@ -14,7 +14,7 @@
 //     it drives — must DCE to 0 bytes.
 //   - debug (AIT_DEBUG_BUILD=1 -> true): the surface must survive (positive
 //     control), and the inner runtime gate (debug=1 + relay + Layer B/C TOTP
-//     in maybeAttach) still applies.
+//     in startDebugConsole) still applies.
 //
 // Note: this fixture depends on the sibling @apps-in-toss/debug-console package's
 // BUILT dist/ output (its `exports` map points at ./dist/*), so it only
@@ -26,7 +26,7 @@ if (__DEBUG_BUILD__ && typeof window !== 'undefined') {
   const params = new URLSearchParams(window.location.search);
   if (params.get('debug') === '1' && params.get('relay')) {
     import('@apps-in-toss/debug-console').then((m) => {
-      m.maybeAttach();
+      m.startDebugConsole({ relayPublicKeys: [] });
     });
   }
 }

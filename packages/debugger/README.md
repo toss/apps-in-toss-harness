@@ -11,14 +11,14 @@
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz"
 ```
 
 설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@apps-in-toss/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx <URL>`은 동작하지 않는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger-test --help
 ```
 
 ## 사용
@@ -32,7 +32,7 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
     }
   }
 }
@@ -41,15 +41,33 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
 기본 동작은 `--mode=debug --target=relay`(실기기 attach)다. 로컬 브라우저만 붙일 때는 `--target=local`을 쓰고, 대상 dev 서버 주소는 로컬 루프백만 사용한다:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger --target=local
 ```
+
+### 공개키 출력 (`debugger relay-key`)
+
+QR 테스트 호스트의 `debug-console`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 프로젝트 폴더에서 `npx -p <tgz URL> debugger relay-key`(`--project <경로>` 선택)를 실행하면 `.ait_relay`가 없을 때 만들고, 공개키만 stdout에 한 줄로 출력한다. 이 값을 `startDebugConsole({ relayPublicKeys: ['…'] })`에 넣는다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 이 공개키는 루트 키이고, 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실려 QR이 작고, 인증서는 relay가 `GET /relay-cert`로 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음). 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다. 세션 키는 파일이나 로그에 남지 않는다.
+
+#### 키 교체 (`debugger relay-key --rotate`)
+
+`.ait_relay`는 오래 쓰는 시크릿이라, 만든 날짜를 `.ait_relay.meta`에 함께 적는다(`.gitignore`에 같이 추가된다. 이 파일이 없는 예전 `.ait_relay`는 파일 수정 시각을 만든 날짜로 본다). 데몬은 키가 **21일**을 넘으면 stderr와 `get_debug_status`의 `relayKey.hint`로 교체를 권하고, **30일**을 넘으면 relay를 시작하지 않는다(`start_debug`가 교체 방법과 함께 에러를 돌려준다). `AIT_DEBUG_TOTP_SECRET`을 직접 export한 경우에는 그 값이 `.ait_relay`와 같을 때만 나이를 따진다.
+
+```sh
+npx -p <tgz URL> debugger relay-key --rotate
+```
+
+새 시크릿을 같은 폴더에 임시 파일로 쓴 뒤 이름을 바꿔 `.ait_relay`를 교체하므로(권한 0600) 중간에 실패해도 이전 키가 남는다. stdout에는 새 공개키 한 줄만 나오고 시크릿은 어디에도 출력하지 않는다. 이전 공개키는 stderr에 보여 준다. 이어서 다음을 한다.
+
+1. 새 공개키를 `startDebugConsole({ relayPublicKeys: [...] })`에 넣고, 계속 테스트할 번들을 모두 다시 빌드한다. 이전 키만 가진 번들은 이 데몬에 더 이상 attach되지 않는다.
+2. 이전 공개키는 같은 번들이 아직 이전 키를 쓰는 데몬(교체하지 않은 팀원의 PC, CI)에도 붙어야 하는 동안만 배열에 남긴다. 그런 데몬이 없어지면 지운다.
+3. 데몬을 다시 시작해 새 키를 읽게 한다.
 
 ### Test runner (`debugger-test`)
 
 실기기 토스 앱 WebView에서 테스트 파일을 실행한다. `--scheme-url`은 `ait deploy --scheme-only`(별개 CLI, 아래 참조)가 출력하는 `intoss-private://` URL을 그대로 받는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 `test-runner` 설정 헬퍼는 서브패스로 import한다:
@@ -88,6 +106,16 @@ export default definePhoneTestConfig({
 
 이 패키지는 원격 디버깅 인프라이므로 시크릿을 다룬다. 다음은 어떤 출력(stdout/stderr/로그/에러 메시지)에도 절대 나타나서는 안 된다: TOTP 시크릿·생성된 코드, relay `wss://` URL과 trycloudflare 터널 호스트, `at=` 파라미터가 붙은 딥링크, Deploy Key. 로그에 안전하게 남길 수 있는 것은 `http://127.0.0.1:<port>` 형태의 로컬 주소뿐이다.
 
+로컬 대시보드(`http://127.0.0.1:<port>/`)는 데몬이 뜰 때마다 새로 만든 접근 토큰이 있어야 열린다. `start_attach`가 브라우저로 여는 주소와 출력하는 대시보드·`/inspector` 주소에는 `dashtoken=` 값이 붙어 있고, 처음 열면 토큰을 HttpOnly·SameSite=Strict 쿠키로 바꾸고 토큰 없는 주소로 이동한다. 토큰 없이 포트만으로 접근하면 403이다. 포트를 직접 입력해 열려면 `start_attach`가 알려 준 주소를 그대로 쓴다. 토큰은 `at=` 코드처럼 로그에서 가려진다.
+
+`at=` relay 인증 코드는 데몬 프로세스가 메모리에만 두는 무작위 키와 시계로 5초 단위마다 만들어진다. 이 키는 `.ait_relay`와 무관하고 파일·환경 변수·로그에 남지 않으며, 프로세스가 다시 뜨면 새로 만든다(`.ait_relay`는 서명용 루트 키에만 쓰인다). 키 기반 MAC을 128비트로 잘라 소문자 hex 32자로 적은 값이다. 사람이 입력하는 값이 아니고 `start_attach`가 만드는 딥링크나 QR 안에만 실린다. relay는 다른 모양의 값이면 시크릿을 보기 전에 거부한다. 코드는 만든 시점부터 30~35초 동안만 통한다(현재 5초 단계와 그 앞 6단계). 대시보드는 열려 있는 동안 5초마다 QR을 새로 그리고 `start_attach`도 5초마다 코드가 바뀌었는지 보고 새 QR을 보내므로(단계마다 한 번), 화면에 떠 있는 QR은 스캔 시점에 25초 이상 남아 있다. 스캔 뒤 미니앱이 처음 뜨는 데 20초쯤 걸려도 통한다. 터미널에 찍힌 텍스트 QR은 갱신되지 않으니 바로 스캔한다. 한 번 attach한 폰은 코드가 묶여 있어서, 코드가 만료된 뒤에도 같은 페이지의 새로고침과 화면 잠금 해제 뒤 재연결은 마지막 소켓이 닫힌 후 5분 동안 된다. 코드 하나는 폰 한 대만 쓴다. 페이지는 처음 붙을 때 무작위 기기 id를 만들어 relay 경로에 코드와 함께 싣고, relay는 처음 소켓을 연 기기 id에 코드를 묶는다. 같은 코드를 든 다른 기기의 요청은 틀린 코드처럼 거부되고, 같은 폰의 새로고침과 다른 페이지는 그대로 붙는다.
+
+relay는 `Origin` 헤더도 확인한다. 터널로 들어온 요청은 앱 이름에 맞는 샌드박스 미니앱 도메인(`https://<앱 이름>.private-apps.tossmini.com`, `https://<앱 이름>.private-web.tossmini.com`)에서 온 경우만 응답하고, 응답에는 `*` 대신 그 origin과 `Vary: Origin`을 싣는다. 출시 도메인(`*.apps.tossmini.com`, `*.web.tossmini.com`)과 그 밖의 origin은 403(WebSocket은 close 4403)이다. 앱 이름을 아직 모르면 두 샌드박스 접미사 아래의 단일 라벨만 받는다. 터널을 거치지 않은 루프백 요청은 localhost origin과 relay 자신의 origin도 받는다. 터널로 들어온 `Origin` 없는 요청은 `target.js`와 핸드셰이크 확인(GET/HEAD)만 통하고 target WebSocket은 거부한다. Origin은 위조할 수 있으므로 인증 코드를 대신하지 않고 추가로 걸리는 조건이다.
+
+relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가져오지도 않는다. 폰의 소스 보기는 페이지 안에서 직접 소스를 불러오고, chii의 옛 `/proxy` 우회 요청은 알 수 없는 경로와 같이 404로 답한다. 만료된 코드로는 `target.js`와 핸드셰이크 확인, 같은 target id의 재연결만 되고, 그 코드에 묶인 소켓이 열려 있거나 마지막 소켓이 닫힌 뒤 5분 유예 안일 때만 통한다.
+
+기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 2)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debug-console`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다.
+
 ## 관련 CLI 구분
 
 이 생태계에는 이름이 비슷한 서로 다른 CLI 두 개가 있다 — 혼동하지 않는다:
@@ -101,6 +129,8 @@ export default definePhoneTestConfig({
 
 `start_attach`는 시간 안에 붙지 못하면 마지막으로 도달한 단계로 원인을 가려 "해야 할 일"과 진행 기록을 돌려준다. 같은 진단이 `get_debug_status`(`attachStages`, `attachDiagnosis`)와 대시보드의 "진행 단계" 타임라인에도 나온다. 폰 화면 하단의 상태 막대(`debug-console` 0.2 이상)도 함께 본다.
 
+터널 주소는 `start_attach`가 돌려주는 attach URL과 `relayUrl`에만 실제 값이 나온다. `get_debug_status`와 `list_pages`는 `wss://***.trycloudflare.com`처럼 첫 라벨을 가려서 보여 주고, 에러 메시지·로그·페이지 URL에서도 `at=` 코드, `/at/<코드>/` 경로, `relay=` 값, 터널 주소를 가린다. 폰 페이지 URL에는 터널 주소 대신 키 있는 해시인 `rid=`(실행 구분용)만 남는다.
+
 | 증상(진단) | 원인 | 조치 |
 |---|---|---|
 | 폰이 이번 QR의 페이지를 열지 않음 | 미니앱이 이미 열려 있어 스캔해도 새로고침되지 않았거나, gate가 막았거나, 사내망·MDM이 `*.trycloudflare.com`을 막음 | 미니앱을 X로 닫고 다시 스캔 → 폰 상태 막대의 사유 확인 → Wi-Fi 변경 |
@@ -111,7 +141,7 @@ export default definePhoneTestConfig({
 | 붙었다가 끊김 | 앱이 백그라운드로 갔거나 네트워크 단절 | 앱을 앞에 두고 X로 닫은 뒤 새 QR 스캔 |
 | 터널 끊김 | cloudflared 종료 | `start_attach`를 다시 호출 |
 | QR 이미지가 안 뜨고 터널이 "연결 끊김"으로 보임 | 대시보드 탭이 쌓여 브라우저 호스트당 연결 한도(Firefox 6개)에 걸림 | 대시보드 탭을 하나만 남기고 새로고침 |
-| relay 인증(TOTP) 거부, close 4401 | `.ait_relay` secret 불일치 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 시스템 시계 동기화 |
+| relay 인증(TOTP) 거부, close 4401 | 다른 디버거 프로세스가 띄운 relay에 붙으려 함 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 디버거를 다시 시작하고 시스템 시계 동기화 |
 | `debugger-test`가 "이미 debugger 프로세스가 relay를 운영 중"이라며 멈춤 | MCP 데몬이 relay를 쓰는 중 | 그 세션에서 `run_tests` 도구로 실행하거나 세션을 끈 뒤 재실행. 별도 relay가 필요하면 `--separate-relay` |
 
 `start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_debug_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
@@ -119,6 +149,8 @@ export default definePhoneTestConfig({
 ### cloudflared 바이너리가 준비되지 않을 때
 
 `debugger`(relay/tunnel 대상)를 처음 기동하는 순간 `ensureCloudflaredBin`이 바이너리 부재를 감지해 `cloudflared.install()`을 lazy로 호출하므로, 첫 실행에서 자동으로 `~38 MB` 바이너리가 다운로드된다 — npm은 postinstall을 기본 실행하므로 대부분 별도 조치가 필요 없다.
+
+바이너리는 버전을 고정(cloudflared 2026.10.7)하고, debugger에 들어 있는 sha256과 맞는지 매번 기동 전에 확인한다. 기본 경로에 다른 실행 파일이 있으면(예: npm postinstall이 받은 `latest`) 고정 버전으로 바꾸고, 해시가 다른 다운로드는 지우고 거부한다. 직접 빌드한 바이너리를 쓰려면 `CLOUDFLARED_BIN`에 경로를 지정한다. 그 파일은 검증하지 않는다.
 
 **pnpm으로 설치한 프로젝트에서만 해당하는 note**: pnpm은 기본적으로 의존성의 postinstall 스크립트를 차단해(`ignore-scripts` 정책) `cloudflared`의 "Ignored build scripts" 경고가 `pnpm install` 로그에 남을 수 있다. 이 다운로드를 install 시점으로 앞당기고 싶다면(예: CI 캐시 warm-up, 첫 기동 지연 방지) `pnpm approve-builds`로 `cloudflared`를 대화형 승인하거나, `pnpm-workspace.yaml`의 [`allowBuilds`](https://pnpm.io/settings#allowbuilds)(워크스페이스) 또는 `package.json`의 `pnpm.onlyBuiltDependencies`(단일 프로젝트)에 `cloudflared: true`/`"cloudflared"`를 명시한다.
 

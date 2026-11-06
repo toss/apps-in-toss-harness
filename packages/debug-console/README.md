@@ -11,7 +11,7 @@
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.3.0/apps-in-toss-debug-console-0.3.0.tgz"
 ```
 
 peerDependency가 없으므로 `@apps-in-toss/web-framework`의 설치 여부·버전과 무관하게 그대로 추가할 수 있다. SDK 브릿지(아래 `window.__sdk`)는 런타임에 동적 import로 SDK 존재 여부를 probe하며, SDK가 없으면 조용히 스킵된다.
@@ -27,6 +27,18 @@ declare const __DEBUG_BUILD__: boolean;
 
 if (__DEBUG_BUILD__) {
   import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());
+}
+```
+
+QR 테스트 호스트에서는 attach URL의 `sig`를 검증하므로 개발자 공개키가 필요하다. 프로젝트 폴더에서 `npx debugger relay-key`(설치한 bin이면 `debugger relay-key`)를 실행해 공개키를 얻고(`.ait_relay`가 없으면 만든다), `startDebugConsole`에 넘긴다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 팀원은 자기 키를 배열에 추가하고 다시 빌드한다.
+
+```ts
+declare const __DEBUG_BUILD__: boolean;
+
+if (__DEBUG_BUILD__) {
+  import('@apps-in-toss/debug-console').then((m) =>
+    m.startDebugConsole({ relayPublicKeys: ['<debugger relay-key 출력>'] }),
+  );
 }
 ```
 
@@ -53,22 +65,38 @@ import '@apps-in-toss/debug-console/auto';
 
 Vite 8, webpack 5, Rspack 2, esbuild 0.28, Rollup 4에서 두 엔트리의 빌드와 `false` 빌드의 코드 제거를 확인했다(2026-10-23).
 
+## 연결 확인
+
+QR 테스트 호스트에서 QR 링크로 처음 붙을 때는 relay에 아무 요청도 보내기 전에 폰 화면에 확인 창을 띄운다. 제목은 "디버거에 연결할까요?", 본문은 "개발자 컴퓨터(relay 호스트)가 이 앱을 원격으로 조작하고 앱 안의 데이터를 볼 수 있게 돼요. 내가 띄운 QR이 맞을 때만 연결하세요."(relay 주소를 확인할 수 없으면 괄호 부분은 빠진다)이고 "연결"·"취소" 두 버튼은 크기와 모양이 같다. `window.confirm`이 아니라 페이지가 직접 그린 창이라 WebView에서도 뜬다. "연결"을 눌러야만 진행하고, "취소"·Escape·창 바깥 탭은 아무 요청도 보내지 않은 채 URL과 history에서 attach 값을 지우고 끝난다(막대도 띄우지 않는다). 서명·인증서 검증이 실패한 경우에도 페이지 URL에서 attach 값을 지운다. 같은 페이지 새로고침은 다시 묻지 않는다. "연결"을 누르고 attach가 검증되면 그 relay origin과 시각만 이 미니앱 origin의 `localStorage`에 남겨, 24시간 안에 같은 relay로 다시 붙을 때는 묻지 않는다(최근 5개까지). 터널이 바뀌면 origin이 달라져 다시 묻는다. 저장소를 쓸 수 없으면 매번 묻는다. localhost 페이지는 루프백 relay에만 붙으므로 묻지 않는다.
+
 ## 폰 화면 상태 표시
 
-attach가 어디까지 됐는지, 안 됐다면 왜인지를 폰 화면 아래쪽 작은 막대로 알려준다. URL에 `debug=1` 또는 `relay=`가 있을 때만 나타난다 — DEV 빌드라서 자동 활성화됐을 뿐이면 아무것도 그리지 않는다. 탭하면 닫힌다. 연결 코드·relay 주소·URL은 화면에도 로그에도 나오지 않는다.
+attach가 어디까지 됐는지를 폰 화면 아래쪽 작은 막대로 알려준다. QR 테스트 호스트(`*.private-apps.tossmini.com` 등)와 로컬호스트에서, URL에 `debug=1` 또는 `relay=`가 있을 때만 나타난다. 프로덕션 호스트(`<app>.apps.tossmini.com`, `<app>.web.tossmini.com`)를 포함한 그 밖의 주소에서는 막대도 `window.__ait_debug_status`도 콘솔 출력도 없다. DEV 빌드라서 자동 활성화됐을 뿐이면 아무것도 그리지 않는다. 탭하면 닫힌다. 연결 코드·relay 주소·URL은 화면에도 로그에도 나오지 않는다.
 
-| 상태 | 의미와 할 일 |
-|---|---|
-| `blocked-host` / `blocked-opt-in` / `blocked-invalid-relay` / `blocked-entry` | 게이트가 막았다. 대시보드의 QR로 다시 연다 |
-| `blocked-auth` | QR 코드(`at=`)가 없거나 만료됐다. 대시보드를 새로고침하고 새 QR을 스캔한다 |
-| `connecting` | 스크립트를 넣고 relay 연결을 기다리는 중이다 |
-| `connected` | 연결됐다. 몇 초 뒤 스스로 사라진다 |
-| `session-ended` | 연결됐다가 끊겼고 돌아오지 않았다. X로 미니앱을 닫고 QR을 다시 스캔한다 |
-| `code-expired` | relay가 코드를 거부했다(4401 또는 스크립트 401). 새 QR을 스캔한다 |
-| `relay-busy` | 이 디버거가 이미 다른 미니앱에 연결돼 있다(relay 4409). 그 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔한다 |
-| `server-unreachable` | relay에 닿지 못했다. 사내망이나 MDM이 `*.trycloudflare.com`을 막는 경우가 많다 |
+막대 문구는 일부러 짧고, 어느 검사가 실패했는지 말하지 않는다. 개발자는 폰 화면이 아니라 상태 값(enum)과 데몬으로 원인을 찾는다. 데몬의 대시보드나 `get_debug_status`를 보거나, 아래 상태 값을 `window.__ait_debug_status`에서 CDP로 읽는다.
 
-같은 값이 `window.__ait_debug_status`에 문자열로 들어가므로 CDP로도 읽을 수 있다. 상태 표시는 기존 attach 이벤트와 close code만 읽고, 데몬과 주고받는 프로토콜(버전 `1`)은 바꾸지 않는다.
+| 상태 | 막대 문구 | 원인과 할 일 |
+|---|---|---|
+| `blocked-opt-in` / `blocked-invalid-relay` / `blocked-entry` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | 게이트가 막았다(`debug=1` 누락, 올바르지 않은 relay 주소, 진입 조건 불일치). 대시보드의 QR로 다시 연다 |
+| `blocked-update-required` | 디버거를 최신 버전으로 올리세요. | 6자리 코드를 쓰는 이전 버전 디버거의 QR이다. 디버거를 올리고 새 QR을 스캔한다 |
+| `blocked-relay-key` | 이 번들에 디버거 키가 없어요. | 번들에 공개키가 없다. 프로젝트 폴더에서 `npx debugger relay-key`를 실행해 출력을 `startDebugConsole({ relayPublicKeys })`에 넣고 다시 빌드한다 |
+| `blocked-relay-signature` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | URL의 `sig`가 없거나 등록한 공개키와 맞지 않거나, relay에서 인증서를 받지 못했다. 폰 시계가 몇 분 이상 틀려 서명 인증서의 유효 시간 밖이어도 이렇게 멈춘다. 다른 PC의 디버거로 만든 QR이면 그 PC에서 `npx debugger relay-key`로 얻은 키를 배열에 추가하고 다시 빌드하고, 아니면 새 QR을 스캔한다 |
+| `relay-origin-rejected` | 이 화면에서는 디버거를 쓸 수 없어요. | relay가 이 페이지의 origin을 거부했다(close 4403). 토스 앱에서 테스트 번들로 연 화면인지 확인한다 |
+| `relay-version-mismatch` | 디버거와 debug-console 버전이 맞지 않아요. | relay가 연결을 거부했다(close 4426). 디버거와 debug-console 중 오래된 쪽을 올리고 새 QR을 스캔한다 |
+| `blocked-auth` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | QR 코드(`at=`)가 없거나 형식이 맞지 않거나 만료됐다. 대시보드를 새로고침하고 새 QR을 스캔한다 |
+| `connecting` | 디버거에 연결하는 중이에요… | 스크립트를 넣고 relay 연결을 기다리는 중이다 |
+| `connected` | 디버거에 연결됐어요. | 연결됐다. 몇 초 뒤 스스로 사라진다 |
+| `session-ended` | 디버거 연결이 끝났어요. QR을 다시 스캔하세요. | 연결됐다가 끊겼고 돌아오지 않았다. X로 미니앱을 닫고 QR을 다시 스캔한다 |
+| `code-expired` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | relay가 코드를 거부했다(4401 또는 스크립트 401). 새 QR을 스캔한다 |
+| `relay-locked` | 잠시 뒤 다시 시도하세요. | relay가 코드 확인을 잠시 잠갔다(4429). 1분쯤 뒤 다시 시도하고, 계속되면 새 QR을 스캔한다 |
+| `relay-busy` | 디버거가 다른 미니앱에 연결돼 있어요. | 이 디버거가 이미 다른 미니앱에 연결돼 있다(relay 4409). 그 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔한다 |
+| `server-unreachable` | 디버거 서버에 접속할 수 없어요. | relay에 닿지 못했다. 사내망이나 MDM이 `*.trycloudflare.com`을 막는 경우가 많다 |
+
+같은 값이 `window.__ait_debug_status`에 문자열로 들어가므로 CDP로도 읽을 수 있다. 상태 표시는 기존 attach 이벤트와 close code만 읽는다. 데몬과 주고받는 프로토콜은 버전 `2`이고 정확히 같아야 한다. 다른 버전의 데몬은 이 패키지를 받지 않고, 폰에는 attach 대신 "업데이트 필요" 막대가 뜬다. `@apps-in-toss/debug-console`과 `@apps-in-toss/debugger` 중 오래된 쪽을 올린다.
+
+## 페이지 URL
+
+attach가 `at=`와 `relay=`를 읽으면 곧바로 두 파라미터를 페이지 URL에서 지운다(`history.replaceState`). 다른 파라미터와 경로, `#hash`는 그대로 둔다. 값은 현재 history 항목의 state에 보관한다. 같은 항목을 새로고침하면 state가 남아 있어 코드가 살아 있는 동안은 다시 attach되고, 코드가 만료됐으면 `code-expired`로 막혀 QR을 다시 스캔한다. 새 항목으로 이동하거나 라우터가 `history.state`를 덮어쓰면 값은 사라진다. state는 페이지의 스크립트가 읽을 수 있으므로, 이 처리는 URL을 기록하는 곳(분석 도구, 에러 리포터, `Referer`, 디버거가 보고하는 `location.href`)에서 값을 빼는 것이지 페이지 코드로부터 숨기는 것이 아니다.
 
 ## 폰 안 콘솔
 
@@ -89,7 +117,7 @@ bin은 없다.
 
 ## 보안 스코프
 
-**이 패키지는 프로덕션 번들에 실제로 들어갈 수 있다** — 그래서 dependency와 peerDependency가 모두 0개다. attach는 3단계 활성화 게이트를 통과해야만 이뤄진다: (B) 호스트 allowlist(`*.tossmini.com` 또는 localhost), (C) `debug=1` opt-in + 유효한 `wss:` relay URL + TOTP 코드(`*.tossmini.com` 호스트에서는 `at=` 코드가 필수이며, `_deploymentId`는 있으면 보고만 하고 요구하지 않는다). 이 게이트를 통과하지 못하면 attach는 일어나지 않으며, gate 실패 사유는 `'host' | 'opt-in' | 'invalid-relay' | 'auth'` (`'entry'`는 타입 호환을 위해 남아 있지만 더 이상 반환되지 않는다) enum 값으로만 노출된다 — 시크릿·코드 값·relay URL 자체는 어떤 로그에도 남지 않는다.
+**이 패키지는 프로덕션 번들에 실제로 들어갈 수 있다** — 그래서 dependency와 peerDependency가 모두 0개다. attach는 3단계 활성화 게이트를 통과해야만 이뤄진다: (B) 호스트 allowlist(QR 테스트 호스트인 `*.private-apps.tossmini.com`·`*.private-web.tossmini.com` 또는 localhost — 출시 환경 호스트인 `*.apps.tossmini.com`·`*.web.tossmini.com`은 URL 파라미터가 있어도 막는다), (C) `debug=1` opt-in + 유효한 `wss:` relay URL + TOTP 코드(localhost가 아닌 호스트에서는 `at=` 코드가 필수이고 소문자 hex 32자여야 하며, `_deploymentId`는 있으면 보고만 하고 요구하지 않는다). relay 주소는 형태까지 검사한다: 경로·쿼리·사용자 정보가 없는 `wss:` 주소이고, localhost 페이지에서는 루프백 relay만, QR 테스트 호스트에서는 `<라벨 하나>.trycloudflare.com`만 허용한다. QR 테스트 호스트에서는 여기에 더해 URL의 `sig`를 검증한다. `sig`에는 세션 키 id와, 그 세션 키로 `at`과 relay 주소에 한 ECDSA 서명만 들어 있다. 세션 키 인증서는 relay의 `/relay-cert`에서 받는다. 이 요청은 공개 인증서를 받는 GET 한 번이고 코드도 자격 증명도 싣지 않으며(3초 제한, 4KB 상한, 리다이렉트 거부), 검증이 끝나기 전에는 아무것도 실행하지 않는다. 받은 인증서는 개발자가 등록한 공개키의 서명, 폰 시계 기준 유효 시간(같은 페이지 새로고침으로 history에서 값을 다시 읽을 때만 이 시간 확인을 건너뛰고, 그때는 앞서 검증한 인증서를 history에서 다시 쓴다), 링크 서명 순서로 확인하고, 하나라도 맞지 않으면 relay에 더 요청하지 않는다. `*.trycloudflare.com`이라는 사실만으로는 relay가 누구 것인지 알 수 없기 때문이다. 이 게이트를 통과하지 못하면 attach는 일어나지 않으며, gate 실패 사유는 `'host' | 'opt-in' | 'invalid-relay' | 'auth' | 'update-required' | 'relay-signature'` (`'entry'`는 타입 호환을 위해 남아 있지만 더 이상 반환되지 않는다) enum 값으로만 노출된다 — 시크릿·코드 값·relay URL 자체는 어떤 로그에도 남지 않는다.
 
 ## 라이선스
 

@@ -31,7 +31,8 @@
 splice해 QR을 발급한다.
 
 전제는 두 가지뿐이다: (1) candidate 번들에 `@apps-in-toss/debug-console`이
-`dependencies`로 들어가 있을 것(`/ait:inject-debug-console`), (2) 그 candidate의
+들어가 있을 것(`/ait:inject-debug-console`이 `__DEBUG_BUILD__` 게이트를 배선하고,
+`AIT_DEBUG_BUILD=1` 빌드가 그 값을 `true`로 만든다), (2) 그 candidate의
 scheme URL(SKILL.md 5-B에서 빌드 → console MCP로 얻는다).
 
 ## `MCP_ENV` — 읽지 않는다 (설정해도 무효)

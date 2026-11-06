@@ -2,9 +2,11 @@
 name: test-on-device
 description: |
   Put the current mini-app on a real phone through the standard path — build the
-  `.ait` bundle, upload it with console MCP (`bundle_upload` →
+  `.ait` bundle (release variant by default; debug variant only when the user is
+  debugging on-device), upload it with console MCP (`bundle_upload` →
   `bundle_upload_complete`), confirm the compile with `miniapp_get_status`, and
   hand over the entry link the tools returned so it opens in the Toss app.
+  Debug-build deployments are recorded locally and must not be submitted for review.
   Review submission, release, rollback, and promotion are out of scope.
   Triggered by `/ait:test-on-device`, no args.
 argument-hint: ''
@@ -24,7 +26,7 @@ argument-hint: ''
 |---|---|
 | 브라우저에서 mock으로 개발 | 프로젝트의 dev 스크립트(`package.json` scripts) + `/ait:debug` 환경 1 (토스 앱 불필요) |
 | **실기기에서 동작 확인** | **이 skill** — 번들을 콘솔에 올려 토스 앱에서 연다 |
-| 실기기에서 CDP로 관측·디버깅 | `/ait:setup-debugger` 배선 후 `/ait:debug` 환경 3(QR attach) |
+| 실기기에서 CDP로 관측·디버깅 | `/ait:setup-debugger` 배선 후 `/ait:debug` 환경 3(QR attach). 이 skill이 디버그 빌드(`AIT_DEBUG_BUILD=1`)로 올릴 수 있지만 그 배포는 검수에 제출하지 않는다 |
 
 이 경로는 특정 스택 전용이 아니다 — 전제는 `.ait` 번들 하나뿐이라, web-framework
 프로젝트, React Native, Unity·엔진 HTML5 빌드 모두 업로드부터는 같은 절차를 탄다.
@@ -162,17 +164,29 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 완료 전 조기 탐색으로 "`.ait`가 없다"고 판단해 재빌드하는 것이 낭비의 전형이다(실측
 사례 있음).
 
+**빌드 변형은 둘이다. 기본은 릴리즈 빌드다.**
+
+- **릴리즈 빌드(기본)**: `AIT_DEBUG_BUILD` 없이 빌드한다. 동작 확인과 검수·출시에 올릴 번들은
+  전부 이 변형이다. 빌드 전에 셸에 `AIT_DEBUG_BUILD`가 남아 있지 않은지 본다
+  (`echo "${AIT_DEBUG_BUILD:-}"`가 비어 있어야 한다. 값이 있으면 `unset`한 뒤 빌드한다).
+- **디버그 빌드**: 사용자가 실기기에서 CDP attach로 디버깅하겠다고 한 경우에만, 프로젝트에
+  `/ait:inject-debug-console` 배선이 돼 있을 때 `AIT_DEBUG_BUILD=1`을 붙여 빌드한다
+  (프로젝트 build 스크립트 앞에 환경 변수로 준다). 배선이 없으면 `/ait:inject-debug-console`을
+  먼저 안내한다. 사용자가 디버깅을 말하지 않았는데 이 변형으로 빌드하지 않는다.
+  디버그 도구 버전이 `../setup-debugger/references/min-versions.json`의 최소 버전보다 낮은지도
+  이 빌드 전에 확인한다(`references/debug-builds.md` 끝 절).
+
 업로드할 번들은 `NODE_ENV=production`으로 빌드한다. devtools unplugin이 이 값으로 활성화를 판단해,
 없으면 일부 번들러(webpack CLI, esbuild, Rollup)가 mock과 패널을 번들에 남긴다. 웹 빌드 출력
 디렉터리에서 `grep -rlE '__aitDevtoolsStateSingleton__|ait-panel-toggle' <출력 디렉터리>`가 0건인지
 확인한 뒤 올린다(`../feature/references/stack-pitfalls.md`의 "번들러" 절).
 
-빌드 산출물의 `deploymentId`는 4에서 그대로 쓴다.
+릴리즈 빌드는 올리기 전에 디버그 마커도 확인한다. 출력 디렉터리(와 `.ait`)에서
+`grep -rlE '__ait_status_banner|__ait_debug_status|ait-attach|relayPublicKeys|startDebugConsole' <출력 디렉터리>`가
+0건이어야 한다. 걸리면 올리지 말고 원인(`__DEBUG_BUILD__` 게이트·define, 남은 환경 변수)을 먼저
+잡는다. 디버그 빌드는 이 마커가 있는 것이 정상이다.
 
-실기기에서 CDP attach까지 하려는 경우라면 이 skill이 아니라
-`/ait:inject-debug-console` + `RELEASE_CHANNEL=dogfood`를 준 빌드(프로젝트 build
-스크립트) candidate 경로가 필요하다 — 그건 `/ait:debug` 환경 3의 절차다. 이 skill은 동작 확인용 일반
-번들만 다룬다.
+빌드 산출물의 `deploymentId`는 4에서 그대로 쓴다.
 
 ### 4. 업로드 — `bundle_upload` → `bundle_upload_complete`
 
@@ -205,6 +219,14 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 - `CREATED` — 컴파일 성공. 6으로 간다.
 - `BUILD_FAILED` — 1의 appName 일치부터 다시 본다. 같은 번들을 반복 업로드해서
   통과시키려 하지 않는다.
+
+### 5-B. 디버그 빌드였다면 기록하고 알린다
+
+방금 올린 번들이 디버그 빌드(`AIT_DEBUG_BUILD=1`)였다면 `bundle_upload_complete`로 `deploymentId`가
+정해지는 즉시(컴파일 결과를 기다리지 않는다) `deploymentId`와 번들 버전을 프로젝트 루트의 `.ait-debug-deployments.json`에 기록한다.
+형식, `.gitignore` 줄 추가, 사용자 안내 문구는 **Read
+`<이 skill의 base directory>/references/debug-builds.md`**. 사용자에게는 "이 배포는 디버그
+빌드라 검수에 제출하면 안 됩니다"를 반드시 전한다. 릴리즈 빌드는 기록하지 않는다.
 
 ### 6. 토스 앱에서 확인
 
@@ -266,7 +288,10 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
   /ait:debug            # 실기기 CDP attach로 관측
                         #   말로: "미니앱이 폰에서 이상하게 동작하는데 라이브 상태를 디버깅하고 싶어"
 
-폰에서 확인을 마치고 검수에 넣을 차례라면:
+(디버그 빌드를 올렸다면 이 블록에 아래 한 줄을 더한다)
+  주의   이 배포는 디버그 빌드입니다. 검수에 제출하지 마세요. .ait-debug-deployments.json에 기록했습니다.
+
+폰에서 확인을 마치고 검수에 넣을 차례라면 (검수용은 AIT_DEBUG_BUILD 없이 빌드한 릴리즈 빌드를 올립니다):
   /ait:launch           # 출시 전 점검, 검수 요청
                         #   말로: "검수 넣기 전에 한번 봐줘"
 
@@ -304,6 +329,9 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
   `deploymentId`가 빠졌는지로 판정한다(5).
 - ❌ `bundle_test_push` 성공(`isTested=true`)을 테스트 완료로 간주해 검수 제출로
   이어감(6-A).
+- ❌ 사용자가 디버깅을 말하지 않았는데 `AIT_DEBUG_BUILD=1`로 빌드해 올림. 동작 확인과 검수용은
+  릴리즈 빌드다.
+- ❌ 디버그 빌드 배포를 기록하지 않고 넘어감, 또는 그 배포를 검수 제출 후보로 안내함.
 - ❌ 브라우저에서 재현되는 문제를 실기기 업로드로 확인. 그건 프로젝트 dev 스크립트 +
   `/ait:debug` 환경 1이 훨씬 빠르다.
 - ❌ 시크릿·인증 코드·업로드 presigned URL의 서명 파라미터를 stdout·로그·메시지에
@@ -314,7 +342,8 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 
 - 짝 skill: `new-miniapp`(scaffold), `design`(화면·등록용 이미지 자산),
   `setup-debugger`·`debug`(실기기 CDP attach — 이 skill 다음 단계),
-  `inject`의 debug-console facet(candidate 빌드에 attach 표면 설치).
+  `inject`의 debug-console facet(디버그 빌드에 attach 표면 설치).
+- `references/debug-builds.md`: 디버그 빌드 배포 기록 파일 형식과 절차.
 - 콘솔 MCP(`ait-console`) 인가는 `/mcp` 1회. 세션이 보는 워크스페이스는
   인가한 계정의 멤버십을 따른다(2).
 - 번들 규격·콘솔 등록 절차·진입 스킴 등 주제별 문서는 docs

@@ -6,11 +6,18 @@
  * empty-match case.
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { discoverTestFiles, isManualTestFile, partitionManualTests } from './discover.js';
+import {
+  assertTestFilesWithinRoot,
+  discoverTestFiles,
+  findRefusedTestPattern,
+  hasAllowedTestSuffix,
+  isManualTestFile,
+  partitionManualTests,
+} from './discover.js';
 
 let root: string;
 
@@ -131,5 +138,106 @@ describe('partitionManualTests — manual files scheduled last (devtools#741)', 
     const lastRegularIndex = Math.max(...regular.map((f) => scheduled.indexOf(f)));
     const firstManualIndex = Math.min(...manual.map((f) => scheduled.indexOf(f)));
     expect(firstManualIndex).toBeGreaterThan(lastRegularIndex);
+  });
+});
+
+describe('findRefusedTestPattern', () => {
+  it('passes plain relative globs', () => {
+    expect(
+      findRefusedTestPattern(['*.ait.test.ts', 'src/**/*.ait.test.ts', 'a..b.ait.test.ts']),
+    ).toBeNull();
+  });
+
+  it('refuses absolute, home, UNC and drive paths', () => {
+    for (const p of [
+      '/etc/passwd',
+      '~/x.ait.test.ts',
+      'C:\\x\\a.ait.test.ts',
+      '\\\\host\\share\\a',
+    ]) {
+      expect(findRefusedTestPattern([p])).not.toBeNull();
+    }
+  });
+
+  it('refuses .. segments, including inside braces', () => {
+    for (const p of [
+      '../a.ait.test.ts',
+      'src/../../a.ait.test.ts',
+      '..',
+      'a/..',
+      '{..,x}/a.ait.test.ts',
+      '..\\a',
+    ]) {
+      expect(findRefusedTestPattern([p])).not.toBeNull();
+    }
+  });
+});
+
+describe('hasAllowedTestSuffix', () => {
+  it('accepts .ait.test.ts (incl. manual) only', () => {
+    expect(hasAllowedTestSuffix('/p/a.ait.test.ts')).toBe(true);
+    expect(hasAllowedTestSuffix('/p/cam.manual.ait.test.ts')).toBe(true);
+    expect(hasAllowedTestSuffix('/p/a.test.ts')).toBe(false);
+    expect(hasAllowedTestSuffix('/p/a.ts')).toBe(false);
+    expect(hasAllowedTestSuffix('/p/secrets.json')).toBe(false);
+  });
+});
+
+describe('assertTestFilesWithinRoot', () => {
+  let base: string;
+  let proj: string;
+  let outside: string;
+
+  beforeAll(async () => {
+    base = await mkdtemp(join(tmpdir(), 'ait-within-'));
+    proj = join(base, 'proj');
+    outside = join(base, 'outside');
+    await mkdir(join(proj, 'src'), { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(proj, 'src', 'ok.ait.test.ts'), '');
+    await writeFile(join(proj, 'notes.txt'), '');
+    await writeFile(join(outside, 'evil.ait.test.ts'), '');
+    await symlink(join(outside, 'evil.ait.test.ts'), join(proj, 'link.ait.test.ts'));
+    await symlink(outside, join(proj, 'linkdir'));
+  });
+
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('keeps an in-root test file', async () => {
+    const r = await assertTestFilesWithinRoot([join(proj, 'src', 'ok.ait.test.ts')], proj);
+    expect(r.refused).toEqual([]);
+    expect(r.files).toEqual([join(proj, 'src', 'ok.ait.test.ts')]);
+  });
+
+  it('refuses a file outside the root (absolute path / .. escape)', async () => {
+    const abs = join(outside, 'evil.ait.test.ts');
+    const dotdot = join(proj, '..', 'outside', 'evil.ait.test.ts');
+    const r = await assertTestFilesWithinRoot([abs, dotdot], proj);
+    expect(r.files).toEqual([]);
+    expect(r.refused.map((x) => x.reason)).toEqual(['outside-root', 'outside-root']);
+  });
+
+  it('refuses a symlink (file or directory) that points outside the root', async () => {
+    const r = await assertTestFilesWithinRoot(
+      [join(proj, 'link.ait.test.ts'), join(proj, 'linkdir', 'evil.ait.test.ts')],
+      proj,
+    );
+    expect(r.files).toEqual([]);
+    expect(r.refused).toHaveLength(2);
+  });
+
+  it('refuses non-test extensions and unresolvable paths', async () => {
+    const r = await assertTestFilesWithinRoot(
+      [join(proj, 'notes.txt'), join(proj, 'missing.ait.test.ts')],
+      proj,
+    );
+    expect(r.files).toEqual([]);
+    expect(r.refused.map((x) => x.reason)).toEqual(['bad-extension', 'unresolvable']);
+  });
+
+  it('rejects when projectRoot does not exist', async () => {
+    await expect(assertTestFilesWithinRoot([], join(base, 'nope'))).rejects.toThrow();
   });
 });

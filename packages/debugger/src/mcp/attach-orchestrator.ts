@@ -39,6 +39,7 @@ import {
 } from './attach-timeline.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
+import { untrustedEnvelope } from './envelope.js';
 import type { McpEnvironment } from './environment.js';
 import {
   attachSupersededError,
@@ -49,6 +50,8 @@ import {
 } from './errors.js';
 import { logInfo } from './log.js';
 import type { QrHttpServer } from './qr-http-server.js';
+import { relayRunId } from './relay-run-id.js';
+import { attachSignature } from './relay-signing.js';
 import {
   canOpenBrowser as defaultCanOpenBrowser,
   listPages,
@@ -56,7 +59,12 @@ import {
   redactErrorMessage,
   type TunnelStatus,
 } from './tools.js';
-import { generateTotp, RELAY_VERIFY_SKEW_STEPS } from './totp.js';
+import {
+  mintRelayCode,
+  RELAY_CODE_MIN_AGE_SECONDS,
+  RELAY_QR_REFRESH_INTERVAL_MS,
+  relayCodeStep,
+} from './totp.js';
 import { renderQr } from './tunnel.js';
 
 /**
@@ -91,17 +99,14 @@ export const RELAY_STALE_PAGE_MS = 5 * 60 * 1_000; // 5 minutes
  * re-mint). The single-shot `wait_for_attach` of the old attach tool could
  * not re-mint a TOTP code mid-wait; `start_attach` decomposes the wait into
  * SEGMENT_MS slices so it can detect an aging code between slices and re-mint a
- * fresh one without the agent re-calling the tool. 30 s = one TOTP step.
+ * fresh one without the agent re-calling the tool. The slice is
+ * {@link RELAY_QR_REFRESH_INTERVAL_MS} (5 s): the relay gate accepts a code for
+ * 30 to 35 s (`RELAY_VERIFY_SKEW_STEPS` = 6 past steps of `RELAY_CODE_STEP_SECONDS`
+ * = 5 s), and the code changes on every step, so checking every 5 s re-issues
+ * the QR once per step, keeps it at most 5 s behind the current step, and a
+ * scan always has 25 s or more left.
  */
-export const START_ATTACH_SEGMENT_MS = 30_000;
-
-/**
- * Elapsed-since-mint threshold (ms) at which `start_attach` re-mints a fresh
- * TOTP code during its wait loop (issue #626). The relay gate accepts a code for
- * `RELAY_VERIFY_SKEW_STEPS` (6) × 30 s = 180 s backwards from issuance; we re-mint
- * at 150 s to leave a 30 s margin so a phone scan never lands on an expired code.
- */
-export const START_ATTACH_REMINT_THRESHOLD_MS = 150_000;
+export const START_ATTACH_SEGMENT_MS = RELAY_QR_REFRESH_INTERVAL_MS;
 
 /**
  * Predicate used by `run_tests` (and the attach wait loop) to decide whether a
@@ -180,6 +185,15 @@ export function extractDeploymentId(schemeUrl: string): string | null {
  */
 export type AttachUrlParts = { kind: 'scheme'; schemeUrl: string; wssUrl: string };
 
+/**
+ * `parts`의 relay 주소를 지금 터널 주소로 맞춘다. 터널이 새로 발급된 뒤에도 start_attach 시작 때
+ * 잡아 둔 옛 주소로 링크를 만들지 않기 위해서다. 터널이 내려가 있으면 `parts`를 그대로 둔다.
+ */
+export function withCurrentRelay(parts: AttachUrlParts, tunnel: TunnelStatus): AttachUrlParts {
+  if (!tunnel.up || tunnel.wssUrl === null || tunnel.wssUrl === parts.wssUrl) return parts;
+  return { ...parts, wssUrl: tunnel.wssUrl };
+}
+
 /** TOTP metadata surfaced in an attach tool result (code value never included). */
 export interface AttachTotpMeta {
   enabled: true;
@@ -208,6 +222,9 @@ export interface TimeoutContext {
 
 /** `AbortSignal.reason`으로 쓰는, 새 `start_attach`가 이전 대기를 대체했다는 표지. */
 export const ATTACH_SUPERSEDED_REASON = 'superseded';
+
+/** The device that scanned the QR speaks another protocol; waiting longer cannot help. */
+class ProtocolSkewError extends Error {}
 
 /** 대기가 `AbortSignal`로 끊겼음을 알리는 내부 에러. */
 class AttachAbortedError extends Error {
@@ -247,6 +264,15 @@ export interface RenderAndWaitOptions {
    * `start_attach` 대체가 같은 경로를 쓴다.
    */
   signal?: AbortSignal;
+  /**
+   * Called with a scannable text QR while the call is still waiting, on the paths
+   * where no dashboard shows it (headless, browser open failed, no HTTP server),
+   * and again after every re-mint. Without it that QR sits in the result that is
+   * returned only once the wait is over. SECRET-HANDLING: the text encodes the
+   * attach link (so the short-lived code); it goes only to the caller of this
+   * tool, like the final result.
+   */
+  onQrText?: (text: string) => void;
 }
 
 /**
@@ -403,19 +429,25 @@ export function waitForAttachWithEvents(
  */
 export function mintAttachUrl(deps: AttachDeps, parts: AttachUrlParts): string {
   const secret = deps.getTotpSecret();
-  const code = secret ? generateTotp(secret) : undefined;
-  return buildDeepLinkAttachUrl(parts.schemeUrl, parts.wssUrl, code);
+  const code = secret ? mintRelayCode(resolveNowMs(deps)()) : undefined;
+  const current = withCurrentRelay(parts, deps.getTunnelStatus());
+  return buildDeepLinkAttachUrl(
+    current.schemeUrl,
+    current.wssUrl,
+    code,
+    relayRunId(secret, current.wssUrl),
+    attachSignature(secret, current.wssUrl, code),
+  );
 }
 
 /** Builds the fresh TOTP metadata (expiresAt window) for a tool result. */
 export function buildTotpMeta(deps: AttachDeps): AttachTotpMeta | undefined {
   const secret = deps.getTotpSecret();
   if (secret === undefined || secret === '') return undefined;
-  const STEP_SECONDS = 30;
-  const expiresAtMs = resolveNowMs(deps)() + RELAY_VERIFY_SKEW_STEPS * STEP_SECONDS * 1000;
+  const expiresAtMs = resolveNowMs(deps)() + RELAY_CODE_MIN_AGE_SECONDS * 1000;
   return {
     enabled: true,
-    ttlSeconds: RELAY_VERIFY_SKEW_STEPS * STEP_SECONDS,
+    ttlSeconds: RELAY_CODE_MIN_AGE_SECONDS,
     expiresAt: new Date(expiresAtMs).toISOString(),
   };
 }
@@ -497,8 +529,20 @@ export async function prepareAttach(
   // carries the relay percent-encoded (URLSearchParams), so both encodings are
   // checked. SECRET-HANDLING: neither the wss URL nor page URLs are logged.
   const wssForMatch = tunnelForBuild.wssUrl;
-  const matchesRelay = (url: string): boolean =>
-    url.includes(wssForMatch) || url.includes(encodeURIComponent(wssForMatch));
+  // The tunnel can be reissued while the wait is open, so the address in use now counts too.
+  // debug-console removes `relay=` from the page URL once attached, so the page
+  // is also recognised by the run marker (`rid=`) the deep link carries.
+  const totpSecret = getTotpSecret();
+  const matchesRelay = (url: string): boolean => {
+    const current = getTunnelStatus().wssUrl;
+    const rid = /[?&]rid=([^&#]*)/.exec(url)?.[1];
+    return [wssForMatch, current].some((wss) => {
+      if (wss === null) return false;
+      if (url.includes(wss) || url.includes(encodeURIComponent(wss))) return true;
+      const runId = relayRunId(totpSecret, wss);
+      return runId !== undefined && rid === runId;
+    });
+  };
   const isMatchingPage = (pages: ReadonlyArray<{ url: string }>): boolean => {
     if (pages.length === 0) return false;
     if (deploymentId === null) return true;
@@ -563,10 +607,10 @@ export async function prepareAttach(
  * headless / browser-opened / browser-open-failed / no-http-server.
  *
  * The wait is decomposed into `START_ATTACH_SEGMENT_MS` slices. Between slices,
- * if the current TOTP code has aged past `START_ATTACH_REMINT_THRESHOLD_MS`,
- * a fresh URL is minted via `mintAttachUrl` and pushed to the dashboard via
- * `onAttachUrlBuilt` (SSE refresh — NO browser re-open). The `reminted` count
- * rides in the success/timeout result.
+ * the link is minted again via `mintAttachUrl`; when it differs from the one on
+ * screen (the code stepped over, or the relay changed) it is pushed to the
+ * dashboard via `onAttachUrlBuilt` (SSE refresh — NO browser re-open). The
+ * `reminted` count rides in the success/timeout result.
  *
  * SECRET-HANDLING: attachUrl encodes tunnel/scheme host + the TOTP `at=` code
  * in the QR payload only. The browser is opened on a 127.0.0.1 URL only. The
@@ -581,7 +625,7 @@ export async function renderAndMaybeWait(
   options: RenderAndWaitOptions = {},
 ): Promise<McpResult> {
   const { getTunnelStatus, qrHttpServer, onAttachUrlBuilt } = deps;
-  const { signal } = options;
+  const { signal, onQrText } = options;
   const nowMs = resolveNowMs(deps);
   // attach 단계 기록: 이 호출이 새 시도를 연다. 기록기가 주입되지 않았으면 이 호출 전용
   // 임시 기록기를 쓴다 — 타임아웃 진단은 QR 발급 이후 단계까지만 알게 된다.
@@ -599,8 +643,22 @@ export async function renderAndMaybeWait(
   timeline.record('qr-issued', 'ok', 'mint');
   onAttachUrlBuilt?.(parts);
   let totpIssuedAt = nowMs();
+  let mintedStep = relayCodeStep(totpIssuedAt);
+  let mintedWss = withCurrentRelay(parts, getTunnelStatus()).wssUrl;
   let reminted = 0;
   const relayUrl = parts.wssUrl;
+  /** The text QR is the only QR the caller can see: re-send it whenever it is re-minted. */
+  let textQrDelivery = false;
+  const announceQr = async (): Promise<void> => {
+    if (onQrText === undefined) return;
+    try {
+      onQrText(
+        `폰 카메라로 아래 QR을 스캔하세요. 코드가 바뀌면 새 QR을 다시 보냅니다.\n\n${await renderQr(attachUrl)}`,
+      );
+    } catch {
+      // Delivery is best-effort; the result still carries the QR.
+    }
+  };
 
   // devtools#766: proactive one-line notice, appended to the shared header so
   // it rides along every render path (headless / browser-opened / browser-
@@ -622,8 +680,7 @@ export async function renderAndMaybeWait(
   /** Builds the totp object surfaced in results (fresh expiresAt + reminted). */
   const totpResult = (): Record<string, unknown> | undefined => {
     if (!totpMeta) return undefined;
-    const STEP_SECONDS = 30;
-    const expiresAtMs = totpIssuedAt + RELAY_VERIFY_SKEW_STEPS * STEP_SECONDS * 1000;
+    const expiresAtMs = totpIssuedAt + RELAY_CODE_MIN_AGE_SECONDS * 1000;
     return {
       enabled: true,
       ttlSeconds: totpMeta.ttlSeconds,
@@ -639,6 +696,8 @@ export async function renderAndMaybeWait(
    * 600 s). Returns immediately once a matching page attaches (no re-mint).
    */
   async function waitWithRemint(): Promise<ReturnType<CdpConnection['listTargets']>> {
+    // A mismatch recorded before this wait began belongs to an earlier scan.
+    const skewAtStart = deps.getProtocolVersionSkew?.() ?? null;
     const deadline = nowMs() + callTimeoutMs;
     // Immediate check — already attached resolves without any wait/re-mint.
     if (isMatchingPage(conn.listTargets())) return conn.listTargets();
@@ -650,7 +709,7 @@ export async function renderAndMaybeWait(
       }
       const segmentMs = Math.min(START_ATTACH_SEGMENT_MS, remaining);
       try {
-        // 페이지 쪽 wait에는 취소 수단이 없다(세그먼트 ≤30초라 늦은 정리는 감수) — 취소는
+        // 페이지 쪽 wait에는 취소 수단이 없다(세그먼트 ≤5초라 늦은 정리는 감수) — 취소는
         // abort와의 경주로 처리한다.
         return await raceWithAbort(
           waitForAttachWithEvents(conn, isMatchingPage, segmentMs),
@@ -664,14 +723,27 @@ export async function renderAndMaybeWait(
           waitError = redactErrorMessage(message).slice(0, 200);
           deps.recordError?.(waitError, 'attach');
         }
+        // A device that speaks another protocol is refused by the relay and will
+        // never show up in the target list: end the wait with the reason.
+        const skewNow = deps.getProtocolVersionSkew?.() ?? null;
+        if (skewNow !== null && skewNow !== skewAtStart) throw new ProtocolSkewError();
         // Segment elapsed without attach — re-mint if the code is aging, then
         // loop into the next segment. SECRET-HANDLING: code never logged.
-        if (totpMeta && nowMs() - totpIssuedAt >= START_ATTACH_REMINT_THRESHOLD_MS) {
+        // The link changes when the code steps over (every 5 s) or the relay
+        // address moves on; in between there is nothing new to show or send.
+        const tunnelNow = getTunnelStatus();
+        const relayChanged =
+          tunnelNow.up && tunnelNow.wssUrl !== null && tunnelNow.wssUrl !== mintedWss;
+        const stepNow = relayCodeStep(nowMs());
+        if ((totpMeta && stepNow !== mintedStep) || relayChanged) {
           attachUrl = mintAttachUrl(deps, parts);
+          mintedWss = withCurrentRelay(parts, getTunnelStatus()).wssUrl;
+          mintedStep = stepNow;
           timeline.record('qr-issued', 'ok', 'remint');
           onAttachUrlBuilt?.(parts);
           totpIssuedAt = nowMs();
           reminted += 1;
+          if (textQrDelivery) await announceQr();
         }
       }
     }
@@ -687,7 +759,14 @@ export async function renderAndMaybeWait(
    * the totp block carries expiresAt + reminted only — never the code value.
    */
   const successResult = (baseText: string): McpResult => {
-    const pagesResult = listPages(conn, getTunnelStatus());
+    // The page list holds the page's own title and URL: mark it as data from the
+    // page, in every mode (this block sits inside prose, so there is no raw
+    // payload shape to keep).
+    const pagesResult = untrustedEnvelope(listPages(conn, getTunnelStatus()), {
+      tool: 'start_attach',
+      env: 'relay-dev',
+      attached: true,
+    });
     const finalTotp = totpResult();
     const remintNote =
       finalTotp && reminted > 0 ? `\n\n${JSON.stringify({ totp: finalTotp }, null, 2)}` : '';
@@ -702,9 +781,13 @@ export async function renderAndMaybeWait(
   };
 
   /** Runs the wait (when requested) and returns success/timeout result. */
-  const runWait = async (baseText: string): Promise<McpResult> => {
+  const runWait = async (baseText: string, textQr = false): Promise<McpResult> => {
     if (!waitForAttach) {
       return { content: [{ type: 'text', text: baseText }] };
+    }
+    if (textQr) {
+      textQrDelivery = true;
+      await announceQr();
     }
     try {
       await waitWithRemint();
@@ -714,6 +797,10 @@ export async function renderAndMaybeWait(
         return err.reason === ATTACH_SUPERSEDED_REASON
           ? attachSupersededError()
           : mcpError('start_attach: 호출이 취소됐습니다.');
+      }
+      if (err instanceof ProtocolSkewError) {
+        const skew = deps.getProtocolVersionSkew?.() ?? null;
+        if (skew !== null) return protocolVersionMismatchError(skew);
       }
       const observed = conn.listTargets();
       return {
@@ -739,14 +826,14 @@ export async function renderAndMaybeWait(
       'GUI 환경이 감지되지 않았습니다 (headless/remote 환경). ' +
       '텍스트 QR을 폰 카메라로 스캔하거나, 로컬 GUI 환경에서 실행하세요.\n\n';
     const qr = await renderQr(attachUrl);
-    const baseText = `${warningPrefix}${headlessNote}${header}\n${JSON.stringify({ attachUrl, relayUrl, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n${qr}`;
-    return runWait(baseText);
+    const baseText = `${warningPrefix}${headlessNote}${header}\n${JSON.stringify({ relayUrl, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n${qr}`;
+    return runWait(baseText, true);
   }
 
   // Path 2 / 3: GUI + HTTP server — open the dashboard in the browser.
   if (guiAvailable && qrHttpServer) {
     const httpUrl = qrHttpServer.buildAttachPageUrl(attachUrl);
-    const pngUrl = `http://127.0.0.1:${qrHttpServer.port}/qr.png?u=${encodeURIComponent(attachUrl)}`;
+    const pngUrl = qrHttpServer.buildPngUrl(attachUrl);
     // A dashboard tab is already connected: do NOT open another one. Every tab
     // holds an SSE connection to the fixed dashboard port and Firefox caps
     // persistent connections per host at 6, so a new tab per call starves
@@ -763,7 +850,8 @@ export async function renderAndMaybeWait(
       return runWait(shortText);
     }
 
-    const browserResult = await openQrInBrowser(httpUrl, pngUrl);
+    // 토큰이 붙은 URL은 브라우저 실행에만 쓴다. 결과 텍스트에는 토큰 없는 httpUrl을 싣는다.
+    const browserResult = await openQrInBrowser(httpUrl, pngUrl, qrHttpServer.tokenizeUrl(httpUrl));
 
     if (browserResult.opened) {
       const retriedNote = browserResult.retried ? ' (1회 retry 후 성공)' : '';
@@ -781,6 +869,8 @@ export async function renderAndMaybeWait(
     }
 
     // Browser open failed — structured error + URL hint + text QR fallback.
+    // 사람이 이 URL을 직접 붙여 넣어야 하므로 이 경로만 접근 토큰이 붙은 URL을 보여준다.
+    // 토큰은 서버에서 쿠키로 바뀌고 주소창에서 지워진다.
     const openResult = {
       attempted: true,
       succeeded: false,
@@ -793,19 +883,19 @@ export async function renderAndMaybeWait(
       : '';
     const fallbackNote =
       `브라우저 자동 열기에 실패했습니다. ` +
-      `다음 URL을 직접 브라우저에서 여세요:\n${browserResult.httpUrl}\n` +
+      `다음 URL을 직접 브라우저에서 여세요:\n${qrHttpServer.tokenizeUrl(browserResult.httpUrl)}\n` +
       `또는 PNG로 받기: ${browserResult.pngUrl}` +
       stderrNote +
       '\n\n';
     const qr = await renderQr(attachUrl);
-    const baseText = `${warningPrefix}${fallbackNote}${header}\n${JSON.stringify({ attachUrl, relayUrl, openResult, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n${qr}`;
-    return runWait(baseText);
+    const baseText = `${warningPrefix}${fallbackNote}${header}\n${JSON.stringify({ relayUrl, openResult, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n${qr}`;
+    return runWait(baseText, true);
   }
 
   // Path 4: GUI but no HTTP server — text QR fallback.
   const qr = await renderQr(attachUrl);
-  const baseText = `${warningPrefix}${header}\n${JSON.stringify({ attachUrl, relayUrl, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n${qr}`;
-  return runWait(baseText);
+  const baseText = `${warningPrefix}${header}\n${JSON.stringify({ relayUrl, ...(totpResult() ? { totp: totpResult() } : {}) }, null, 2)}\n\n${qr}`;
+  return runWait(baseText, true);
 }
 
 /**

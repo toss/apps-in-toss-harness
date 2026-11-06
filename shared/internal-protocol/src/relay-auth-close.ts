@@ -37,3 +37,15 @@ export const RELAY_AUTH_REJECT_CLOSE_CODE = 4401;
  * never interpolated with request data.
  */
 export const RELAY_AUTH_REJECT_REASON = 'totp-rejected';
+
+/**
+ * WebSocket close code sent while the relay's code check is temporarily locked
+ * after repeated failed checks. Unlike {@link RELAY_AUTH_REJECT_CLOSE_CODE} it
+ * says nothing about the code itself: the client should retry later and may
+ * show a retryable message instead of "code expired". The HTTP form is status
+ * 429 with the body `{"error":"auth-locked"}`.
+ */
+export const RELAY_AUTH_LOCKED_CLOSE_CODE = 4429;
+
+/** Close reason and HTTP `error` value for {@link RELAY_AUTH_LOCKED_CLOSE_CODE}. */
+export const RELAY_AUTH_LOCKED_REASON = 'auth-locked';

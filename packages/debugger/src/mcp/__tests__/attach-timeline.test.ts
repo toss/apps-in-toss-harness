@@ -205,6 +205,10 @@ describe('sanitizePageUrl', () => {
     expect(out).toBe('https://h/p?a=1&at=<redacted>&relay=<redacted>');
     expect(sanitizePageUrl(`https://h/${'z'.repeat(300)}`).length).toBeLessThanOrEqual(80);
   });
+
+  it('redacts sig as well', () => {
+    expect(sanitizePageUrl('https://h/p?sig=abc&a=1')).toBe('https://h/p?sig=<redacted>&a=1');
+  });
 });
 
 describe('createRelayStageHooks', () => {

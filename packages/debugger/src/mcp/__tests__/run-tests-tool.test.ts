@@ -17,7 +17,7 @@
  * mock-SDK / local path through a fake connection.
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -554,5 +554,86 @@ describe('run_tests auto-attach branch (PR2 — issue #684)', () => {
     // (cell injection only on 4b auto-attach path).
     expect(result.isError).toBeFalsy();
     expect(injectGlobalsSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('run_tests tool — path boundary', () => {
+  let base: string;
+  let proj: string;
+  let outside: string;
+
+  beforeAll(async () => {
+    base = await mkdtemp(join(tmpdir(), 'ait-run-tests-bound-'));
+    proj = join(base, 'proj');
+    outside = join(base, 'outside');
+    await mkdir(proj, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(proj, 'in.ait.test.ts'), '');
+    await writeFile(join(proj, 'plain.txt'), '');
+    await writeFile(join(outside, 'evil.ait.test.ts'), '');
+    await symlink(join(outside, 'evil.ait.test.ts'), join(proj, 'link.ait.test.ts'));
+  });
+
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  async function run(files: string[], projectRootArg: string = proj) {
+    const conn = new FakeCdpConnection({ raw: cannedRunReport() });
+    const client = await makeClient({ connection: conn });
+    const result = await client.callTool({
+      name: 'run_tests',
+      arguments: { files, projectRoot: projectRootArg },
+    });
+    return { result, text: getText(result) };
+  }
+
+  it('refuses an absolute path pattern without running or even globbing', async () => {
+    const { result, text } = await run([join(outside, 'evil.ait.test.ts')]);
+    expect(result.isError).toBe(true);
+    expect(text).toContain('절대 경로');
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+    expect(discoverTestFilesSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses a .. escape pattern', async () => {
+    const { result, text } = await run(['../outside/*.ait.test.ts']);
+    expect(result.isError).toBe(true);
+    expect(text).toContain('..');
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+    expect(discoverTestFilesSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses a symlink whose real path is outside the project root', async () => {
+    const { result, text } = await run(['link.ait.test.ts']);
+    expect(result.isError).toBe(true);
+    expect(text).toContain('projectRoot 밖');
+    expect(text).not.toContain(outside);
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-test extension that a glob happens to match', async () => {
+    const { result, text } = await run(['plain.txt']);
+    expect(result.isError).toBe(true);
+    expect(text).toContain('.ait.test.ts');
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses a projectRoot that does not exist', async () => {
+    const { result, text } = await run(['*.ait.test.ts'], join(base, 'missing'));
+    expect(result.isError).toBe(true);
+    expect(text).toContain('projectRoot');
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('runs an in-root test file and pins the bundler to the real project root', async () => {
+    const { result } = await run(['in.ait.test.ts']);
+    expect(result.isError).toBeFalsy();
+    expect(runWithConnectionSpy).toHaveBeenCalledTimes(1);
+    const opts = runWithConnectionSpy.mock.calls[0]?.[2] as {
+      bundleOptions?: { allowedRoot?: string };
+    };
+    const { realpath } = await import('node:fs/promises');
+    expect(opts.bundleOptions?.allowedRoot).toBe(await realpath(proj));
   });
 });

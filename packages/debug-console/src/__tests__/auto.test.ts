@@ -33,6 +33,8 @@ vi.mock('@apps-in-toss/web-framework', () => ({
 
 vi.mock('../attach.js', () => ({
   maybeAttach: vi.fn(),
+  // The bridge installs only after an accepted attach; these tests model that.
+  isDebugAttached: vi.fn(() => true),
   deriveTargetScriptUrl: vi.fn((url: string) => url),
   installRelayWsObserver: vi.fn(),
 }));
@@ -272,19 +274,18 @@ describe('host-gate kill-switch (#665)', () => {
     });
   });
 
-  it('3.0 계열 host(apps.tossmini.com)는 coarse gate를 통과해 maybeAttach에 위임한다 (#760)', async () => {
-    // #760 이전에는 이 host가 coarse allowlist에서 잘려 maybeAttach가 아예
-    // 안 불렸다. 이제 tossmini 계열은 통과하고, 실제 차단은 maybeAttach 안의
-    // 전체 gate(C3 — at= 없으면 'auth')가 담당한다. 여기서 attach.js는 mock이라
-    // gate 결과 자체는 in-app-gate.test.ts의 #760 블록이 검증한다.
+  it.each([
+    'apps.tossmini.com',
+    'example-app.apps.tossmini.com',
+    'example-app.web.tossmini.com',
+    'example-app.private-apps.tossmini.com.evil.example',
+    'evil-private-apps.tossmini.com',
+  ])('운영·비허용 host(%s)는 URL 신호가 있어도 maybeAttach를 부르지 않는다', async (hostname) => {
     vi.resetModules();
     vi.clearAllMocks();
 
     Object.defineProperty(window, 'location', {
-      value: {
-        hostname: 'apps.tossmini.com',
-        search: '?debug=1&relay=wss://r.example.com/',
-      },
+      value: { hostname, search: '?debug=1&relay=wss://r.example.com/&at=123456' },
       writable: true,
       configurable: true,
     });
@@ -295,15 +296,44 @@ describe('host-gate kill-switch (#665)', () => {
     const attachMod = (await import('../attach.js')) as unknown as {
       maybeAttach: ReturnType<typeof vi.fn>;
     };
-    expect(attachMod.maybeAttach).toHaveBeenCalledTimes(1);
+    expect(attachMod.maybeAttach).not.toHaveBeenCalled();
+    expect(window.__sdk).toBeUndefined();
 
-    // 복구
     Object.defineProperty(window, 'location', {
       value: { hostname: 'localhost', search: '' },
       writable: true,
       configurable: true,
     });
   });
+
+  it.each(['example-app.private-apps.tossmini.com', 'example-app.private-web.tossmini.com'])(
+    'QR 테스트 host(%s)는 coarse gate를 통과해 maybeAttach에 위임한다',
+    async (hostname) => {
+      // attach.js는 mock이라 gate 결과 자체는 gate.test.ts가 검증한다.
+      vi.resetModules();
+      vi.clearAllMocks();
+
+      Object.defineProperty(window, 'location', {
+        value: { hostname, search: '?debug=1&relay=wss://r.example.com/' },
+        writable: true,
+        configurable: true,
+      });
+
+      await import('../auto.js');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const attachMod = (await import('../attach.js')) as unknown as {
+        maybeAttach: ReturnType<typeof vi.fn>;
+      };
+      expect(attachMod.maybeAttach).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(window, 'location', {
+        value: { hostname: 'localhost', search: '' },
+        writable: true,
+        configurable: true,
+      });
+    },
+  );
 
   it('허용 host(localhost)에서 maybeAttach 호출됨', async () => {
     vi.resetModules();

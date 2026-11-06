@@ -1,67 +1,73 @@
 /**
- * Unit tests for the RFC 6238 TOTP implementation in src/mcp/totp.ts.
+ * Unit tests for the time-stepped relay auth code in src/mcp/totp.ts.
  *
  * Coverage:
- *  - RFC 6238 test vectors (HMAC-SHA1, 6 digits, T0=0, step=30 s)
+ *  - code shape (32 lowercase hex characters) and determinism per 10 s step
  *  - ±1 time-step skew acceptance
  *  - timingSafeEqual path (verified indirectly: valid code passes, invalid fails)
- *  - Edge cases: short/long/non-digit codes, empty secret
- *  - buildRelayVerifyAuth: RELAY_VERIFY_SKEW_STEPS=6 acceptance (~3 min window)
+ *  - Edge cases: short/long/non-hex/uppercase codes, empty secret
+ *  - buildRelayVerifyAuth: RELAY_VERIFY_SKEW_STEPS=6 acceptance (30-35 s window)
  *
  * NOTE: This test does NOT produce or assert on any secret value or TOTP code
  * beyond what is necessary to verify the algorithm — no code values are logged.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { START_ATTACH_SEGMENT_MS } from '../attach-orchestrator.js';
 import {
   buildRelayVerifyAuth,
   generateTotp,
+  RELAY_CODE_MAX_AGE_SECONDS,
+  RELAY_CODE_MIN_AGE_SECONDS,
+  RELAY_CODE_STEP_SECONDS,
+  RELAY_QR_REFRESH_INTERVAL_MS,
+  RELAY_VERIFY_FUTURE_SKEW_STEPS,
   RELAY_VERIFY_SKEW_STEPS,
   verifyTotp,
 } from '../totp.js';
 
 // ---------------------------------------------------------------------------
-// RFC 6238 test vectors (SHA-1, T0=0, step=30 s)
-// Reference: RFC 6238 Appendix B, re-encoded for SHA-1 + 6-digit output.
-//
-// The RFC appendix uses the ASCII key "12345678901234567890" (20 bytes).
-// Hex: 3132333435363738393031323334353637383930
+// Fixtures
 // ---------------------------------------------------------------------------
 
-/** RFC 6238 Appendix B secret, hex-encoded (ASCII "12345678901234567890"). */
+/** Fixture secret, hex-encoded (ASCII "12345678901234567890"). */
 const RFC_SECRET = '3132333435363738393031323334353637383930';
 
-/**
- * RFC 6238 Appendix B vectors for SHA-1 / 6 digits.
- * Format: [unix_seconds, expected_6_digit_code]
- *
- * The RFC appendix lists 8-digit codes; the 6-digit suffix matches the
- * last 6 digits of those codes (RFC 4226 §5.4 truncation applies on the
- * same MAC, just mod 10^6 instead of 10^8).
- *
- * Pre-computed expected values using reference implementation
- * (openssl + manual truncation to confirm):
- *   T=1     (unix 59)       → counter=1
- *   T=2     (unix 90..119)  → counter=3
- *   T=3     (unix 1111111109) → counter=37037036
- *   T=4     (unix 1234567890) → counter=41152263
- */
+/** One code step in ms. */
+const STEP_MS = RELAY_CODE_STEP_SECONDS * 1000;
+
+// The relay gate reads the wall clock itself. Pin it to the middle of a step so
+// window-edge assertions cannot race a real step boundary between minting a
+// code and verifying it.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(1_800_000_000_000 + STEP_MS / 2);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Fixture times (counter 5 and counter 9) with the code generated for each. */
 const VECTORS: Array<{ unix: number; code: string }> = [
-  // T-counter = 1: floor(59 / 30) = 1
+  // T-counter = 5: floor(59 / 10) = 5
   { unix: 59 * 1000, code: generateTotp(RFC_SECRET, 59 * 1000) },
-  // T-counter = 3: floor(90 / 30) = 3
+  // T-counter = 9: floor(90 / 10) = 9
   { unix: 90 * 1000, code: generateTotp(RFC_SECRET, 90 * 1000) },
 ];
 
-// We cannot use the RFC's exact expected strings for 6-digit output since the
-// RFC only lists 8-digit values, so instead we verify internal consistency:
-// a code generated at time T verifies at the same T (round-trip), and a code
-// from T±1 verifies within skew, while a code from T±2 does not.
+// Internal consistency: a code generated at time T verifies at the same T
+// (round-trip), and a code from T±1 verifies within skew, while a code from
+// T±2 does not.
 
 describe('generateTotp', () => {
-  it('returns a 6-digit zero-padded string', () => {
+  it('returns 32 lowercase hex characters', () => {
     const code = generateTotp(RFC_SECRET, 1000);
-    expect(code).toMatch(/^\d{6}$/);
+    expect(code).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('depends on the secret', () => {
+    const t = 1_700_000_000_000;
+    expect(generateTotp(RFC_SECRET, t)).not.toBe(generateTotp('ab'.repeat(20), t));
   });
 
   it('is deterministic — same secret + time → same code', () => {
@@ -71,23 +77,22 @@ describe('generateTotp', () => {
 
   it('produces different codes for different time steps', () => {
     const t1 = 0;
-    const t2 = 30_000; // next step
+    const t2 = STEP_MS; // next step
     expect(generateTotp(RFC_SECRET, t1)).not.toBe(generateTotp(RFC_SECRET, t2));
   });
 
-  it('produces the same code for all milliseconds within the same 30-second window', () => {
+  it('produces the same code for all milliseconds within the same step', () => {
     const step = 1_620_000_000; // arbitrary step start in seconds
     const base = step * 1000;
     const code = generateTotp(RFC_SECRET, base);
-    // Any ms within [base, base + 29 999] should produce the same code.
-    expect(generateTotp(RFC_SECRET, base + 15_000)).toBe(code);
-    expect(generateTotp(RFC_SECRET, base + 29_999)).toBe(code);
+    // Any ms within [base, base + STEP_MS - 1] should produce the same code.
+    expect(generateTotp(RFC_SECRET, base + STEP_MS / 2)).toBe(code);
+    expect(generateTotp(RFC_SECRET, base + STEP_MS - 1)).toBe(code);
   });
 
   it('produces a different code one step later', () => {
     const base = 1_620_000_000_000;
-    const next = base + 30_000;
-    // There is a 1-in-1_000_000 chance these collide by coincidence; acceptable.
+    const next = base + STEP_MS;
     expect(generateTotp(RFC_SECRET, base)).not.toBe(generateTotp(RFC_SECRET, next));
   });
 });
@@ -101,7 +106,7 @@ describe('verifyTotp — round-trip', () => {
 
   it('rejects a code from a different step (skew=0)', () => {
     const now = Date.now();
-    const staleTime = now - 30_000; // previous step
+    const staleTime = now - STEP_MS; // previous step
     const staleCode = generateTotp(RFC_SECRET, staleTime);
     expect(verifyTotp(RFC_SECRET, staleCode, now, 0)).toBe(false);
   });
@@ -113,16 +118,16 @@ describe('verifyTotp — ±1 skew (default)', () => {
       // Verify within the same step.
       expect(verifyTotp(RFC_SECRET, code, unix)).toBe(true);
       // Verify one step behind (T-1).
-      expect(verifyTotp(RFC_SECRET, code, unix + 30_000)).toBe(true);
+      expect(verifyTotp(RFC_SECRET, code, unix + STEP_MS)).toBe(true);
       // Verify one step ahead (T+1).
-      expect(verifyTotp(RFC_SECRET, code, unix - 30_000)).toBe(true);
+      expect(verifyTotp(RFC_SECRET, code, unix - STEP_MS)).toBe(true);
     });
 
     it(`rejects code two steps away from unix=${unix / 1000}s`, () => {
       // Two steps ahead — outside ±1 window.
-      expect(verifyTotp(RFC_SECRET, code, unix - 60_000)).toBe(false);
+      expect(verifyTotp(RFC_SECRET, code, unix - 2 * STEP_MS)).toBe(false);
       // Two steps behind.
-      expect(verifyTotp(RFC_SECRET, code, unix + 60_000)).toBe(false);
+      expect(verifyTotp(RFC_SECRET, code, unix + 2 * STEP_MS)).toBe(false);
     });
   }
 });
@@ -136,27 +141,32 @@ describe('verifyTotp — invalid inputs', () => {
   });
 
   it('rejects a code that is too short', () => {
-    expect(verifyTotp(RFC_SECRET, '12345', now)).toBe(false);
+    expect(verifyTotp(RFC_SECRET, validCode.slice(0, 31), now)).toBe(false);
   });
 
   it('rejects a code that is too long', () => {
-    expect(verifyTotp(RFC_SECRET, '1234567', now)).toBe(false);
+    expect(verifyTotp(RFC_SECRET, `${validCode}0`, now)).toBe(false);
   });
 
-  it('rejects a code with non-digit characters', () => {
-    expect(verifyTotp(RFC_SECRET, 'abcdef', now)).toBe(false);
+  it('rejects a six-digit decimal code', () => {
+    expect(verifyTotp(RFC_SECRET, '123456', now, 1000)).toBe(false);
   });
 
-  it('rejects a code that is off-by-one digit', () => {
-    // Flip the last digit. If the valid code ends in '9', wrapping to '0' is
-    // still different (probability of collision = 0). We test both directions.
-    const lastDigit = parseInt(validCode[5], 10);
-    const flipped = validCode.slice(0, 5) + String((lastDigit + 1) % 10);
-    // There is a 1-in-1_000_000 chance the flipped code is still valid;
-    // acceptable for a unit test.
-    if (flipped !== validCode) {
-      expect(verifyTotp(RFC_SECRET, flipped, now)).toBe(false);
-    }
+  it('rejects a code with non-hex characters', () => {
+    expect(verifyTotp(RFC_SECRET, 'g'.repeat(32), now)).toBe(false);
+  });
+
+  it('rejects the right code in upper case', () => {
+    expect(verifyTotp(RFC_SECRET, validCode.toUpperCase(), now, 0)).toBe(false);
+  });
+
+  it('rejects a non-string code', () => {
+    expect(verifyTotp(RFC_SECRET, 123456 as unknown as string, now)).toBe(false);
+  });
+
+  it('rejects a code that differs in one character', () => {
+    const last = validCode[31] === '0' ? '1' : '0';
+    expect(verifyTotp(RFC_SECRET, validCode.slice(0, 31) + last, now)).toBe(false);
   });
 
   it('rejects a valid code against the wrong secret', () => {
@@ -179,12 +189,9 @@ describe('verifyTotp — constant-time comparison (timingSafeEqual path)', () =>
   it('returns false for an incorrect code (timingSafeEqual fails)', () => {
     const now = 1_700_000_000_000;
     const code = generateTotp(RFC_SECRET, now);
-    // Mutate the first digit to something different.
-    const firstDigit = parseInt(code[0], 10);
-    const wrong = String((firstDigit + 1) % 10) + code.slice(1);
-    if (wrong !== code) {
-      expect(verifyTotp(RFC_SECRET, wrong, now, 0)).toBe(false);
-    }
+    // Mutate the first character to something different.
+    const wrong = (code[0] === '0' ? '1' : '0') + code.slice(1);
+    expect(verifyTotp(RFC_SECRET, wrong, now, 0)).toBe(false);
   });
 });
 
@@ -196,10 +203,27 @@ describe('RELAY_VERIFY_SKEW_STEPS', () => {
   it('equals 6', () => {
     expect(RELAY_VERIFY_SKEW_STEPS).toBe(6);
   });
+
+  it('keeps a fresh code accepted for 30 to 35 s, never longer', () => {
+    expect(RELAY_CODE_STEP_SECONDS).toBe(5);
+    expect(RELAY_CODE_MIN_AGE_SECONDS).toBe(30);
+    expect(RELAY_CODE_MAX_AGE_SECONDS).toBe(35);
+  });
+
+  it('re-issues the QR once per step and a shown QR keeps at least 25 s of validity', () => {
+    expect(RELAY_QR_REFRESH_INTERVAL_MS).toBeLessThanOrEqual(RELAY_CODE_STEP_SECONDS * 1000);
+    expect(START_ATTACH_SEGMENT_MS).toBeLessThanOrEqual(RELAY_CODE_STEP_SECONDS * 1000);
+    const guaranteedMs = RELAY_CODE_MIN_AGE_SECONDS * 1000;
+    // A QR is replaced at most one refresh interval after the step rolled over,
+    // for the dashboard push and for the start_attach segment alike.
+    const oldestShownMs = Math.max(RELAY_QR_REFRESH_INTERVAL_MS, START_ATTACH_SEGMENT_MS);
+    expect(RELAY_QR_REFRESH_INTERVAL_MS).toBe(5_000);
+    expect(guaranteedMs - oldestShownMs).toBeGreaterThanOrEqual(25_000);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// buildRelayVerifyAuth — ±6 step relay gate (#490)
+// buildRelayVerifyAuth — T-3..T relay gate
 //
 // SECRET-HANDLING: test fixture secret is an obvious dummy (hex-encoded
 // constant with no operational significance). No code values are logged.
@@ -228,30 +252,42 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
   it('accepts a code issued at the current time step', () => {
     const now = Date.now();
     const code = generateTotp(RELAY_TEST_SECRET, now);
-    const predicate = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET });
+    const predicate = buildRelayVerifyAuth(
+      { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
+      RELAY_TEST_SECRET,
+    );
     expect(predicate).toBeDefined();
     // Use a fake req; the predicate reads `at=` from req.url.
     expect(predicate!(makeReq(code))).toBe(true);
   });
 
-  it('accepts a code issued ~3 minutes ago (170 s — within 6-step window)', () => {
-    const issuanceTime = Date.now() - 170_000; // 170 s ago ≈ ~5.7 steps back
+  it('accepts a code issued one step ago', () => {
+    const issuanceTime = Date.now() - STEP_MS; // exactly one step back
     const code = generateTotp(RELAY_TEST_SECRET, issuanceTime);
-    const predicate = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET });
+    const predicate = buildRelayVerifyAuth(
+      { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
+      RELAY_TEST_SECRET,
+    );
     expect(predicate).toBeDefined();
     expect(predicate!(makeReq(code))).toBe(true);
   });
 
-  it('rejects a code issued ~4 minutes ago (240 s — outside 6-step window)', () => {
-    const issuanceTime = Date.now() - 240_000; // 240 s ago = 8 steps back
+  it('rejects a code issued 70 s ago (outside the window)', () => {
+    const issuanceTime = Date.now() - 70_000; // 70 s ago = at least 2 steps back
     const code = generateTotp(RELAY_TEST_SECRET, issuanceTime);
-    const predicate = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET });
+    const predicate = buildRelayVerifyAuth(
+      { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
+      RELAY_TEST_SECRET,
+    );
     expect(predicate).toBeDefined();
     expect(predicate!(makeReq(code))).toBe(false);
   });
 
   it('rejects a missing at= code', () => {
-    const predicate = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET });
+    const predicate = buildRelayVerifyAuth(
+      { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
+      RELAY_TEST_SECRET,
+    );
     expect(predicate).toBeDefined();
     const reqNoAt = { url: '/client/id?target=t1' } as import('node:http').IncomingMessage;
     expect(predicate!(reqNoAt)).toBe(false);
@@ -261,15 +297,40 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
 describe('verifyTotp — default skew=1 unchanged after #490', () => {
   it('still rejects a code 2 steps old with default skew=1', () => {
     const now = Date.now();
-    const twoStepsAgo = now - 60_000; // 2 × 30 s
+    const twoStepsAgo = now - 2 * STEP_MS;
     const oldCode = generateTotp(RFC_SECRET, twoStepsAgo);
     expect(verifyTotp(RFC_SECRET, oldCode, now)).toBe(false);
   });
 
   it('still accepts a code 1 step old with default skew=1', () => {
     const now = Date.now();
-    const oneStepAgo = now - 30_000; // 1 × 30 s
+    const oneStepAgo = now - STEP_MS;
     const code = generateTotp(RFC_SECRET, oneStepAgo);
     expect(verifyTotp(RFC_SECRET, code, now)).toBe(true);
+  });
+});
+
+describe('buildRelayVerifyAuth — asymmetric window', () => {
+  const verify = buildRelayVerifyAuth(
+    { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
+    RELAY_TEST_SECRET,
+  );
+  const STEP = STEP_MS;
+  const at = (steps: number) => makeReq(generateTotp(RELAY_TEST_SECRET, Date.now() + steps * STEP));
+
+  it('keeps the backwards window a freshly shown QR needs', () => {
+    expect(verify?.(at(-1))).toBe(true);
+  });
+
+  it('accepts the current step and the RELAY_VERIFY_SKEW_STEPS before it', () => {
+    for (let k = 0; k <= RELAY_VERIFY_SKEW_STEPS; k++) expect(verify?.(at(-k))).toBe(true);
+    expect(verify?.(at(-(RELAY_VERIFY_SKEW_STEPS + 1)))).toBe(false);
+    expect(verify?.(at(-(RELAY_VERIFY_SKEW_STEPS + 2)))).toBe(false);
+  });
+
+  it('accepts no future step', () => {
+    expect(RELAY_VERIFY_FUTURE_SKEW_STEPS).toBe(0);
+    expect(verify?.(at(1))).toBe(false);
+    expect(verify?.(at(3))).toBe(false);
   });
 });

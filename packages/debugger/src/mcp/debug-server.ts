@@ -59,7 +59,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 // so they do not break the MCP-daemon react-free invariant.
 import { injectDebugIndicator, injectGlobals } from '../test-runner/cell.js';
 import { runWithConnection } from '../test-runner/cli.js';
-import { discoverTestFiles } from '../test-runner/discover.js';
+import {
+  ALLOWED_TEST_FILE_SUFFIXES,
+  assertTestFilesWithinRoot,
+  discoverTestFiles,
+  findRefusedTestPattern,
+} from '../test-runner/discover.js';
 import type { RelayRunReport } from '../test-runner/relay-worker.js';
 import { ChiiAitSource } from './ait-chii-source.js';
 import type { AitSource } from './ait-source.js';
@@ -75,8 +80,9 @@ import {
   prepareAttach as prepareAttachCore,
   RELAY_STALE_PAGE_MS,
   renderAndMaybeWait as renderAndMaybeWaitCore,
+  withCurrentRelay,
 } from './attach-orchestrator.js';
-import { startAttachProgress } from './attach-progress.js';
+import { type AttachProgressHandle, startAttachProgress } from './attach-progress.js';
 import {
   AttachTimeline,
   buildDashboardTimelineState,
@@ -97,20 +103,26 @@ export {
   extractDeploymentId,
   isRelayPageFresh,
   RELAY_STALE_PAGE_MS,
-  START_ATTACH_REMINT_THRESHOLD_MS,
   START_ATTACH_SEGMENT_MS,
 } from './attach-orchestrator.js';
 
 import { runBlockedServer } from './blocked-server.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { ChiiCdpConnection } from './chii-connection.js';
-import { startChiiRelay } from './chii-relay.js';
+import { type ChiiRelay, startChiiRelay } from './chii-relay.js';
 import { buildDeepLinkAttachUrl } from './deeplink.js';
 import { AutoDevtoolsOpener, buildChiiInspectorUrl } from './devtools-opener.js';
-import { type UnbootedEnv, wrapEnvelope } from './envelope.js';
+import {
+  isCompatMode,
+  isUntrustedDataTool,
+  UNTRUSTED_DATA_NOTE,
+  type UnbootedEnv,
+  wrapEnvelope,
+} from './envelope.js';
 import { deriveEnvironment, isRelayEnv, type McpEnvironment } from './environment.js';
 import {
   classifyToolError,
+  type McpErrorResult,
   mcpError,
   type PageGoneContext,
   pageCrashError,
@@ -130,6 +142,7 @@ import {
   startQrHttpServer,
 } from './qr-http-server.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
+import { attachSignature, relayCertDocument } from './relay-signing.js';
 import { RESTART_CMD } from './restart-hint.js';
 import {
   acquireLock,
@@ -163,10 +176,20 @@ import {
   takeScreenshot,
   takeSnapshot,
 } from './tools.js';
-import { assertRelayAuthConfigured, buildRelayVerifyAuth, generateTotp } from './totp.js';
+import {
+  assertRelayAuthConfigured,
+  buildRelayVerifyAuth,
+  mintRelayCode,
+  RELAY_QR_REFRESH_INTERVAL_MS,
+} from './totp.js';
 
 export { startMaxAgeWatchdog, startParentWatcher } from './parent-watcher.js';
 
+import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
+import { relayCodeSecret } from './relay-code-secret.js';
+import { appNameFromSchemeUrl } from './relay-origin.js';
+import { redactRelayText } from './relay-redact.js';
+import { relayRunId } from './relay-run-id.js';
 import {
   makeTunnelStatus,
   printAttachBanner,
@@ -174,9 +197,10 @@ import {
   startQuickTunnel,
   startTunnelHealthProbe,
 } from './tunnel.js';
+import { createTunnelRotationPolicy, type TunnelRotationOptions } from './tunnel-rotation.js';
 
 // RELAY_STALE_PAGE_MS / START_ATTACH_SEGMENT_MS /
-// START_ATTACH_REMINT_THRESHOLD_MS / isRelayPageFresh / extractDeploymentId
+// isRelayPageFresh / extractDeploymentId
 // moved to `attach-orchestrator.ts` (issue #684 PR1) and are re-exported above
 // for back-compat.
 
@@ -211,8 +235,8 @@ export interface ModeSwitchReport {
  *                 intoss-private deep-link/QR relay injection.
  *
  * `relay-live` (env 4) has been removed (#665) — the debug surface is now gated
- * by a positive allowlist (localhost/trycloudflare/private-apps). Hosts on
- * `apps.tossmini.com` are blocked at the in-app entry and MCP layer.
+ * by a host allowlist (localhost, `*.private-apps.tossmini.com` and
+ * `*.private-web.tossmini.com`, see `isDebugAllowedHost`).
  *
  * `relay-sandbox` (env 2 — real-device PWA over an external relay the launcher
  * path brought up) has been removed (#103, 2026-08-10 maintainer decision): the
@@ -400,8 +424,8 @@ export interface DebugServerDeps {
    *
    * 완성된 URL 문자열이 아니라 컴포넌트를 전달하는 이유: `getDashboardState`가
    * 호출될 때마다 최신 TOTP 코드를 freshly mint해 QR을 갱신하기 위함이다.
-   * 정적 URL에 구워진 코드는 ~3분 후 만료(RELAY_VERIFY_SKEW_STEPS=6 기준) → relay 401 reason:'auth' (Defect 1).
-   * rebuildAttachUrl()이 매 호출 시 generateTotp(secret)를 새로 계산한다.
+   * 정적 URL에 구워진 코드는 30~35초 후 만료(RELAY_VERIFY_SKEW_STEPS=6 기준) → relay 401 reason:'auth' (Defect 1).
+   * rebuildAttachUrl()이 매 호출 시 mintRelayCode()로 새 코드를 만든다.
    *
    * SECRET-HANDLING: 컴포넌트 안의 tunnel/scheme host와 wssUrl은 NEVER 로그 출력.
    * TOTP 코드는 rebuildAttachUrl() 내부에서만 mint되며 attachUrl의 at= param 안에만 노출.
@@ -716,7 +740,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       })();
 
       let attachController: AbortController | null = null;
-      let progress: { stop(): void } | null = null;
+      let progress: AttachProgressHandle | null = null;
       try {
         const prep = await prepareAttachCore(attachDeps, attachEnv, args, attachConn);
         if (!prep.ok) return prep.error;
@@ -746,7 +770,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           waitForAttach,
           callTimeoutMs,
           attachConn,
-          { signal: waitSignal },
+          { signal: waitSignal, onQrText: (text) => progress?.announce(text) },
         );
         if (!attachResult.isError) {
           // The device reported its build version on the handshake path while
@@ -818,13 +842,19 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     if (isAitToolName(name)) {
       try {
         await conn.enableDomains();
+        const aitAttached = conn.listTargets().length > 0;
         switch (name) {
           case 'AIT.getSdkCallHistory':
-            return jsonResult(await getSdkCallHistory(aitSource));
+            return envelopeResult(await getSdkCallHistory(aitSource), name, env, aitAttached);
           case 'AIT.getMockState':
-            return jsonResult(await getMockState(aitSource));
+            return envelopeResult(await getMockState(aitSource), name, env, aitAttached);
           case 'AIT.getOperationalEnvironment':
-            return jsonResult(await getOperationalEnvironment(aitSource));
+            return envelopeResult(
+              await getOperationalEnvironment(aitSource),
+              name,
+              env,
+              aitAttached,
+            );
           default:
             return unknownTool(name);
         }
@@ -883,17 +913,23 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       return classifyEnableDomainError(err, name, pageGoneContext());
     }
 
+    const pageAttached = (): boolean => conn.listTargets().length > 0;
     try {
       switch (name) {
         case 'list_console_messages':
-          return jsonResult(listConsoleMessages(conn));
+          return envelopeResult(listConsoleMessages(conn), name, env, pageAttached());
         case 'list_exceptions': {
           const rawLimit = request.params.arguments?.limit;
           const limit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : 50;
-          return jsonResult({ exceptions: listExceptions(conn, limit) });
+          return envelopeResult(
+            { exceptions: listExceptions(conn, limit) },
+            name,
+            env,
+            pageAttached(),
+          );
         }
         case 'list_network_requests':
-          return jsonResult(listNetworkRequests(conn));
+          return envelopeResult(listNetworkRequests(conn), name, env, pageAttached());
         case 'list_pages': {
           // Refresh from relay so evict→reattach transitions are not served stale.
           try {
@@ -911,9 +947,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           );
         }
         case 'get_dom_document':
-          return jsonResult(await getDomDocument(conn));
+          return envelopeResult(await getDomDocument(conn), name, env, pageAttached());
         case 'take_snapshot':
-          return jsonResult(await takeSnapshot(conn));
+          return envelopeResult(await takeSnapshot(conn), name, env, pageAttached());
         case 'take_screenshot': {
           const shot = await takeScreenshot(conn);
           return {
@@ -940,16 +976,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           }
           // Host allowlist kill-switch (#665). Replaces the old LIVE guard.
           // connectionHostsAllowed() checks each attached page's URL hostname
-          // against the positive allowlist (localhost/trycloudflare/private-apps).
+          // against the positive allowlist (localhost and the QR test host families).
           // SECRET-HANDLING: hostname never logged — only the boolean.
           if (!connectionHostsAllowed(conn)) {
             return mcpError(
               'evaluate: 현재 연결된 페이지는 debug 허용 호스트가 아닙니다 (#665). ' +
-                '허용 호스트: localhost, *.tossmini.com.',
+                '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
           // SECRET-HANDLING: do not log expression or result value.
-          return jsonResult(await evaluate(conn, expression));
+          return envelopeResult(await evaluate(conn, expression), name, env, pageAttached());
         }
         case 'call_sdk': {
           const sdkName = request.params.arguments?.name;
@@ -965,7 +1001,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           if (!connectionHostsAllowed(conn)) {
             return mcpError(
               'call_sdk: 현재 연결된 페이지는 debug 허용 호스트가 아닙니다 (#665). ' +
-                '허용 호스트: localhost, *.tossmini.com.',
+                '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
           // SECRET-HANDLING: do not log name, args, or result value.
@@ -996,6 +1032,14 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           }
           const rawRoot = request.params.arguments?.projectRoot;
           const projectRoot = typeof rawRoot === 'string' ? rawRoot : process.cwd();
+          // 경로 경계: files/projectRoot는 에이전트가 넘긴 인자다. 절대 경로·`..` 패턴은 glob
+          // 전에 거부하고, 매칭 결과는 아래 resolveRunTestFiles가 realpath로 다시 가둔다.
+          const refusedPattern = findRefusedTestPattern(patterns);
+          if (refusedPattern !== null) {
+            return mcpError(
+              `run_tests: files는 projectRoot 안의 상대 glob이어야 합니다. ${refusedPattern}`,
+            );
+          }
           const rawTimeout = request.params.arguments?.timeout_ms;
           const timeoutMs =
             typeof rawTimeout === 'number' && rawTimeout >= 1000 && rawTimeout <= 600_000
@@ -1062,7 +1106,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             if (!connectionHostsAllowed(conn)) {
               return mcpError(
                 'run_tests: 연결된 페이지가 debug 허용 호스트가 아닙니다 (#665). ' +
-                  '허용 호스트: localhost, *.tossmini.com.',
+                  '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
               );
             }
 
@@ -1075,7 +1119,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             }
             runTestsInFlight = true;
             try {
-              const files = await discoverTestFiles(patterns, projectRoot);
+              const resolved = await resolveRunTestFiles(patterns, projectRoot);
+              if (!resolved.ok) return resolved.error;
+              const files = resolved.files;
               if (files.length === 0) {
                 return mcpError(
                   `run_tests: 매칭된 테스트 파일이 없습니다 (patterns: ${patterns.join(', ')}).`,
@@ -1092,6 +1138,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 // envelope surfaces only a per-category count (toRunTestsResult);
                 // line bodies stay off the run_tests result.
                 collectCaptures: true,
+                bundleOptions: { allowedRoot: resolved.root },
               });
               logInfo('run_tests.done', {
                 passed: report.totals.passed,
@@ -1121,7 +1168,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           if (!connectionHostsAllowed(conn)) {
             return mcpError(
               'run_tests: 현재 연결된 페이지는 debug 허용 호스트가 아닙니다 (#665). ' +
-                '허용 호스트: localhost, *.tossmini.com.',
+                '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
 
@@ -1140,7 +1187,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           }
           runTestsInFlight = true;
           try {
-            const files = await discoverTestFiles(patterns, projectRoot);
+            const resolved = await resolveRunTestFiles(patterns, projectRoot);
+            if (!resolved.ok) return resolved.error;
+            const files = resolved.files;
             if (files.length === 0) {
               return mcpError(
                 `run_tests: 매칭된 테스트 파일이 없습니다 (patterns: ${patterns.join(', ')}).`,
@@ -1164,6 +1213,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
               // harvest __AIT_CAPTURE__ lines regardless of how the page was
               // attached. toRunTestsResult exposes per-category counts only.
               collectCaptures: true,
+              bundleOptions: { allowedRoot: resolved.root },
             });
             logInfo('run_tests.done', {
               passed: report.totals.passed,
@@ -1207,11 +1257,11 @@ export function normalizeStartDebugMode(raw: unknown): StartDebugMode | null {
 }
 
 /**
- * Positive-allowlist kill-switch for side-effect MCP tools (#665).
+ * Host allowlist kill-switch for side-effect MCP tools (#665).
  *
  * Returns `true` when the connection's attached targets are all on allowed
- * debug hosts (localhost / trycloudflare / private-apps). Returns `false` when
- * any target's page URL is on a non-allowed host (e.g. `apps.tossmini.com`).
+ * debug hosts (localhost / the two QR test host families). Returns `false` when any target's
+ * page URL is on another host.
  *
  * For local connections this always returns `true` — the local Chromium is
  * always on localhost. For relay connections without any pages it returns
@@ -1288,12 +1338,55 @@ export function makeSingleConnectionRouter(connection: CdpConnection): Connectio
  * so the dashboard/`/attach` QR is never an expired bake-in (Defect 1).
  * SECRET-HANDLING: reads AIT_DEBUG_TOTP_SECRET at call time (mirrors tunnel.ts
  * getDashboardState). The minted code rides inside attachUrl's at= param only —
- * never logged. generateTotp() relies on its Date.now() default.
+ * never logged. mintRelayCode() relies on its Date.now() default.
  */
-function rebuildAttachUrl(parts: AttachUrlParts): string {
+export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): string {
   const secret = process.env.AIT_DEBUG_TOTP_SECRET;
-  const code = secret ? generateTotp(secret) : undefined;
-  return buildDeepLinkAttachUrl(parts.schemeUrl, parts.wssUrl, code);
+  const code = secret ? mintRelayCode() : undefined;
+  // 터널이 새로 발급됐으면 start_attach 때 잡아 둔 옛 주소 대신 지금 주소로 링크를 만든다.
+  const current = withCurrentRelay(parts, tunnel);
+  return buildDeepLinkAttachUrl(
+    current.schemeUrl,
+    current.wssUrl,
+    code,
+    relayRunId(secret, current.wssUrl),
+    attachSignature(secret, current.wssUrl, code),
+  );
+}
+
+/**
+ * `run_tests`의 파일 해석. `discoverTestFiles`(glob)로 찾은 뒤, 모든 결과를
+ * `realpath(projectRoot)` 안의 `.ait.test.ts`로 제한한다 — 심볼릭 링크로 루트 밖을 가리키는
+ * 파일, `..`로 빠져나간 매칭, 테스트 파일이 아닌 확장자는 한 건이라도 있으면 실행 전체를 거부한다
+ * (일부만 조용히 실행하지 않는다). 거부 문구에는 루트 밖 경로를 싣지 않는다.
+ */
+async function resolveRunTestFiles(
+  patterns: string[],
+  projectRoot: string,
+): Promise<{ ok: true; files: string[]; root: string } | { ok: false; error: McpErrorResult }> {
+  const files = await discoverTestFiles(patterns, projectRoot);
+  let checked: Awaited<ReturnType<typeof assertTestFilesWithinRoot>>;
+  try {
+    checked = await assertTestFilesWithinRoot(files, projectRoot);
+  } catch {
+    return {
+      ok: false,
+      error: mcpError(
+        'run_tests: projectRoot를 확인할 수 없습니다. 존재하는 프로젝트 디렉터리를 전달하세요.',
+      ),
+    };
+  }
+  if (checked.refused.length > 0) {
+    return {
+      ok: false,
+      error: mcpError(
+        `run_tests: projectRoot 밖이거나 테스트 파일(${ALLOWED_TEST_FILE_SUFFIXES.join(', ')})이 ` +
+          `아닌 경로가 ${checked.refused.length}건 매칭돼 실행하지 않았습니다. ` +
+          'files를 projectRoot 안의 테스트 파일 glob으로 좁혀 다시 호출하세요.',
+      ),
+    };
+  }
+  return { ok: true, files: checked.files, root: checked.root };
 }
 
 function jsonResult(value: unknown) {
@@ -1312,7 +1405,15 @@ function envelopeResult(
   attached: boolean,
 ) {
   const wrapped = wrapEnvelope(value, { tool, env, attached });
-  return { content: [{ type: 'text' as const, text: JSON.stringify(wrapped, null, 2) }] };
+  const content: Array<{ type: 'text'; text: string }> = [
+    { type: 'text' as const, text: JSON.stringify(wrapped, null, 2) },
+  ];
+  // Compat mode returns the raw payload, which has no room for the marker: say it
+  // in a second block so the first block keeps the old shape.
+  if (isCompatMode() && isUntrustedDataTool(tool)) {
+    content.push({ type: 'text' as const, text: UNTRUSTED_DATA_NOTE });
+  }
+  return { content };
 }
 
 /**
@@ -1636,7 +1737,9 @@ function createRelayConnection(relayBaseUrl: string, timeline?: AttachTimeline):
   // appended (backward compatible). SECRET-HANDLING: forwarded, never logged.
   return new ChiiCdpConnection({
     relayBaseUrl,
-    totpSecret: process.env.AIT_DEBUG_TOTP_SECRET,
+    // The connection mints `at` codes with the process code key (relay-code-secret.ts);
+    // the relay secret only decides whether codes are used at all.
+    totpSecret: process.env.AIT_DEBUG_TOTP_SECRET ? relayCodeSecret() : undefined,
     // 안전망: relay 게이트를 통과한 다른 호스트 target도 갈아타지 않고 거부로 기록한다.
     onTargetRejectedBusy: (e) => timeline?.recordBusyRejection(e.rejectedHost, e.attachedHost),
     onTargetReplaced: () => {
@@ -1724,6 +1827,9 @@ export async function bootLocalFamily(): Promise<BootedFamily> {
   };
 }
 
+/** Minimum gap between two `relay.origin.reject` log lines. */
+const ORIGIN_REJECT_LOG_INTERVAL_MS = 30_000;
+
 /** Options for {@link bootRelayFamily}. */
 export interface BootRelayFamilyOptions {
   /** Relay local port. Default 0 (OS-assigned ephemeral). */
@@ -1748,6 +1854,12 @@ export interface BootRelayFamilyOptions {
    * surface silent 401s.
    */
   onAuthReject?: (event: import('./chii-relay.js').RelayAuthRejectEvent) => void;
+  /**
+   * Exact mini-app name when known (the host of the last `start_attach`
+   * `scheme_url`), for the relay's origin rule. `null` or omitted: any label
+   * under the private sandbox suffixes passes. See relay-origin.ts.
+   */
+  getAppName?: () => string | null;
   /**
    * Secret-free observability callback for the device's attach version report —
    * forwarded to {@link startChiiRelay}'s `onAttachHandshake`. Receives only the
@@ -1776,6 +1888,16 @@ export interface BootRelayFamilyOptions {
    * inside `tunnelStatus`, surfaced via `getTunnelStatus()`).
    */
   onTunnelDown?: () => void;
+  /**
+   * Called after the daemon reissued the tunnel to take the URL away from a
+   * caller that kept the tunnel scope locked. The new URL is only available
+   * through `start_attach` and the dashboard. No arguments, no URL.
+   */
+  onTunnelRotated?: () => void;
+  /** Overrides when the tunnel is rotated. Tests only. */
+  tunnelRotation?: TunnelRotationOptions;
+  /** Overrides the relay's code-check backoff. Tests only. */
+  authThrottle?: RelayAuthThrottleOptions;
   /**
    * attach 단계 기록기. 주면 relay 훅(스크립트 제공·WS 업그레이드·target 종료·인증 거부·
    * 핸드셰이크)과 터널 up/down 이벤트가 이 기록기에 단계로 남는다. 기록은 비밀 없이 단계
@@ -1821,12 +1943,46 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
 
   // relay 훅 → 단계 기록. 기존 콜백(진단 수집기·프로토콜 버전 모니터)과 나란히 호출한다.
   const stageHooks = options.timeline ? createRelayStageHooks(options.timeline) : undefined;
+
+  // Tunnel rotation: repeated locks of the tunnel scope mean someone holds the
+  // URL and is guessing codes. See tunnel-rotation.ts for the policy.
+  const rotationPolicy = createTunnelRotationPolicy(options.tunnelRotation);
+  const relayRef: { current: ChiiRelay | null } = { current: null };
+  let tunnelProbe: { stop(): void; rotate(): Promise<boolean> } | null = null;
+  const rotateTunnel = async (): Promise<void> => {
+    if (tunnelProbe === null) return;
+    logWarn('tunnel.rotation', { reason: 'rotate' });
+    await tunnelProbe.rotate();
+  };
+
+  let lastOriginRejectLogAt = 0;
   const relay = await startChiiRelay({
     port: relayPort,
     verifyAuth: options.verifyAuth,
+    authThrottle: options.authThrottle,
+    getAppName: options.getAppName,
+    // Public certificates of this process's session keys (relay-signing.ts).
+    getRelayCertDocument: () => relayCertDocument(process.env.AIT_DEBUG_TOTP_SECRET),
+    onOriginReject: (event) => {
+      // Rate-limited: a flood of refused requests must not flood the log.
+      const now = Date.now();
+      if (now - lastOriginRejectLogAt < ORIGIN_REJECT_LOG_INTERVAL_MS) return;
+      lastOriginRejectLogAt = now;
+      logWarn('relay.origin.reject', { reason: `${event.kind}:${event.reason}` });
+    },
     onAuthReject: (event) => {
       stageHooks?.onAuthReject(event);
       options.onAuthReject?.(event);
+    },
+    onAuthLockout: (event) => {
+      logWarn('relay.auth.lockout', { scope: event.scope, lockMs: event.lockMs });
+      if (event.scope !== 'tunnel') return;
+      const attached = (relayRef.current?.attachedTargetCount() ?? 0) > 0;
+      const decision = rotationPolicy.noteTunnelLock(attached);
+      if (decision === 'rotate') void rotateTunnel();
+      else if (decision !== 'below-threshold') {
+        logWarn('tunnel.rotation', { reason: decision });
+      }
     },
     onAttachHandshake: (event) => {
       stageHooks?.onAttachHandshake(event);
@@ -1834,17 +1990,21 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
     },
     onTargetScriptServed: stageHooks?.onTargetScriptServed,
     onWsUpgrade: stageHooks?.onWsUpgrade,
-    onTargetClose: stageHooks?.onTargetClose,
+    onTargetClose: () => {
+      stageHooks?.onTargetClose();
+      // A rotation held back while the phone was attached runs now.
+      if (rotationPolicy.noteTargetDetached()) void rotateTunnel();
+    },
     // 먼저 붙은 미니앱이 이긴다: 다른 호스트의 새 target은 거부한다. 정책은 target-busy.ts.
     shouldRejectTarget: (info) => shouldRejectNewTarget(info),
     onTargetRejectedBusy: stageHooks?.onTargetRejectedBusy,
   });
+  relayRef.current = relay;
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
   logInfo('server.start', { port: relay.port, totpEnabled });
 
   let tunnel: QuickTunnel | null = null;
   let tunnelStatus: TunnelStatus = makeTunnelStatus(false, null);
-  let tunnelProbe: { stop(): void } | null = null;
   // Bring the cloudflared tunnel up in the background so the MCP stdio transport
   // can answer `initialize` immediately. cloudflared has to lazy-download a
   // ~38 MB binary on first run; awaiting it here pushes the initialize response
@@ -1870,19 +2030,25 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
       // Start the health probe now that the tunnel URL is known.
       // The probe runs every 60 s and attempts up to 3 reissues on drop.
       tunnelProbe = startTunnelHealthProbe(t, relay.port, {
-        onReissue: (newTunnel) => {
+        onReissue: (newTunnel, reason) => {
           tunnel = newTunnel;
           tunnelStatus = makeTunnelStatus(true, newTunnel.wssUrl, null, 0);
           options.onWssUrl?.(newTunnel.wssUrl);
           options.timeline?.record('tunnel', 'ok');
+          // The failures came through a URL that no longer answers, whatever
+          // replaced it: a rotation or a drop. The new address starts clean.
+          relay.resetAuthLock('tunnel');
+          if (reason === 'rotation') {
+            options.onTunnelRotated?.();
+          }
           // FIX (issue #572 review): update the lock's tunnelChildPid so a later
           // acquireLock sees the reissued tunnel's child — not the original dead one.
           // childPid is a plain integer — not a secret.
           if (newTunnel.childPid !== undefined) {
             options.onTunnelChildPid?.(newTunnel.childPid);
           }
-          // Reprint the banner so the user (and agent) see the new URL + QR.
-          void printAttachBanner({ wssUrl: newTunnel.wssUrl, totpEnabled }).then(() => {
+          // Reprint the notice; the new URL + QR come from start_attach / the dashboard.
+          void printAttachBanner({ totpEnabled }).then(() => {
             logInfo('tunnel.up', { totpEnabled, reissued: true });
           });
         },
@@ -1895,18 +2061,18 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
           // Wake open dashboard SSE clients immediately so the render gate
           // swaps the now-dead QR for the tunnel-down error state (issue #631).
           // Mirrors the onWssUrl path — without it the page shows a scannable
-          // dead QR until the next periodic refresh push (up to 20s later).
+          // dead QR until the next periodic refresh push (up to 10s later).
           options.onTunnelDown?.();
         },
       });
 
-      return printAttachBanner({ wssUrl: t.wssUrl, totpEnabled });
+      return printAttachBanner({ totpEnabled });
     },
     (err) => {
       const message = err instanceof Error ? err.message : String(err);
       options.timeline?.record('tunnel', 'down');
       logError('tunnel.down', {
-        msg: `Failed to open cloudflared quick tunnel: ${message}. The relay is up locally; attach over the public URL is unavailable until the tunnel starts.`,
+        msg: `Failed to open cloudflared quick tunnel: ${redactRelayText(message)}. The relay is up locally; attach over the public URL is unavailable until the tunnel starts.`,
       });
     },
   );
@@ -2006,10 +2172,15 @@ export interface DualRouterDeps {
   /**
    * Returns the stable `/inspector` URL from the QR HTTP server (issue #530).
    * Called by `armWatcher` to pass to `AutoDevtoolsOpener.open()` so it can
-   * open the secret-free stable URL instead of building a direct TOTP URL.
-   * Returns null if the QR server is not yet started.
+   * open the stable URL (no relay secret, no dashboard access token) instead of
+   * building a direct TOTP URL. Returns null if the QR server is not yet started.
    */
   getInspectorStableUrl?: () => string | null;
+  /**
+   * Same URL with the dashboard access token attached. Passed only to the browser
+   * launch (never logged), so a fresh browser can obtain the dashboard cookie.
+   */
+  getInspectorOpenUrl?: () => string | null;
 }
 
 /**
@@ -2166,21 +2337,20 @@ export class DualConnectionRouter implements ConnectionRouter {
           // callback, so listTargets() is guaranteed to be non-empty.
           const firstTarget = activeFamily.connection.listTargets()[0];
           const env = deriveEnvironment(activeFamily.connection.kind);
-          // Prefer the stable /inspector URL (issue #530): secret-free, no
+          // Prefer the stable /inspector URL (issue #530): no relay secret, no
           // expiry race. Falls back to the direct URL path when qrServer is
           // not yet available (should not happen in practice).
           const inspectorStableUrl = this.deps.getInspectorStableUrl?.() ?? null;
           this.deps.devtoolsOpener.open({
             inspectorStableUrl,
+            inspectorOpenUrl: this.deps.getInspectorOpenUrl?.() ?? null,
             relayHttpBaseUrl: activeFamily.relayHttpUrl,
             targetId: firstTarget?.id,
             // Mint a fresh TOTP code from the daemon's secret at open time.
-            // The relay gate accepts ±RELAY_VERIFY_SKEW_STEPS=6 steps (~3 min).
+            // The relay gate accepts codes up to RELAY_VERIFY_SKEW_STEPS=6 steps old (30-35 s).
             // SECRET-HANDLING: the closure captures only the getter, never logs.
             // Only used when inspectorStableUrl is absent (legacy path).
-            mintTotp: process.env.AIT_DEBUG_TOTP_SECRET
-              ? () => generateTotp(process.env.AIT_DEBUG_TOTP_SECRET as string)
-              : undefined,
+            mintTotp: process.env.AIT_DEBUG_TOTP_SECRET ? () => mintRelayCode() : undefined,
             env,
           });
         }
@@ -2234,7 +2404,10 @@ export class DualConnectionRouter implements ConnectionRouter {
       // single #250 fail-fast. Local switches need no secret, so skip the load.
       // SECRET-HANDLING: loadRelaySecretReadOnly never logs the value or path.
       if (isRelayMode(mode)) {
-        await loadRelaySecretReadOnly({ projectRoot });
+        await loadRelaySecretReadOnly({
+          projectRoot,
+          onKeyAge: (age) => this.deps.diagnosticsCollector.recordRelayKeyAge?.(age),
+        });
       }
 
       // (2) Resolve the family by key (#378). `bootLazyFor` may throw — let it
@@ -2342,6 +2515,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
         : bootRelayFamily({
             relayPort: options.relayPort,
             verifyAuth: buildRelayVerifyAuth(),
+            getAppName: () =>
+              lastAttachParts ? appNameFromSchemeUrl(lastAttachParts.schemeUrl) : null,
             // Mirror the assigned tunnel URL into the lock file so a second
             // caller sees the correct wssUrl in the conflict error message, and
             // notify the dashboard SSE clients of the tunnel URL change.
@@ -2360,6 +2535,11 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
             // get_debug_status can distinguish "phone never arrived" from
             // "phone arrived but was rejected".
             onAuthReject: () => diagnosticsCollector.recordAuthReject(),
+            // The tunnel was reissued to cut off a caller that held the old URL.
+            onTunnelRotated: () => {
+              diagnosticsCollector.recordTunnelRotation();
+              qrServer?.notifyStateChange();
+            },
             // Attach version handshake: record what the device says it is so
             // `start_attach` can name a device↔host skew instead of letting
             // the value-duplicated contract misbehave silently.
@@ -2386,6 +2566,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // the router is created but before armWatcher fires, so the closure safely
     // captures it by reference.
     getInspectorStableUrl: () => qrServer?.inspectorStableUrl ?? null,
+    getInspectorOpenUrl: () =>
+      qrServer ? qrServer.tokenizeUrl(qrServer.inspectorStableUrl) : null,
   });
 
   // AIT.* methods ride the *active* connection's command channel (relay Chii or
@@ -2408,18 +2590,20 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
 
   // getDashboardState 클로저 — qr-http-server dashboard에 현재 상태 전달.
   // rebuildAttachUrl()로 매 호출마다 최신 TOTP 코드를 mint한 URL을 생성한다 (Defect 1).
-  // inspectorUrl은 안정 /inspector URL(issue #530) — 시크릿 없으므로 출력 가능.
+  // inspectorUrl은 안정 /inspector URL(issue #530) — relay 시크릿·접근 토큰이 없어 출력 가능.
   const getDashboardState = (): DashboardState => {
     const targets = router.active.listTargets();
     // inspectorUrl — /inspector 안정 진입점 (issue #530).
     // qrServer가 아직 없으면 null(초기화 직후 race). qrServer가 생기면 항상 안정 URL.
     // 클릭 시점에 TOTP를 mint하고 302 redirect하므로 stale 문제가 없다.
-    // SECRET-HANDLING: /inspector URL 자체에 시크릿 없음 — 출력 가능.
+    // SECRET-HANDLING: /inspector URL에는 relay 시크릿도 접근 토큰도 없다 — 출력 가능.
     const inspectorUrl = qrServer?.inspectorStableUrl ?? null;
     return {
       tunnel: { up: router.relayTunnelStatus().up, wssUrl: router.relayTunnelStatus().wssUrl },
       pages: targets.map((t) => ({ id: t.id, url: t.url })),
-      attachUrl: lastAttachParts ? rebuildAttachUrl(lastAttachParts) : null,
+      attachUrl: lastAttachParts
+        ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
+        : null,
       inspectorUrl,
       // 현재 active connection에서 매 호출마다 파생한 env — /attach 카피·환경 라벨
       // 분기(#468). start_debug family swap을 따라가도록 저장하지 않고 파생한다.
@@ -2448,9 +2632,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     if (!totpSecret) {
       return { ok: false, reason: 'totpUnavailable' };
     }
-    const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () =>
-      generateTotp(totpSecret, Date.now()),
-    );
+    const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () => mintRelayCode(Date.now()));
     if (url === null) {
       return { ok: false, reason: 'totpUnavailable' };
     }
@@ -2469,9 +2651,10 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   }
 
   // TOTP 주기 갱신 타이머 — 이벤트 없이 페이지가 방치될 때 at= 코드가 stale되는 갭 수정 (#445).
-  // TOTP step은 30초이므로 20초 주기로 push해 step 경계를 놓치지 않는다.
+  // TOTP step은 5초이고 코드는 30~35초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
+  // RELAY_QR_REFRESH_INTERVAL_MS(5초) 주기로 push한다.
   // SECRET-HANDLING: 콜백은 단순 trigger만 — TOTP 값·at= 코드는 절대 로그/stdout에 출력 금지.
-  const TOTP_REFRESH_INTERVAL_MS = 20_000;
+  const TOTP_REFRESH_INTERVAL_MS = RELAY_QR_REFRESH_INTERVAL_MS;
   let totpRefreshHandle: ReturnType<typeof setInterval> | null = null;
   totpRefreshHandle = setInterval(() => {
     if (lastAttachParts !== null) {
@@ -2753,6 +2936,8 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
         ? bootLocalFamilyForEntry()
         : bootRelayFamily({
             verifyAuth: buildRelayVerifyAuth(),
+            getAppName: () =>
+              lastAttachParts ? appNameFromSchemeUrl(lastAttachParts.schemeUrl) : null,
             onWssUrl: (wssUrl) => {
               lockHandle.updateWssUrl(wssUrl);
               qrServer?.notifyStateChange();
@@ -2765,6 +2950,11 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
             },
             // Issue #467: secret-free relay TOTP 401 counter for get_debug_status.
             onAuthReject: () => diagnosticsCollector.recordAuthReject(),
+            // The tunnel was reissued to cut off a caller that held the old URL.
+            onTunnelRotated: () => {
+              diagnosticsCollector.recordTunnelRotation();
+              qrServer?.notifyStateChange();
+            },
             // Attach version handshake: record what the device says it is so
             // `start_attach` can name a device↔host skew instead of letting
             // the value-duplicated contract misbehave silently.
@@ -2789,6 +2979,8 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     },
     // Stable /inspector URL for auto-open (issue #530).
     getInspectorStableUrl: () => qrServer?.inspectorStableUrl ?? null,
+    getInspectorOpenUrl: () =>
+      qrServer ? qrServer.tokenizeUrl(qrServer.inspectorStableUrl) : null,
   });
 
   // AIT.* methods ride the *active* connection's command channel (local CDP or,
@@ -2811,12 +3003,14 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   const getDashboardState = (): DashboardState => {
     const targets = router.active.listTargets();
     // inspectorUrl — /inspector 안정 진입점 (issue #530).
-    // SECRET-HANDLING: /inspector URL 자체에 시크릿 없음 — 출력 가능.
+    // SECRET-HANDLING: /inspector URL에는 relay 시크릿도 접근 토큰도 없다 — 출력 가능.
     const inspectorUrl = qrServer?.inspectorStableUrl ?? null;
     return {
       tunnel: { up: router.relayTunnelStatus().up, wssUrl: router.relayTunnelStatus().wssUrl },
       pages: targets.map((t) => ({ id: t.id, url: t.url })),
-      attachUrl: lastAttachParts ? rebuildAttachUrl(lastAttachParts) : null,
+      attachUrl: lastAttachParts
+        ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
+        : null,
       inspectorUrl,
       phase: currentPhase, // #730
       ...buildDashboardTimelineState(attachTimeline, sessionStartedAt),
@@ -2842,9 +3036,7 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
     if (!totpSecret) {
       return { ok: false, reason: 'totpUnavailable' };
     }
-    const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () =>
-      generateTotp(totpSecret, Date.now()),
-    );
+    const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () => mintRelayCode(Date.now()));
     if (url === null) {
       return { ok: false, reason: 'totpUnavailable' };
     }
@@ -2862,11 +3054,12 @@ export async function runLocalDebugServer(options: RunLocalDebugServerOptions = 
   }
 
   // TOTP 주기 갱신 타이머 — 이벤트 없이 페이지가 방치될 때 at= 코드가 stale되는 갭 수정 (#448).
-  // TOTP step은 30초이므로 20초 주기로 push해 step 경계를 놓치지 않는다.
+  // TOTP step은 5초이고 코드는 30~35초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
+  // RELAY_QR_REFRESH_INTERVAL_MS(5초) 주기로 push한다.
   // local-only 동안엔 lastAttachParts가 null이라 no-op — relay로 전환된 뒤 첫 start_attach
   // 호출 시 lastAttachParts가 세팅되면 갱신이 시작된다.
   // SECRET-HANDLING: 콜백은 단순 trigger만 — TOTP 값·at= 코드는 절대 로그/stdout 출력 금지.
-  const TOTP_REFRESH_INTERVAL_MS = 20_000;
+  const TOTP_REFRESH_INTERVAL_MS = RELAY_QR_REFRESH_INTERVAL_MS;
   let totpRefreshHandle: ReturnType<typeof setInterval> | null = null;
   totpRefreshHandle = setInterval(() => {
     if (lastAttachParts !== null) {

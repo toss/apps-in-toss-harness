@@ -13,11 +13,12 @@
  *      an allowed key name (e.g. a message string that includes a TOTP code).
  *
  * SECRET-HANDLING (MUST NOT appear in stdout/stderr/logs):
- *   - TOTP 6-digit codes (pattern: standalone 6-digit run)
+ *   - relay auth codes (pattern: any run of 32 or more hex characters; this also
+ *     covers the 64-hex secret)
  *   - AITCC_API_KEY values (pattern: "aitcc_" or "AITCC_" prefix — Deploy Key format)
  *   - cookie header values (pattern: "cookie:" header content)
  *   - relay WSS URLs (contain the relay host which is semi-sensitive)
- *   - "at=<TOTP>" query params
+ *   - "at=<code>" query params
  *
  * Canonical event categories:
  *   server.start    — MCP server started (relay port, TOTP enabled, etc.)
@@ -62,7 +63,15 @@ export type LogEvent =
   // chii's `server/lib/proxy.js` sets NODE_TLS_REJECT_UNAUTHORIZED='0' as a
   // load-time side effect (issue #1 comment 5434190154) — tls-guard.ts undoes
   // it and reports the restore here. Secret-free (msg only).
-  | 'tls.restored';
+  | 'tls.restored'
+  // Repeated failed relay code checks locked a source scope. Scope and duration only.
+  | 'relay.auth.lockout'
+  // A request or upgrade refused because of its browser origin. Surface and
+  // reason enum only.
+  | 'relay.origin.reject'
+  // The tunnel was reissued, or a reissue was held back, after repeated locks.
+  // `reason` is an enum string; no URL.
+  | 'tunnel.rotation';
 
 /**
  * Allowed field keys that may pass through to a log line.
@@ -75,6 +84,8 @@ const ALLOWED_KEYS = new Set([
   'msg',
   'port',
   'totpEnabled',
+  'scope',
+  'lockMs',
   'env',
   'tool',
   'deploymentId',
@@ -104,16 +115,23 @@ const ALLOWED_KEYS = new Set([
  * Here we extend to in-process value-level patterns used in server logs.
  */
 const SECRET_PATTERNS: RegExp[] = [
-  // TOTP 6-digit code as a standalone value (whole string is exactly 6 digits).
-  /^\d{6}$/,
+  // Relay auth code (32 hex characters) or the secret behind it (64), as the whole
+  // value or anywhere inside a longer string.
+  /[0-9a-f]{32,}/i,
   // Deploy Key — AITCC_API_KEY value prefix formats.
   /^(aitcc_|AITCC_)/i,
   // Cookie header value (whole string starts with a cookie-like name=value pair).
   /^[A-Za-z0-9_-]+=.{4,}/,
-  // WSS relay URL value.
-  /^wss:\/\//,
-  // TOTP "at=" query param embedded in a string.
+  // A relay address, at the start of the value or inside a longer string.
+  /wss:\/\//i,
+  // `relay=` query param embedded in a string.
+  /(?:^|[?&])relay=/i,
+  // "at=" query param embedded in a string, whatever follows it.
   /(?:^|[?&])at=[A-Z0-9]{6}/i,
+  // Dashboard access token query param (`dashtoken=`), whatever follows it.
+  /(?:^|[?&])dashtoken=/i,
+  // "sig=" query param (relay endpoint signature) embedded in a string.
+  /(?:^|[?&])sig=[A-Za-z0-9_-]{16}/,
 ];
 
 /**

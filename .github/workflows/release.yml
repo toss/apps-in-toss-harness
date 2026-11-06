@@ -36,22 +36,17 @@ permissions:
   contents: read
 
 jobs:
-  release:
+  # build job: 게이트(서드파티 코드를 설치·실행)와 pack만 한다. 읽기 권한뿐이고
+  # `release` environment도 거치지 않는다 — 쓰기 토큰·승인된 환경 시크릿이 있는 job에서
+  # 서드파티 코드가 돌지 않게 가른다. 산출 tarball은 artifact로 publish job에 넘긴다.
+  # dry-run은 이 job에서 끝난다(publish job은 건너뜀).
+  build:
     runs-on: ubuntu-latest
-    # 실릴리즈만 `release` environment를 거친다 — dry-run은 environment 없이
-    # 그대로 돈다(워크플로 자체를 반복 테스트하는 용도라 승인을 요구하면
-    # 방해만 된다). 빈 문자열은 GitHub에서 "environment 미사용"으로 해석된다.
-    #
-    # 이 배선이 실제로 승인을 강제하려면 repo Settings → Environments →
-    # `release`에 **required reviewers가 지정돼 있어야 한다**. 리뷰어가 없으면
-    # environment는 통과 지점일 뿐 게이트가 아니다(보안검토 ③ G16) — 지정
-    # 자체는 조직 권한 판단이라 워크플로 파일이 대신 정할 수 없다.
-    environment: ${{ !inputs.dry_run && 'release' || '' }}
-    # gh release create에는 contents: write가 필요하다. 그 외 권한은
-    # 요구하지 않는다 — npm 발행을 하지 않으므로 id-token(OIDC)·registry
-    # 관련 권한은 전량 불필요.
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
+      real_publish: ${{ steps.validate.outputs.real_publish }}
     steps:
       # 아래 두 스텝(패키지 결정 + 입력 검증)은 checkout·pnpm install도 필요
       # 없다 — 되돌릴 수 없는 액션이니 잘못된 입력은 CI 시간을 쓰기 전에
@@ -100,17 +95,16 @@ jobs:
             exit 1
           fi
 
-      # persist-credentials: false — checkout이 job 토큰(contents: write)을 .git/config에
-      # 남기지 않게 한다. 이 job은 push·태그를 하지 않고(릴리즈는 REST + GH_TOKEN env로
-      # 만든다) 게이트가 서드파티 코드를 실행하므로(check:relay-pool-compat), 디스크에
-      # 남은 쓰기 토큰은 불필요한 노출면이다.
-      - uses: actions/checkout@v7
+      # persist-credentials: false — checkout이 job 토큰을 .git/config에 남기지 않게 한다.
+      # 이 job은 push·태그를 하지 않고 게이트가 서드파티 코드를 실행하므로
+      # (check:relay-pool-compat), 디스크에 남은 토큰은 불필요한 노출면이다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -172,6 +166,10 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # 배포 산출물이 attach 게이트를 소스와 같게 판정하는지 본다. 방금 빌드한
+      # debug-console dist(ESM·CJS)로 `evaluateDebugGate`를 표 몇 줄에 돌려, 운영 호스트
+      # 거부·서명 없는 QR 호스트 거부·정상 attach를 확인한다. dist가 없으면 실패한다.
+      - run: pnpm -r check:gate-dist
       # 소비자 Vitest 호환 게이트(사유는 ci.yml 주석 참고) — 발행되는 pool이
       # Vitest 4.1·5.x 소비자에서 깨지지 않는지 pack한 tarball로 확인한다.
       # 이 스텝은 서드파티 코드를 설치·실행하는 유일한 게이트라 공급망 면을 줄여 뒀다:
@@ -186,6 +184,10 @@ jobs:
       # 갈라진다.
       - run: pnpm -r check:relay-pool-compat
       - run: pnpm check:pack-manifests
+      # debugger는 tarball에 런타임 의존성을 번들한다(scripts/bundle-deps.mjs). 번들 내용은
+      # npm-shrinkwrap.json 그대로 설치되므로, 그 파일이 pnpm-lock.yaml의 런타임 폐포와
+      # (버전·integrity) 어긋나지 않았는지 오프라인으로 확인한다. 어긋나면 pnpm shrinkwrap:debugger.
+      - run: pnpm check:shrinkwrap
       - run: pnpm check:dist-urls
       - run: pnpm typecheck
       - run: pnpm test
@@ -208,38 +210,18 @@ jobs:
             fi
           done
 
-      # pnpm pack 산출 tarball을 그대로 GitHub Release 에셋으로 올린다. workspace:*
-      # devDependency를 실제 버전으로 치환하는 건 pnpm pack의 역할이고, tarball은
-      # 이미 자립적(internal-protocol은 dist에 인라인 흡수, 런타임 dependencies에
-      # workspace: 프로토콜 없음)임이 실측으로 확인됐다 — 별도 변환 없이 그대로
-      # 배포 가능하다.
-      #
-      # inputs.*는 여기서 셸에 직접 보간하지 않는다 — env로 넘겨 "$VAR"로
-      # 참조한다. `${{ inputs.prerelease }}`를 run: 블록에 텍스트로 그대로 박으면
-      # GitHub가 bash 파싱 전에 치환하므로, 예상 못한 값이 들어오면 명령
-      # 인젝션 표면이 될 수 있다(이 job의 트리거 권한은 repo write라 외부
-      # 공격면은 아니지만, 되돌릴 수 없는 액션이라 방어적으로 막는다).
-      #
-      # real_publish 판정은 validate 스텝이 이미 fail-closed로 내렸지만, 여기
-      # 실행 지점에서도 다시 명시적으로 분기한다 — "빈 값·예상 못한 값이면
-      # 기본 동작이 dry-run(혹은 실릴리즈)"가 아니라 "기본 동작이 멈춤"이
-      # 되도록.
-      - name: Pack and release
+      # pnpm pack 산출 tarball을 그대로 GitHub Release 에셋으로 올린다(publish job).
+      # workspace:* devDependency를 실제 버전으로 치환하는 건 pnpm pack의 역할이고,
+      # tarball은 이미 자립적(internal-protocol은 dist에 인라인 흡수, 런타임
+      # dependencies에 workspace: 프로토콜 없음)임이 실측으로 확인됐다 — 별도 변환
+      # 없이 그대로 배포 가능하다. tarball과 manifest.tsv(pkg·tag·asset·sha256)를
+      # artifact로 넘기고, publish job은 sha256을 다시 대조한 뒤 올린다.
+      - name: Pack release tarballs
         env:
           TARGET_PACKAGES: ${{ steps.plan.outputs.packages }}
-          REAL_PUBLISH: ${{ steps.validate.outputs.real_publish }}
-          PRERELEASE: ${{ inputs.prerelease }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          case "$PRERELEASE" in
-            true|false) ;;
-            *)
-              echo "::error::prerelease must be exactly 'true' or 'false', got: '${PRERELEASE}' — refusing to proceed"
-              exit 1
-              ;;
-          esac
-
           mkdir -p "$GITHUB_WORKSPACE/release-tarballs"
+          : > "$GITHUB_WORKSPACE/release-tarballs/manifest.tsv"
 
           # 업로드하는(또는 dry-run에서 업로드했을) 에셋의 sha256을 job Summary에
           # 남긴다. 소비자는 이 tarball을 URL로 직접 받는데(npm registry 경유가
@@ -266,54 +248,28 @@ jobs:
             tarball="$(ls "$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-*.tgz)"
             asset_name="$(basename "$tarball")"
 
+            # debugger는 런타임 의존성을 tarball에 번들한다. URL 설치(npx -p <URL>,
+            # npm install <URL>)에서 npm은 tarball 안 npm-shrinkwrap.json을 무시하고
+            # 의존성을 사용자 머신에서 새로 해석하기 때문이다(사유는 scripts/bundle-deps.mjs).
+            # 번들은 npm ci(shrinkwrap의 sha512 integrity 검증, --ignore-scripts)로 만든다.
+            # sha256은 번들 이후의 최종 tarball에서 계산한다.
+            if [ "$pkg" = "debugger" ]; then
+              node scripts/bundle-deps.mjs "$tarball"
+            fi
+
             sha256="$(sha256sum "$tarball" | cut -d' ' -f1)"
             echo "sha256(${asset_name}) = ${sha256}"
             echo "| \`${asset_name}\` | \`${sha256}\` |" >> "$GITHUB_STEP_SUMMARY"
-
-            case "$REAL_PUBLISH" in
-              true)
-                # draft로 만들어 에셋을 첨부한 뒤 마지막에 publish한다.
-                # 이 repo는 Immutable Releases가 켜져 있어 발행(publish) 순간
-                # 릴리즈가 잠기고 그 뒤의 에셋 추가·교체가 거부된다 — 발행된
-                # 릴리즈에 에셋을 올리는 순서(gh release create의 기본 동작)는
-                # immutable 환경에서 half-released 상태를 만들 수 있다.
-                # draft 생성은 REST로 직접 해서 응답에서 id를 받는다 — 목록
-                # 조회로 draft를 되찾는 방식은 releases 목록 API의 반영
-                # 지연과 경합한다(실측: 생성 0.25초 뒤 목록 미노출로 run 실패).
-                release_id="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
-                  -f tag_name="$tag" -f name="$tag" \
-                  -F draft=true -F prerelease="$PRERELEASE" \
-                  -F generate_release_notes=true --jq '.id')"
-                if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
-                  echo "::error::draft release create for ${tag} returned no id — aborting"
-                  exit 1
-                fi
-                asset_state="$(gh api -X POST \
-                  -H "Content-Type: application/gzip" \
-                  "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name}" \
-                  --input "$tarball" --jq '.state')"
-                if [ "$asset_state" != "uploaded" ]; then
-                  echo "::error::asset upload for ${tag} ended in state '${asset_state}' — leaving draft (id ${release_id}) in place; delete it manually before re-running"
-                  exit 1
-                fi
-                published_draft="$(gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-                  -F draft=false --jq '.draft')"
-                if [ "$published_draft" != "false" ]; then
-                  echo "::error::publish PATCH for ${tag} did not clear draft (got '${published_draft}')"
-                  exit 1
-                fi
-                echo "released: ${tag} (asset: ${asset_name})"
-                ;;
-              false)
-                echo "[dry-run] would create release ${tag} (asset: ${asset_name}, prerelease=${PRERELEASE}) — no release created"
-                ;;
-              *)
-                echo "::error::REAL_PUBLISH is '${REAL_PUBLISH}' (expected 'true' or 'false') — refusing to release"
-                exit 1
-                ;;
-            esac
+            printf '%s\t%s\t%s\t%s\n' "$pkg" "$tag" "$asset_name" "$sha256" >> "$GITHUB_WORKSPACE/release-tarballs/manifest.tsv"
             echo "::endgroup::"
           done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-tarballs
+          path: release-tarballs/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Summary
         if: always()
@@ -329,3 +285,109 @@ jobs:
             echo "- prerelease: ${PRERELEASE}"
             echo "- dry-run: ${DRY_RUN}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # publish job: 승인된 `release` environment 안에서, 게이트가 통과한 tarball만 올린다.
+  # 쓰기 권한(contents: write)과 provenance 서명 권한(id-token·attestations)은 여기에만
+  # 있다. checkout·pnpm install이 없어 서드파티 코드를 실행하지 않는다. npm 발행은
+  # 하지 않으므로 registry 관련 권한은 불필요.
+  publish:
+    needs: build
+    if: needs.build.outputs.real_publish == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tarballs
+          path: release-tarballs
+
+      # build job이 pack할 때 적은 sha256과 내려받은 tarball이 같은지 확인한다.
+      - name: Verify tarball digests
+        run: |
+          cd release-tarballs
+          [ -s manifest.tsv ] || { echo "::error::manifest.tsv is empty"; exit 1; }
+          while IFS="$(printf '\t')" read -r _ _ asset sha256; do
+            echo "${sha256}  ${asset}" | sha256sum -c -
+          done < manifest.tsv
+
+      # 에셋마다 SLSA build provenance를 GitHub attestation으로 남긴다. 검증:
+      # `gh attestation verify <tarball> --repo <owner>/<repo>`.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-tarballs/*.tgz
+
+      # inputs.*는 여기서 셸에 직접 보간하지 않는다 — env로 넘겨 "$VAR"로 참조한다.
+      # `${{ inputs.prerelease }}`를 run: 블록에 텍스트로 그대로 박으면 GitHub가 bash
+      # 파싱 전에 치환하므로, 예상 못한 값이 들어오면 명령 인젝션 표면이 될 수 있다.
+      - name: Create release
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+          BUILT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$PRERELEASE" in
+            true|false) ;;
+            *)
+              echo "::error::prerelease must be exactly 'true' or 'false', got: '${PRERELEASE}' — refusing to proceed"
+              exit 1
+              ;;
+          esac
+
+          # 중복 태그 재확인(build job의 확인 이후 승인 대기 중 생겼을 수 있다).
+          while IFS="$(printf '\t')" read -r _ tag _ _; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::release ${tag} already exists — refusing to overwrite."
+              exit 1
+            fi
+          done < release-tarballs/manifest.tsv
+
+          while IFS="$(printf '\t')" read -r pkg tag asset sha256; do
+            echo "::group::${pkg}"
+            tarball="release-tarballs/${asset}"
+            # 사용자가 URL로 직접 받는 tarball이라 registry integrity가 걸리지 않는다.
+            # 해시와 attestation 검증 방법을 릴리즈 본문에 남긴다(generate_release_notes
+            # 결과는 이 본문 뒤에 붙는다).
+            notes="$(printf '%s\n' \
+              '### Integrity' '' \
+              "- \`${asset}\` sha256: \`${sha256}\`" \
+              "- Verify: \`gh attestation verify ${asset} --repo ${GITHUB_REPOSITORY}\`" '')"
+            # draft로 만들어 에셋을 첨부한 뒤 마지막에 publish한다.
+            # 이 repo는 Immutable Releases가 켜져 있어 발행(publish) 순간
+            # 릴리즈가 잠기고 그 뒤의 에셋 추가·교체가 거부된다 — 발행된
+            # 릴리즈에 에셋을 올리는 순서(gh release create의 기본 동작)는
+            # immutable 환경에서 half-released 상태를 만들 수 있다.
+            # draft 생성은 REST로 직접 해서 응답에서 id를 받는다 — 목록
+            # 조회로 draft를 되찾는 방식은 releases 목록 API의 반영
+            # 지연과 경합한다(실측: 생성 0.25초 뒤 목록 미노출로 run 실패).
+            # target_commitish로 태그가 빌드한 커밋(이 run의 github.sha)을 가리키게
+            # 한다 — 생략하면 발행 시점의 기본 브랜치 HEAD에 태그가 붙는다
+            # (실측: debugger-v0.2.7은 4279cd0을 빌드했는데 태그는 7687969).
+            release_id="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="$tag" -f name="$tag" -f target_commitish="$BUILT_SHA" \
+              -F draft=true -F prerelease="$PRERELEASE" \
+              -f body="$notes" -F generate_release_notes=true --jq '.id')"
+            if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
+              echo "::error::draft release create for ${tag} returned no id — aborting"
+              exit 1
+            fi
+            asset_state="$(gh api -X POST \
+              -H "Content-Type: application/gzip" \
+              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset}" \
+              --input "$tarball" --jq '.state')"
+            if [ "$asset_state" != "uploaded" ]; then
+              echo "::error::asset upload for ${tag} ended in state '${asset_state}' — leaving draft (id ${release_id}) in place; delete it manually before re-running"
+              exit 1
+            fi
+            published_draft="$(gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              -F draft=false --jq '.draft')"
+            if [ "$published_draft" != "false" ]; then
+              echo "::error::publish PATCH for ${tag} did not clear draft (got '${published_draft}')"
+              exit 1
+            fi
+            echo "released: ${tag} (asset: ${asset}, commit: ${BUILT_SHA})"
+            echo "::endgroup::"
+          done < release-tarballs/manifest.tsv

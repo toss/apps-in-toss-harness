@@ -292,14 +292,14 @@ const MAX_OBSERVED_PAGES = 3;
 const MAX_PAGE_URL_LENGTH = 80;
 
 /**
- * 진단에 싣는 페이지 URL에서 비밀이 될 수 있는 부분을 지운다: 해시는 버리고, `at`·`relay`
+ * 진단에 싣는 페이지 URL에서 비밀이 될 수 있는 부분을 지운다: 해시는 버리고, `at`·`sig`·`relay`
  * 쿼리 값은 `<redacted>`로 바꾼다. 나머지(예: `_deploymentId`)는 어느 배포의 페이지인지
  * 알아보는 데 필요하므로 남긴다.
  */
 export function sanitizePageUrl(url: string): string {
   const hashAt = url.indexOf('#');
   const noHash = hashAt === -1 ? url : url.slice(0, hashAt);
-  const redacted = noHash.replace(/([?&])(at|relay)=[^&]*/g, '$1$2=<redacted>');
+  const redacted = noHash.replace(/([?&])(at|sig|relay)=[^&]*/g, '$1$2=<redacted>');
   return redacted.slice(0, MAX_PAGE_URL_LENGTH);
 }
 
@@ -443,7 +443,7 @@ export function diagnoseAttach(
       summary:
         '폰이 페이지를 열었지만 디버거 연결(target.js 로드 또는 WebSocket)이 끝나지 않았어요.',
       actions: [
-        '폰 화면의 디버거 상태 표시를 확인하세요.',
+        '폰 화면의 디버거 막대가 짧은 안내만 보여 주면, 원인은 데몬의 get_debug_status와 대시보드에서 확인하세요.',
         '네트워크가 relay로 가는 WebSocket을 막고 있을 수 있어요 — Wi-Fi를 바꿔 보세요.',
         'start_attach를 다시 호출해 새 QR을 스캔하세요.',
       ],
@@ -455,8 +455,9 @@ export function diagnoseAttach(
     lastStage,
     summary: '폰이 이번 QR의 페이지를 열지 않았어요 (폰에서 이 relay로 온 요청이 없어요).',
     actions: [
+      '폰에 "디버거에 연결할까요?" 창이 떠 있으면 "연결"을 눌러 주세요 — 누르기 전에는 폰이 relay로 아무 요청도 보내지 않아요.',
       '미니앱이 이미 열려 있으면 X 버튼으로 닫고 QR을 다시 스캔하세요 — 열린 미니앱은 스캔해도 새로고침되지 않아요.',
-      '폰 화면의 디버거 상태 표시를 확인하세요 (gate가 막은 사유가 적혀 있어요).',
+      '폰 화면에 디버거 막대가 아예 없다면 QR 테스트 호스트가 아닌 주소로 열렸거나 debug-console이 번들에 없는 경우예요 — 토스 앱에서 테스트 번들로 연 화면인지 확인하세요.',
       '사내망·MDM이 *.trycloudflare.com을 막으면 폰이 relay에 닿지 못해요 — Wi-Fi를 바꿔 보세요.',
     ],
     ...withPages,

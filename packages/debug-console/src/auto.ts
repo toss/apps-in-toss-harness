@@ -10,6 +10,11 @@
  * imported chunk stays dormant and `window.__sdk` / `window.__sdkCall` are
  * never installed on a normal production load.
  *
+ * NOT RECOMMENDED. On a QR test page the relay address must be signed by the
+ * project's debugger, and this side-effect entry cannot take the public keys as
+ * an argument: it reads `globalThis.__AIT_DEBUG_RELAY_KEYS__` instead. Use
+ * `startDebugConsole({ relayPublicKeys })` from the main entry.
+ *
  * DEPRECATED for builds that require debug code to be PHYSICALLY ABSENT from
  * the release bundle. This entry is a RUNTIME self-gate, not a build-time one:
  * the imported chunk (Chii target.js injection, the SDK bridge, and the status
@@ -19,7 +24,9 @@
  * re-enable), do NOT use this entry. Instead guard the call site yourself:
  *
  *   if (__DEBUG_BUILD__) {
- *     import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());
+ *     import('@apps-in-toss/debug-console').then((m) =>
+ *       m.startDebugConsole({ relayPublicKeys: ['<relay public key>'] }),
+ *     );
  *   }
  *
  * with `define: { __DEBUG_BUILD__: 'false' }` in your release build — the
@@ -31,7 +38,8 @@
  *  1. Calls `maybeAttach()` — runs the full Layer B/C gate (host allowlist,
  *     opt-in params, relay URL, TOTP) and injects the Chii `target.js` script.
  *     Gate semantics are NOT changed — this is a thin self-gate wrapper.
- *  2. Installs the SDK bridge (`window.__sdk` / `window.__sdkCall`) so an AI
+ *  2. Once the attach was accepted (the gate passed and, on a QR host, the relay
+ *     signature verified), installs the SDK bridge (`window.__sdk` / `window.__sdkCall`) so an AI
  *     agent can drive any SDK API over the CDP relay without hand-synthesising
  *     the Granite/ReactNative bridge envelope. SDK access uses a dynamic
  *     import of `@apps-in-toss/web-framework` — which this package does not
@@ -70,43 +78,10 @@
  *     bundler substitution) a ReferenceError is caught → fail-closed (dormant).
  */
 
-import { maybeAttach } from './attach.js';
+import { isDebugAttached, maybeAttach } from './attach.js';
 import { isDebugAllowedHost } from './gate.js';
-import { loadTossSdk } from './sdk-probe.js';
-
-// ---------------------------------------------------------------------------
-// Global type augmentation
-//
-// Consumers who import '@apps-in-toss/debug-console/auto' get these Window types
-// automatically — no separate globals.d.ts needed in their project.
-// ---------------------------------------------------------------------------
-declare global {
-  interface Window {
-    /**
-     * Entire `@apps-in-toss/web-framework` export namespace mirrored onto a
-     * plain writable object. Installed by the auto entry when `?debug=1` /
-     * `?relay=` is present in the URL, or in DEV builds.
-     *
-     * Lets an AI agent call any SDK API over a CDP relay without
-     * hand-synthesising the Granite/ReactNative bridge envelope:
-     *   `window.__sdk.setDeviceOrientation({ type: 'landscape' })`
-     */
-    __sdk?: Record<string, unknown>;
-
-    /**
-     * Safe call wrapper for `window.__sdk`. Returns a JSON-serialisable
-     * `{ ok: true, value }` or `{ ok: false, error }` tuple even for
-     * throwing/async SDK functions — ideal for `Runtime.evaluate` results.
-     *
-     * @example
-     * window.__sdkCall('setDeviceOrientation', { type: 'landscape' })
-     */
-    __sdkCall?: (
-      name: string,
-      ...args: unknown[]
-    ) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
-  }
-}
+import { pageSearchWithAttachParams } from './page-at-code.js';
+import { installSdkBridge } from './sdk-bridge.js';
 
 // ---------------------------------------------------------------------------
 // Self-gate
@@ -174,11 +149,14 @@ export function detectDevSignal(): boolean {
  *   Pass an explicit value in tests to control the DEV signal without
  *   depending on the Vite/vitest build environment.
  * @param searchStr - URL search string to inspect. Defaults to
- *   `window.location.search` when called in a browser context.
+ *   the page's query (`window.location.search`, plus `at`/`relay` when attach
+ *   already moved them to the history entry) when called in a browser context.
  */
 export function shouldActivate(
   isDev: boolean = detectDevSignal(),
-  searchStr: string = typeof window !== 'undefined' ? window.location.search : '',
+  searchStr: string | URLSearchParams = typeof window !== 'undefined'
+    ? pageSearchWithAttachParams()
+    : '',
 ): boolean {
   if (isDev) return true;
   const params = new URLSearchParams(searchStr);
@@ -188,56 +166,37 @@ export function shouldActivate(
 if (!shouldActivate()) {
   // Dormant — no-op. Normal production load exits here.
 } else if (typeof window === 'undefined' || !isDebugAllowedHost(window.location.hostname)) {
-  // Dormant — host not in debug allowlist (#665). env 4 / apps.tossmini.com
-  // and any non-allowlisted host stay dormant even when URL params signal
-  // debug intent. SECRET-HANDLING: hostname is never logged here.
+  // Dormant — host not in the debug allowlist: anything other than localhost
+  // and the two QR test host families (`*.private-apps.tossmini.com`,
+  // `*.private-web.tossmini.com`), even when URL params or a DEV build signal
+  // debug intent. The DEV signal only decides whether to look at the host; it
+  // never widens the allowlist.
+  // SECRET-HANDLING: hostname is never logged here.
 } else {
   // ---------------------------------------------------------------------------
   // Step 1: attach (runs the full Layer B/C gate — zero semantics change).
   // ---------------------------------------------------------------------------
-  maybeAttach();
+  // Relay public keys come from `globalThis.__AIT_DEBUG_RELAY_KEYS__` here (the
+  // side-effect import has no way to pass options), so a QR test page attaches
+  // only if the bundle defines that global. Defining it, and this whole entry,
+  // is not recommended: prefer `startDebugConsole({ relayPublicKeys })` behind
+  // the `__DEBUG_BUILD__` guard.
+  const attaching = maybeAttach();
 
   // ---------------------------------------------------------------------------
-  // Step 2: SDK bridge — install window.__sdk / window.__sdkCall.
-  //
-  // Dynamic import keeps the SDK out of the top-level module graph so the
-  // bridge chunk stays dormant when not needed. The namespace mirror pattern
-  // (iterate Object.keys) works identically for SDK 2.x and 3.x without any
-  // version-specific code path (version-agnostic).
-  //
-  // `@apps-in-toss/web-framework` is NOT a dependency of this package — not
-  // even an optional peer. `loadTossSdk()` reaches it through a runtime
-  // `import()` and resolves to `null` when it is absent (MCP-only consumers,
-  // plain browsers, test environments), so nothing here fails loudly.
-  //
-  // SECRET-HANDLING: no host, relay URL, or auth code is logged here.
+  // Step 2: SDK bridge — window.__sdk / window.__sdkCall (see sdk-bridge.ts).
+  // `@apps-in-toss/web-framework` is NOT a dependency of this package; the
+  // bridge reaches it through a runtime probe and skips itself when absent.
+  // Installed only once the attach was accepted (same as `startDebugConsole`):
+  // a gate that blocked, or a relay signature that did not verify, leaves the
+  // page without `window.__sdk`. On a QR host the signature check is async, so
+  // the install waits for it to settle.
   // ---------------------------------------------------------------------------
-  void loadTossSdk().then((sdk) => {
-    if (sdk === null) return;
-    if (typeof window === 'undefined') return;
-
-    // Enumerate all exports onto a plain writable object. A namespace import
-    // is frozen/read-only, so callers need a plain enumerable surface.
-    const bridge: Record<string, unknown> = {};
-    for (const key of Object.keys(sdk)) {
-      bridge[key] = sdk[key];
-    }
-    window.__sdk = bridge;
-
-    // Convenience call helper: window.__sdkCall('apiName', arg1, arg2)
-    // returns { ok: true, value } or { ok: false, error } — safe for any
-    // CDP Runtime.evaluate result consumer.
-    window.__sdkCall = async (name: string, ...args: unknown[]) => {
-      const fn = bridge[name];
-      if (typeof fn !== 'function') {
-        return { ok: false, error: `__sdk.${name} is not a function` };
-      }
-      try {
-        const value = await (fn as (...a: unknown[]) => unknown)(...args);
-        return { ok: true, value };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-    };
-  });
+  const installBridge = (): Promise<void> | undefined =>
+    isDebugAttached() ? installSdkBridge() : undefined;
+  if (attaching === undefined) {
+    void installBridge();
+  } else {
+    void attaching.then(installBridge, () => undefined);
+  }
 }

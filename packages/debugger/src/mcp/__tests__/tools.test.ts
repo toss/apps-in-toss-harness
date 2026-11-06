@@ -236,7 +236,7 @@ describe('listPages', () => {
     });
     expect(listPages(connection, tunnel)).toEqual({
       pages: [{ id: 't1', title: 'sdk-example', url: 'https://example/storage', lastSeenAt: null }],
-      tunnel: { up: true, wssUrl: 'wss://abc123.trycloudflare.com' },
+      tunnel: { up: true, wssUrl: 'wss://***.trycloudflare.com' },
       crashDetectedAt: null,
       crashWarning: null,
       singleAttachModel: true,
@@ -247,7 +247,7 @@ describe('listPages', () => {
     const connection = new FakeCdpConnection({});
     expect(listPages(connection, { up: true, wssUrl: 'wss://x.trycloudflare.com' })).toEqual({
       pages: [],
-      tunnel: { up: true, wssUrl: 'wss://x.trycloudflare.com' },
+      tunnel: { up: true, wssUrl: 'wss://***.trycloudflare.com' },
       crashDetectedAt: null,
       crashWarning: null,
       singleAttachModel: true,
@@ -270,7 +270,9 @@ describe('listPages', () => {
     // Non-secret params must survive.
     expect(url).toContain('_deploymentId=dep-1');
     expect(url).toContain('debug=1');
-    expect(url).toContain('relay=wss://x.trycloudflare.com');
+    // The relay address is a secret-class value too.
+    expect(url).not.toContain('trycloudflare');
+    expect(url).toContain('relay=<redacted>');
   });
 });
 
@@ -286,12 +288,13 @@ describe('redactAtParam', () => {
     );
   });
 
-  it('keeps relay and _deploymentId params intact', () => {
+  it('redacts the relay address and keeps _deploymentId', () => {
     const url =
       'intoss-private://app?_deploymentId=dep-1&debug=1&relay=wss://x.trycloudflare.com&at=474082';
     const result = redactAtParam(url);
     expect(result).toContain('_deploymentId=dep-1');
-    expect(result).toContain('relay=wss://x.trycloudflare.com');
+    expect(result).toContain('relay=<redacted>');
+    expect(result).not.toContain('trycloudflare');
     expect(result).toContain('at=<redacted>');
     expect(result).not.toContain('at=474082');
   });

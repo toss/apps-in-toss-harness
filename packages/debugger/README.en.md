@@ -11,14 +11,14 @@ Remote-debugging infrastructure for Apps in Toss mini-apps — the MCP debugging
 Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz"
 ```
 
 To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx <URL>` will not work:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger-test --help
 ```
 
 ## Usage
@@ -32,7 +32,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
     }
   }
 }
@@ -41,15 +41,33 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
 The default is `--mode=debug --target=relay` (real-device attach). For attaching a local browser only, use `--target=local`, and point the target dev server at a loopback address only:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger --target=local
 ```
+
+### Printing the public key (`debugger relay-key`)
+
+On the QR test hosts the `debug-console` verifies the `sig` parameter of the attach URL against the developer's public key. Run `npx -p <tgz URL> debugger relay-key` (optionally `--project <path>`) in the project folder: it creates `.ait_relay` if missing and prints only the public key, as one line on stdout. Pass that value to `startDebugConsole({ relayPublicKeys: ['…'] })`. The public key is safe to commit; `.ait_relay` is not. It is the root key and does not sign links itself. The daemon makes a session key every 5 minutes, held only in memory, certifies it with the root key for a short window (from 5 minutes before issue to 15 minutes after), and signs each link with the session key. The link's `sig` carries only the session key id and the link signature, which keeps the QR small; the relay serves the certificates at `GET /relay-cert` (no code, allowed mini-app origins only, not cached, never counted toward the code lock), keeping an unexpired certificate listed after the next session key appears. The session key is never written to a file or a log.
+
+#### Rotating the key (`debugger relay-key --rotate`)
+
+`.ait_relay` is a long-lived secret, so its creation date is recorded in `.ait_relay.meta` next to it (added to `.gitignore` as well; an older `.ait_relay` without that file counts its file modification time as the creation date). When the key is older than **21 days** the daemon recommends a rotation on stderr and in `relayKey.hint` of `get_debug_status`; when it is older than **30 days** the daemon does not start the relay (`start_debug` returns an error that says how to rotate). If you export `AIT_DEBUG_TOTP_SECRET` yourself, its age is judged only when it equals the secret in `.ait_relay`.
+
+```sh
+npx -p <tgz URL> debugger relay-key --rotate
+```
+
+The new secret is written to a temporary file in the same folder and renamed over `.ait_relay` (mode 0600), so a failure midway leaves the previous key in place. Stdout carries only the new public key, one line; the secret is never printed anywhere. The previous public key is shown on stderr. Then:
+
+1. Put the new public key in `startDebugConsole({ relayPublicKeys: [...] })` and rebuild every bundle you still test. A bundle that carries only the old key no longer attaches to this daemon.
+2. Keep the previous public key in the array only while a daemon that still uses the old key (a teammate who has not rotated, a CI job) must attach to the same bundle. Remove it once there is none.
+3. Restart the daemon so it reads the new key.
 
 ### Test runner (`debugger-test`)
 
 Runs test files against a real device's Toss app WebView. `--scheme-url` takes the `intoss-private://` URL printed by `ait deploy --scheme-only` (a different CLI — see below) as-is:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 Import the `test-runner` config helper via its subpath:
@@ -88,6 +106,16 @@ This package is **devDependency / `npx` only**. It never declares `@apps-in-toss
 
 Because this package is remote-debugging infrastructure, it handles secrets. The following must never appear in any output (stdout/stderr/logs/error messages): TOTP secrets and generated codes, relay `wss://` URLs and trycloudflare tunnel hostnames, deep-links carrying an `at=` parameter, and Deploy Keys. The only address safe to log is a local `http://127.0.0.1:<port>`.
 
+The local dashboard (`http://127.0.0.1:<port>/`) only opens with an access token the daemon generates on every boot. The address `start_attach` opens in the browser, and the dashboard and `/inspector` addresses it prints, carry a `dashtoken=` value. On first use the token is swapped for an HttpOnly, SameSite=Strict cookie and the browser is redirected to the address without it. A request that has only the port gets 403, so use the address `start_attach` gives you instead of typing the port by hand. The token is redacted from logs like the `at=` code.
+
+The `at=` relay auth code is derived from a random key that the daemon process keeps only in memory and the clock in 5-second steps. That key is unrelated to `.ait_relay`, never reaches a file, the environment or a log, and is new each time the process starts (`.ait_relay` feeds only the root signing key). The code is a keyed MAC truncated to 128 bits and written as 32 lowercase hex characters. Nobody types it. It travels only inside the deep-link or QR from `start_attach`, and the relay refuses any other shape before looking at the secret. A code works for 30-35 seconds after it is made (the current 5-second step and the 6 before it). While the dashboard is open it redraws the QR every 5 seconds, and `start_attach` checks every 5 seconds whether the code has changed and sends a new QR when it has (once per step), so a QR on screen has 25 seconds or more left when scanned. That covers a mini-app cold start of about 20 seconds after the scan. A text QR printed in the terminal is not refreshed, so scan it right away. A phone that has attached stays bound to its code: after the code expires, a reload of the same page or a reconnect after unlocking the screen still works for 5 minutes after the last socket closed. One code serves one phone: the page makes a random device id when it first attaches and sends it in the relay path next to the code, and the relay binds the code to the device id of the first socket. A request from another device with the same code is refused like a wrong code; reloads and other pages of the same phone still attach.
+
+The relay also checks the `Origin` header. A request that arrives through the tunnel is answered only when it comes from a sandbox mini-app origin for the app (`https://<app name>.private-apps.tossmini.com` or `https://<app name>.private-web.tossmini.com`); the response carries that origin and `Vary: Origin` instead of `*`. Production hosts (`*.apps.tossmini.com`, `*.web.tossmini.com`) and any other origin get 403 (close 4403 for WebSocket). Until the app name is known, a single label under either sandbox suffix is accepted. Loopback requests that did not come through the tunnel also accept localhost origins and the relay's own origin. Through the tunnel, a request with no `Origin` keeps only `target.js` and the handshake ping (GET/HEAD); the target WebSocket is refused. Origin can be forged, so it adds to the auth code and does not replace it.
+
+The relay has no `/proxy` route and never fetches anything on behalf of a caller. The phone's source view loads sources inside the page itself; chii's old `/proxy` fallback is simply answered like any unknown route (404), and the source view then shows empty content only where the page's own fetch was blocked. An aged code reaches only `target.js`, the handshake ping and a reconnect with the same target id, and only while a socket bound to that code is open or inside the 5-minute grace after the last one closed.
+
+The device and the daemon must speak the same protocol (`PROTOCOL_VERSION`, currently 2). The relay does not serve a `@apps-in-toss/debug-console` that speaks another one: the phone shows an "update required" bar where `target.js` would load, and `start_attach` ends with the same message instead of waiting out its timeout. Update the older of the two packages and scan a new QR.
+
 ## Two distinct CLIs
 
 This ecosystem has two similarly-named but different CLIs — do not conflate them:
@@ -101,6 +129,8 @@ This ecosystem has two similarly-named but different CLIs — do not conflate th
 
 When `start_attach` times out it names the last stage reached, the likely cause and what to do, plus a stage log. The same diagnosis is available from `get_debug_status` (`attachStages`, `attachDiagnosis`) and the dashboard's progress timeline. Also check the status bar at the bottom of the phone screen (`debug-console` 0.2 or later).
 
+The real tunnel address appears only in the attach URL and `relayUrl` that `start_attach` returns. `get_debug_status` and `list_pages` show it masked, as `wss://***.trycloudflare.com`, and error messages, logs and page URLs mask the `at=` code, the `/at/<code>/` path prefix, `relay=` values and tunnel addresses. The phone page URL keeps only `rid=`, a keyed hash that tells runs apart, instead of the tunnel address.
+
 | Symptom (diagnosis) | Cause | Action |
 |---|---|---|
 | Phone did not open this QR's page | The mini-app was already open and scanning did not reload it, the gate blocked it, or the corporate network/MDM blocks `*.trycloudflare.com` | Close the mini-app with X and scan again, read the reason in the phone status bar, switch Wi-Fi |
@@ -111,7 +141,7 @@ When `start_attach` times out it names the last stage reached, the likely cause 
 | Attached, then dropped | The app went to the background or the network dropped | Bring the app to the front, close it with X, scan a new QR |
 | Tunnel down | cloudflared exited | Call `start_attach` again |
 | QR image missing, tunnel badge shows "disconnected" | Piled-up dashboard tabs hit the browser's per-host connection limit (6 in Firefox) | Keep a single dashboard tab and reload it |
-| relay auth (TOTP) rejected, close 4401 | `.ait_relay` secret mismatch or a skewed PC clock | Call `start_attach` again; if it repeats, sync the system clock |
+| relay auth (TOTP) rejected, close 4401 | The daemon tried a relay started by another debugger process, or a skewed PC clock | Call `start_attach` again; if it repeats, restart the debugger and sync the system clock |
 | `debugger-test` stops with "another debugger process is already running the relay" | The MCP daemon is using the relay | Run the tests with the `run_tests` tool in that session, or end it and rerun. Use `--separate-relay` if you need a second relay |
 
 Calling `start_attach` again ends the earlier wait as "superseded" and the new call takes over. Progress notifications are sent only when the client sends a `progressToken`; clients that do not receive them still get the same content in the timeout error and `get_debug_status`. For an in-phone console, use the official Apps in Toss web debug tools (More menu).
@@ -119,6 +149,8 @@ Calling `start_attach` again ends the earlier wait as "superseded" and the new c
 ### cloudflared binary not installed
 
 The first time `debugger` starts the relay/tunnel, `ensureCloudflaredBin` detects the missing binary and lazily calls `cloudflared.install()`, downloading the `~38 MB` binary on that first run — npm runs postinstall by default, so most of the time this needs no action.
+
+The binary is version-pinned (cloudflared 2026.10.7) and checked against a sha256 that ships with the debugger before every start. A different executable at the default path, such as the `latest` that an npm postinstall fetched, is replaced by the pinned build, and a download whose hash does not match is deleted and refused. If you want to use your own build, set `CLOUDFLARED_BIN` to its path; that file is not verified.
 
 **Note for pnpm-installed projects only**: pnpm blocks dependency postinstall scripts by default (`ignore-scripts`), which can leave an "Ignored build scripts" warning for `cloudflared` in the `pnpm install` log. If you'd rather pull that download forward to install time (e.g. to warm a CI cache, or to avoid the delay on first start), run `pnpm approve-builds` and select `cloudflared`, or add `cloudflared: true` to [`allowBuilds`](https://pnpm.io/settings#allowbuilds) in `pnpm-workspace.yaml` (workspace) / `"cloudflared"` to `pnpm.onlyBuiltDependencies` in `package.json` (single project).
 

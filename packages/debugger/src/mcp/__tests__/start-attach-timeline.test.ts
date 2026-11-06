@@ -134,7 +134,7 @@ describe('start_attach — timeout diagnosis', () => {
     expect(t).toContain('deploymentId=diag-1');
     // 진단 본문(attach JSON 블록 뒤)에는 코드·relay host가 없다
     const diagnosis = t.slice(t.indexOf('attach 타임아웃'));
-    expect(diagnosis).not.toMatch(/at=\d{6}/);
+    expect(diagnosis).not.toMatch(/at=[0-9a-f]{32}/);
     expect(diagnosis).not.toContain('wss://');
   });
 
@@ -215,7 +215,7 @@ describe('start_attach — progress notifications', () => {
     expect([...progresses].sort((a, b) => a - b)).toEqual(progresses);
     expect(new Set(progresses).size).toBe(progresses.length);
     // 비밀은 알림에도 없다
-    expect(messages.join('\n')).not.toMatch(/wss?:\/\/|at=|\d{6}/);
+    expect(messages.join('\n')).not.toMatch(/wss?:\/\/|at=|[0-9a-f]{32}/);
   });
 
   it('sends nothing and still works without a progressToken', async () => {

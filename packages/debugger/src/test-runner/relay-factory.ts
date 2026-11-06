@@ -199,7 +199,8 @@ export function createRelayConnectionFactory(
         '../mcp/attach-timeline.js'
       );
       const { buildChiiInspectorUrl } = await import('../mcp/devtools-opener.js');
-      const { generateTotp } = await import('../mcp/totp.js');
+      const { mintRelayCode } = await import('../mcp/totp.js');
+      const { appNameFromSchemeUrl } = await import('../mcp/relay-origin.js');
 
       // Load the project-local .ait_relay secret into AIT_DEBUG_TOTP_SECRET
       // BEFORE booting the relay so assertRelayAuthConfigured()/buildRelayVerifyAuth()
@@ -233,6 +234,9 @@ export function createRelayConnectionFactory(
 
       const booted = await bootRelayFamily({
         verifyAuth: buildRelayVerifyAuth(),
+        // The run's mini-app is known up front: the relay's origin rule can use
+        // its exact name.
+        getAppName: () => appNameFromSchemeUrl(opts.schemeUrl),
         onWssUrl: () => {
           // Resolve the tunnel-ready gate so the prepareAttach call below is
           // unblocked. qrServer may not be set yet at call time (it's started
@@ -283,9 +287,9 @@ export function createRelayConnectionFactory(
       // because the browser is opened by URL — not via captured stdout.
       //
       // Headless decision: we start the server even in --headless mode so the
-      // printed stderr URL can be opened manually. The existing
+      // URL printed to a terminal can be opened manually. The existing
       // canOpenBrowser: () => !headless gate inside renderAndMaybeWait prevents
-      // the auto-open; headless users see only the stderr URL.
+      // the auto-open.
       //
       // On failure we fall back gracefully to the text-QR path — do NOT crash.
       // SECRET-HANDLING: only http://127.0.0.1:<port>/ (no secrets) goes to stderr.
@@ -334,7 +338,7 @@ export function createRelayConnectionFactory(
             return { ok: false, reason: 'totpUnavailable' };
           }
           const url = buildChiiInspectorUrl(booted.relayHttpUrl, targets[0].id, () =>
-            generateTotp(totpSecret, Date.now()),
+            mintRelayCode(Date.now()),
           );
           if (url === null) {
             return { ok: false, reason: 'totpUnavailable' };
@@ -374,9 +378,22 @@ export function createRelayConnectionFactory(
           () => qrServer?.notifyStateChange(),
         );
 
-        // Print the loopback dashboard URL to stderr — it carries no secrets
-        // (TOTP codes and relay wss live only in the in-memory HTTP response).
-        process.stderr.write(`debugger-test: QR dashboard: http://127.0.0.1:${qrServer.port}/\n`);
+        // Print the loopback dashboard URL to stderr. It carries no relay address or TOTP code.
+        // A launched browser gets the access token and keeps the cookie, so the plain URL works
+        // there. Headless has no such browser and a person must paste the URL, so the token is
+        // printed only when stderr is a terminal: redirected stderr ends up in stored logs.
+        const dashboardUrl = qrServer.buildAttachPageUrl('');
+        if (!headless) {
+          process.stderr.write(`debugger-test: QR dashboard: ${dashboardUrl}\n`);
+        } else if (process.stderr.isTTY === true) {
+          process.stderr.write(
+            `debugger-test: QR dashboard: ${qrServer.tokenizeUrl(dashboardUrl)}\n`,
+          );
+        } else {
+          process.stderr.write(
+            'debugger-test: QR dashboard URL is printed only to a terminal. Use the text QR.\n',
+          );
+        }
       } catch {
         // startQrHttpServer failed (e.g. port conflict, import error). Fall back
         // to the existing text-QR path by leaving qrHttpServer: undefined.

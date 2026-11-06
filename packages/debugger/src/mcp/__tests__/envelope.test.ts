@@ -24,7 +24,13 @@ import type {
   CdpTarget,
 } from '../cdp-connection.js';
 import { createDebugServer } from '../debug-server.js';
-import { isCompatMode, toEnvelopeEnv, wrapEnvelope } from '../envelope.js';
+import {
+  isCompatMode,
+  toEnvelopeEnv,
+  UNTRUSTED_DATA_NOTE,
+  untrustedEnvelope,
+  wrapEnvelope,
+} from '../envelope.js';
 import type { McpEnvironment } from '../environment.js';
 import type { TunnelStatus } from '../tools.js';
 
@@ -69,12 +75,20 @@ class FakeAitSource implements AitSource {
   }
 }
 
+class CannedAitSource implements AitSource {
+  get<M extends AitMethodName>(_m: M): Promise<AitMethodMap[M]> {
+    return Promise.resolve({} as AitMethodMap[M]);
+  }
+}
+
 async function makeClient(opts: {
+  aitSource?: AitSource;
   connection?: FakeCdpConnection;
   env?: McpEnvironment;
   tunnelStatus?: TunnelStatus;
 }): Promise<Client> {
   const {
+    aitSource = new FakeAitSource(),
     connection = new FakeCdpConnection(),
     env = 'mock',
     tunnelStatus = { up: false, wssUrl: null },
@@ -82,7 +96,7 @@ async function makeClient(opts: {
 
   const server = createDebugServer({
     connection,
-    aitSource: new FakeAitSource(),
+    aitSource,
     getTunnelStatus: () => tunnelStatus,
     getEnvironment: () => env,
     getEnvironmentReason: () => `test-pinned-${env}`,
@@ -107,6 +121,37 @@ describe('wrapEnvelope', () => {
   afterEach(() => {
     // Reset compat env var after each test that might set it.
     delete process.env.AIT_MCP_COMPAT;
+  });
+
+  it('marks data that came from the attached page', () => {
+    const fromPage = wrapEnvelope({}, { tool: 'evaluate', env: 'mock', attached: true });
+    const fromDaemon = wrapEnvelope({}, { tool: 'start_debug', env: 'mock', attached: true });
+    expect(fromPage).toMatchObject({ meta: { untrustedData: true } });
+    expect(fromDaemon).not.toHaveProperty('meta.untrustedData');
+  });
+
+  it('marks by default: only the explicit daemon-authored allowlist is unmarked', () => {
+    for (const tool of [
+      'AIT.getSdkCallHistory',
+      'AIT.getMockState',
+      'AIT.getOperationalEnvironment',
+      'get_debug_status',
+      'measure_safe_area',
+      'run_tests',
+      'start_attach',
+      'some_future_tool',
+    ]) {
+      expect(wrapEnvelope({}, { tool, env: 'mock', attached: true })).toMatchObject({
+        meta: { untrustedData: true },
+      });
+    }
+  });
+
+  it('always marks the embedded form, whatever the compat flag says', () => {
+    process.env.AIT_MCP_COMPAT = 'chrome-devtools';
+    expect(
+      untrustedEnvelope({ pages: [] }, { tool: 'start_attach', env: 'relay-dev', attached: true }),
+    ).toMatchObject({ meta: { untrustedData: true } });
   });
 
   it('wraps data in ToolEnvelope when compat mode is off', () => {
@@ -356,4 +401,51 @@ describe('measure_safe_area result is wrapped in ToolEnvelope', () => {
     expect(meta.tool).toBe('measure_safe_area');
     expect(meta.env).toBe('relay-dev');
   });
+});
+
+// ---- Untrusted-data marker on every page-derived tool -----------------------
+
+describe('untrusted-data marker', () => {
+  const PAGE_TOOLS = [
+    'list_console_messages',
+    'list_exceptions',
+    'list_network_requests',
+    'AIT.getSdkCallHistory',
+    'AIT.getMockState',
+    'AIT.getOperationalEnvironment',
+  ];
+  const attachedConn = (): FakeCdpConnection =>
+    new FakeCdpConnection([{ id: 't1', title: 'App', url: 'http://localhost:5173/' }]);
+
+  afterEach(() => {
+    delete process.env.AIT_MCP_COMPAT;
+  });
+
+  it.each(PAGE_TOOLS)('%s result carries meta.untrustedData', async (tool) => {
+    delete process.env.AIT_MCP_COMPAT;
+    const client = await makeClient({
+      connection: attachedConn(),
+      aitSource: new CannedAitSource(),
+    });
+    const result = await client.callTool({ name: tool, arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(parseRaw(result)).toMatchObject({ ok: true, meta: { tool, untrustedData: true } });
+  });
+
+  it.each(PAGE_TOOLS)(
+    '%s keeps the raw payload first and adds the note in compat mode',
+    async (tool) => {
+      process.env.AIT_MCP_COMPAT = 'chrome-devtools';
+      const client = await makeClient({
+        connection: attachedConn(),
+        aitSource: new CannedAitSource(),
+      });
+      const result = await client.callTool({ name: tool, arguments: {} });
+      const content = result.content as Array<{ type: string; text?: string }>;
+      expect(content).toHaveLength(2);
+      const first = JSON.parse(content[0]?.text ?? '') as Record<string, unknown>;
+      expect('meta' in first).toBe(false);
+      expect(content[1]?.text).toBe(UNTRUSTED_DATA_NOTE);
+    },
+  );
 });

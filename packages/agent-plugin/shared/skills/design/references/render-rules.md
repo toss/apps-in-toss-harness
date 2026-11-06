@@ -106,7 +106,7 @@ safe area ⑥ 광고 배치 ⑦ 레이아웃 무결성 ⑧ 다크패턴 금지 �
 `⚠️ 주의`)도 전부 포함한다.
 
 ```css
-@import url('https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css');
+@import url('https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/tossface.css');
 .tf { font-family: 'Tossface'; font-style: normal; }
 ```
 

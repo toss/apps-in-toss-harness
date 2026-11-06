@@ -12,7 +12,7 @@
  * without duplicating the rule.
  *
  * This module is intentionally dependency-free (no Node, no DOM — only
- * `String#endsWith` and one regex) so it inlines into both bundles. There is no
+ * `String#endsWith` and a couple of regexes) so it inlines into both bundles. There is no
  * barrel index in this package: each consumer imports the one subpath it needs,
  * and its bundler inlines the handful of statements at build time. Nothing here
  * survives as a runtime cross-package import.
@@ -23,48 +23,83 @@
  */
 
 /**
- * The host suffix the Toss app uses to serve dogfood / private mini-apps.
+ * Host suffixes of the two QR test (dogfood) host families.
  *
- * A dogfood entry maps to a host such as
- * `example.private-apps.tossmini.com`. A production entry is served from
- * `*.apps.tossmini.com` — the `.private-apps.` segment is absent.
+ * A QR test entry is served from `<app>.private-apps.tossmini.com`
+ * (web-framework 2.x and 3.1.1+) or `<app>.private-web.tossmini.com`
+ * (3.0.0 to 3.1.0). The leading `.` in each suffix forces at least one label in
+ * front of the family name, so the bare family host does not match.
  */
 const PRIVATE_APPS_HOST_SUFFIX = '.private-apps.tossmini.com';
+const PRIVATE_WEB_HOST_SUFFIX = '.private-web.tossmini.com';
 
 /**
- * The parent host suffix for the whole mini-app serving family.
- *
- * The 3.0 runtime loader serves mini-app pages from tossmini.com hosts that are
- * NOT `*.private-apps.tossmini.com`, so under 3.0 the hostname no longer
- * distinguishes a dogfood candidate from a production entry. For those hosts
- * the host layer is demoted from a stage discriminator to a "known host family"
- * filter and the effective boundary moves to the opt-in + relay + TOTP layer.
+ * The parent host suffix of the whole tossmini serving family. It covers the
+ * production families (`<app>.apps.tossmini.com`, `<app>.web.tossmini.com`) as
+ * well as the QR test families above, so it is NOT a debug allowlist. It is
+ * kept for callers that only need to know "is this a tossmini host".
  */
 const TOSSMINI_HOST_SUFFIX = '.tossmini.com';
 
 /**
- * Returns whether `hostname` is a `*.private-apps.tossmini.com` subdomain —
- * the host reserved for dogfood / private mini-app entries.
- *
- * The match is an exact suffix check, not a substring `.includes()`: a
- * substring test would also accept an attacker-controlled host like
- * `private-apps.tossmini.com.evil.example`, which ends in `.example`, not in
- * `.tossmini.com`. Requiring the string to END with the suffix closes that.
- * The leading `.` in the suffix also forces a real subdomain label, so a bare
- * `private-apps.tossmini.com` (no mini-app subdomain) does not match.
+ * The part of a hostname in front of a family suffix: exactly one non-empty
+ * label of letters, digits, `-` and `_`. A QR test entry is always
+ * `<app>.<family>`, so a deeper name such as `a.b.private-apps.tossmini.com`
+ * is refused. This also rejects empty labels (`.private-apps.tossmini.com`), a
+ * port, a path and any other character a spoofed string could smuggle in front
+ * of the real suffix.
  */
-export function isPrivateAppsHost(hostname: string): boolean {
-  return hostname.endsWith(PRIVATE_APPS_HOST_SUFFIX);
+const HOST_PREFIX_LABEL = /^[a-z0-9_-]+$/;
+
+/**
+ * Returns whether `hostname` is `<label>` followed by exactly `suffix`, compared
+ * case-insensitively (DNS names are case-insensitive and `URL#hostname` already
+ * lowercases, so this only matters for callers that pass a raw string). A
+ * trailing dot is not accepted.
+ */
+function hasHostSuffix(hostname: string, suffix: string): boolean {
+  const host = hostname.toLowerCase();
+  if (!host.endsWith(suffix)) return false;
+  return HOST_PREFIX_LABEL.test(host.slice(0, host.length - suffix.length));
 }
 
 /**
- * Returns whether `hostname` is any `*.tossmini.com` subdomain — the host
- * family mini-app pages are served from. Includes the 2.x
- * `*.private-apps.tossmini.com` dogfood hosts and the 3.0 unified serving
- * hosts.
+ * Returns whether `hostname` is a `<app>.private-apps.tossmini.com` host — a
+ * QR test entry of web-framework 2.x and 3.1.1+.
  *
- * Same exact-suffix `endsWith` check as {@link isPrivateAppsHost} — never a
- * substring `.includes()`, which would accept `x.tossmini.com.evil.example`.
+ * The match is an exact suffix check with exactly one label in front, not a substring
+ * `.includes()`: `private-apps.tossmini.com.evil.example` does not end in the
+ * suffix, and `evil-private-apps.tossmini.com` has no `.` in front of
+ * `private-apps`. The bare `private-apps.tossmini.com` does not match either.
+ */
+export function isPrivateAppsHost(hostname: string): boolean {
+  return hasHostSuffix(hostname, PRIVATE_APPS_HOST_SUFFIX);
+}
+
+/**
+ * Returns whether `hostname` is a `<app>.private-web.tossmini.com` host — a QR
+ * test entry of web-framework 3.0.0 to 3.1.0. Same matching rules as
+ * {@link isPrivateAppsHost}.
+ */
+export function isPrivateWebHost(hostname: string): boolean {
+  return hasHostSuffix(hostname, PRIVATE_WEB_HOST_SUFFIX);
+}
+
+/**
+ * Returns whether `hostname` belongs to either QR test host family
+ * ({@link isPrivateAppsHost} or {@link isPrivateWebHost}).
+ */
+export function isPrivateTossminiHost(hostname: string): boolean {
+  return isPrivateAppsHost(hostname) || isPrivateWebHost(hostname);
+}
+
+/**
+ * Returns whether `hostname` is any `*.tossmini.com` subdomain. This includes
+ * the production families, so it must not be used as a debug allow rule; use
+ * {@link isDebugAllowedHost} for that.
+ *
+ * Same exact-suffix `endsWith` check — never a substring `.includes()`, which
+ * would accept `x.tossmini.com.evil.example`.
  */
 export function isTossminiHost(hostname: string): boolean {
   return hostname.endsWith(TOSSMINI_HOST_SUFFIX);
@@ -95,9 +130,18 @@ export function isLocalhostHost(hostname: string): boolean {
 /**
  * Positive-allowlist kill-switch: returns true when the hostname is a known
  * debug-allowed host. The debug surface is ONLY active on:
- *   - localhost / loopback (env 1 desktop dev)
- *   - `*.tossmini.com` (env 3 dog-food — 2.x private-apps hosts AND the 3.0
- *     unified serving family)
+ *   - localhost / loopback (desktop dev)
+ *   - the two QR test host families, `<app>.private-apps.tossmini.com` and
+ *     `<app>.private-web.tossmini.com`
+ *
+ * Production hosts (`<app>.apps.tossmini.com`, `<app>.web.tossmini.com`) and
+ * every other host are refused here, whatever the URL parameters or build-time
+ * signals say. The hostname is the one input that a URL parameter or a build
+ * flag cannot change, so this predicate is the single place that decides which
+ * pages may ever attach.
+ *
+ * This is only the host layer. A page on an allowed host still has to pass the
+ * opt-in, relay-host and auth layers of the runtime gate.
  *
  * `*.trycloudflare.com` used to be listed here for env 2 (the PWA launcher
  * served the dev server through a Cloudflare quick tunnel); it was dropped when
@@ -105,56 +149,56 @@ export function isLocalhostHost(hostname: string): boolean {
  * relay socket, never the page origin, so no debug page is served from that
  * host family any more.
  *
- * Any other host is silently blocked. Unlisted hosts never had a debug surface
- * regardless, but this function makes it explicit and auditable in one place.
- *
- * The 3.0 loader serves dogfood candidates and production entries from the same
- * host family, so the hostname alone can no longer separate them. The "no naked
- * attach on a production-family host" invariant is preserved one layer down: on
- * tossmini hosts that are not `*.private-apps.*` the TOTP code is mandatory,
- * and production entry URLs carry no debug/relay/at params at all.
- *
  * SECRET-HANDLING: the hostname value MUST NOT be logged or included in any
  * error reason string — only benign labels ('host not in allowlist') are safe.
  */
 export function isDebugAllowedHost(hostname: string): boolean {
-  return isLocalhostHost(hostname) || isTossminiHost(hostname);
+  return isLocalhostHost(hostname) || isPrivateTossminiHost(hostname);
 }
 
 /**
- * The host suffix a legitimate CDP relay tunnel is served from — a
- * cloudflared quick tunnel started for the debug relay socket.
+ * The host suffix of a cloudflared quick tunnel, the kind of relay endpoint the
+ * debugger starts.
  */
 const RELAY_TUNNEL_HOST_SUFFIX = '.trycloudflare.com';
 
+/** One tunnel label: lowercase letters, digits and hyphens. */
+const TUNNEL_LABEL = /^[a-z0-9-]+$/;
+
 /**
- * Returns whether `hostname` is an allowed destination for the debug CDP
- * relay socket (the `relay=wss://…` query param `evaluateDebugGate` reads).
+ * Returns whether `hostname` has the shape of a quick-tunnel host: exactly one
+ * label in front of `.trycloudflare.com` (`abc-def.trycloudflare.com`).
+ *
+ * This is a shape check only. Anyone can obtain a `trycloudflare.com`
+ * subdomain, so a match does NOT say who runs the relay behind it; the device
+ * establishes that with the signature carried in `sig` (see
+ * `relay-signature.ts`). The exact-suffix check with a single label keeps
+ * look-alikes such as `trycloudflare.com.evil.example` and
+ * `a.b.trycloudflare.com` out.
+ */
+export function isTunnelRelayHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (!host.endsWith(RELAY_TUNNEL_HOST_SUFFIX)) return false;
+  return TUNNEL_LABEL.test(host.slice(0, host.length - RELAY_TUNNEL_HOST_SUFFIX.length));
+}
+
+/**
+ * Returns whether `hostname` is a possible destination for the debug CDP relay
+ * socket (the `relay=wss://…` query param the runtime gate reads): a
+ * quick-tunnel host ({@link isTunnelRelayHost}) or a loopback host.
  *
  * This is a DIFFERENT axis from {@link isDebugAllowedHost}: that predicate
- * validates the PAGE origin (where the debug surface is served from);
- * this one validates the RELAY destination (where `attach.ts` opens a
- * WebSocket and injects a `<script src>` from). A page can pass the page-host
- * check yet still point `relay=` at an attacker-controlled `wss:` endpoint —
- * scheme-only validation (`protocol === 'wss:'`) proves the transport is
- * encrypted but not WHO is on the other end. Without this check an attacker
- * relay reachable over `wss:` would be attached to and could inject arbitrary
- * JS via `attach.ts`'s `<script src>`.
- *
- * Allowed:
- *   - `*.trycloudflare.com` — the legitimate relay is always a cloudflared
- *     quick tunnel; the exact-suffix `endsWith` check (not `.includes()`)
- *     is the same pattern as {@link isPrivateAppsHost} / {@link isTossminiHost}
- *     and for the same reason — a substring test would also accept
- *     `trycloudflare.com.evil.example` or `evil.trycloudflare.com.attacker.example`.
- *   - localhost/loopback — a local relay is a non-vector: for it to be
- *     malicious, the attacker would already need to control the victim's own
- *     machine, at which point the relay host check buys nothing. Allowing it
- *     preserves the local dev flow (env 1).
+ * validates the PAGE origin; this one validates the shape of the RELAY
+ * destination (where `attach.ts` opens a WebSocket and injects a
+ * `<script src>` from). It does not prove who is on the other end: scheme and
+ * host shape say nothing about ownership. The runtime gate additionally pairs
+ * the page host with the relay host (a loopback page takes a loopback relay, a
+ * QR test page takes a tunnel relay), and on a QR test page the relay endpoint
+ * must carry a valid signature before the device contacts it.
  *
  * SECRET-HANDLING: returns a boolean only — never logs or returns the
  * hostname, the relay URL, or any part of it.
  */
 export function isRelayAllowedHost(hostname: string): boolean {
-  return hostname.endsWith(RELAY_TUNNEL_HOST_SUFFIX) || isLocalhostHost(hostname);
+  return isTunnelRelayHost(hostname) || isLocalhostHost(hostname);
 }

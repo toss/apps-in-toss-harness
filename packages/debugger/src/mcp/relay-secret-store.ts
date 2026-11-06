@@ -4,13 +4,14 @@
  *
  * Two surfaces, intentionally split by who is allowed to write:
  *
- *   - {@link ensureRelaySecret} — WRITE path, called ONLY from the unplugin.
- *     Mints a fresh secret on first run and persists it to
- *     `<projectRoot>/.ait_relay` (0600). A single file — no directory is created.
+ *   - {@link ensureRelaySecret} — WRITE path, called from the `debugger relay-key`
+ *     subcommand (`relay-key.ts`) and from a project's own tooling. It mints a
+ *     fresh secret on first run and persists it to `<projectRoot>/.ait_relay`
+ *     (0600). A single file — no directory is created. The MCP daemon never calls it.
  *
  *   - {@link loadRelaySecretReadOnly} — READ-ONLY path, called from the MCP
- *     daemon when switching into a relay environment. It NEVER mints, chmods, or
- *     creates anything: it only reads an already-existing `.ait_relay` and injects
+ *     daemon when switching into a relay environment. It NEVER mints or creates
+ *     anything (it only tightens a too-open mode, see `vetSecretFile`): it only reads an already-existing `.ait_relay` and injects
  *     its value into `env`. A daemon that minted would defeat the #250 fail-fast
  *     (the daemon is the verifier side — a self-minted secret would let a leaked
  *     tunnel URL attach unauthenticated), so the daemon stays read-only.
@@ -21,6 +22,13 @@
  * root (which always has a package.json). So the project root is supplied
  * per-debug-session through `start_debug`.
  *
+ * Key age (relay-key-age.ts): the file has no room for a date, so
+ * {@link ensureRelaySecret} and {@link rotateRelaySecret} record the creation
+ * time in a sidecar `.ait_relay.meta`. The daemon reads it (falling back to the
+ * file's modification time) and warns when the key is old and refuses to start
+ * the relay when it is older still. {@link rotateRelaySecret} replaces the key
+ * atomically; it is the only way the file is ever replaced on purpose.
+ *
  * SECRET-HANDLING: this module handles AIT_DEBUG_TOTP_SECRET — the raw value and
  * its length MUST NOT appear in any log, error message, stdout, stderr, or
  * assertion output. Only boolean pass/fail signals are safe to surface, and the
@@ -29,6 +37,14 @@
  */
 
 import { dirname, join } from 'node:path';
+import {
+  judgeRelayKeyAge,
+  RELAY_KEY_META_FILE_NAME,
+  type RelayKeyAge,
+  RelayKeyExpiredError,
+  relayKeyHint,
+  serializeRelayKeyMeta,
+} from './relay-key-age.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -41,8 +57,23 @@ export const RELAY_SECRET_FILE_NAME = '.ait_relay';
 // Dependency injection surface
 // ---------------------------------------------------------------------------
 
+/**
+ * Optional fs calls for vetting the secret file before it is read (see
+ * {@link vetSecretFile}). Injected filesystems that omit them skip the check.
+ * `chmodSync` is used only to tighten a file that others can read.
+ */
+export interface SecretFileStatFs {
+  lstatSync?(path: string): {
+    isSymbolicLink(): boolean;
+    mode: number;
+    uid: number;
+    mtimeMs?: number;
+  };
+  chmodSync?(path: string, mode: number): void;
+}
+
 /** Minimal fs subset needed by {@link ensureRelaySecret} — injectable for tests. */
-export interface RelaySecretFs {
+export interface RelaySecretFs extends SecretFileStatFs {
   writeFileSync(path: string, data: string, options: { mode: number; flag: string }): void;
   readFileSync(path: string, encoding: BufferEncoding): string;
   chmodSync(path: string, mode: number): void;
@@ -56,9 +87,15 @@ export interface RelaySecretFs {
  * the daemon path cannot mutate the filesystem even by accident (the type
  * forbids it).
  */
-export interface RelaySecretReadOnlyFs {
+export interface RelaySecretReadOnlyFs extends SecretFileStatFs {
   existsSync(path: string): boolean;
   readFileSync(path: string, encoding: BufferEncoding): string;
+}
+
+/** What {@link rotateRelaySecret} needs on top of {@link RelaySecretFs}. */
+export interface RelaySecretRotateFs extends RelaySecretFs {
+  renameSync(from: string, to: string): void;
+  unlinkSync(path: string): void;
 }
 
 export interface RelaySecretDeps {
@@ -66,7 +103,7 @@ export interface RelaySecretDeps {
    * Project root (typically Vite `server.config.root`). The `.ait_relay` file is
    * resolved against the nearest `package.json` directory at or above this path.
    * When omitted, the current working directory is used as the start point —
-   * retained for back-compat/tests; the unplugin always passes it.
+   * retained for back-compat/tests; callers normally pass it.
    */
   projectRoot?: string;
   /** Process environment to read from and inject into. Defaults to process.env. */
@@ -81,6 +118,8 @@ export interface RelaySecretDeps {
   cwd?: () => string;
   /** Log function for first-mint announcement. Defaults to process.stderr.write. */
   log?: (msg: string) => void;
+  /** Clock for the creation time written next to a new key. Defaults to Date.now. */
+  now?: () => number;
 }
 
 export interface RelaySecretReadOnlyDeps {
@@ -98,6 +137,65 @@ export interface RelaySecretReadOnlyDeps {
   existsSync?: (path: string) => boolean;
   /** Optional log sink — never receives the secret value, length, or file path. */
   log?: (msg: string) => void;
+  /** Clock for the key age. Defaults to Date.now. */
+  now?: () => number;
+  /**
+   * Receives the age of the key that was loaded (when it can be told). Called
+   * before an expired key is refused, so the caller can show why.
+   */
+  onKeyAge?: (age: RelayKeyAge) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Secret file vetting
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks the secret file before its content is trusted: a symlink or a file owned
+ * by another user is refused, and a file that group or others can read is
+ * tightened to 0600 with a warning. Skipped on Windows (no POSIX modes) and when
+ * the injected fs has no `lstatSync`.
+ *
+ * SECRET-HANDLING: the warnings name neither the path nor any value.
+ */
+export function vetSecretFile(
+  path: string,
+  fs: SecretFileStatFs,
+  logFn: (msg: string) => void,
+  platform: NodeJS.Platform = process.platform,
+  uid: number | undefined = process.getuid?.(),
+): 'ok' | 'refuse' {
+  if (platform === 'win32' || fs.lstatSync === undefined) return 'ok';
+  let st: { isSymbolicLink(): boolean; mode: number; uid: number };
+  try {
+    st = fs.lstatSync(path);
+  } catch {
+    return 'ok'; // missing or unreadable: the read that follows reports it
+  }
+  if (st.isSymbolicLink()) {
+    logFn('[@apps-in-toss/debugger] relay 시크릿 파일이 심볼릭 링크라서 사용하지 않습니다.\n');
+    return 'refuse';
+  }
+  if (uid !== undefined && st.uid !== uid) {
+    logFn(
+      '[@apps-in-toss/debugger] relay 시크릿 파일의 소유자가 현재 사용자가 아니라서 사용하지 않습니다.\n',
+    );
+    return 'refuse';
+  }
+  if ((st.mode & 0o077) !== 0) {
+    try {
+      fs.chmodSync?.(path, 0o600);
+      logFn(
+        '[@apps-in-toss/debugger] relay 시크릿 파일이 다른 사용자도 읽을 수 있어 권한을 0600으로 조였습니다.\n',
+      );
+    } catch {
+      logFn(
+        '[@apps-in-toss/debugger] relay 시크릿 파일 권한을 조이지 못했습니다. 0600으로 직접 바꾸세요.\n',
+      );
+      return 'refuse';
+    }
+  }
+  return 'ok';
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +207,7 @@ export interface RelaySecretReadOnlyDeps {
  * `package.json`. Falls back to `start` itself when none is found (so a write
  * still lands somewhere deterministic).
  *
- * The write (unplugin) and read (daemon) sides use the SAME anchor so a secret
+ * The write (relay-key) and read (daemon) sides use the SAME anchor so a secret
  * minted by `npm run dev` is found by the daemon: real mini-apps keep
  * `vite.config.ts` and `package.json` in the same directory, so
  * `server.config.root === package.json-dir`. In a monorepo subdir the anchor is
@@ -154,7 +252,7 @@ export function relaySecretFilePath(
 }
 
 // ---------------------------------------------------------------------------
-// WRITE path (unplugin only) — mint + persist
+// WRITE path (relay-key and project tooling) — mint + persist
 // ---------------------------------------------------------------------------
 
 /**
@@ -167,7 +265,7 @@ export function relaySecretFilePath(
  * `O_EXCL` (`flag: 'wx'`) so a concurrent process cannot be clobbered; on the
  * EEXIST race the winner's value is read instead.
  *
- * Called ONLY from the unplugin. The MCP daemon uses
+ * Called from `debugger relay-key` and project tooling, never from the daemon. The daemon uses
  * {@link loadRelaySecretReadOnly} (read-only) — it must never mint.
  *
  * @param deps - Optional dependency overrides for testing.
@@ -181,9 +279,11 @@ export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
     existsSync: existsSyncDep,
     cwd: cwdFn,
     log,
+    now,
   } = deps ?? {};
 
   const logFn: (msg: string) => void = log ?? ((msg: string) => process.stderr.write(msg));
+  const nowFn = now ?? Date.now;
 
   // Lazily import isValidRelayAuthSecret to avoid pulling in node:crypto at
   // module-load time (keeps the import side-effect free).
@@ -221,11 +321,105 @@ export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
 
   // 2. Persist file exists — read and inject (silent reload).
   if (fs.existsSync(secretPath)) {
-    return readAndInject(secretPath, fs, env, logFn, isValidRelayAuthSecret, rb);
+    return readAndInject(secretPath, fs, env, logFn, isValidRelayAuthSecret, rb, nowFn);
   }
 
   // 3. Mint a fresh secret.
-  return mintAndPersist(secretPath, fs, env, rb, logFn, isValidRelayAuthSecret);
+  return mintAndPersist(secretPath, fs, env, rb, logFn, isValidRelayAuthSecret, false, nowFn);
+}
+
+// ---------------------------------------------------------------------------
+// ROTATE path (relay-key --rotate) — replace the key on purpose
+// ---------------------------------------------------------------------------
+
+export interface RelaySecretRotateDeps extends Omit<RelaySecretDeps, 'fs'> {
+  fs?: RelaySecretRotateFs;
+}
+
+export interface RelaySecretRotation {
+  /** The new secret. In memory only: callers derive a public key from it and drop it. */
+  readonly secret: string;
+  /** The secret that was replaced, or `null` when there was none (or it was unusable). */
+  readonly previousSecret: string | null;
+  /**
+   * An exported `AIT_DEBUG_TOTP_SECRET` that differs from the new key is in the
+   * environment: the daemon prefers it over the file, so the rotation does not
+   * reach the daemon until it is removed.
+   */
+  readonly envOverride: boolean;
+}
+
+/**
+ * Replaces `<projectRoot>/.ait_relay` with a freshly minted secret (0600) and
+ * records its creation time. The new file is written to a temp file next to it
+ * and renamed over the old one, so the project always has a complete key; a
+ * failure leaves the old key in place. A key file that is a symlink or belongs
+ * to another user is refused, like everywhere else.
+ *
+ * Unlike {@link ensureRelaySecret} it ignores `AIT_DEBUG_TOTP_SECRET` when
+ * deciding what to do, and then sets it to the new value in `env` (the caller's
+ * private copy) so the public key can be derived from it.
+ *
+ * SECRET-HANDLING: the secrets are returned to the caller in memory and never
+ * logged, put in an error, or written anywhere but the key file.
+ */
+export async function rotateRelaySecret(
+  deps?: RelaySecretRotateDeps,
+): Promise<RelaySecretRotation> {
+  const {
+    projectRoot,
+    env = process.env,
+    randomBytes: randomBytesFn,
+    fs: fsDep,
+    existsSync: existsSyncDep,
+    cwd: cwdFn,
+    log,
+    now,
+  } = deps ?? {};
+  const logFn: (msg: string) => void = log ?? ((msg: string) => process.stderr.write(msg));
+  const nowFn = now ?? Date.now;
+  const { isValidRelayAuthSecret } = await import('./totp.js');
+  const rb: (n: number) => Buffer = randomBytesFn ?? (await import('node:crypto')).randomBytes;
+  const fs: RelaySecretRotateFs = fsDep ?? (await import('node:fs'));
+  const existsSyncFn: (path: string) => boolean = existsSyncDep ?? fs.existsSync;
+
+  const start = projectRoot ?? (cwdFn ?? (() => process.cwd()))();
+  const secretPath = relaySecretFilePath(start, existsSyncFn);
+
+  let previousSecret: string | null = null;
+  if (fs.existsSync(secretPath)) {
+    if (vetSecretFile(secretPath, fs, logFn) === 'refuse') {
+      throw new Error(
+        '[@apps-in-toss/debugger] relay 시크릿 파일을 사용할 수 없습니다. 심볼릭 링크이거나 다른 사용자 소유입니다. 파일을 지우고 다시 실행하세요.',
+      );
+    }
+    try {
+      const stored = fs.readFileSync(secretPath, 'utf8').trim();
+      if (isValidRelayAuthSecret(stored)) previousSecret = stored;
+    } catch {
+      // Unreadable: it is replaced anyway; there is just no previous key to name.
+    }
+  }
+
+  const secret = rb(32).toString('hex'); // 64 hex chars = 256 bits
+  if (!isValidRelayAuthSecret(secret)) {
+    throw new Error(
+      '[@apps-in-toss/debugger] 내부 오류: mint된 시크릿이 유효성 검사를 통과하지 못했습니다.',
+    );
+  }
+
+  writeFileAtomic(fs, secretPath, secret, rb(4).toString('hex'));
+  if (!writeKeyMeta(secretPath, secret, fs, nowFn, rb(4).toString('hex'))) {
+    logFn(
+      '[@apps-in-toss/debugger] 키 생성 시각을 기록하지 못했습니다. 이 키의 나이는 파일 수정 시각으로 계산합니다.\n',
+    );
+  }
+  ensureGitignoreEntries(dirname(secretPath), fs, logFn, SECRET_IGNORE_NAMES);
+
+  const exported = env.AIT_DEBUG_TOTP_SECRET;
+  const envOverride = isValidRelayAuthSecret(exported) && exported !== secret;
+  env.AIT_DEBUG_TOTP_SECRET = secret;
+  return { secret, previousSecret, envOverride };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +437,12 @@ export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
  * found the function leaves `env` untouched and returns without throwing, so the
  * downstream `assertRelayAuthConfigured()` stays the single fail-fast.
  *
+ * The one thing it does throw is {@link RelayKeyExpiredError}: a key older than
+ * the refuse limit (see relay-key-age.ts) is not loaded and the relay must not
+ * start under it. A key past the warn limit is loaded and logged about. The age
+ * is judged for a key that comes from the file and for an exported secret that
+ * is the same as the file's; an exported secret that differs has no known age.
+ *
  * Resolution order:
  *   1. `env.AIT_DEBUG_TOTP_SECRET` already valid → no-op (operator export wins).
  *   2. `projectRoot` given → read `<nearest package.json dir>/.ait_relay`; inject
@@ -255,13 +455,22 @@ export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
  * @param deps - Optional dependency overrides for testing.
  */
 export async function loadRelaySecretReadOnly(deps?: RelaySecretReadOnlyDeps): Promise<void> {
-  const { projectRoot, env = process.env, fs: fsDep, existsSync: existsSyncDep, log } = deps ?? {};
+  const {
+    projectRoot,
+    env = process.env,
+    fs: fsDep,
+    existsSync: existsSyncDep,
+    log,
+    now,
+    onKeyAge,
+  } = deps ?? {};
 
   const logFn: (msg: string) => void = log ?? ((msg: string) => process.stderr.write(msg));
+  const nowFn = now ?? Date.now;
 
   const { isValidRelayAuthSecret } = await import('./totp.js');
 
-  // 1. Already configured — no-op (operator export or unplugin run wins).
+  // 1. Already configured — no-op (operator export or an earlier run wins).
   //    But first check for a divergence between the env value and .ait_relay —
   //    if they differ the relay will verify against the env value while QR/
   //    deep-links carry codes derived from the file, causing silent 401s (#620).
@@ -276,6 +485,14 @@ export async function loadRelaySecretReadOnly(deps?: RelaySecretReadOnlyDeps): P
         fsEarly,
         isValidRelayAuthSecret,
         logFn,
+      );
+      applyKeyAgePolicy(
+        secretPathEarly,
+        fsEarly,
+        logFn,
+        nowFn,
+        onKeyAge,
+        (stored) => stored === env.AIT_DEBUG_TOTP_SECRET,
       );
     }
     return;
@@ -294,6 +511,8 @@ export async function loadRelaySecretReadOnly(deps?: RelaySecretReadOnlyDeps): P
     return;
   }
 
+  if (vetSecretFile(secretPath, fs, logFn) === 'refuse') return;
+
   let stored: string;
   try {
     stored = fs.readFileSync(secretPath, 'utf8').trim();
@@ -309,12 +528,101 @@ export async function loadRelaySecretReadOnly(deps?: RelaySecretReadOnlyDeps): P
     return;
   }
 
+  // An expired key throws here, before it reaches `env`.
+  judgeAndEnforceKeyAge(secretPath, stored, fs, logFn, nowFn, onKeyAge);
+
   env.AIT_DEBUG_TOTP_SECRET = stored;
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers (not exported — single-use extracted for readability)
 // ---------------------------------------------------------------------------
+
+/**
+ * Reads the date of the key in `secretPath` (the sidecar, else the file's
+ * modification time) and applies the age policy to `secret`: tells `onKeyAge`,
+ * logs a hint when the key is aging, and throws {@link RelayKeyExpiredError}
+ * when it is past the limit. An age that cannot be told is not a problem.
+ *
+ * SECRET-HANDLING: only the age and the policy text leave this function.
+ */
+function judgeAndEnforceKeyAge(
+  secretPath: string,
+  secret: string,
+  fs: RelaySecretReadOnlyFs,
+  logFn: (msg: string) => void,
+  nowFn: () => number,
+  onKeyAge: ((age: RelayKeyAge) => void) | undefined,
+): void {
+  const age = readRelayKeyAge(secretPath, secret, fs, nowFn);
+  if (age === null) return;
+  try {
+    onKeyAge?.(age);
+  } catch {
+    // Observability is best-effort.
+  }
+  if (age.status === 'aging') {
+    logFn(`[@apps-in-toss/debugger] ${relayKeyHint(age)}\n`);
+  } else if (age.status === 'expired') {
+    throw new RelayKeyExpiredError(age);
+  }
+}
+
+/**
+ * The age of `secret`, the key stored in `secretPath`: from the sidecar next to
+ * it when that is for this secret, else from the file's modification time, else
+ * unknown (`null`).
+ */
+export function readRelayKeyAge(
+  secretPath: string,
+  secret: string,
+  fs: RelaySecretReadOnlyFs,
+  nowFn: () => number = Date.now,
+): RelayKeyAge | null {
+  const metaPath = join(dirname(secretPath), RELAY_KEY_META_FILE_NAME);
+  let metaText: string | undefined;
+  try {
+    if (fs.existsSync(metaPath)) {
+      const text = fs.readFileSync(metaPath, 'utf8');
+      if (text.length <= 1024) metaText = text;
+    }
+  } catch {
+    // An unreadable sidecar counts as absent: the modification time answers.
+  }
+  let mtimeMs: number | undefined;
+  try {
+    mtimeMs = fs.lstatSync?.(secretPath).mtimeMs;
+  } catch {
+    // No modification time: the age stays unknown unless the sidecar has it.
+  }
+  return judgeRelayKeyAge({ secretHex: secret, metaText, mtimeMs, nowMs: nowFn() });
+}
+
+/**
+ * Age policy for an exported secret: applies only when the file next to the
+ * project holds the same secret, since that is the only case where its date
+ * is known.
+ */
+function applyKeyAgePolicy(
+  secretPath: string,
+  fs: RelaySecretReadOnlyFs,
+  logFn: (msg: string) => void,
+  nowFn: () => number,
+  onKeyAge: ((age: RelayKeyAge) => void) | undefined,
+  isSameSecret: (stored: string) => boolean,
+): void {
+  if (!fs.existsSync(secretPath)) return;
+  // The comparison above already reported a refused file; stay quiet here.
+  if (vetSecretFile(secretPath, fs, () => {}) === 'refuse') return;
+  let stored: string;
+  try {
+    stored = fs.readFileSync(secretPath, 'utf8').trim();
+  } catch {
+    return;
+  }
+  if (!isSameSecret(stored)) return;
+  judgeAndEnforceKeyAge(secretPath, stored, fs, logFn, nowFn, onKeyAge);
+}
 
 /**
  * Compares `envSecret` against the contents of `secretPath` (if the file
@@ -351,6 +659,8 @@ function warnIfEnvDiffersFromFile(
   if (!fsDep.existsSync(secretPath)) {
     return;
   }
+
+  if (vetSecretFile(secretPath, fsDep, logFn) === 'refuse') return;
 
   let stored: string;
   try {
@@ -416,10 +726,9 @@ function ensureGitignoreEntries(
   secretDir: string,
   fsDep: RelaySecretFs,
   _logFn: (msg: string) => void,
+  names: readonly string[] = [RELAY_SECRET_FILE_NAME],
 ): GitignoreResult {
   const gi = join(secretDir, '.gitignore');
-
-  const names = [RELAY_SECRET_FILE_NAME];
 
   let existing = '';
   if (fsDep.existsSync(gi)) {
@@ -432,7 +741,10 @@ function ensureGitignoreEntries(
   }
 
   const presentLines = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
-  const missing = names.filter((n) => !presentLines.has(n));
+  // `/name` and `**/name` ignore the same file as `name`, so they count as present.
+  const missing = names.filter(
+    (n) => !(presentLines.has(n) || presentLines.has(`/${n}`) || presentLines.has(`**/${n}`)),
+  );
 
   if (missing.length === 0) {
     // Pure no-op: all entries already present (sdk-example case).
@@ -451,6 +763,57 @@ function ensureGitignoreEntries(
   }
 }
 
+/** What a project ignores for the relay key: the secret and its dated sidecar. */
+const SECRET_IGNORE_NAMES = [RELAY_SECRET_FILE_NAME, RELAY_KEY_META_FILE_NAME] as const;
+
+type AtomicFs = RelaySecretFs & Partial<Pick<RelaySecretRotateFs, 'renameSync' | 'unlinkSync'>>;
+
+/**
+ * Writes `data` to `path` (mode 0600) so that a reader sees the old file or the
+ * new one and never half of it, and so that a link planted at `path` is replaced
+ * instead of written through: the data goes to a new exclusive temp file in the
+ * same directory, which is then renamed over `path`. Without `renameSync` (an
+ * injected fs) it falls back to a plain write.
+ */
+function writeFileAtomic(fs: AtomicFs, path: string, data: string, tag: string): void {
+  if (fs.renameSync === undefined) {
+    fs.writeFileSync(path, data, { mode: 0o600, flag: 'w' });
+    fs.chmodSync(path, 0o600);
+    return;
+  }
+  const tmp = `${path}.${process.pid}.${tag}.tmp`;
+  try {
+    fs.writeFileSync(tmp, data, { mode: 0o600, flag: 'wx' });
+    // Belt-and-suspenders: apply chmod in case umask relaxed the mode.
+    fs.chmodSync(tmp, 0o600);
+    fs.renameSync(tmp, path);
+  } catch (err) {
+    try {
+      fs.unlinkSync?.(tmp);
+    } catch {
+      // Nothing to clean up, or nothing we can do about it.
+    }
+    throw err;
+  }
+}
+
+/** Writes the creation-time sidecar (0600). Never throws. */
+function writeKeyMeta(
+  secretPath: string,
+  secret: string,
+  fs: AtomicFs,
+  nowFn: () => number,
+  tag: string,
+): boolean {
+  try {
+    const metaPath = join(dirname(secretPath), RELAY_KEY_META_FILE_NAME);
+    writeFileAtomic(fs, metaPath, serializeRelayKeyMeta(secret, nowFn()), tag);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function readAndInject(
   secretPath: string,
   fs: RelaySecretFs,
@@ -458,7 +821,14 @@ async function readAndInject(
   logFn: (msg: string) => void,
   isValidRelayAuthSecret: (s: string | undefined) => s is string,
   rb: (n: number) => Buffer,
+  nowFn: () => number,
 ): Promise<void> {
+  if (vetSecretFile(secretPath, fs, logFn) === 'refuse') {
+    throw new Error(
+      '[@apps-in-toss/debugger] relay 시크릿 파일을 사용할 수 없습니다. 심볼릭 링크이거나 다른 사용자 소유입니다. 파일을 지우고 다시 실행하세요.',
+    );
+  }
+
   let stored: string;
   try {
     stored = fs.readFileSync(secretPath, 'utf8').trim();
@@ -470,7 +840,7 @@ async function readAndInject(
   if (!isValidRelayAuthSecret(stored)) {
     // Stored value is corrupt — re-mint over the same path.
     logFn('[@apps-in-toss/debugger] relay 시크릿 파일의 값이 유효하지 않습니다. 재생성합니다.\n');
-    return mintAndPersist(secretPath, fs, env, rb, logFn, isValidRelayAuthSecret, true);
+    return mintAndPersist(secretPath, fs, env, rb, logFn, isValidRelayAuthSecret, true, nowFn);
   }
 
   // Inject into env — silent path (no log on successful reload).
@@ -491,6 +861,7 @@ async function mintAndPersist(
   isValidRelayAuthSecret: (s: string | undefined) => s is string,
   /** When re-minting over a corrupt file, the existing file must be overwritten. */
   overwrite = false,
+  nowFn: () => number = Date.now,
 ): Promise<void> {
   // SECRET-HANDLING: the raw bytes are never written to any log or string other
   // than the persist file and the env variable.
@@ -515,6 +886,11 @@ async function mintAndPersist(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
       // Race: another process already wrote the file — read their value.
+      if (vetSecretFile(secretPath, fs, logFn) === 'refuse') {
+        throw new Error(
+          '[@apps-in-toss/debugger] relay 시크릿 파일을 사용할 수 없습니다. 심볼릭 링크이거나 다른 사용자 소유입니다.',
+        );
+      }
       let stored: string;
       try {
         stored = fs.readFileSync(secretPath, 'utf8').trim();
@@ -537,10 +913,14 @@ async function mintAndPersist(
   // assertRelayAuthConfigured() / buildRelayVerifyAuth() calls see the value.
   env.AIT_DEBUG_TOTP_SECRET = secret;
 
+  // Record when this key was created, next to it (best effort: without the
+  // sidecar the file's modification time stands in).
+  writeKeyMeta(secretPath, secret, fs, nowFn, rb(4).toString('hex'));
+
   // Idempotently inject the .gitignore entry for the secret file (#669).
   // Fold the result into the single first-mint announcement below so
   // logs.length === 1 is preserved (SECRET-HANDLING: no path/value surfaced).
-  const giResult = ensureGitignoreEntries(dirname(secretPath), fs, logFn);
+  const giResult = ensureGitignoreEntries(dirname(secretPath), fs, logFn, SECRET_IGNORE_NAMES);
 
   // First-mint announcement (value never included — SECRET-HANDLING). The file
   // name is fixed (`.ait_relay`); we do not echo the resolved directory either.
@@ -548,13 +928,13 @@ async function mintAndPersist(
   const giLine = giResult.injected
     ? `프로젝트의 .gitignore에 .ait_relay 무시 규칙을 추가했습니다.\n`
     : giResult.failed
-      ? `.gitignore 자동 갱신에 실패했습니다 — .ait_relay 를 직접 추가하거나 비공개 repo를 권장합니다.\n`
+      ? `.gitignore 자동 갱신에 실패했습니다 — .ait_relay 를 .gitignore에 직접 추가하고 커밋하지 마세요.\n`
       : '';
 
   logFn(
     `[@apps-in-toss/debugger] relay 인증 시크릿을 생성해 프로젝트의 ${RELAY_SECRET_FILE_NAME} 파일에 저장했습니다 (권한 0600).\n` +
       `다음 실행부터 자동으로 사용됩니다. 직접 export할 필요 없습니다.\n` +
-      `팀이 같은 relay를 공유하려면 이 파일을 repo에 커밋하세요(비공개 repo 권장).\n` +
+      `이 파일은 커밋하거나 공유하지 마세요. 팀원마다 자기 PC에서 따로 생성됩니다.\n` +
       (giLine ? giLine : '') +
       `자세히: docs MCP(apps-in-toss-docs)의 searchDocumentation으로 "relay auth totp" 조회.\n`,
   );

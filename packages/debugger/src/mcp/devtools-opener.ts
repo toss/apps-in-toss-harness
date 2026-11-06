@@ -34,8 +34,8 @@
  *
  * TOTP expiry caveat:
  *   The `at=` TOTP code embedded in the `wss=` parameter is minted fresh at the
- *   moment `open()` is called. The code is valid for ~3 minutes (the relay gate
- *   accepts ±RELAY_VERIFY_SKEW_STEPS=6 steps = 180–210 s). If the developer
+ *   moment `open()` is called. The code is valid for 30–35 s (the relay gate
+ *   accepts RELAY_VERIFY_SKEW_STEPS=3 steps back). If the developer
  *   does not open the URL within that window the WebSocket upgrade will be
  *   rejected with 4401. In practice the browser opens immediately after the OS
  *   `open` command; if needed the developer can copy the wss= param, replace
@@ -51,6 +51,7 @@
  * Node-only: uses `child_process.spawnSync` to invoke the OS open command.
  */
 
+import { childProcessEnv } from './child-env.js';
 import type { McpEnvironment } from './environment.js';
 
 // ---------------------------------------------------------------------------
@@ -68,8 +69,7 @@ import type { McpEnvironment } from './environment.js';
  * by Chii's own target list page (derived from `chii/public/index.js`).
  *
  * The `at=` TOTP code is minted at call time via `mintTotp()`.  It is valid
- * for ~3 minutes (relay gate accepts ±RELAY_VERIFY_SKEW_STEPS=6 steps =
- * 180–210 s).  The developer must open the returned URL within that window.
+ * for 30–35 s (relay gate accepts RELAY_VERIFY_SKEW_STEPS=6 steps back).  The developer must open the returned URL within that window.
  * If the window expires before the browser connects, the relay will reject the
  * WebSocket upgrade with close code 4401.
  *
@@ -90,7 +90,7 @@ import type { McpEnvironment } from './environment.js';
  * @param relayHttpBaseUrl - Local HTTP base URL of the Chii relay, e.g.
  *   `http://127.0.0.1:9100`. No trailing slash.
  * @param targetId - Chii target id (from `GET <relay>/targets`).
- * @param mintTotp - Function that returns a fresh 6-digit TOTP code string.
+ * @param mintTotp - Function that returns a fresh relay auth code (32 hex characters).
  *   Called at most once. **Required** — when `undefined`, the function returns
  *   `null` (fail-closed: no `at=` param means the relay WS gate rejects the
  *   handshake, so a null result is safer than a URL that always 404s).
@@ -209,7 +209,11 @@ export function openUrlInBrowser(url: string): boolean {
 
   for (const { cmd, args } of candidates) {
     try {
-      const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: 5_000 });
+      const result = spawnSync(cmd, args, {
+        encoding: 'utf8',
+        timeout: 5_000,
+        env: childProcessEnv(),
+      });
       if (!result.error && result.status === 0) return true;
     } catch {
       // Try next candidate.
@@ -242,6 +246,11 @@ export interface DevtoolsOpenOptions {
    */
   inspectorStableUrl?: string | null;
   /**
+   * `inspectorStableUrl`에 대시보드 접근 토큰을 붙인 URL. 브라우저 실행에만 쓰고 stderr에는
+   * 쓰지 않는다. 없으면 `inspectorStableUrl`을 그대로 연다.
+   */
+  inspectorOpenUrl?: string | null;
+  /**
    * Local HTTP base URL of the Chii relay, e.g. `http://127.0.0.1:9100`.
    * Used to build the `<relay-base>/front_end/chii_app.html?wss=…` URL when
    * `inspectorStableUrl` is not available.
@@ -266,7 +275,7 @@ export interface DevtoolsOpenOptions {
    *
    * Pass `undefined` when TOTP is disabled (no `at=` param is added).
    *
-   * SECRET-HANDLING: the function MUST return only the code (6 digits), not
+   * SECRET-HANDLING: the function MUST return only the code (32 hex characters), not
    * the secret. The code rides in the URL's `at=` param only.
    */
   mintTotp?: () => string;
@@ -294,6 +303,9 @@ export class AutoDevtoolsOpener {
   /** Per-target de-dupe set (issue #530 — target-unit guard replaces once-per-daemon). */
   private readonly _openedTargets = new Set<string>();
 
+  /** @param launch 브라우저를 띄우는 함수. 테스트에서 실행된 URL을 확인하려고 바꿀 수 있다. */
+  constructor(private readonly launch: (url: string) => boolean = openUrlInBrowser) {}
+
   /**
    * Attempts to auto-open Chii DevTools in the developer's browser.
    *
@@ -309,15 +321,16 @@ export class AutoDevtoolsOpener {
    *
    * When `inspectorStableUrl` is provided (issue #530 stable URL): opens
    * `http://127.0.0.1:<port>/inspector` directly and writes it to stderr.
-   * The URL contains no tunnel host or TOTP code — safe to log anywhere.
+   * The URL contains no tunnel host, TOTP code or dashboard access token — safe to log.
    *
    * Legacy path (no `inspectorStableUrl`): builds a direct
    * `<relay-base>/front_end/chii_app.html?wss=…` URL from `relayHttpBaseUrl`
-   * + `mintTotp`, writes to stderr. TOTP expiry caveat applies (~3 min window).
+   * + `mintTotp`, writes to stderr. TOTP expiry caveat applies (30–35 s window).
    *
    * SECRET-HANDLING: direct inspector URL (written to stderr) may contain relay
-   * host and TOTP code. Stable URL is secret-free. Neither must go to stdout or
-   * persistent logs.
+   * host and TOTP code. The stable URL has no relay secret and no dashboard
+   * access token; the tokened `inspectorOpenUrl` goes only to the browser launch
+   * and is never written to stderr. Neither must go to stdout or persistent logs.
    */
   open(options: DevtoolsOpenOptions): void {
     if (isAutoDevtoolsDisabled()) return;
@@ -328,7 +341,7 @@ export class AutoDevtoolsOpener {
     const targetId = options.targetId;
     if (this._openedTargets.has(targetId)) return;
 
-    // Use stable /inspector URL when available (issue #530) — secret-free, no expiry.
+    // Use stable /inspector URL when available (issue #530) — no relay secret, no expiry.
     if (options.inspectorStableUrl) {
       this._openedTargets.add(targetId);
       const stableUrl = options.inspectorStableUrl;
@@ -337,7 +350,8 @@ export class AutoDevtoolsOpener {
           `[ait-debug] QR 페이지 또는 대시보드(${stableUrl.replace('/inspector', '')})의 "디버그 툴 열기" 버튼을 눌러 DevTools를 여세요.\n` +
           '[ait-debug] (AIT_AUTO_DEVTOOLS=1 로 설정하면 연결 시 자동으로 열립니다)\n',
       );
-      const opened = openUrlInBrowser(stableUrl);
+      // 접근 토큰이 붙은 URL은 브라우저 실행에만 쓰고 stderr에는 토큰 없는 URL만 쓴다.
+      const opened = this.launch(options.inspectorOpenUrl ?? stableUrl);
       if (!opened) {
         process.stderr.write(
           `[ait-debug] 브라우저 자동 열기 실패 — ${stableUrl} 을 브라우저에서 직접 여세요.\n`,
@@ -368,17 +382,18 @@ export class AutoDevtoolsOpener {
       return;
     }
 
+    // SECRET-HANDLING: inspectorUrl carries a live at= code and the chii target id.
+    // It goes to the browser launcher only; stderr (terminal scrollback, CI logs)
+    // gets a line without either.
     process.stderr.write(
-      '[ait-debug] 기기가 연결됐습니다.\n' +
-        `[ait-debug] DevTools URL: ${inspectorUrl}\n` +
-        '[ait-debug] (AIT_AUTO_DEVTOOLS=1 로 설정하면 연결 시 자동으로 열립니다)\n' +
-        '[ait-debug] 주의: URL의 at= 코드는 ~3분 안에서만 유효합니다.\n',
+      '[ait-debug] 기기가 연결됐습니다. DevTools 인스펙터를 엽니다.\n' +
+        '[ait-debug] (AIT_AUTO_DEVTOOLS=1 로 설정하면 연결 시 자동으로 열립니다)\n',
     );
 
-    const opened = openUrlInBrowser(inspectorUrl);
+    const opened = this.launch(inspectorUrl);
     if (!opened) {
       process.stderr.write(
-        '[ait-debug] 브라우저 자동 열기 실패 — 위 URL을 브라우저에서 직접 여세요.\n',
+        '[ait-debug] 브라우저 자동 열기 실패 — 대시보드의 "디버그 툴 열기" 버튼으로 DevTools를 여세요.\n',
       );
     }
   }

@@ -5,7 +5,7 @@
  * `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` as a top-level side effect
  * merely by being `require`d (node_modules/chii/server/lib/proxy.js:3, chii
  * ^1.15.5 per package.json). This disables outbound TLS certificate
- * verification for the ENTIRE process, not just chii's own `/proxy` route —
+ * verification for the ENTIRE process, not just chii's own proxy code —
  * every other outbound HTTPS call this daemon makes (most notably the
  * cloudflared tunnel health probe in `debug-server.ts`'s
  * `startTunnelHealthProbe`) is silently downgraded too. Recorded in issue #1
@@ -16,7 +16,7 @@
  * requires `../lib/proxy` — so the side effect fires synchronously the
  * moment `loadChiiServer()` (chii-relay.ts) calls `require('chii')`, well
  * before `chii.start()` is ever invoked. A future chii release could make
- * that require lazy (e.g. only on the first `/proxy` request); this guard
+ * that require lazy (e.g. only on the first proxy request); this guard
  * does not rely on chii's current eagerness — it force-loads
  * `chii/server/lib/proxy` itself right after boot so the side effect is
  * triggered at a known, deterministic point instead of lurking until some
@@ -88,7 +88,7 @@ export function restoreTlsRejectUnauthorized(snapshot: TlsRejectUnauthorizedSnap
     // module (current chii 1.15.x behavior — eager via server/index.js ->
     // middle/router.js -> lib/proxy.js), this is a harmless cache hit that
     // re-triggers nothing new. If a future chii release makes the require
-    // lazy (only on first `/proxy` request), this call triggers the side
+    // lazy (only on first proxy request), this call triggers the side
     // effect early, at a point we control, instead of it lurking until an
     // arbitrary later request.
     require('chii/server/lib/proxy');

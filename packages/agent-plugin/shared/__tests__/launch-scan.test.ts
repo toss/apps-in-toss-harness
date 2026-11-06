@@ -19,7 +19,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// 스캔마다 bash 와 grep 을 여러 번 띄운다. 패키지를 동시에 돌리면 기본 5초를 넘긴 적이 있다.
+vi.setConfig({ testTimeout: 30_000 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(__dirname, '../skills/launch/scripts/launch-scan.sh');
@@ -187,7 +190,7 @@ describe('launch-scan.sh', () => {
       '[client-ai-key] src/lib/summary.ts:3',
     ]);
     expect(summary(out)).toBe(
-      'launch-scan:viewport-zoom=1 dark-theme=1 cors-any-origin=2 client-ai-key=5 total=9',
+      'launch-scan:viewport-zoom=1 dark-theme=1 cors-any-origin=2 client-ai-key=5 debug-console-bundle=0 debug-artifact=0 total=9',
     );
 
     // 설명에는 변수 이름·호스트·접두사 라벨만 실린다
@@ -228,8 +231,16 @@ describe('launch-scan.sh', () => {
     const out = scan(dir);
 
     expect(candidates(out)).toEqual([]);
-    expect(out).toBe(
-      'launch-scan:viewport-zoom=0 dark-theme=0 cors-any-origin=0 client-ai-key=0 total=0\n',
+    const rows = out.trimEnd().split('\n');
+    expect(rows).toHaveLength(3);
+    // 본 범위를 먼저 밝히고, 0건이 통과가 아니라는 말을 붙인다
+    expect(rows[0]).toMatch(
+      /^launch-scan:scope 코드·스타일 파일 4개, .*\[src\].*빌드 산출물 디렉터리 \[없음\]/,
+    );
+    expect(rows[1]).toMatch(/^launch-scan:clean 후보 0건이다\..*통과했다는 뜻이 아니다/);
+    expect(rows[1]).toContain('"후보 없음');
+    expect(rows[2]).toBe(
+      'launch-scan:viewport-zoom=0 dark-theme=0 cors-any-origin=0 client-ai-key=0 debug-console-bundle=0 debug-artifact=0 total=0',
     );
   });
 
@@ -242,14 +253,12 @@ describe('launch-scan.sh', () => {
     const excluded = [
       'node_modules',
       '.git',
-      'build',
       '.wrangler',
       '.next',
       '.turbo',
       '.vercel',
       '.output',
       'coverage',
-      'out',
       '.cache',
     ];
     const files: Record<string, string> = {
@@ -273,7 +282,7 @@ describe('launch-scan.sh', () => {
 
     expect(candidates(out)).toEqual([]);
     expect(summary(out)).toBe(
-      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=0 client-ai-key=0 total=0',
+      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=0 client-ai-key=0 debug-console-bundle=0 debug-artifact=0 total=0',
     );
     expect(out).not.toContain('node_modules');
   });
@@ -290,7 +299,7 @@ describe('launch-scan.sh', () => {
 
     expect(heads(out)).toEqual(['[cors-any-origin] server/app.ts:1']);
     expect(summary(out)).toBe(
-      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=1 client-ai-key=0 total=1',
+      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=1 client-ai-key=0 debug-console-bundle=0 debug-artifact=0 total=1',
     );
   });
 
@@ -566,5 +575,335 @@ describe('launch-scan.sh', () => {
     expect(out).not.toContain('a'.repeat(24));
     expect(out).not.toContain('B'.repeat(34));
     expect(out).not.toContain('Q'.repeat(6));
+  });
+  it('후보가 있으면 clean 줄 없이 scope 줄만 붙고 마지막 줄은 요약이다', () => {
+    const out = scan(mkFixture({ 'server/app.ts': L('app.use(cors());') }));
+    expect(out).toContain('launch-scan:scope ');
+    expect(out).not.toContain('launch-scan:clean');
+    expect(summary(out)).toMatch(/^launch-scan:viewport-zoom=/);
+  });
+
+  it('깊은 build/·out/ 디렉터리는 소스로 보고 스캔하고, 최상위 build/ 는 산출물이라 뺀다', () => {
+    const dir = mkFixture({
+      // 깊은 build/ 는 소스일 수 있다 — 규칙 2·3·4 모두 본다
+      'src/features/build/theme.css': L('@media (prefers-color-scheme: dark) {}'),
+      'server/tools/build/app.ts': L('app.use(cors());'),
+      'src/features/build/client.ts': L('const e = import.meta.env.VITE_OPENAI_API_KEY;'),
+      // 최상위 build/ 는 규칙 2·3 에서 뺀다(산출물)
+      'build/static/css/main.css': L('@media (prefers-color-scheme: dark) {}'),
+      'build/server.js': L('app.use(cors());'),
+    });
+    expect(heads(scan(dir))).toEqual([
+      '[dark-theme] src/features/build/theme.css:1',
+      '[cors-any-origin] server/tools/build/app.ts:1',
+      '[client-ai-key] src/features/build/client.ts:1',
+    ]);
+  });
+
+  it('키 형태 문자열: 빌드 산출물 디렉터리(최상위 build/·깊은 build/·out/·모노레포 dist/)를 깊이 상관없이 본다', () => {
+    const orKey = `sk-or-v1-${'c'.repeat(32)}`;
+    const dir = mkFixture({
+      'build/static/js/chunks/deep/main.js': L(`var k="${FAKE_SK}";`),
+      'packages/app/build/main.js': L(`var k="${orKey}";`),
+      'apps/web/dist/assets/x.js': L(`var k="${FAKE_AIZA}";`),
+      'out/_next/static/y.js': L(`var k="${FAKE_SK}";`),
+      // 산출물이 아닌 곳, 확장자 밖은 안 본다
+      'server/keys.js': L(`var k="${FAKE_SK}";`),
+      'build/static/js/main.js.map': L(`{"k":"${FAKE_SK}"}`),
+    });
+    const out = scan(dir);
+    expect(heads(out)).toEqual([
+      '[client-ai-key] apps/web/dist/assets/x.js:1',
+      '[client-ai-key] build/static/js/chunks/deep/main.js:1',
+      '[client-ai-key] out/_next/static/y.js:1',
+      '[client-ai-key] packages/app/build/main.js:1',
+    ]);
+    expect(lineAt(out, 'packages/app/build/main.js:1')).toContain('(sk-…)');
+    expect(out).toMatch(/빌드 산출물 디렉터리 \[.*build.*\]/);
+    for (const secret of [orKey, 'c'.repeat(32), 'a'.repeat(24), 'B'.repeat(35)]) {
+      expect(out).not.toContain(secret);
+    }
+  });
+
+  it('OpenRouter 형태(sk-or-v1-…)는 잡고, 짧거나 접두사 앞이 영숫자면 거른다', () => {
+    const body = 'd'.repeat(40);
+    const dir = mkFixture({
+      'src/or.ts': L(
+        `const a = "sk-or-v1-${body}";`, // 1 잡음
+        `const b = "sk-or-v1-${'d'.repeat(8)}";`, // 2 안 잡음 (20자 미만)
+        `const c = "task-or-v1-${body}";`, // 3 안 잡음 (sk- 앞이 영숫자)
+        `const d = "sk-or-v2-${body}";`, // 4 안 잡음 (v1 아님)
+      ),
+    });
+    const out = scan(dir);
+    expect(heads(out)).toEqual(['[client-ai-key] src/or.ts:1']);
+    expect(out).not.toContain(body);
+  });
+
+  it('VITE_*_SECRET*: 클라이언트 접두사 변수에 SECRET·PRIVATE 가 들면 잡고, 서버 변수나 비밀이 아닌 이름은 거른다', () => {
+    const secretVal = `sv-${'z'.repeat(14)}`;
+    const dir = mkFixture({
+      'src/cfg.ts': L(
+        'const a = import.meta.env.VITE_PAYMENT_SECRET;', // 1 잡음
+        'const b = process.env.NEXT_PUBLIC_API_SECRET_KEY;', // 2 잡음
+        'const c = import.meta.env.VITE_APP_TITLE;', // 3 안 잡음
+        'const d = process.env.JWT_SECRET;', // 4 안 잡음 (클라이언트 접두사 없음)
+        'const e = import.meta.env.VITE_SECRETARY_NAME;', // 5 잡음 (이름에 SECRET 이 든다 — 후보로 올린다)
+        'const f = import.meta.env.VITE_OPENAI_API_KEY;', // 6 AI 키 규칙(기존 설명)
+      ),
+      '.env': L(
+        `VITE_STRIPE_SECRET=${secretVal}`, // 1 잡음
+        `EXPO_PUBLIC_PRIVATE_KEY=${secretVal}`, // 2 잡음
+        `DATABASE_SECRET=${secretVal}`, // 3 안 잡음
+        'VITE_API_BASE_URL=https://example.com', // 4 안 잡음
+      ),
+    });
+    const out = scan(dir);
+    expect(heads(out)).toEqual([
+      '[client-ai-key] .env:1',
+      '[client-ai-key] .env:2',
+      '[client-ai-key] src/cfg.ts:1',
+      '[client-ai-key] src/cfg.ts:2',
+      '[client-ai-key] src/cfg.ts:5',
+      '[client-ai-key] src/cfg.ts:6',
+    ]);
+    expect(lineAt(out, 'src/cfg.ts:1')).toContain('(VITE_PAYMENT_SECRET)');
+    expect(lineAt(out, '.env:1')).toContain('시크릿 이름 변수(VITE_STRIPE_SECRET)');
+    expect(lineAt(out, 'src/cfg.ts:6')).toContain('AI 키 환경변수');
+    expect(out).not.toContain(secretVal);
+  });
+
+  it('반사형 CORS: 요청 Origin 을 그대로 돌려주는 형태는 잡고, 고정 origin·허용 목록 문자열은 거른다', () => {
+    const dir = mkFixture({
+      'server/reflect.ts': L(
+        "res.setHeader('Access-Control-Allow-Origin', req.headers.origin);", // 1 잡음
+        'res.headers.set("Access-Control-Allow-Origin", origin);', // 2 잡음
+        "c.header('Access-Control-Allow-Origin', c.req.header('Origin') ?? '');", // 3 잡음
+        "const h = { 'Access-Control-Allow-Origin': request.headers.get('Origin') };", // 4 잡음
+        'app.use(cors({ origin: req.headers.origin }));', // 5 잡음
+        'app.use(cors({ origin: (origin, cb) => cb(null, true) }));', // 6 잡음
+        "res.setHeader('Access-Control-Allow-Origin', 'https://example.com');", // 7 안 잡음
+        "res.setHeader('Access-Control-Allow-Methods', 'GET, POST');", // 8 안 잡음
+        "app.use(cors({ origin: 'https://example.com' }));", // 9 안 잡음
+        "res.setHeader('Vary', 'Origin');", // 10 안 잡음
+      ),
+      'api/reflect.py': L(
+        'app.add_middleware(CORSMiddleware, allow_origin_regex=".*")', // 1 잡음
+        'app.add_middleware(CORSMiddleware, allow_origin_regex="https://.*[.]example[.]com")', // 2 안 잡음
+      ),
+    });
+    expect(heads(scan(dir))).toEqual([
+      '[cors-any-origin] api/reflect.py:1',
+      '[cors-any-origin] server/reflect.ts:1',
+      '[cors-any-origin] server/reflect.ts:2',
+      '[cors-any-origin] server/reflect.ts:3',
+      '[cors-any-origin] server/reflect.ts:4',
+      '[cors-any-origin] server/reflect.ts:5',
+      '[cors-any-origin] server/reflect.ts:6',
+    ]);
+  });
+
+  it('루트 파일(vite.config.ts 등)의 CORS·다크 모드도 본다', () => {
+    const dir = mkFixture({
+      'server.js': L('app.use(cors());'),
+      'theme.css': L('@media (prefers-color-scheme: dark) {}'),
+    });
+    expect(heads(scan(dir))).toEqual(['[dark-theme] theme.css:1', '[cors-any-origin] server.js:1']);
+  });
+
+  describe('debug-console-bundle', () => {
+    const PKG = '@apps-in-toss/debug-console';
+    const DC_URL = 'https://example.invalid/debug-console.tgz';
+
+    it('dependencies 항목은 후보이고 devDependencies 항목은 후보가 아니다', () => {
+      const bad = mkFixture({
+        'package.json': L(
+          '{',
+          '  "name": "app",',
+          '  "dependencies": {',
+          '    "react": "^18.0.0",',
+          `    "${PKG}": "${DC_URL}"`,
+          '  }',
+          '}',
+        ),
+      });
+      expect(heads(scan(bad))).toEqual(['[debug-console-bundle] package.json:5']);
+      expect(summary(scan(bad))).toContain('debug-console-bundle=1 debug-artifact=0 total=1');
+
+      const good = mkFixture({
+        'package.json': L(
+          '{',
+          '  "dependencies": {',
+          '    "react": "^18.0.0"',
+          '  },',
+          '  "devDependencies": {',
+          `    "${PKG}": "${DC_URL}"`,
+          '  }',
+          '}',
+        ),
+      });
+      expect(heads(scan(good))).toEqual([]);
+      expect(summary(scan(good))).toContain('debug-console-bundle=0 debug-artifact=0 total=0');
+    });
+
+    it('게이트 없는 import(/auto 포함)는 후보이고 __DEBUG_BUILD__ 게이트 안의 import는 아니다', () => {
+      const bad = mkFixture({
+        'src/main.ts': L("import '@apps-in-toss/debug-console/auto';", 'start();'),
+        'src/other.ts': L("import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());"),
+      });
+      expect(heads(scan(bad))).toEqual([
+        '[debug-console-bundle] src/main.ts:1',
+        '[debug-console-bundle] src/other.ts:1',
+      ]);
+
+      const good = mkFixture({
+        'src/main.ts': L(
+          'declare const __DEBUG_BUILD__: boolean;',
+          '',
+          'if (__DEBUG_BUILD__) {',
+          "  import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());",
+          '}',
+        ),
+      });
+      expect(heads(scan(good))).toEqual([]);
+    });
+
+    it('게이트 없는 startDebugConsole·maybeAttach 연결은 후보이고, 게이트가 4줄 넘게 떨어져 있으면 게이트로 치지 않는다', () => {
+      const bad = mkFixture({
+        'src/a.ts': L(
+          "import { startDebugConsole } from '@apps-in-toss/debug-console';",
+          'startDebugConsole({});',
+        ),
+        'src/b.ts': L("const m = await import('@apps-in-toss/debug-console/auto');"),
+        'src/c.ts': L(
+          "import { maybeAttach } from '@apps-in-toss/debug-console';",
+          'maybeAttach(result);',
+        ),
+        'src/d.ts': L(
+          '// __DEBUG_BUILD__',
+          '',
+          '',
+          '',
+          "import('@apps-in-toss/debug-console').then((m) => m.startDebugConsole({}));",
+        ),
+      });
+      expect(heads(scan(bad))).toEqual([
+        '[debug-console-bundle] src/a.ts:1',
+        '[debug-console-bundle] src/b.ts:1',
+        '[debug-console-bundle] src/c.ts:1',
+        '[debug-console-bundle] src/d.ts:5',
+      ]);
+
+      const good = mkFixture({
+        'src/a.ts': L(
+          'if (__DEBUG_BUILD__) {',
+          "  import('@apps-in-toss/debug-console').then((m) => m.startDebugConsole({}));",
+          '}',
+        ),
+        'src/b.ts': L(
+          'if (__DEBUG_BUILD__) {',
+          "  void import('@apps-in-toss/debug-console/auto');",
+          '}',
+        ),
+      });
+      expect(heads(scan(good))).toEqual([]);
+    });
+  });
+
+  describe('debug-artifact (차단)', () => {
+    const blocking = (out: string): string[] =>
+      out.split('\n').filter((l) => l.startsWith('launch-scan:blocking'));
+
+    it('산출물 JS 에 디버그 마커가 하나라도 있으면 차단 줄과 함께 잡는다', () => {
+      for (const marker of [
+        '__ait_status_banner',
+        '__ait_debug_status',
+        'ait-attach',
+        'relayPublicKeys',
+        'startDebugConsole',
+      ]) {
+        const bad = mkFixture({ 'dist/assets/index.js': L('var x=1;', `var a="${marker}";`) });
+        const out = scan(bad);
+        expect(heads(out), marker).toEqual(['[debug-artifact] dist/assets/index.js:2']);
+        expect(lineAt(out, 'dist/assets/index.js:2')).toContain(`(${marker})`);
+        expect(lineAt(out, 'dist/assets/index.js:2')).toContain('[차단]');
+        expect(blocking(out)).toHaveLength(1);
+        expect(summary(out)).toContain('debug-artifact=1 total=1');
+      }
+    });
+
+    it('마커 이름을 함께 찍고 값은 찍지 않으며 마커가 없으면 조용하다', () => {
+      const bad = mkFixture({
+        'build/app.js': L('var a="ait-attach";'),
+      });
+      expect(heads(scan(bad))).toEqual(['[debug-artifact] build/app.js:1']); // build·out 도 산출물 디렉터리다
+      const dist = mkFixture({
+        'dist/a.js': L('var a="ait-attach";var k="relayPublicKeys";'),
+        'dist/b.js': L('console.log(1);'),
+      });
+      const out = scan(dist);
+      expect(lineAt(out, 'dist/a.js:1')).toContain('(ait-attach,relayPublicKeys)');
+      expect(heads(out)).toEqual(['[debug-artifact] dist/a.js:1']);
+    });
+
+    it('.ait 번들(zip)을 풀어 마커를 찾는다', () => {
+      const dir = mkFixture({ 'stage/index.js': L('var a="__ait_debug_status";') });
+      execFileSync('zip', ['-q', '-r', '../app.ait', '.'], { cwd: path.join(dir, 'stage') });
+      fs.rmSync(path.join(dir, 'stage'), { recursive: true, force: true });
+      const out = scan(dir);
+      expect(heads(out)).toEqual(['[debug-artifact] app.ait:1']);
+      expect(lineAt(out, 'app.ait:1')).toContain('(__ait_debug_status)');
+      expect(blocking(out)).toHaveLength(1);
+    });
+
+    it('마커 없는 .ait 는 후보가 아니고, zip 이 아닌 .ait 는 note 로 알린다', () => {
+      const clean = mkFixture({ 'stage/index.js': L('console.log(1);') });
+      execFileSync('zip', ['-q', '-r', '../app.ait', '.'], { cwd: path.join(clean, 'stage') });
+      fs.rmSync(path.join(clean, 'stage'), { recursive: true, force: true });
+      const out = scan(clean);
+      expect(heads(out)).toEqual([]);
+      expect(out).not.toContain('launch-scan:note');
+
+      const odd = mkFixture({ 'weird.ait': 'not a zip\n' });
+      const oddOut = scan(odd);
+      expect(heads(oddOut)).toEqual([]);
+      expect(oddOut).toContain('launch-scan:note');
+      expect(oddOut).toContain('weird.ait');
+    });
+
+    it('.ait-debug-deployments.json 의 deploymentId 를 정보 줄로 알린다', () => {
+      const dir = mkFixture({
+        '.ait-debug-deployments.json': JSON.stringify({
+          version: 1,
+          deployments: [
+            {
+              deploymentId: 'dep-1',
+              bundleVersion: '1',
+              appName: 'a',
+              recordedAt: 'x',
+              source: 'test-on-device',
+            },
+            {
+              deploymentId: 'dep-2',
+              bundleVersion: '2',
+              appName: 'a',
+              recordedAt: 'y',
+              source: 'debug',
+            },
+          ],
+        }),
+      });
+      const out = scan(dir);
+      expect(out).toContain('launch-scan:debug-deployments count=2 ids=dep-1,dep-2');
+      expect(heads(out)).toEqual([]);
+      expect(scan(mkFixture({ 'package.json': '{}\n' }))).not.toContain('debug-deployments');
+    });
+
+    it('스캔은 프로젝트 안에 아무것도 쓰지 않는다', () => {
+      const dir = mkFixture({ 'dist/a.js': L('var a="ait-attach";'), 'x.ait': 'zz\n' });
+      const before = snapshot(dir);
+      scan(dir);
+      expect(snapshot(dir)).toEqual(before);
+    });
   });
 });

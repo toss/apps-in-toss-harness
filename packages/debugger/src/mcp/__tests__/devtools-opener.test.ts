@@ -255,8 +255,9 @@ describe('AutoDevtoolsOpener', () => {
       env: 'relay-dev',
     });
     expect(opener.opened).toBe(true);
-    expect(stderrOutput).toContain('DevTools URL');
-    expect(stderrOutput).toContain('127.0.0.1:9100');
+    expect(stderrOutput).toContain('DevTools 인스펙터를 엽니다');
+    // The URL (live at= code, target id) is not printed.
+    expect(stderrOutput).not.toContain('127.0.0.1:9100');
   });
 
   it('is a no-op on second call for the same targetId (per-target dedupe)', () => {
@@ -298,7 +299,7 @@ describe('AutoDevtoolsOpener', () => {
       env: 'relay-dev',
     });
     // Second call with a NEW target should write to stderr.
-    expect(stderrOutput).toContain('DevTools URL');
+    expect(stderrOutput).toContain('DevTools 인스펙터를 엽니다');
     expect(opener.openedTargets.size).toBe(2);
   });
 
@@ -375,33 +376,49 @@ describe('AutoDevtoolsOpener', () => {
     expect(stderrOutput).toBe('');
   });
 
-  it('writes the Chii inspector URL to stderr before attempting browser open (opt-in)', () => {
+  it('hands the Chii inspector URL to the browser launch only, never to stderr (opt-in)', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
+    const launched: string[] = [];
+    const opener = new AutoDevtoolsOpener((url) => {
+      launched.push(url);
+      return true;
+    });
     opener.open({
       relayHttpBaseUrl: 'https://tunnel.trycloudflare.com',
       targetId: 'phone-target',
       mintTotp: fixtureMintTotp,
       env: 'relay-dev',
     });
-    expect(stderrOutput).toContain('DevTools URL');
-    expect(stderrOutput).toContain('tunnel.trycloudflare.com');
-    expect(stderrOutput).toContain('front_end/chii_app.html');
+    expect(launched).toHaveLength(1);
+    expect(launched[0]).toContain('tunnel.trycloudflare.com');
+    expect(launched[0]).toContain('front_end/chii_app.html');
+    expect(launched[0]).toContain('123456');
+    expect(launched[0]).toContain('phone-target');
+    // stderr says only that the inspector was opened.
+    expect(stderrOutput).toContain('DevTools 인스펙터를 엽니다');
+    expect(stderrOutput).not.toContain('tunnel.trycloudflare.com');
+    expect(stderrOutput).not.toContain('front_end/chii_app.html');
+    expect(stderrOutput).not.toContain('at=');
+    expect(stderrOutput).not.toContain('target=');
+    expect(stderrOutput).not.toContain('123456');
+    expect(stderrOutput).not.toContain('phone-target');
+    expect(stderrOutput).not.toContain(FIXTURE_SECRET);
   });
 
-  it('embeds the TOTP code (not the secret) in the stderr URL (opt-in)', () => {
+  it('a failed launch tells the developer where to open DevTools, without the URL', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
+    const opener = new AutoDevtoolsOpener(() => false);
     opener.open({
       relayHttpBaseUrl: 'http://127.0.0.1:9100',
       targetId: 'tgt',
       mintTotp: fixtureMintTotp,
       env: 'relay-dev',
     });
-    // Code value should appear (it is in the URL, which is written to stderr).
-    expect(stderrOutput).toContain('123456');
-    // Raw secret must never appear.
-    expect(stderrOutput).not.toContain(FIXTURE_SECRET);
+    expect(stderrOutput).toContain('브라우저 자동 열기 실패');
+    expect(stderrOutput).not.toContain('123456');
+    expect(stderrOutput).not.toContain('at=');
+    expect(stderrOutput).not.toContain('target=');
+    expect(stderrOutput).not.toContain('127.0.0.1:9100');
   });
 
   it('fail-closed when mintTotp is absent — marks opened but skips browser open (issue #509)', () => {
@@ -420,20 +437,6 @@ describe('AutoDevtoolsOpener', () => {
     expect(stderrOutput).not.toContain('front_end/chii_app.html');
     // TOTP 미설정 안내 메시지가 있어야 한다.
     expect(stderrOutput).toContain('TOTP');
-  });
-
-  it('includes the TOTP expiry notice in stderr output (opt-in)', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'tgt',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    expect(stderrOutput).toContain('at=');
-    // The expiry caveat must be communicated to the developer (#490: updated to ~3분).
-    expect(stderrOutput).toContain('3분');
   });
 
   // ── inspectorStableUrl 경로 (issue #530 stable /inspector URL) ──────────
@@ -455,7 +458,41 @@ describe('AutoDevtoolsOpener', () => {
     // TOTP code must NOT appear in stderr (stable URL has no TOTP).
     expect(stderrOutput).not.toContain('123456');
     // No expiry notice when using the stable URL.
-    expect(stderrOutput).not.toContain('3분');
+    expect(stderrOutput).not.toContain('30초');
+  });
+
+  it('inspectorStableUrl path: the tokened URL goes to the browser launch only, never to stderr', () => {
+    process.env.AIT_AUTO_DEVTOOLS = '1';
+    const launched: string[] = [];
+    const opener = new AutoDevtoolsOpener((url) => {
+      launched.push(url);
+      return true;
+    });
+    const token = 'c'.repeat(64);
+    opener.open({
+      inspectorStableUrl: 'http://127.0.0.1:19000/inspector',
+      inspectorOpenUrl: `http://127.0.0.1:19000/inspector?dashtoken=${token}`,
+      relayHttpBaseUrl: 'http://127.0.0.1:9100',
+      targetId: 'tgt',
+      env: 'relay-dev',
+    });
+    expect(launched).toEqual([`http://127.0.0.1:19000/inspector?dashtoken=${token}`]);
+    expect(stderrOutput).not.toContain('dashtoken');
+    expect(stderrOutput).not.toContain(token);
+  });
+
+  it('inspectorStableUrl path: a failed launch prints the tokenless URL', () => {
+    process.env.AIT_AUTO_DEVTOOLS = '1';
+    const opener = new AutoDevtoolsOpener(() => false);
+    opener.open({
+      inspectorStableUrl: 'http://127.0.0.1:19000/inspector',
+      inspectorOpenUrl: `http://127.0.0.1:19000/inspector?dashtoken=${'c'.repeat(64)}`,
+      relayHttpBaseUrl: 'http://127.0.0.1:9100',
+      targetId: 'tgt',
+      env: 'relay-dev',
+    });
+    expect(stderrOutput).toContain('http://127.0.0.1:19000/inspector');
+    expect(stderrOutput).not.toContain('dashtoken');
   });
 
   it('inspectorStableUrl path: is a no-op on second call for same targetId', () => {

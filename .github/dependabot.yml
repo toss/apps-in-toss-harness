@@ -1,0 +1,44 @@
+# version updates 설정. security updates(알림 기반 PR)는 repo 설정에서 따로 켜져 있고,
+# 이 파일은 정기 버전 갱신만 다룬다.
+#
+# - npm: pnpm workspace 하나(루트 pnpm-lock.yaml)라 루트 디렉터리 하나로 충분하다.
+#   Dependabot은 pnpm-lock.yaml을 보고 pnpm으로 lockfile을 갱신한다.
+# - github-actions: 워크플로의 액션은 전부 커밋 SHA로 고정돼 있다. Dependabot이 SHA와
+#   `# vX.Y.Z` 주석을 함께 올린다.
+# - cooldown: 갓 발행된 버전을 바로 채택하지 않는다(공급망 사고는 대개 발행 직후 며칠 안에
+#   걷힌다). pnpm-workspace.yaml의 minimumReleaseAge와 같은 7일.
+# - packages/debugger/scripts/relay-pool-compat/ 의 픽스처 lockfile은 일부러 대상에서 뺐다.
+#   debugger dependencies와 맞춰 수동 절차로 갱신해야 하는 파일이다(CLAUDE.md 참고).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime:
+        dependency-type: production
+        update-types: [patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(ci)"

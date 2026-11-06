@@ -20,12 +20,14 @@
  * compares it with its own. The device's package version rides along purely as
  * a human-readable label for the diagnostic and is never compared.
  *
- * Legacy devices: `@apps-in-toss/debug-console` up to and including 0.1.5
- * report only their package version (`v`). The contract in this directory is
- * byte-identical between debug-console-v0.1.4/v0.1.5 and every debugger release
- * since, so a report without `p` is, by definition, protocol 1
- * ({@link LEGACY_DEVICE_PROTOCOL_VERSION}). When protocol 2 ships, such a
- * device compares as 1 against 2 and is flagged, which is the correct outcome.
+ * Older devices: every `@apps-in-toss/debug-console` before the protocol-2 line
+ * (<= 0.2.0) reports `p=1`, or no `p` at all (<= 0.1.5), and dials the relay
+ * under the unversioned `/at/<code>/` prefix. Protocol 2 moved the prefix to
+ * {@link relayAuthPathPrefix}, so such a device is recognised from its very first
+ * request, before it reports anything: the relay refuses it (see
+ * {@link RELAY_UPDATE_REQUIRED_CLOSE_CODE}) and says that an update is required.
+ * There is no compatibility mode, and a device that reports nothing usable is
+ * never assumed to be on any protocol.
  *
  * Why a dedicated request rather than a query param on `target.js`: chii's
  * stock `target.js` derives its WebSocket endpoint from its own script `src`
@@ -57,14 +59,46 @@ export const ATTACH_HANDSHAKE_PROTOCOL_PARAM = 'p';
  * on an incompatible change to the contract clauses listed at the top of this
  * file. Never derive it from a package version.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /**
- * Protocol a device is assumed to speak when it reports no `p` but does report
- * `v`: every `@apps-in-toss/debug-console` published before `p` existed
- * (<= 0.1.5), whose contract is unchanged from {@link PROTOCOL_VERSION} 1.
+ * Path prefix under which a device of `protocol` carries its relay auth code:
+ * `<prefix>/<code>/target.js`, `<prefix>/<code>/ait-attach`,
+ * `<prefix>/<code>/target/<id>`. Versioned on purpose: the unversioned
+ * `/at/<code>/` form belongs to protocol 1 and is refused, so an older device
+ * cannot attach by accident and is told to update.
  */
-export const LEGACY_DEVICE_PROTOCOL_VERSION = 1;
+export function relayAuthPathPrefix(protocol: number = PROTOCOL_VERSION): string {
+  return `/v${protocol}/at`;
+}
+
+/**
+ * WebSocket close code the relay sends to a device whose protocol is not the
+ * relay's own. 4000-4999 is the application range; 4426 mirrors HTTP 426
+ * (Upgrade Required).
+ */
+export const RELAY_UPDATE_REQUIRED_CLOSE_CODE = 4426;
+
+/** Fixed close reason that goes with {@link RELAY_UPDATE_REQUIRED_CLOSE_CODE}. */
+export const RELAY_UPDATE_REQUIRED_REASON = 'update-required';
+
+/** Longest `v` label worth keeping. Real package versions are far shorter. */
+const MAX_DEVICE_VERSION_LENGTH = 64;
+
+/** `MAJOR.MINOR.PATCH`, optional prerelease and build. */
+const DEVICE_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/**
+ * Returns the device's `v` label when it is a plausible semver, otherwise `''`.
+ *
+ * `v` is free text from the network and it ends up in an error message an agent
+ * reads, so anything that is not a version is treated as not reported.
+ */
+export function sanitizeDeviceVersion(raw: string | null | undefined): string {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (value.length > MAX_DEVICE_VERSION_LENGTH) return '';
+  return DEVICE_VERSION_RE.test(value) ? value : '';
+}
 
 /** What the device reported on the handshake request. */
 export interface DeviceHandshakeReport {
@@ -78,11 +112,14 @@ export interface DeviceHandshakeReport {
 export interface ProtocolVersionCheck {
   /**
    * `true` when the protocols agree, or when there is nothing to contradict
-   * (the device reported nothing usable). An absent report is deliberately NOT
+   * (the device reported nothing at all). An absent report is deliberately NOT
    * a mismatch: a dropped fire-and-forget request must not read as skew.
    */
   readonly match: boolean;
-  /** Protocol the device speaks, or `null` when it reported nothing usable. */
+  /**
+   * Protocol the device speaks, or `null` when it reported none (nothing at all,
+   * or only a package version because it predates the protocol number).
+   */
   readonly deviceProtocol: number | null;
   /** Protocol the daemon speaks. */
   readonly hostProtocol: number;
@@ -94,9 +131,10 @@ export interface ProtocolVersionCheck {
  * Compares the device-reported protocol with the daemon's own.
  *
  * Exact integer equality — there is no "compatible range"; a protocol bump
- * means the clauses changed incompatibly. A report with `v` but no `p` is a
- * legacy device and counts as {@link LEGACY_DEVICE_PROTOCOL_VERSION}. A
- * malformed `p` is treated as "nothing usable" and stays silent.
+ * means the clauses changed incompatibly. A report with `v` but no usable `p`
+ * is a device that predates the protocol number: it is a mismatch with
+ * `deviceProtocol: null`, never assumed to speak any protocol. A report with
+ * neither stays silent.
  *
  * @param report - What the device sent on the handshake request.
  * @param hostProtocol - The daemon's own protocol (defaults to {@link PROTOCOL_VERSION}).
@@ -106,13 +144,9 @@ export function compareProtocolVersions(
   hostProtocol: number = PROTOCOL_VERSION,
 ): ProtocolVersionCheck {
   const rawProtocol = typeof report.protocol === 'string' ? report.protocol.trim() : '';
-  const deviceVersion = typeof report.version === 'string' ? report.version.trim() : '';
-  let deviceProtocol: number | null = null;
-  if (rawProtocol !== '') {
-    deviceProtocol = /^[1-9][0-9]{0,8}$/.test(rawProtocol) ? Number(rawProtocol) : null;
-  } else if (deviceVersion !== '') {
-    deviceProtocol = LEGACY_DEVICE_PROTOCOL_VERSION;
-  }
-  const match = deviceProtocol === null || deviceProtocol === hostProtocol;
+  const deviceVersion = sanitizeDeviceVersion(report.version);
+  const deviceProtocol = /^[1-9][0-9]{0,8}$/.test(rawProtocol) ? Number(rawProtocol) : null;
+  const silent = deviceProtocol === null && deviceVersion === '';
+  const match = silent || deviceProtocol === hostProtocol;
   return { match, deviceProtocol, hostProtocol, deviceVersion };
 }

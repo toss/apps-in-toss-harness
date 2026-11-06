@@ -14,6 +14,8 @@
     "build": "pnpm -r --if-present build",
     "check:pack-manifests": "node scripts/check-pack-manifests.mjs",
     "check:dist-urls": "node scripts/check-dist-urls.mjs",
+    "check:shrinkwrap": "node scripts/shrinkwrap.mjs check packages/debugger",
+    "shrinkwrap:debugger": "node scripts/shrinkwrap.mjs generate packages/debugger",
     "typecheck": "pnpm -r --if-present typecheck && pnpm typecheck:shared",
     "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json"
   },

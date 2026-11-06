@@ -57,6 +57,21 @@ describe('release.yml gate parity with ci.yml', () => {
     }
   });
 
+  // 배포 산출물 게이트 판정 검사는 build 뒤(dist 필요), debug-surface-absent 바로 뒤에 둔다.
+  test('gate dist check exists in both workflows, after build and the surface check', () => {
+    for (const name of ['ci.yml', 'release.yml']) {
+      const cmds = gateCommands(read(name));
+      const gate = cmds.indexOf('pnpm -r check:gate-dist');
+      assert.ok(gate >= 0, `${name} lacks pnpm -r check:gate-dist`);
+      assert.ok(gate > cmds.indexOf('pnpm build'), `${name}: gate dist check must follow build`);
+      assert.equal(
+        gate,
+        cmds.indexOf('pnpm -r check:debug-surface-absent') + 1,
+        `${name}: gate dist check must directly follow check:debug-surface-absent`,
+      );
+    }
+  });
+
   test('named guard steps in ci.yml appear in release.yml at the same position', () => {
     const ci = gateSteps(read('ci.yml'));
     const names = new Set(ci.filter((s) => s.startsWith('name: ')).map((s) => s.slice(6)));

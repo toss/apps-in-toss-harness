@@ -11,8 +11,8 @@
  * safe to import from the MCP daemon graph.
  */
 
-import { glob } from 'node:fs/promises';
-import { basename, isAbsolute, resolve } from 'node:path';
+import { glob, realpath } from 'node:fs/promises';
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 
 /**
  * Filename suffix that opts a test file into manual-variant scheduling
@@ -88,4 +88,93 @@ export function partitionManualTests(files: string[]): { regular: string[]; manu
     (isManualTestFile(f) ? manual : regular).push(f);
   }
   return { regular, manual };
+}
+
+/**
+ * Filename suffixes the `run_tests` MCP tool accepts. Same convention as the
+ * config default (`**\/*.ait.test.ts`) and {@link MANUAL_TEST_SUFFIX} (which is a
+ * `.ait.test.ts` file too). The CLI is typed by the user and keeps accepting any
+ * glob; the tool's `files` argument comes from an agent, so it is held to this.
+ */
+export const ALLOWED_TEST_FILE_SUFFIXES: readonly string[] = ['.ait.test.ts'];
+
+/** True when `file`'s basename ends with an {@link ALLOWED_TEST_FILE_SUFFIXES} entry. */
+export function hasAllowedTestSuffix(file: string): boolean {
+  const name = basename(file);
+  return ALLOWED_TEST_FILE_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/** A `..` path segment, including one inside a brace alternative (`{..,x}/a`). */
+const PARENT_SEGMENT = /(?:^|[\\/{,])\.\.(?:$|[\\/},])/;
+
+/**
+ * Pre-glob check for patterns that arrive as tool arguments: refuses absolute
+ * paths (POSIX, Windows drive/UNC, `~`) and any `..` segment. This is the cheap
+ * first line; {@link assertTestFilesWithinRoot} is the authoritative one (it
+ * resolves symlinks, which a pattern check can never see).
+ *
+ * @returns An error message for the first refused pattern, or `null` if all pass.
+ */
+export function findRefusedTestPattern(patterns: readonly string[]): string | null {
+  for (const pattern of patterns) {
+    if (isAbsolute(pattern) || /^[A-Za-z]:[\\/]/.test(pattern) || pattern.startsWith('\\\\')) {
+      return `절대 경로는 허용되지 않습니다: ${JSON.stringify(pattern.slice(0, 120))}`;
+    }
+    if (pattern.startsWith('~')) {
+      return `홈 경로(~)는 허용되지 않습니다: ${JSON.stringify(pattern.slice(0, 120))}`;
+    }
+    if (PARENT_SEGMENT.test(pattern)) {
+      return `'..' 세그먼트는 허용되지 않습니다: ${JSON.stringify(pattern.slice(0, 120))}`;
+    }
+  }
+  return null;
+}
+
+/** The outcome of {@link assertTestFilesWithinRoot}. */
+export interface TestFilesWithinRoot {
+  /** `realpath(projectRoot)`. */
+  root: string;
+  /** Files whose `realpath` is inside `root` and that have an allowed suffix (original discover paths). */
+  files: string[];
+  /** Files dropped, with a reason each (paths relative to nothing secret: only the discovered path). */
+  refused: Array<{ file: string; reason: 'outside-root' | 'bad-extension' | 'unresolvable' }>;
+}
+
+/**
+ * Resolves `projectRoot` and every discovered file with `realpath` and keeps only
+ * files that sit inside the real project root and carry an allowed test suffix.
+ * A symlink inside the project that points outside is refused (its realpath is
+ * outside), as is a glob that expanded through `..`.
+ *
+ * Throws when `projectRoot` itself cannot be resolved.
+ */
+export async function assertTestFilesWithinRoot(
+  files: readonly string[],
+  projectRoot: string,
+): Promise<TestFilesWithinRoot> {
+  const root = await realpath(resolve(projectRoot));
+  const ok: string[] = [];
+  const refused: TestFilesWithinRoot['refused'] = [];
+  for (const file of files) {
+    let real: string;
+    try {
+      real = await realpath(file);
+    } catch {
+      refused.push({ file, reason: 'unresolvable' });
+      continue;
+    }
+    const rel = relative(root, real);
+    const inside = rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+    if (!inside) {
+      refused.push({ file, reason: 'outside-root' });
+      continue;
+    }
+    // 확장자는 realpath 기준이 아니라 요청된 이름과 실제 대상 둘 다 맞아야 한다.
+    if (!hasAllowedTestSuffix(file) || !hasAllowedTestSuffix(real)) {
+      refused.push({ file, reason: 'bad-extension' });
+      continue;
+    }
+    ok.push(file);
+  }
+  return { root, files: ok, refused };
 }

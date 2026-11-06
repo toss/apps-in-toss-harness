@@ -13,9 +13,21 @@
  * - lockFilePath: respects AIT_DEVTOOLS_LOCK_DIR override
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireLock,
@@ -402,7 +414,10 @@ describe('acquireLock — orphan tunnel reap (#628)', () => {
     const deadNode = 999001;
     const aliveChild = 999002;
     // Node holder dead, cloudflared child orphaned but still alive.
-    const kills = spyKill([aliveChild]);
+    const inspector = fakeInspector(
+      { [aliveChild]: { ppid: 1, command: '/usr/local/bin/cloudflared tunnel --url x' } },
+      { alive: [aliveChild] },
+    );
     writeLockFile(lockPath, {
       pid: deadNode,
       wssUrl: 'wss://old.trycloudflare.com',
@@ -410,10 +425,10 @@ describe('acquireLock — orphan tunnel reap (#628)', () => {
       tunnelChildPid: aliveChild,
     });
 
-    const handle = acquireLock();
+    const handle = acquireLock({ inspector });
     try {
       // The orphaned child received a termination signal.
-      expect(kills.some((c) => c.pid === aliveChild && c.signal === 'SIGTERM')).toBe(true);
+      expect(inspector.kills).toContainEqual([aliveChild, 'SIGTERM']);
       // Lock taken over by this process.
       const raw = JSON.parse(readFileSync(lockPath, 'utf8'));
       expect(raw.pid).toBe(process.pid);
@@ -427,7 +442,10 @@ describe('acquireLock — orphan tunnel reap (#628)', () => {
     const liveNode = 999010;
     const aliveChild = 999011;
     // Node holder alive (so --force is the reclaim path) + child alive.
-    const kills = spyKill([liveNode, aliveChild]);
+    const inspector = fakeInspector({
+      [liveNode]: { ppid: 1, command: 'node /x/@apps-in-toss/debugger/dist/mcp/cli.js' },
+      [aliveChild]: { ppid: liveNode, command: 'cloudflared tunnel --url x' },
+    });
     writeLockFile(lockPath, {
       pid: liveNode,
       wssUrl: 'wss://old.trycloudflare.com',
@@ -435,13 +453,73 @@ describe('acquireLock — orphan tunnel reap (#628)', () => {
       tunnelChildPid: aliveChild,
     });
 
-    const handle = acquireLock({ force: true });
+    const handle = acquireLock({ force: true, inspector });
     try {
       // Both the Node holder and the orphaned child were terminated.
-      expect(kills.some((c) => c.pid === liveNode && c.signal === 'SIGTERM')).toBe(true);
-      expect(kills.some((c) => c.pid === aliveChild && c.signal === 'SIGTERM')).toBe(true);
+      expect(inspector.kills).toContainEqual([liveNode, 'SIGTERM']);
+      expect(inspector.kills).toContainEqual([aliveChild, 'SIGTERM']);
       const raw = JSON.parse(readFileSync(lockPath, 'utf8'));
       expect(raw.pid).toBe(process.pid);
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('--force leaves recycled PIDs alone and still takes the lock', () => {
+    const lockPath = lockFilePath();
+    const recycledHolder = 999020;
+    const recycledChild = 999021;
+    const inspector = fakeInspector({
+      [recycledHolder]: { ppid: 1, command: '/usr/bin/postgres' },
+      [recycledChild]: { ppid: 1, command: '/usr/bin/redis-server' },
+    });
+    writeLockFile(lockPath, {
+      pid: recycledHolder,
+      wssUrl: 'wss://old.trycloudflare.com',
+      startedAt: '2020-01-01T00:00:00.000Z',
+      tunnelChildPid: recycledChild,
+    });
+
+    const handle = acquireLock({ force: true, inspector });
+    try {
+      expect(inspector.kills).toEqual([]);
+      expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('leaves a recycled tunnel child PID alone on a stale lock', () => {
+    const lockPath = lockFilePath();
+    const recycledChild = 999031;
+    const inspector = fakeInspector(
+      { [recycledChild]: { ppid: 1, command: '/usr/bin/postgres' } },
+      { alive: [recycledChild] },
+    );
+    writeLockFile(lockPath, {
+      pid: 999030,
+      wssUrl: 'wss://old.trycloudflare.com',
+      startedAt: '2020-01-01T00:00:00.000Z',
+      tunnelChildPid: recycledChild,
+    });
+
+    const handle = acquireLock({ inspector });
+    try {
+      expect(inspector.kills).toEqual([]);
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('writes the lock owner-only, also over a wider existing file', () => {
+    const lockPath = lockFilePath();
+    mkdirSync(dirname(lockPath), { recursive: true });
+    writeFileSync(lockPath, '{}', { mode: 0o644 });
+    chmodSync(lockPath, 0o644);
+
+    const handle = acquireLock();
+    try {
+      expect(statSync(lockPath).mode & 0o777).toBe(0o600);
     } finally {
       handle.release();
     }
@@ -842,4 +920,148 @@ describe('acquireLock — same-client takeover', () => {
     expect(() => acquireLock({ inspector: insp })).toThrow(ServerLockConflictError);
     expect(insp.kills).toEqual([]);
   });
+});
+
+describe('acquireLock — exclusive create and atomic updates', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    ({ dir } = setupTmpLockDir());
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    teardownTmpLockDir(dir);
+  });
+
+  const COMPETITOR = 4242;
+
+  it('leaves only the lock file behind: no temp files after acquire, update or release', () => {
+    const handle = acquireLock();
+    handle.updateWssUrl('wss://x.example.invalid');
+    handle.updateTunnelChildPid(1234);
+    expect(readdirSync(dir)).toEqual(['server.lock']);
+    handle.release();
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('keeps the file owner-only through every update', () => {
+    const lockPath = lockFilePath();
+    const handle = acquireLock();
+    try {
+      handle.updateWssUrl('wss://x.example.invalid');
+      expect(statSync(lockPath).mode & 0o777).toBe(0o600);
+      handle.updateTunnelChildPid(1234);
+      expect(statSync(lockPath).mode & 0o777).toBe(0o600);
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('does not replace a lock another daemon created while a stale one was being judged', () => {
+    const lockPath = lockFilePath();
+    const stalePid = deadPid();
+    writeLockFile(lockPath, { pid: stalePid, wssUrl: null, startedAt: '2026-01-01T00:00:00.000Z' });
+    const competitor = {
+      pid: COMPETITOR,
+      wssUrl: 'wss://theirs.example.invalid',
+      startedAt: new Date().toISOString(),
+      clientPid: 777,
+    };
+    const insp = fakeInspector({}, { alive: [COMPETITOR, 777] });
+    let swapped = false;
+    const isAlive = insp.isAlive;
+    insp.isAlive = (pid) => {
+      if (!swapped && pid === stalePid) {
+        swapped = true;
+        // Another daemon wins the race: it replaces the stale file after we read it.
+        rmSync(lockPath);
+        writeLockFile(lockPath, competitor);
+      }
+      return isAlive(pid);
+    };
+
+    expect(() => acquireLock({ inspector: insp })).toThrow(ServerLockConflictError);
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(COMPETITOR);
+    expect(readdirSync(dir)).toEqual(['server.lock']);
+  });
+
+  it('deletes a stale lock only when it still has the bytes that were judged stale', () => {
+    const lockPath = lockFilePath();
+    const stalePid = deadPid();
+    writeLockFile(lockPath, { pid: stalePid, wssUrl: null, startedAt: '2026-01-01T00:00:00.000Z' });
+    const live = {
+      pid: COMPETITOR,
+      wssUrl: null,
+      startedAt: new Date().toISOString(),
+      clientPid: 777,
+    };
+    const insp = fakeInspector({}, { alive: [COMPETITOR, 777] });
+    let swapped = false;
+    const isAlive = insp.isAlive;
+    insp.isAlive = (pid) => {
+      if (!swapped && pid === stalePid) {
+        swapped = true;
+        writeLockFile(lockPath, live);
+      }
+      return isAlive(pid);
+    };
+
+    expect(() => acquireLock({ inspector: insp })).toThrow(ServerLockConflictError);
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(COMPETITOR);
+  });
+
+  it('does not overwrite a lock another daemon took over when a late update arrives', () => {
+    const lockPath = lockFilePath();
+    const handle = acquireLock();
+    const theirs = { pid: COMPETITOR, wssUrl: 'wss://theirs.example.invalid', startedAt: 'later' };
+    writeLockFile(lockPath, theirs);
+    handle.updateWssUrl('wss://late.example.invalid');
+    handle.updateTunnelChildPid(99);
+    expect(JSON.parse(readFileSync(lockPath, 'utf8'))).toEqual(theirs);
+  });
+
+  it('does not follow a symlink at the lock path', () => {
+    const lockPath = lockFilePath();
+    const target = join(dir, 'elsewhere.txt');
+    writeFileSync(target, 'untouched');
+    symlinkSync(target, lockPath);
+    // A dangling-or-foreign link is not a lock: it is judged stale and replaced.
+    const handle = acquireLock({ inspector: blindInspector() });
+    try {
+      expect(readFileSync(target, 'utf8')).toBe('untouched');
+      expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
+      expect(lstatSync(lockPath).isSymbolicLink()).toBe(false);
+    } finally {
+      handle.release();
+    }
+  });
+
+  it('two daemons starting at once: exactly one wins', async () => {
+    const { spawn } = await import('node:child_process');
+    const script = `
+      import { acquireLock } from ${JSON.stringify(pathToFileURL(join(process.cwd(), 'src/mcp/server-lock.ts')).href)};
+      try { acquireLock({ inspector: { parentOf: () => null, commandOf: () => 'node debugger', isAlive: () => true, kill() {}, sleep() {} } }); process.stdout.write('won'); setTimeout(() => process.exit(0), 400); }
+      catch { process.stdout.write('lost'); }
+    `;
+    const run = () =>
+      new Promise<string>((resolve) => {
+        const child = spawn(
+          process.execPath,
+          ['--import', 'tsx', '--input-type=module', '-e', script],
+          {
+            env: { ...process.env, AIT_DEVTOOLS_LOCK_DIR: dir },
+            stdio: ['ignore', 'pipe', 'ignore'],
+          },
+        );
+        let out = '';
+        child.stdout.on('data', (c) => {
+          out += String(c);
+        });
+        child.on('close', () => resolve(out));
+      });
+    const results = await Promise.all([run(), run(), run()]);
+    expect(results.filter((r) => r === 'won')).toHaveLength(1);
+  }, 30_000);
 });

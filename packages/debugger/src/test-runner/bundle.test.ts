@@ -23,7 +23,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isStubBlockingEnabled, wrapSdkWithStub } from './bridge-stub.js';
-import { buildSdkRedirectModuleContents } from './bundle.js';
+import { buildSdkRedirectModuleContents, bundleTestFile } from './bundle.js';
 import { getPaceMethodMs, wrapWithMethodPacing } from './method-pace.js';
 
 describe('buildSdkRedirectModuleContents', () => {
@@ -160,5 +160,31 @@ describe('sdk-redirect composition (pacing + bridge-stub, devtools#769)', () => 
     // (disabled) also returns its input untouched — the composed result must
     // be the exact same object reference as the original sdk.
     expect(composeSdkRedirect(sdk)).toBe(sdk);
+  });
+});
+
+describe('bundleTestFile — path handling', () => {
+  it('refuses a relative path before touching esbuild', async () => {
+    await expect(bundleTestFile('tests/a.ait.test.ts')).rejects.toThrow(/absolute/);
+  });
+
+  it('refuses a file outside allowedRoot before touching esbuild', async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const base = await mkdtemp(join(tmpdir(), 'ait-bundle-root-'));
+    try {
+      await writeFile(join(base, 'x.ait.test.ts'), '');
+      const other = await mkdtemp(join(tmpdir(), 'ait-bundle-other-'));
+      try {
+        await expect(
+          bundleTestFile(join(base, 'x.ait.test.ts'), { allowedRoot: other }),
+        ).rejects.toThrow(/outside the allowed project root/);
+      } finally {
+        await rm(other, { recursive: true, force: true });
+      }
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });

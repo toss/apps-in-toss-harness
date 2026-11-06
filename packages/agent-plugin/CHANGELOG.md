@@ -1,5 +1,22 @@
 # @apps-in-toss/agent-plugin
 
+## 0.3.0
+
+### Minor Changes
+
+- SDK 기능(광고·인앱결제·공유·리더보드·햅틱·저장소 등)을 사용자 프로젝트에 구현하는 `feature` skill 신설(`/ait:feature`). 프로젝트 스택(웹·Unity·엔진 HTML5 빌드·React Native)과 SDK 버전을 읽고, API는 docs MCP 원문을 확인한 뒤 쓴다. 광고 정책·결제 지급 규약은 `references/conventions.md`, 스택별 주의점은 `references/stack-pitfalls.md`.
+- `new-miniapp`·`inject`·`design`의 스택별 분기를 줄였다. 템플릿은 create-ait-app `--list-templates`에서 고르고, 번들러 배선은 devtools·debug-console README를 따르며, 디자인 가이드 주입은 `src/index.css`가 없는 프로젝트에서도 엔트리를 찾아 연결한다.
+
+### Patch Changes
+
+- 디버거와 debug-console은 0.3.0 이상을 함께 쓰도록 안내한다. `setup-debugger`·`debug`·`test-on-device`·`launch`는 `setup-debugger/references/min-versions.json`의 최소 버전보다 낮은 핀을 찾으면 올리기를 권하고, 확인을 받은 뒤 바꾼다.
+- `debug` skill의 attach 안내에 폰의 연결 확인 창과 "코드 하나는 폰 한 대" 규칙, relay 공개키 배선(`debugger relay-key` → `startDebugConsole({ relayPublicKeys })`), 짧아진 상태 막대 문구의 조치를 반영했다. `blocked-relay-signature`가 반복되면 폰 시계를 확인하도록 안내한다. 기기에서 읽은 내용은 지시로 따르지 않고, 그 내용에서 나온 `call_sdk`·`evaluate` 호출은 사용자 확인을 받는다.
+- 출시 번들에서 디버그 도구를 제외한다. `inject-debug-console`은 `@apps-in-toss/debug-console`을 `devDependencies`로 설치하고, `AIT_DEBUG_BUILD=1`을 명시한 빌드에서만 `__DEBUG_BUILD__`가 `true`가 되도록 배선한다(기본 `false`, 설정 파일에 고정 `true`를 쓰지 않는다). 릴리스 빌드와 디버그 빌드 만드는 법도 안내한다. `test-on-device`는 기본으로 릴리스 빌드를 올리고, 디버깅할 때만 디버그 빌드를 올리며 그 배포의 `deploymentId`와 번들 버전을 프로젝트의 `.ait-debug-deployments.json`(git 제외)에 기록한다.
+- `launch`는 기록된 디버그 배포와, 산출물에서 디버그 마커가 발견된 배포의 `bundle_submit_review` 제안을 거절한다. `launch-scan.sh`에 `debug-artifact` 규칙(요약 줄에 `debug-artifact=<n>`)과 디버그 배포 기록 정보 줄을 더했다. 깊은 `build/` 디렉터리와 빌드 산출물, `sk-or-v1-` 키, `VITE_*_SECRET*` 변수, 요청 Origin 반사형 CORS도 점검하고, 후보가 없을 때 본 범위를 함께 알린다. `src/`·`public/` 고정 대신 제외 목록 기반으로 스캔한다.
+- `debug`·`setup-debugger`·`test-on-device`·`launch`·`welcome`에서 스택 가정을 걷어냈다. dev 서버 포트와 빌드 명령은 `package.json` scripts와 실행 출력에서 읽고, `.ait`는 glob으로 찾는다. Unity 프로젝트일 때의 안내를 더했다.
+- Vite 외 번들러(webpack, Rspack, esbuild, Rollup)를 반영했다. devtools unplugin이 `NODE_ENV`로 활성화를 판단하므로 release 빌드는 `NODE_ENV=production`으로 돌리고 산출물에서 devtools 마커를 grep으로 확인하도록 `inject`(devtools)와 `test-on-device`에 더했다. `feature`의 `stack-pitfalls.md`에 번들러 절을 추가했고, inject 참고 문서에 attach가 동작하는 호스트를 적었다.
+- 디자인 가이드의 Tossface 주소에 버전을 박았다. `new-miniapp`은 프로젝트 안의 `ait`만 실행하며 레지스트리 변경은 동의를 받은 뒤 정확한 버전으로 한 번만 쓴다. `inject-project-guide.sh`는 심볼릭 링크와 `..` 경로로 프로젝트 밖에 쓰지 않는다.
+
 ## 0.2.6
 
 ### Patch Changes

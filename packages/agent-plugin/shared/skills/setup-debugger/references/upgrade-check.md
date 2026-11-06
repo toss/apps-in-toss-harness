@@ -1,10 +1,17 @@
-# ait-devtools 버전 점검·업그레이드
+# ait-devtools·debug-console 버전 점검·업그레이드
 
 `setup-debugger`를 예전에 실행한 프로젝트는 MCP 설정 파일의 `ait-devtools` 항목이
-그때의 debugger Release URL에 고정돼 있다. 플러그인이 올라가도 이 항목은 자동으로
+그때의 debugger Release URL에 고정돼 있다. 폰에 올라가는 `@apps-in-toss/debug-console`도
+프로젝트 `package.json`에서 Release URL로 고정돼 있어 같은 방식으로 점검한다. 플러그인이 올라가도 이 항목은 자동으로
 바뀌지 않으므로, `/ait:debug`와 `/ait:setup-debugger`가 같은 절차로 점검한다.
-이 문서가 그 절차의 단일 정본이다. 버전 숫자는 여기에 적지 않는다 — 기준은 항상
-`setup-debugger/SKILL.md` 4단계 json 블록의 URL이다.
+이 문서가 그 절차의 단일 정본이다. 버전 숫자는 여기에 적지 않는다 — 두 가지 기준이 있다.
+
+- **최소 버전**: `setup-debugger/references/min-versions.json`(이 파일이 최소 버전의 단일
+  정본이다. `launch`·`test-on-device`·`debug`도 이 파일을 읽는다). 이 값보다 낮은 debugger나
+  debug-console은 쓰지 않도록 올리게 한다.
+- **권장 버전**: debugger는 `setup-debugger/SKILL.md` 4단계 json 블록의 URL, debug-console은
+  `inject/references/debug-console.md` 4절 설치 명령의 URL이다. 최소 버전 이상이면서 이
+  버전보다 낮은 경우는 아래 4번 갈래의 가벼운 안내만 한다.
 
 ## 1. 점검 (읽기만, 값싸다)
 
@@ -19,24 +26,62 @@
 
 3. 이 형태가 **아니면**(커스텀 런처, 로컬 경로, 다른 URL, 버전 없는 bare 패키지)
    그 항목은 사용자 것이다. 건드리지 않고 업그레이드 제안도 하지 않는다.
-4. 이 형태이면 `<v>`를 `setup-debugger/SKILL.md` 4단계 URL의 버전과 숫자로
-   비교한다(`0.2.10`은 `0.2.4`보다 새 버전이다).
+4. 이 형태이면 `<v>`를 `min-versions.json`의 `@apps-in-toss/debugger`와 숫자로 비교한다
+   (`0.2.10`은 `0.2.4`보다 새 버전이다).
+   - 최소 버전보다 낮으면: **최소 버전 미달**이다. 2단계로 간다(강한 권고).
+   - 최소 버전 이상이고 `setup-debugger/SKILL.md` 4단계 URL의 버전보다 낮으면: 2단계로 간다(일반 안내).
    - 같거나 더 높으면: 아무 말 없이 지나간다.
-   - 더 낮으면: 2단계로 간다.
+
+### 1-B. debug-console 점검
+
+1. 프로젝트 `package.json`의 `dependencies`와 `devDependencies`에서
+   `@apps-in-toss/debug-console` 항목을 찾는다. 없으면 점검할 것이 없다.
+   설치돼 있으면 `node_modules/@apps-in-toss/debug-console/package.json`의 `version`이
+   실제로 깔린 버전이므로, 있으면 그 값을 현재 버전으로 쓴다(lockfile만 낡은 경우를 잡는다).
+2. 값이 아래 형태의 URL인지 본다 (`<v>`는 같은 값). URL이 아니라 버전 표기(`0.2.0`,
+   `^0.2.0`)면 그 숫자를 현재 버전으로 쓴다:
+
+   ```
+   https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v<v>/apps-in-toss-debug-console-<v>.tgz
+   ```
+
+3. 이 형태도 버전 표기도 **아니면**(로컬 경로, 다른 URL, 버전 없는 bare 패키지) 사용자
+   것이다. 건드리지 않고 업그레이드 제안도 하지 않는다.
+4. 현재 버전을 `min-versions.json`의 `@apps-in-toss/debug-console`과 비교한다. 낮으면 최소
+   버전 미달이다(2단계, 강한 권고). 최소 버전 이상이고 `inject/references/debug-console.md`
+   4절 URL의 버전보다 낮으면 일반 안내로 2단계로 간다. 같거나 더 높으면 아무 말 없이
+   지나간다.
 
 ## 2. 사용자에게 알리고 동의받기
 
 설정 파일 경로, 현재 버전, 기준 버전을 그대로 보여 준다. 예(현재 0.2.3):
 
 ```
-.mcp.json의 ait-devtools가 debugger 0.2.3에 고정돼 있습니다. 이 플러그인이 쓰는 버전은 0.2.7입니다.
+.mcp.json의 ait-devtools가 debugger 0.2.3에 고정돼 있습니다. 이 플러그인이 쓰는 버전은 0.3.0입니다.
 0.2.2와 0.2.3에는 start_attach가 항상 "프로토콜 버전 불일치"로 실패하는 알려진 버그가 있고, 0.2.4에서 고쳐졌습니다.
 바꿀 항목은 args의 URL 하나입니다.
   - .../debugger-v0.2.3/apps-in-toss-debugger-0.2.3.tgz
-  + .../debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz
+  + .../debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz
 다른 서버 항목은 건드리지 않습니다. 업데이트할까요?
 ```
 
+최소 버전 미달이면 안내에 "이 플러그인이 받아들이는 최소 버전은 <최소 버전>입니다"를 넣고,
+업그레이드를 강하게 권한다. 거절해도 디버그 빌드를 올리는 일(`test-on-device`·`debug`)은
+막지 않지만, 보고에 최소 버전 미달 상태가 남아 있음을 적는다.
+
+debug-console이 기준보다 낮으면 같은 방식으로 `package.json` 경로, 현재 버전, 기준 버전을
+보여 주고, 최소 버전 미달이면 최소 버전을 함께 적어 적용을 권한다:
+
+```
+package.json의 @apps-in-toss/debug-console이 <현재 버전>에 고정돼 있습니다. 이 플러그인이 받아들이는 최소 버전은 <최소 버전>이고, 쓰는 버전은 <기준 버전>입니다.
+최소 버전 미만은 최신 attach 검증과 상태 표시를 지원하지 않아 올리는 것을 권합니다.
+바꿀 항목은 package.json의 URL 하나이고, 바꾼 뒤 패키지 매니저로 다시 설치합니다.
+  - .../debug-console-v<현재 버전>/apps-in-toss-debug-console-<현재 버전>.tgz
+  + .../debug-console-v<기준 버전>/apps-in-toss-debug-console-<기준 버전>.tgz
+다른 항목은 건드리지 않습니다. 업데이트할까요?
+```
+
+debugger와 debug-console이 둘 다 낮으면 한 번에 묶어 묻되, 항목별로 따로 동의를 받는다.
 동의를 받을 때까지 파일을 쓰지 않는다. 거절하면 그대로 두고, 이번 세션에서는
 다시 묻지 않는다.
 
@@ -50,6 +95,17 @@
   재연결하거나 세션을 다시 시작해야 새 버전이 뜬다(Cursor는 MCP 목록에서 껐다 켠다).
 - 이미 떠 있는 데몬은 옛 버전 그대로이므로, 재연결 전에는 `start_attach`를 다시
   시도해도 같은 결과가 날 수 있다.
+
+debug-console은 동의하면 `package.json`에서 그 항목의 값(URL 또는 버전 표기) 하나만 기준 URL로
+바꾸고(`Edit`), 프로젝트의 패키지 매니저(lockfile로 판단)로 설치를 다시 돌려 lockfile과
+`node_modules`를 맞춘다. 키가 `dependencies`든 `devDependencies`든 그 자리에서 바꾸고
+옮기지 않는다. 새 번들에 반영하려면 디버그 빌드(`AIT_DEBUG_BUILD=1`)를 다시 만들어야 한다. 옛 GitHub
+Release 자산은 바꿀 수 없으므로(잠긴 릴리스) 이미 받은 옛 버전은 핀을 새 URL로 바꿔야만
+벗어난다.
+
+기준 URL이 최소 버전보다 낮으면(릴리스 전 플러그인 상태) 올려도 최소 버전을 채우지 못한다.
+그 경우 새 URL로 바꾸자고 제안하지 말고, 플러그인이 아직 최소 버전 릴리스를 가리키지
+않는다고 알린다.
 
 ## 4. 증상으로 들어온 경우 (start_attach 프로토콜 불일치)
 

@@ -22,8 +22,12 @@
  * which is exactly why Layer A lives at the consumer guard, not here.
  */
 
+import { isDebugAttached, type MaybeAttachOptions, maybeAttach } from './attach.js';
 import { evaluateDebugGate, type GateResult } from './gate.js';
+import { pageSearchWithAttachParams } from './page-at-code.js';
+import { installSdkBridge } from './sdk-bridge.js';
 
+export type { MaybeAttachOptions } from './attach.js';
 export { deriveTargetScriptUrl, detachDebugSurface, maybeAttach } from './attach.js';
 export {
   BRIDGE_CALL_EVENT,
@@ -49,11 +53,41 @@ export type { DebugStatus } from './status-banner.js';
  * (build-time) is enforced by the consumer's `if (__DEBUG_BUILD__)` guard
  * around the import site, not here — see the file-level comment. Consumers
  * call this with no arguments, so the Layer B1 host check is picked up with
- * no change at the call site.
+ * no change at the call site. After attach the `at` code and the `relay` address live on the history
+ * entry instead of the URL (see `page-at-code.ts`), so a reload still gates.
  */
 export function checkDebugGate(): GateResult {
-  return evaluateDebugGate({
-    hostname: window.location.hostname,
-    searchParams: new URLSearchParams(window.location.search),
-  });
+  const searchParams = pageSearchWithAttachParams();
+  return evaluateDebugGate({ hostname: window.location.hostname, searchParams });
+}
+
+/**
+ * Gates the current page and, when the gate passes, attaches the debug surface.
+ * The entry point a debug build calls:
+ *
+ * ```ts
+ * if (__DEBUG_BUILD__) {
+ *   import('@apps-in-toss/debug-console').then((m) =>
+ *     m.startDebugConsole({ relayPublicKeys: ['<output of `debugger relay-key`>'] }),
+ *   );
+ * }
+ * ```
+ *
+ * `relayPublicKeys` are the public keys of the projects whose debugger may
+ * serve this bundle. On a QR test page the relay address in the URL is trusted
+ * only when its signature verifies against one of them. Public values: safe to
+ * commit. See {@link maybeAttach}.
+ */
+export function startDebugConsole(options?: MaybeAttachOptions): Promise<void> | undefined {
+  const attaching = maybeAttach(checkDebugGate(), options);
+  // The SDK bridge (`window.__sdk` / `window.__sdkCall`, used by the debugger's
+  // `call_sdk`) goes in only once the attach was accepted: never on a blocked
+  // gate or a relay signature that did not verify.
+  const installBridge = (): Promise<void> | undefined =>
+    isDebugAttached() ? installSdkBridge() : undefined;
+  if (attaching === undefined) {
+    void installBridge();
+    return undefined;
+  }
+  return attaching.then(installBridge);
 }

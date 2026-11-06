@@ -4,7 +4,7 @@
  * Redact matrix:
  *   Input value                  | Expected output
  *   -----------------------------|----------------
- *   "123456" (6-digit TOTP)      | "***"
+ *   32-hex relay auth code       | "***"
  *   "aitcc_abc123" (Deploy Key)  | "***"
  *   "AITCC_XYZ" (Deploy Key)     | "***"
  *   "session=abc; path=/"        | "***"  (cookie-like value)
@@ -25,6 +25,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logError, logInfo, logWarn, redact } from '../log.js';
+import { generateTotp } from '../totp.js';
+
+/** Fixture secret (64 hex characters) with no operational meaning. */
+const SECRET = 'cafebabe'.repeat(8);
 
 // ---------------------------------------------------------------------------
 // stderr capture helper
@@ -58,8 +62,33 @@ function lastLine(): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 describe('redact()', () => {
-  it('redacts a 6-digit TOTP code (whole string)', () => {
-    expect(redact('123456')).toBe('***');
+  it('redacts a relay auth code (whole string)', () => {
+    expect(redact(generateTotp(SECRET, 1_700_000_000_000))).toBe('***');
+  });
+
+  it('redacts a relay auth code embedded in a longer string', () => {
+    const code = generateTotp(SECRET, 1_700_000_000_000);
+    expect(redact(`dial failed for /at/${code}/target/x`)).toBe('***');
+    expect(redact(`https://h.example/p?debug=1&at=${code}`)).toBe('***');
+    expect(redact(`at=${code}`)).toBe('***');
+  });
+
+  it('redacts a relay endpoint signature carried in a query', () => {
+    expect(redact(`https://h.example/p?debug=1&sig=${'S'.repeat(86)}`)).toBe('***');
+    expect(redact('https://h.example/p?design=1')).toBe('https://h.example/p?design=1');
+  });
+
+  it('redacts the secret itself', () => {
+    expect(redact(SECRET)).toBe('***');
+  });
+
+  it('redacts a hex code regardless of case', () => {
+    expect(redact(generateTotp(SECRET, 1_700_000_000_000).toUpperCase())).toBe('***');
+  });
+
+  it('keeps writing a freshly generated code as "***" in a log line', () => {
+    logInfo('tool.call', { msg: generateTotp(SECRET, Date.now()) });
+    expect(lastLine().msg).toBe('***');
   });
 
   it('redacts an AITCC_API_KEY (aitcc_ prefix, case-insensitive)', () => {
@@ -97,12 +126,15 @@ describe('redact()', () => {
     expect(redact(null)).toBe(null);
   });
 
-  it('does not redact a 5-digit string (not a valid 6-digit TOTP)', () => {
+  it('does not redact a short number-like string', () => {
     expect(redact('12345')).toBe('12345');
+    expect(redact('123456')).toBe('123456');
   });
 
-  it('does not redact a 7-digit string', () => {
-    expect(redact('1234567')).toBe('1234567');
+  it('does not redact a uuid', () => {
+    expect(redact('3f2b8c1e-7a4d-4e0b-9c55-1a2b3c4d5e6f')).toBe(
+      '3f2b8c1e-7a4d-4e0b-9c55-1a2b3c4d5e6f',
+    );
   });
 });
 
@@ -152,8 +184,8 @@ describe('logInfo()', () => {
 
   it('redacts a secret string under an allowed key', () => {
     // "msg" is an allowed key — its value must still be redact-scanned.
-    // We use a 6-digit string which would match the TOTP pattern.
-    logInfo('tool.call', { msg: '123456' });
+    // We use a string shaped like a relay auth code.
+    logInfo('tool.call', { msg: 'ab'.repeat(16) });
     expect(lastLine().msg).toBe('***');
   });
 });
@@ -210,7 +242,7 @@ describe('stage.changed event', () => {
       stage: 'device-handshake',
       result: 'ok',
       attempt: 2,
-      url: 'wss://relay.example/at/123456/target/x',
+      url: 'wss://relay.example/at/abcdef/target/x',
     });
     const line = lastLine();
     expect(line.stage).toBe('device-handshake');

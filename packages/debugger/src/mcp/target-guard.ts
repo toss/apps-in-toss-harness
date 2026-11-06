@@ -92,3 +92,45 @@ return true;
 `;
   return `${guard}${chiiBody}\n}).call(this);\n`;
 }
+
+/** On-phone text for a device whose protocol differs from the relay's. */
+export function updateRequiredText(devicePathProtocol: number, hostProtocol: number): string {
+  return devicePathProtocol < hostProtocol
+    ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console이 디버거보다 오래돼서 연결하지 않았어요. debug-console을 최신 버전으로 올려 다시 배포한 뒤 QR을 다시 스캔하세요.'
+    : '디버거(@apps-in-toss/debugger)가 이 미니앱의 debug-console보다 오래돼서 연결하지 않았어요. 디버거를 최신 버전으로 올려 다시 실행하세요.';
+}
+
+export const UPDATE_REQUIRED_CONSOLE_WARNING =
+  '[ait-debugger] debug-console과 디버거의 프로토콜이 달라서 연결하지 않았어요. 업데이트가 필요해요.';
+
+/**
+ * `target.js` 대신 내려주는 스크립트. 프로토콜이 다른 기기는 chii 코드를 받지 못하고, 화면 위쪽에
+ * 업데이트 필요 막대만 그린다(탭하면 닫힘). 옛 debug-console도 `target.js`를 script 태그로
+ * 실행하므로 이 막대는 어떤 버전에서도 보인다.
+ *
+ * SECRET-HANDLING: 고정 문구와 프로토콜 번호만 들어 있다. `at=`·relay 호스트·페이지 URL은 없다.
+ */
+export function buildUpdateRequiredScript(
+  devicePathProtocol: number,
+  hostProtocol: number,
+): string {
+  const text = updateRequiredText(devicePathProtocol, hostProtocol);
+  return `;(function(){
+var M=${safeJson(text)},W=${safeJson(UPDATE_REQUIRED_CONSOLE_WARNING)};
+try{var d=Object.getOwnPropertyDescriptor(window,'__ait_debug_status');if(!d||d.writable||d.set)window.__ait_debug_status='update-required'}catch(e){}
+try{console.warn(W)}catch(e){}
+function show(){try{
+var host=document.createElement('div');
+host.style.cssText='position:fixed;top:0;left:0;right:0;width:100%;z-index:2147483647;margin:0;padding:0;';
+var root=host.attachShadow?host.attachShadow({mode:'closed'}):host;
+var bar=document.createElement('div');
+bar.style.cssText='box-sizing:border-box;width:100%;padding:12px 16px;background:#b3261e;color:#fff;font:600 14px/1.5 -apple-system,system-ui,sans-serif;word-break:keep-all;cursor:pointer;';
+bar.textContent=M;
+bar.addEventListener('click',function(){if(host.parentNode)host.parentNode.removeChild(host)});
+root.appendChild(bar);
+(document.body||document.documentElement).appendChild(host);
+}catch(e){}}
+if(document.body)show();else document.addEventListener('DOMContentLoaded',show);
+})();
+`;
+}

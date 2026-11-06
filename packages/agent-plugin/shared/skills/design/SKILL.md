@@ -113,7 +113,7 @@ argument-hint: '[screen or request]'
   건다(예: `✅ 완료`, `⚠️ 주의`) — 한 화면에서 두 서체가 섞이면 어색해 보인다.
   권장 항목이라 완료를 막지 않고 자동 수정하지 않는다(`render-rules.md` 1-2).
 - `font-family`는 `Tossface`이고, 공식 README가 안내하는 CDN 경로는
-  `https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css`다. 폰트 파일을
+  `https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/tossface.css`다. 폰트 파일을
   직접 **번들·재배포**하는 경로를 고르면 라이선스가 저작권 안내 + 라이선스
   전문 동봉을 요구하므로, 링크로 쓰는 것과 조건이 다르다는 점을 사용자에게
   알린다.

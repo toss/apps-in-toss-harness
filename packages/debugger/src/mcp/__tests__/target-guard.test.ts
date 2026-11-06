@@ -127,7 +127,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
   let relay: ChiiRelay;
 
   beforeAll(async () => {
-    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: SECRET });
+    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: SECRET }, SECRET);
     if (verifyAuth === undefined) throw new Error('verifyAuth was not built');
     relay = await startChiiRelay({
       port: 0,
@@ -140,7 +140,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
   });
 
   const fetchScript = () =>
-    fetch(`http://127.0.0.1:${relay.port}/at/${generateTotp(SECRET)}/target.js`);
+    fetch(`http://127.0.0.1:${relay.port}/v2/at/${generateTotp(SECRET)}/target.js`);
 
   it('original bytes when nothing is attached; guarded + no-store when attached', async () => {
     const original = readChiiTargetScript();
@@ -150,7 +150,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
 
     const q = new URLSearchParams({ url: FOO, title: 't' });
     const ws = new WebSocket(
-      `ws://127.0.0.1:${relay.port}/at/${generateTotp(SECRET)}/target/t1?${q}`,
+      `ws://127.0.0.1:${relay.port}/v2/at/${generateTotp(SECRET)}/target/t1?${q}`,
     );
     await new Promise((r) => ws.on('open', r));
     await new Promise((r) => setTimeout(r, 100));
@@ -174,8 +174,38 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
     expect(await after.text()).toBe(original);
   });
 
+  it('unprefixed /target.js is refused and never carries an attached host', async () => {
+    const q = new URLSearchParams({ url: FOO, title: 't' });
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${relay.port}/v2/at/${generateTotp(SECRET)}/target/t2?${q}`,
+    );
+    await new Promise((r) => ws.on('open', r));
+    await new Promise((r) => setTimeout(r, 100));
+    try {
+      for (const path of [
+        '/target.js',
+        '/Target.js',
+        '/target.js/',
+        '/v2/at/00000000000000000000000000000000/target.js',
+      ]) {
+        const res = await fetch(`http://127.0.0.1:${relay.port}${path}`);
+        expect(res.status).toBe(401);
+        expect(await res.text()).not.toContain('foo.private-apps.tossmini.com');
+      }
+      // The phone's real path (with a valid code) still gets the guard.
+      const ok = await fetchScript();
+      expect(ok.status).toBe(200);
+      expect(await ok.text()).toContain('foo.private-apps.tossmini.com');
+    } finally {
+      ws.close();
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  });
+
   it('unauthenticated request is still rejected', async () => {
-    const res = await fetch(`http://127.0.0.1:${relay.port}/at/000000/target.js`);
+    const res = await fetch(
+      `http://127.0.0.1:${relay.port}/v2/at/00000000000000000000000000000000/target.js`,
+    );
     expect(res.status).toBe(401);
   });
 });

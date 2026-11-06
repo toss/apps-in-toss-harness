@@ -1,7 +1,8 @@
-@import url("https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css");
+@import url("https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/tossface.css");
 @import "./tokens.css";
 
-/* CDN이 막힌 환경에서는 에러 없이 시스템 이모지 폰트로 조용히 대체된다.
+/* 서체 주소는 버전(@1.6.1)을 박았다. 버전 없는 주소는 원본이 바뀌면 배포된 앱 서체도 바뀐다.
+   CDN이 막힌 환경에서는 에러 없이 시스템 이모지 폰트로 조용히 대체된다.
    토스 앱 WebView에서 jsdelivr CDN 로드는 확인됐다(2026-10-14, iOS·Android).
    자기 앱에서 확인하려면 /ait:test-on-device(번들 업로드 → 콘솔 컴파일 확인 → 토스 앱에서 열기). */
 

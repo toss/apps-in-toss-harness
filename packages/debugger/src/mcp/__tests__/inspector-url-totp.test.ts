@@ -88,16 +88,16 @@ describe('buildChiiInspectorUrl — TOTP 있음/없음 × relay 환경 매트릭
       expect(wsParam).toContain('at=999888');
     });
 
-    it('generateTotp(secret)로 생성한 mintTotp → URL에 6자리 코드 포함', () => {
-      // 실제 TOTP 코드 생성 경로 검증 — 코드 값은 검증하지 않고 형식(6자리)만 확인.
+    it('generateTotp(secret)로 생성한 mintTotp → URL에 32자 코드 포함', () => {
+      // 실제 TOTP 코드 생성 경로 검증 — 코드 값은 검증하지 않고 형식(32자 hex)만 확인.
       const url = buildChiiInspectorUrl('http://127.0.0.1:9100', 'tgt', () =>
         generateTotp(FIXTURE_SECRET),
       );
       expect(url).not.toBeNull();
       const parsed = new URL(url as string);
       const wsParam = decodeURIComponent(parsed.searchParams.get('ws') ?? '');
-      // at= 뒤에 6자리 숫자 패턴 — 코드 값 자체는 출력/스냅샷 금지.
-      expect(wsParam).toMatch(/at=\d{6}/);
+      // at= 뒤에 32자 hex 패턴 — 코드 값 자체는 출력/스냅샷 금지.
+      expect(wsParam).toMatch(/at=[0-9a-f]{32}/);
     });
   });
 

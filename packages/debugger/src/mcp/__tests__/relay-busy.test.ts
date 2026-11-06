@@ -25,7 +25,7 @@ const BAR = 'https://bar.private-apps.tossmini.com/p?at=654321';
 
 function targetUrl(port: number, id: string, pageUrl: string | null): string {
   const q = new URLSearchParams(pageUrl === null ? { title: 't' } : { url: pageUrl, title: 't' });
-  return `ws://127.0.0.1:${port}/at/${generateTotp(TEST_SECRET)}/target/${id}?${q}`;
+  return `ws://127.0.0.1:${port}/v2/at/${generateTotp(TEST_SECRET)}/target/${id}?${q}`;
 }
 
 interface Outcome {
@@ -59,7 +59,7 @@ describe('relay busy rejection (first mini-app wins)', () => {
   let policyThrows = false;
 
   beforeAll(async () => {
-    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET });
+    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET }, TEST_SECRET);
     if (verifyAuth === undefined) throw new Error('verifyAuth was not built');
     relay = await startChiiRelay({
       port: 0,
