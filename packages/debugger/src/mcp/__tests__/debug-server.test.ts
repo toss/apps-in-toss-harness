@@ -14,6 +14,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { AitMethodMap, AitMethodName, AitSource } from '../ait-source.js';
+import { START_ATTACH_SEGMENT_MS } from '../attach-orchestrator.js';
 import type {
   CdpCommandMap,
   CdpCommandName,
@@ -29,8 +30,14 @@ import {
   startParentWatcher,
 } from '../debug-server.js';
 import type { McpEnvironment } from '../environment.js';
+import { relayRunId } from '../relay-run-id.js';
 import type { TunnelStatus } from '../tools.js';
 import { BOOTSTRAP_TOOL_NAMES, DEBUG_TOOL_DEFINITIONS } from '../tools.js';
+
+/** Fake of QrHttpServer.tokenizeUrl: appends a recognisable dashboard token. */
+const FAKE_DASH_TOKEN = 'd'.repeat(64);
+const fakeTokenize = (u: string): string =>
+  `${u}${u.includes('?') ? '&' : '?'}dashtoken=${FAKE_DASH_TOKEN}`;
 
 // Stub `qrcode` so tests are deterministic and don't need a real QR matrix.
 // The stub produces a 1x1 module matrix so the half-block loop runs but is cheap.
@@ -251,7 +258,7 @@ describe('start_attach — response includes unicode QR', () => {
     expect(text).toContain('do NOT re-print the QR below in your reply');
   });
 
-  it('response text contains the attachUrl JSON and a QR string without ANSI escapes', async () => {
+  it('response text contains the relayUrl JSON (no attachUrl) and a QR string without ANSI escapes', async () => {
     const client = await makeClient({
       getTunnelStatus: () => tunnelUp,
       connection: new FakeCdpConnection([matchTarget('test-uuid-1234')]),
@@ -274,15 +281,14 @@ describe('start_attach — response includes unicode QR', () => {
 
     const text = block!.text!;
 
-    // JSON portion: must contain attachUrl and relayUrl keys. The block nests a
-    // `totp` object, so extract the full balanced object (not a non-greedy match).
+    // JSON portion: relayUrl only. The attach link (and its short-lived code)
+    // lives in the QR, never as readable JSON. The block nests a `totp` object,
+    // so extract the full balanced object (not a non-greedy match).
     const parsed = parseLeadingJson(text) as { attachUrl?: string; relayUrl?: string };
-    expect(parsed).toHaveProperty('attachUrl');
+    expect(parsed).not.toHaveProperty('attachUrl');
     expect(parsed).toHaveProperty('relayUrl');
     expect(parsed.relayUrl).toBe('wss://abc123.trycloudflare.com');
-    // attachUrl must contain the relay and debug flag
-    expect(parsed.attachUrl).toContain('debug=1');
-    expect(parsed.attachUrl).toContain('relay=');
+    expect(text).not.toMatch(/at=[0-9a-f]{32}/);
 
     // No ANSI escape codes (0x1b) in the response
     expect(text.split('').some((c) => c.charCodeAt(0) === 0x1b)).toBe(false);
@@ -376,6 +382,36 @@ describe('start_attach — protocol version skew', () => {
     expect(text).not.toContain('at=');
   });
 
+  it('ends the wait early with the update message when a skewed device is refused mid-wait', async () => {
+    const skew = {
+      match: false,
+      deviceProtocol: 1,
+      hostProtocol: 2,
+      deviceVersion: '0.2.0',
+    } as const;
+    let refused = false;
+    setTimeout(() => {
+      refused = true;
+    }, 30);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: new FakeCdpConnection([]),
+      waitForAttachTimeoutMs: 400,
+      getProtocolVersionSkew: () => (refused ? skew : null),
+    });
+
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: schemeUrl },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('업데이트가 필요합니다');
+    expect(text).toContain('연결하지 않았습니다');
+    expect(text).not.toContain('타임아웃');
+  });
+
   it('attaches normally when the versions agree', async () => {
     const client = await makeClient({
       getTunnelStatus: () => tunnelUp,
@@ -439,14 +475,15 @@ describe('start_attach — wait_for_attach', () => {
   });
 
   it('matches a 3.0-runtime page by relay wss when _deploymentId is not propagated (#763)', async () => {
-    // The 3.0 loader consumes _deploymentId natively (absent from the page
-    // URL), but the appended relay= param IS propagated (percent-encoded).
+    // The runtime consumes _deploymentId natively (absent from the page
+    // URL), while the appended relay= param was observed in the page URL
+    // (percent-encoded).
     // The page must match via this run's relay wss despite the missing id.
     const connection = new FakeCdpConnection([
       {
         id: 'target-3x',
         title: 'sdk-example',
-        url: 'https://app.apps.tossmini.com/?debug=1&relay=wss%3A%2F%2Fabc123.trycloudflare.com&at=000000',
+        url: 'https://app.private-web.tossmini.com/?debug=1&relay=wss%3A%2F%2Fabc123.trycloudflare.com&at=000000',
       },
     ]);
     const client = await makeClient({
@@ -466,12 +503,59 @@ describe('start_attach — wait_for_attach', () => {
     expect(text).toContain('target-3x');
   });
 
+  it('matches a page whose URL no longer carries relay= by the run marker (rid=)', async () => {
+    // debug-console removes relay= and at= from the page URL after reading them;
+    // the run marker the deep link also carries is what stays.
+    const secret = DUMMY_SECRET_FOR_TESTS;
+    const rid = relayRunId(secret, tunnelUp.wssUrl as string);
+    expect(rid).toMatch(/^[0-9a-f]{10}$/);
+    const connection = new FakeCdpConnection([
+      {
+        id: 'target-cleaned',
+        title: 'sdk-example',
+        url: `https://app.apps.tossmini.com/?debug=1&rid=${rid}`,
+      },
+    ]);
+    const client = await makeClient({ getTunnelStatus: () => tunnelUp, connection });
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=not-in-page-url' },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(getContent(result)[0]!.text!).toContain('target-cleaned');
+  });
+
+  it('rejects a cleaned page carrying the run marker of another tunnel', async () => {
+    const other = relayRunId(DUMMY_SECRET_FOR_TESTS, 'wss://old-run.trycloudflare.com');
+    const connection = new FakeCdpConnection([
+      {
+        id: 'stale-cleaned',
+        title: 'old-run',
+        url: `https://app.apps.tossmini.com/?debug=1&rid=${other}`,
+      },
+    ]);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection,
+      waitForAttachTimeoutMs: 50,
+    });
+    const result = await client.callTool(
+      {
+        name: 'start_attach',
+        arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=fresh-id' },
+      },
+      undefined,
+      { timeout: 5000 },
+    );
+    expect(result.isError).toBe(true);
+  });
+
   it('still rejects a stale page carrying neither the deploymentId nor this run relay (#763)', async () => {
     const connection = new FakeCdpConnection([
       {
         id: 'stale-target',
         title: 'old-run',
-        url: 'https://app.apps.tossmini.com/?debug=1&relay=wss%3A%2F%2Fold-run.trycloudflare.com&at=000000',
+        url: 'https://app.private-web.tossmini.com/?debug=1&relay=wss%3A%2F%2Fold-run.trycloudflare.com&at=000000',
       },
     ]);
     const client = await makeClient({
@@ -901,14 +985,15 @@ describe('start_attach — TOTP in-call re-mint', () => {
 
   /**
    * Connection whose `waitForFirstTarget` advances an injected clock by 160 s
-   * each call and rejects (= a 30 s segment elapsed without attach in fake
+   * each call and rejects (= a segment elapsed without attach in fake
    * time), until the configured segment count is reached — then it resolves
-   * with the matching target. Driving the clock past 150 s forces a re-mint.
+   * with the matching target. Driving the clock across code steps forces a re-mint.
    */
   class RemintConnection extends FakeCdpConnection {
     private callCount = 0;
     constructor(
       private readonly advanceClock: (ms: number) => void,
+      private readonly stepMs = 160_000,
       private readonly resolveOnCall: number,
     ) {
       super([]);
@@ -924,12 +1009,12 @@ describe('start_attach — TOTP in-call re-mint', () => {
         if (filterFn(targets)) return Promise.resolve(targets);
       }
       // Segment elapsed: advance fake time past the re-mint threshold, reject.
-      this.advanceClock(160_000);
+      this.advanceClock(this.stepMs);
       return Promise.reject(new Error('segment timeout (fake)'));
     }
   }
 
-  it('re-mints a fresh TOTP code when the wait crosses the 150 s threshold', async () => {
+  it('re-mints a fresh TOTP code when the wait crosses a code step', async () => {
     let mockNow = 1_000_000;
     const nowMs = () => mockNow;
     const advanceClock = (ms: number) => {
@@ -937,9 +1022,9 @@ describe('start_attach — TOTP in-call re-mint', () => {
     };
     const builtParts: AttachUrlParts[] = [];
 
-    // Resolve on the 2nd segment: segment 1 advances +160 s (≥150 s) → 1 re-mint,
+    // Resolve on the 2nd segment: segment 1 advances +160 s (several code steps) → 1 re-mint,
     // segment 2 resolves with the attached target.
-    const connection = new RemintConnection(advanceClock, /*resolveOnCall*/ 2);
+    const connection = new RemintConnection(advanceClock, 160_000, /*resolveOnCall*/ 2);
 
     const server = createDebugServer({
       connection,
@@ -976,6 +1061,68 @@ describe('start_attach — TOTP in-call re-mint', () => {
     expect(builtParts.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('does not re-mint while the code has not changed, and does once it steps over', async () => {
+    // Segments of 2 s inside one 5 s code step: the link stays the same, so
+    // nothing is re-pushed. A step boundary in between makes exactly one re-mint.
+    let mockNow = 30_000 * 1000; // start of a code step
+    const builtParts: AttachUrlParts[] = [];
+    const run = async (resolveOnCall: number, segmentMs: number): Promise<string> => {
+      const connection = new RemintConnection(
+        (ms) => {
+          mockNow += ms;
+        },
+        segmentMs,
+        resolveOnCall,
+      );
+      const server = createDebugServer({
+        connection,
+        aitSource: new FakeAitSource(),
+        getTunnelStatus: () => tunnelUp,
+        getEnvironment: () => 'relay-dev',
+        getEnvironmentReason: () => 'test-pinned-relay-dev',
+        totpSecret: DUMMY_SECRET_FOR_TESTS,
+        nowMs: () => mockNow,
+        onAttachUrlBuilt: (parts) => builtParts.push(parts),
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+      const client = new Client({ name: 'remint-steady', version: '0.0.0' });
+      await client.connect(clientTransport);
+      const result = await client.callTool(
+        {
+          name: 'start_attach',
+          arguments: {
+            scheme_url: 'intoss-private://miniapp?_deploymentId=remint-test',
+            wait_timeout_seconds: 600,
+          },
+        },
+        undefined,
+        { timeout: 10_000 },
+      );
+      return getContent(result)[0]!.text!;
+    };
+
+    // Two 2 s segments: 4 s into the step, same code.
+    const steady = await run(3, 2_000);
+    expect(steady).not.toMatch(/"reminted"/);
+    expect(builtParts).toHaveLength(1);
+
+    // Three 2 s segments from the start of a step: the third crosses the boundary.
+    builtParts.length = 0;
+    mockNow = 60_000 * 1000;
+    const stepped = await run(4, 2_000);
+    expect(stepped).toMatch(/"reminted":\s*1\b/);
+    expect(builtParts).toHaveLength(2);
+
+    // At the real segment length (one step), every segment boundary is a new
+    // step, so the QR is re-issued once per step: 5 segments → 5 re-mints.
+    builtParts.length = 0;
+    mockNow = 90_000 * 1000;
+    const perStep = await run(6, START_ATTACH_SEGMENT_MS);
+    expect(perStep).toMatch(/"reminted":\s*5\b/);
+    expect(builtParts).toHaveLength(6);
+  });
+
   it('does NOT leak the TOTP at= code value in the tool-result', async () => {
     // A matching page is already attached so the wait resolves immediately.
     const connection = new FakeCdpConnection([matchTarget]);
@@ -1004,7 +1151,7 @@ describe('start_attach — TOTP in-call re-mint', () => {
     // SECRET-HANDLING: no bare `at=<6-digit>` may appear in the result OUTSIDE
     // the attachUrl string (which legitimately carries it in the QR payload).
     const withoutAttachUrl = text.replace(/"attachUrl":\s*"[^"]*"/g, '');
-    expect(withoutAttachUrl).not.toMatch(/\bat=\d{6}\b/);
+    expect(withoutAttachUrl).not.toMatch(/\bat=[0-9a-f]{32}\b/);
   });
 });
 
@@ -1684,9 +1831,48 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
     expect(text).toContain('GUI 환경이 감지되지 않았습니다');
     // [open_in_browser] 접두어는 더 이상 출력되지 않음
     expect(text).not.toContain('[open_in_browser]');
-    // 텍스트 QR 경로로 폴백 — attachUrl, relayUrl이 포함
-    expect(text).toContain('attachUrl');
+    // 텍스트 QR 경로로 폴백 — relayUrl만 JSON에 있고 attachUrl은 QR에만 있다
+    expect(text).not.toContain('attachUrl');
     expect(text).toContain('relayUrl');
+  });
+
+  it('marks the attached page list in the result as untrusted page data', async () => {
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: attachedConn('intoss-private://miniapp?_deploymentId=mark-test'),
+    });
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=mark-test' },
+    });
+    expect(result.isError).toBeFalsy();
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('"untrustedData": true');
+    expect(text).toContain('"tool": "start_attach"');
+  });
+
+  it('hands the text QR over the progress channel before the call returns', async () => {
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: attachedConn('intoss-private://miniapp?_deploymentId=progress-qr'),
+    });
+    const messages: string[] = [];
+
+    const result = await client.callTool(
+      {
+        name: 'start_attach',
+        arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=progress-qr' },
+      },
+      undefined,
+      { onprogress: (p) => messages.push(p.message ?? '') },
+    );
+
+    expect(result.isError).toBeFalsy();
+    const qrMessage = messages.find((m) => m.includes('QR을 스캔하세요'));
+    expect(qrMessage).toBeDefined();
+    // A scannable block, not a readable link.
+    expect(qrMessage).toMatch(/[▀▄█]/);
+    expect(qrMessage).not.toMatch(/at=[0-9a-f]{32}/);
   });
 
   it('when browser open succeeds: openResult.succeeded=true is in JSON', async () => {
@@ -1696,8 +1882,10 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
 
     const fakeQrServer = {
       port: 19999,
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
+      tokenizeUrl: fakeTokenize,
       hasActiveClients: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
@@ -1738,8 +1926,10 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
 
     const fakeQrServer = {
       port: 19998,
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19998/attach?u=${encodeURIComponent(url)}`,
+      tokenizeUrl: fakeTokenize,
       hasActiveClients: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
@@ -1815,8 +2005,9 @@ describe('start_attach — scheme authority warning', () => {
     expect(result.isError).toBeFalsy();
     const text = getContent(result)[0]!.text!;
     expect(text).toContain('경고');
-    // Still produces a valid attach URL (non-fatal).
-    expect(text).toContain('attachUrl');
+    // Still produces the attach QR (non-fatal), without a readable attach link.
+    expect(text).not.toContain('attachUrl');
+    expect(text).toContain('relayUrl');
   });
 
   it('result text includes a warning when authority is empty', async () => {
@@ -1863,8 +2054,8 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
 
     expect(result.isError).toBeFalsy();
     const text = getContent(result)[0]!.text!;
-    // GUI 없으므로 text QR 경로 — attachUrl, relayUrl 포함
-    expect(text).toContain('attachUrl');
+    // GUI 없으므로 text QR 경로 — relayUrl만 JSON에 있다
+    expect(text).not.toContain('attachUrl');
     expect(text).toContain('relayUrl');
     // [open_in_browser] 접두어는 더 이상 출력되지 않음
     expect(text).not.toContain('[open_in_browser]');
@@ -1881,8 +2072,10 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
       port: 19999,
       inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
+      tokenizeUrl: fakeTokenize,
       hasActiveClients: () => false,
       close: async () => {},
     };
@@ -1922,8 +2115,10 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
       port: 19999,
       inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
       buildAttachPageUrl: () => 'http://127.0.0.1:19999/',
       notifyStateChange: notify,
+      tokenizeUrl: fakeTokenize,
       hasActiveClients: () => true,
       close: async () => {},
     };
@@ -1976,8 +2171,10 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
       port: 19999,
       inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
+      tokenizeUrl: fakeTokenize,
       hasActiveClients: () => false,
       close: async () => {},
     };
@@ -2000,8 +2197,8 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     // Fallback: includes the "브라우저 자동 열기에 실패" note and HTTP URL.
     expect(text).toContain('브라우저 자동 열기에 실패했습니다');
     expect(text).toContain('http://127.0.0.1:19999/attach');
-    // text QR fallback: attachUrl JSON should be in the QR path too.
-    expect(text).toContain('attachUrl');
+    // text QR fallback: the JSON carries no attachUrl.
+    expect(text).not.toContain('attachUrl');
     // [open_in_browser] 접두어는 더 이상 출력되지 않음
     expect(text).not.toContain('[open_in_browser]');
   });
@@ -2016,10 +2213,27 @@ describe('start_attach — TOTP auto-splice', () => {
   const DUMMY_SECRET = 'deadbeef'.repeat(8);
   const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
 
-  it('includes at=<6-digit-code> in attachUrl when totpSecret is set', async () => {
+  it('includes at=<32-hex-code> in the attach link when totpSecret is set', async () => {
+    const toolsMod = await import('../tools.js');
+    (toolsMod.canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+    const { spawnSync } = await import('node:child_process');
+    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({ status: 0, stderr: '', error: null });
+    const minted: string[] = [];
+    const fakeQrServer = {
+      port: 19997,
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
+      buildAttachPageUrl: (url: string) => {
+        minted.push(url);
+        return `http://127.0.0.1:19997/attach?u=${encodeURIComponent(url)}`;
+      },
+      tokenizeUrl: fakeTokenize,
+      hasActiveClients: () => false,
+      close: () => Promise.resolve(),
+    } as import('../qr-http-server.js').QrHttpServer;
     const client = await makeClient({
       getTunnelStatus: () => tunnelUp,
       totpSecret: DUMMY_SECRET,
+      qrHttpServer: fakeQrServer,
       connection: attachedConn('intoss-private://aitc-sdk-example?_deploymentId=test-uuid'),
     });
 
@@ -2031,9 +2245,8 @@ describe('start_attach — TOTP auto-splice', () => {
     });
 
     expect(result.isError).toBeFalsy();
-    const text = getContent(result)[0]!.text!;
-    // attachUrl in the JSON must contain at=<6-digit-code>
-    expect(text).toMatch(/at=\d{6}/);
+    expect(minted).toHaveLength(1);
+    expect(minted[0]).toMatch(/at=[0-9a-f]{32}/);
   });
 
   it('includes totp.enabled=true in the JSON response', async () => {
@@ -2053,8 +2266,8 @@ describe('start_attach — TOTP auto-splice', () => {
     const text = getContent(result)[0]!.text!;
     // The totp block must be in the JSON output.
     expect(text).toContain('"enabled": true');
-    // ttlSeconds reflects the relay gate's RELAY_VERIFY_SKEW_STEPS=6 window (#490): 6×30=180 s
-    expect(text).toContain('"ttlSeconds": 180');
+    // ttlSeconds reflects the relay gate's RELAY_VERIFY_SKEW_STEPS=6 window: 6×5=30 s
+    expect(text).toContain('"ttlSeconds": 30');
     expect(text).toContain('"expiresAt"');
   });
 
@@ -2126,7 +2339,7 @@ describe('onAttachUrlBuilt — AttachUrlParts stored, fresh TOTP re-minted on ge
       expect(parts.wssUrl).toBe('wss://relay.trycloudflare.com');
     }
     // SECRET-HANDLING: the parts object must NOT contain any minted TOTP code.
-    expect(JSON.stringify(parts)).not.toMatch(/\bat=\d{6}/);
+    expect(JSON.stringify(parts)).not.toMatch(/\bat=[0-9a-f]{32}/);
   });
 
   it('getDashboardState re-mints a fresh at= code on each call (kind:scheme)', async () => {
@@ -2171,7 +2384,7 @@ describe('onAttachUrlBuilt — AttachUrlParts stored, fresh TOTP re-minted on ge
 
       // Manually replicate rebuildAttachUrl to verify the contract.
       const code = generateTotp(SECRET);
-      expect(/^\d{6}$/.test(code)).toBe(true);
+      expect(/^[0-9a-f]{32}$/.test(code)).toBe(true);
 
       // Build the URL directly to assert at= is present.
       if (schemePartsSnapshot.kind === 'scheme') {
@@ -2252,5 +2465,74 @@ describe('onAttachUrlBuilt — AttachUrlParts stored, fresh TOTP re-minted on ge
         process.env.AIT_DEBUG_TOTP_SECRET = prevSecret;
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// start_attach — dashboard access token and attach secrets stay out of results
+// ---------------------------------------------------------------------------
+
+describe('start_attach — dashboard token and attach secrets in results', () => {
+  const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
+  const SCHEME = 'intoss-private://miniapp?_deploymentId=token-leak-test';
+
+  /** Mirrors the real server contract: printable URLs carry no token, `u`, at or sig. */
+  const contractQrServer = (): import('../qr-http-server.js').QrHttpServer => ({
+    port: 19997,
+    inspectorStableUrl: 'http://127.0.0.1:19997/inspector',
+    buildPngUrl: () => 'http://127.0.0.1:19997/qr.png',
+    buildAttachPageUrl: () => 'http://127.0.0.1:19997/',
+    notifyStateChange: () => {},
+    tokenizeUrl: fakeTokenize,
+    hasActiveClients: () => false,
+    close: async () => {},
+  });
+
+  async function run(spawnImpl: unknown) {
+    const toolsMod = await import('../tools.js');
+    (toolsMod.canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+    const { spawnSync } = await import('node:child_process');
+    const spawnMock = spawnSync as ReturnType<typeof vi.fn>;
+    spawnMock.mockReset();
+    spawnMock.mockReturnValue(spawnImpl);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      qrHttpServer: contractQrServer(),
+      connection: attachedConn(SCHEME),
+    });
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: SCHEME },
+    });
+    return { text: getContent(result)[0]!.text!, spawnMock };
+  }
+
+  it('success path: the browser gets the tokened URL, the result text has no token', async () => {
+    const { text, spawnMock } = await run({ status: 0, stderr: '', error: null });
+    const launched = spawnMock.mock.calls.map((c) => (c[1] as string[]).join(' ')).join('\n');
+    expect(launched).toContain(`dashtoken=${FAKE_DASH_TOKEN}`);
+    expect(text).not.toContain('dashtoken=');
+    expect(text).not.toContain(FAKE_DASH_TOKEN);
+  });
+
+  it('failure path: only the paste-by-hand URL carries the token; pngUrl has no u/at/sig', async () => {
+    const { text } = await run({ error: new Error('ENOENT'), stderr: '', status: null });
+    expect(text).toContain('브라우저 자동 열기에 실패했습니다');
+    expect(text.match(/dashtoken=/g)).toHaveLength(1);
+    const json = text.slice(text.indexOf('\n{\n') + 1, text.indexOf('\n}\n') + 2);
+    expect(json).not.toContain('dashtoken');
+    expect(JSON.parse(json).openResult.pngUrl).toBe('http://127.0.0.1:19997/qr.png');
+    expect(text).not.toMatch(/[?&]u=/);
+    expect(text).not.toMatch(/[?&](at|sig|relay)=/);
+  });
+
+  it('failure path: a launcher that echoes the launch URL on stderr does not leak the token', async () => {
+    const { text } = await run({
+      error: undefined,
+      status: 1,
+      stderr: `could not open http://127.0.0.1:19997/?dashtoken=${FAKE_DASH_TOKEN}`,
+    });
+    const afterNote = text.slice(text.indexOf('stderr:'));
+    expect(afterNote).not.toContain(FAKE_DASH_TOKEN);
   });
 });

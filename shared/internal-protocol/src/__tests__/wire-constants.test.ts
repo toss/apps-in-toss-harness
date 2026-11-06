@@ -16,8 +16,21 @@ import {
   RELAY_WS_OBSERVED_FLAG,
   RELAY_WS_STATE_EVENT,
 } from '../bridge-observer-state.js';
-import { RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON } from '../relay-auth-close.js';
+import {
+  RELAY_AUTH_LOCKED_CLOSE_CODE,
+  RELAY_AUTH_LOCKED_REASON,
+  RELAY_AUTH_REJECT_CLOSE_CODE,
+  RELAY_AUTH_REJECT_REASON,
+} from '../relay-auth-close.js';
 import { RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON } from '../relay-busy-close.js';
+
+describe('relay auth lock', () => {
+  it('uses a retryable application close code distinct from the terminal rejection', () => {
+    expect(RELAY_AUTH_LOCKED_CLOSE_CODE).toBe(4429);
+    expect(RELAY_AUTH_LOCKED_CLOSE_CODE).not.toBe(RELAY_AUTH_REJECT_CLOSE_CODE);
+    expect(RELAY_AUTH_LOCKED_REASON).toBe('auth-locked');
+  });
+});
 
 describe('relay auth rejection', () => {
   it('uses an application close code, not a protocol one', () => {

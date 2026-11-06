@@ -31,6 +31,7 @@ import { realpathSync } from 'node:fs';
 import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { runDebugServer, runLocalDebugServer } from './debug-server.js';
+import { runRelayKey } from './relay-key.js';
 import { runDevServer } from './server.js';
 import { readDevtoolsVersion } from './tools.js';
 
@@ -49,6 +50,7 @@ debugger — MCP debugging daemon (CDP/Chii relay + dev-mode bridge) for Apps in
 
 USAGE
   debugger [options]
+  debugger relay-key [--project <dir>]
 
 OPTIONS
   --mode <mode>          debug (default) | dev. debug boots the MCP stdio
@@ -78,6 +80,13 @@ DESCRIPTION
   honored. MCP_ENV is NOT — it is accepted and ignored (#665). Switch
   environments in-session with the start_debug / start_attach tools; no
   restart is needed.
+
+SUBCOMMANDS
+  relay-key               Print the relay public key for this project (creates
+                          .ait_relay when missing). The key goes into the debug
+                          build so the device can check the relay address in a
+                          QR link. \`--rotate\` replaces the key with a new
+                          one. Run \`debugger relay-key --help\`.
 
 EXAMPLE
   debugger --mode=debug --target=local
@@ -233,6 +242,11 @@ function normalizeTarget(value: string): Target {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  if (args[0] === 'relay-key') {
+    process.exitCode = await runRelayKey(args.slice(1));
+    return;
+  }
 
   // --help/--version short-circuit before any other parsing — checked first
   // regardless of what else is in argv, matching debugger-test's convention.

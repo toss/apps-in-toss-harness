@@ -457,8 +457,7 @@ describe('positive-allowlist: relay-staging on allowed host passes side-effect t
 });
 
 // ---- connectionHostsAllowed unit tests (#665 작업 B) ------------------------
-// 지시서 §작업 B.1: (b) apps.tossmini.com → false/거부, (c) 0 targets → true,
-// (d) 빈 URL → false (파싱 불가 → fail-closed, 작업 A 수정 후 검증)
+// (b) 운영 host는 거부, (c) 0 targets → true, (d) 빈 URL → false (파싱 불가 → fail-closed)
 
 describe('connectionHostsAllowed — positive-allowlist kill-switch unit', () => {
   it('(a) private-apps target → 허용', () => {
@@ -468,14 +467,30 @@ describe('connectionHostsAllowed — positive-allowlist kill-switch unit', () =>
     expect(connectionHostsAllowed(conn)).toBe(true);
   });
 
-  it('(b) apps.tossmini.com target → 허용 (3.0 통합 서빙 계열, #760)', () => {
-    // #760 이전에는 거부(production host). 3.0 로더가 dogfood candidate를
-    // 같은 tossmini 계열에서 서빙하므로 MCP 쪽도 계열 필터로 넓힌다 —
-    // attach 자체는 여전히 in-app gate의 C 레이어(TOTP 필수)가 지킨다.
+  it('(a2) private-web target → 허용', () => {
     const conn = new FakeConn('relay', [
-      { id: 'p1', title: 'prod', url: 'https://apps.tossmini.com/app' },
+      { id: 'r1', title: 'app', url: 'https://r1.private-web.tossmini.com/app' },
     ]);
     expect(connectionHostsAllowed(conn)).toBe(true);
+  });
+
+  it.each([
+    'https://r1.apps.tossmini.com/app',
+    'https://r1.web.tossmini.com/app',
+    'https://apps.tossmini.com/app',
+    'https://private-apps.tossmini.com.evil.example/app',
+    'https://evil-private-apps.tossmini.com/app',
+  ])('(b) 운영·비허용 host target %s → 거부', (url) => {
+    const conn = new FakeConn('relay', [{ id: 'p1', title: 'prod', url }]);
+    expect(connectionHostsAllowed(conn)).toBe(false);
+  });
+
+  it('(b1) 허용 target 하나라도 비허용 target과 섞이면 거부', () => {
+    const conn = new FakeConn('relay', [
+      { id: 'r1', title: 'app', url: 'https://r1.private-apps.tossmini.com/app' },
+      { id: 'p1', title: 'prod', url: 'https://r1.apps.tossmini.com/app' },
+    ]);
+    expect(connectionHostsAllowed(conn)).toBe(false);
   });
 
   it('(b2) 비-tossmini 외부 host target → 거부', () => {

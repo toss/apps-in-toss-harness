@@ -39,7 +39,7 @@ JS 소스만 쟀고 TS 로더, dev 서버, 실기기는 미확인이다.
 - `ait build`는 번들러 종류를 보지 않는다. `apps-in-toss.config.*`의 `webBundleDir`(기본 `dist`)를 그대로
   패킹하고, 디렉터리나 그 안의 `index.html`이 없으면 에러로 끝난다. 기본 출력이 `dist`인 Vite, webpack,
   Rspack은 설정이 필요 없다. esbuild와 Rollup은 출력 디렉터리를 `dist`로 맞추거나 `webBundleDir`를 바꾼다.
-- debug-console `/auto`의 DEV 판정은 `process.env.NODE_ENV` 치환에 기댄다. webpack과 Rspack은 mode만으로
+- (참고) debug-console `/auto`의 DEV 판정은 `process.env.NODE_ENV` 치환에 기댄다. webpack과 Rspack은 mode만으로
   치환되지만, esbuild와 Rollup은 `process.env.NODE_ENV`를 직접 define(replace)해야 한다. 치환이 없으면
   `/auto`가 예외를 잡고 휴면하는 것으로 코드상 읽히나 이 경로는 실행해 보지 못했다(미확인).
 - debug-console의 build-gate(`__DEBUG_BUILD__`) 방식은 다섯 번들러 모두 `false` 빌드에서 attach 코드가

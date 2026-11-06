@@ -329,8 +329,11 @@ npx -y create-ait-app@latest <package_name> --inline --pm npm --template react-t
   환경은 특정 버전·dist-tag를 못 내려주거나, `latest`를 공개 registry와 다르게
   준다(최신을 숨겨 구버전을 주기도 하고 공개에 없는 prerelease를 주기도 한다 —
   그래서 해석 실패를 "그 버전이 없다"로 단정하면 안 된다). 공개
-  미러(`registry.npmmirror.com`)·jsdelivr로 교차 확인하고, 그 프로젝트 전용
-  `.npmrc`의 registry override나 `--local` 폴백으로 우회한다(호스트명을
+  미러(`registry.npmmirror.com`)·jsdelivr로 교차 확인한다. 우회가 필요하면
+  `--local` 폴백을 먼저 권하고, 레지스트리를 바꾸는 우회(프로젝트 전용 `.npmrc`의
+  override, `npm_config_registry`)는 쓸 호스트와 이유를 사용자에게 보여 주고 동의를
+  받은 뒤에 한다. 바꾼 registry에서 받은 패키지는 공개 registry와 같은 바이트라는
+  보장이 없으니, 명령 한 번에만 주고 `.npmrc`에는 남기지 않는다(호스트명을
   하드코드하지 않는다).
 - **scaffold 단계 install이 실패한 경우** — 0.2.4부터 CLI는 생성 디렉터리를
   지우지 않고 남긴 채 `cd <dir>` 이어하기 안내를 낸다(0.2.8 실측). 이 실패는
@@ -397,8 +400,12 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
    (이제 install이 정상이라 성공할 가능성이 높다):
 
    ```bash
-   (cd ./<package_name> && npx -y ait init --app-name <package_name> --skip-input)
+   (cd ./<package_name> && A=./node_modules/.bin/ait && if [ -x "$A" ]; then "$A" init --app-name <package_name> --skip-input; else echo "프로젝트에 ait bin이 없어 init을 건너뜁니다: $A" >&2; exit 1; fi)
    ```
+
+   프로젝트 안에 설치된 bin만 쓴다. `npx -y ait`는 로컬 bin이 없을 때 npm 레지스트리의
+   같은 이름 패키지(앱인토스 CLI가 아닌 다른 패키지일 수 있다)를 받아 실행하므로 쓰지
+   않는다. bin이 없으면 install이 덜 끝난 것이니 위 1번의 install부터 다시 한다.
 
    그래도 실패하면 stderr를 그대로 보고하고, 아래 Step 3(형상 가드)에서
    중단된다.
@@ -444,24 +451,25 @@ npm은 postinstall을 기본 실행하므로 남는 실패 원인은 네트워�
 
 ```bash
 { D=0; T=0; N=0; P="./<package_name>"; MK='ait:design-guide'; R=""; OK=1; G=""; S=""; DG=""; TF=""; TE=""; MV=""; E=""; IF=0
-test -f "$P/apps-in-toss.config.ts" && node -e "const p=require(require('node:path').resolve('$P','package.json')); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" && echo "형상 일치" || echo "형상 불일치"
+test -f "$P/apps-in-toss.config.ts" && node -e "const p=require(require('node:path').resolve(process.argv[1],'package.json')); process.exit((p.dependencies?.['@apps-in-toss/web-framework'] && /\bait build\b/.test(p.scripts?.build ?? '')) ? 0 : 1)" -- "$P" && echo "형상 일치" || echo "형상 불일치"
 if [ "$D" = 1 ]; then echo "디자인 가이드 없음(--no-design-guide — 닫힘 ②)"
 elif [ ! -d "$P" ] || [ ! -f "$P/package.json" ]; then echo "디자인 가이드 주입 보류(프로젝트 경로 아님=$P) — 닫힘이 아니다: 경로 치환을 고쳐 이 fence를 다시 실행한다"
+elif LK=""; for X in docs src src/styles src/components src/assets src/assets/icons AGENTS.md CLAUDE.md index.html; do [ -L "$P/$X" ] && LK="$LK $X"; done; [ -n "$LK" ]; then echo "디자인 가이드 주입 보류(심볼릭 링크는 따라가 쓰지 않는다:$LK) — 링크를 실제 파일·디렉터리로 바꾸거나 /ait:design으로 나중에 넣을 수 있습니다"
 else
 touch "$P/.ait-design-guide-failed" 2>/dev/null
 if [ "$T" = 1 ] && [ "$N" = 1 ]; then set -- --tds --no-tossface; elif [ "$T" = 1 ]; then set -- --tds; elif [ "$N" = 1 ]; then set -- --no-tossface; else set --; fi
-dgico() { if node -e "process.exit(require(require('node:path').resolve('$P','package.json')).dependencies?.react?0:1)" 2>/dev/null; then [ -s "$P/src/components/icons.tsx" ]; else [ -s "$P/src/assets/icons/close.svg" ]; fi; }
-dgent() { HE="$(grep -o '<script[^>]*>' "$P/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"; for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -n "$C" ] && grep -qs 'styles/base.css' "$P/$C" && return 0; done; for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -n "$C" ] && [ -f "$P/$C" ] && return 1; done; return 0; }
+dgico() { if node -e "process.exit(require(require('node:path').resolve(process.argv[1],'package.json')).dependencies?.react?0:1)" -- "$P" 2>/dev/null; then [ -s "$P/src/components/icons.tsx" ]; else [ -s "$P/src/assets/icons/close.svg" ]; fi; }
+dgent() { HE="$(grep -o '<script[^>]*>' "$P/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"; case "$HE" in *..*) HE="";; esac; for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -n "$C" ] && grep -qs 'styles/base.css' "$P/$C" && return 0; done; for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts index.html; do [ -n "$C" ] && [ -f "$P/$C" ] && return 1; done; return 0; }
 dgok() { grep -qs "<!-- $MK v" "$P/AGENTS.md" && grep -qs "<!-- $MK v" "$P/CLAUDE.md" && [ -s "$P/docs/design-guide.md" ] && { [ "$T" = 1 ] || { [ -s "$P/src/styles/tokens.css" ] && [ -s "$P/src/styles/base.css" ] && dgico && dgent; }; }; }
 if dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(이미 있음)"
 else
-for C in "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" .claude/skills/design/scripts/inject-project-guide.sh "$HOME/.claude/skills/design/scripts/inject-project-guide.sh"; do
+for C in "<이 skill의 base directory>/../design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/scripts/inject-project-guide.sh" "$CLAUDE_PLUGIN_ROOT/skills/design/scripts/inject-project-guide.sh" "$HOME/.claude/skills/design/scripts/inject-project-guide.sh"; do
 [ -f "$C" ] && { G="$C"; break; }
 done
 [ -n "$G" ] && { bash "$G" "$P" "$@"; dgok || bash "$G" "$P" "$@"; }
 if dgok; then rm -f "$P/.ait-design-guide-failed"; echo "디자인 가이드 있음(스크립트로 보완됨 — 스크립트=$G)"
 else
-for C in "<이 skill의 base directory>/../design/assets/project" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/assets/project" "$CLAUDE_PLUGIN_ROOT/skills/design/assets/project" .claude/skills/design/assets/project "$HOME/.claude/skills/design/assets/project"; do
+for C in "<이 skill의 base directory>/../design/assets/project" "$CLAUDE_PLUGIN_ROOT/shared/skills/design/assets/project" "$CLAUDE_PLUGIN_ROOT/skills/design/assets/project" "$HOME/.claude/skills/design/assets/project"; do
 [ -s "$C/memory-digest.md" ] && [ -s "$C/design-guide.md" ] && { [ "$T" = 1 ] || { [ -s "$C/tokens.css" ] && [ -s "$C/base.css" ] && [ -s "$C/icons.tsx" ] && [ -s "$C/icons/close.svg" ]; }; } && { S="$C"; break; }
 done
 if [ -z "$S" ]; then
@@ -486,7 +494,7 @@ if [ "$N" = 1 ] && grep -q 'tossface\.css' "$P/src/styles/base.css" 2>/dev/null;
 sed -i.aitbak -e '/tossface\.css/d' -e 's/"Tossface", -apple-system/-apple-system/' "$P/src/styles/base.css" 2>/dev/null; rm -f "$P/src/styles/base.css.aitbak"
 grep -q 'tossface\.css' "$P/src/styles/base.css" 2>/dev/null && R="$R tossface=FAIL" || R="$R tossface=off"
 fi
-if node -e "process.exit(require(require('node:path').resolve('$P','package.json')).dependencies?.react?0:1)" 2>/dev/null; then
+if node -e "process.exit(require(require('node:path').resolve(process.argv[1],'package.json')).dependencies?.react?0:1)" -- "$P" 2>/dev/null; then
 mkdir -p "$P/src/components" 2>/dev/null
 [ -f "$P/src/components/icons.tsx" ] || cp "$S/icons.tsx" "$P/src/components/icons.tsx" 2>/dev/null
 [ -f "$P/src/components/icons.tsx" ] || { OK=0; R="$R icons=FAIL"; }
@@ -499,9 +507,10 @@ done
 [ "$IF" = 0 ] || { OK=0; R="$R icons=FAIL"; }
 fi
 HE="$(grep -o '<script[^>]*>' "$P/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"
+case "$HE" in *..*) HE="";; esac
 E=""
 for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
-[ -n "$C" ] && [ -f "$P/$C" ] && { E="$P/$C"; break; }
+[ -n "$C" ] && [ -f "$P/$C" ] && [ ! -L "$P/$C" ] && { E="$P/$C"; break; }
 done
 JSOK=0
 case "$E" in *.js|*.jsx|*.mjs) JSOK=1;; *.ts|*.tsx|*.mts) if [ -f "$P/src/vite-env.d.ts" ] || [ -n "$(find "$P" -maxdepth 1 -name 'tsconfig*.json' -exec grep -l '"vite/client"' {} + 2>/dev/null)" ]; then JSOK=1; fi;; esac
@@ -761,11 +770,21 @@ npm --prefix ./<package_name> install -D @apps-in-toss/devtools@latest
 
 일부 환경은 registry 프록시가 최신 버전을 숨기거나 낡은 dist-tag만 내려줄 수 있다
 (루트 CLAUDE.md "dist-tag quirk" 참고) — 위 명령이 같은 이유로 또 실패하면
-공개 미러를 강제한 뒤 재시도한다:
+공개 미러로 정확한 버전을 확인한 뒤 그 버전으로 재시도한다. 레지스트리를 바꾸는
+일이므로 미러 호스트와 이유를 사용자에게 보여 주고 동의를 받은 뒤에 한다:
 
 ```bash
-npm_config_registry=https://registry.npmmirror.com/ npm --prefix ./<package_name> install -D @apps-in-toss/devtools@latest
+# 1) 미러에서 최신 버전을 읽고, jsdelivr로 같은 값인지 교차 확인한다
+npm view --registry=https://registry.npmmirror.com/ @apps-in-toss/devtools version
+curl -s "https://data.jsdelivr.com/v1/packages/npm/@apps-in-toss/devtools/resolved?specifier=latest"
+# 2) 두 값이 같을 때만, 그 정확 버전을 이 명령 한 번에 한해 미러에서 받는다(.npmrc에는 남기지 않는다)
+npm_config_registry=https://registry.npmmirror.com/ npm --prefix ./<package_name> install -D @apps-in-toss/devtools@<위에서 확인한 정확 버전> --ignore-scripts
 ```
+
+`--ignore-scripts`는 미러에서 새로 받는 패키지의 설치 스크립트가 도는 것을 막는다.
+`@apps-in-toss/devtools`에는 설치 스크립트가 없어(미러 packument 확인) 이 옵션이 설치
+결과를 바꾸지 않는다. 두 값이 다르면 설치하지 않고 사용자에게
+보고한다. 바이트는 이후 lockfile의 integrity가 고정한다.
 
 **해석된 정확 버전을 인용해 사용자에게 보고한다** — "latest를 넣었다"고만 말하지
 않는다:

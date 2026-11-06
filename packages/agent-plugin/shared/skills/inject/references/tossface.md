@@ -90,7 +90,7 @@ grep -rn "Tossface" --include="*.css" --include="*.scss" --include="*.html" --in
 에러 없이 조용히 무시하고 배선이 무효가 된다. 반드시 진입 CSS의 맨 위에 놓는다:
 
 ```css
-@import url('https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css');
+@import url('https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/tossface.css');
 ```
 
 CSS `@import` 대신 HTML에 `<link>`로 넣을 수도 있다 — 공식 README가 안내하는 형태
@@ -99,8 +99,15 @@ CSS `@import` 대신 HTML에 `<link>`로 넣을 수도 있다 — 공식 README�
 ```html
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-<link href="https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css" rel="stylesheet" type="text/css" />
+<link href="https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/tossface.css" rel="stylesheet" type="text/css" integrity="sha384-NvFWxNBCtS/t7ARZAnagIacT7UimQmV2ye6DK4dEJvzGQthX59t7e+f1Ll/6xMXR" crossorigin="anonymous" />
 ```
+
+CDN 주소에는 버전(`@1.6.1`)을 박아 둔다. 버전 없는 주소는 저장소 기본 브랜치를
+따라가서, 원본이 바뀌면 배포된 앱의 서체 CSS도 말없이 바뀐다. 버전을 올릴 때는
+`https://data.jsdelivr.com/v1/packages/gh/toss/tossface`에서 그 버전이 실재하는지
+확인하고, `<link>`를 쓴다면 `integrity` 값도 새 파일로 다시 계산한다
+(`curl -sSL <주소> | openssl dgst -sha384 -binary | openssl base64 -A`). `@import`
+형태에는 `integrity`를 붙일 수 없다.
 
 그 뒤 `font-family` 스택 **맨 앞**에 `Tossface`를 추가한다(예:
 `font-family: 'Tossface', -apple-system, system-ui, sans-serif;`). 이모지 서체에는
@@ -129,7 +136,7 @@ CSS `@import` 대신 HTML에 `<link>`로 넣을 수도 있다 — 공식 README�
    보장이 없으므로 쓰지 않는다):
 
    ```bash
-   curl -sSL https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css
+   curl -sSL https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/tossface.css
    ```
 
    각 `@font-face` 블록의 `unicode-range`와 1번의 코드포인트 집합을 대조해서 필요한
@@ -148,7 +155,7 @@ CSS `@import` 대신 HTML에 `<link>`로 넣을 수도 있다 — 공식 README�
 
    ```bash
    curl -sSL -o public/fonts/tossface/TossFaceFontMac-<NN>.woff2 \
-     https://cdn.jsdelivr.net/gh/toss/tossface/dist/TossFaceFontMac-<NN>.woff2
+     https://cdn.jsdelivr.net/gh/toss/tossface@1.6.1/dist/TossFaceFontMac-<NN>.woff2
    ```
 
    `<NN>`은 2번에서 정한 subset 번호(`00`~`11`)로 치환한다. 파일을 다시 subsetting하거나

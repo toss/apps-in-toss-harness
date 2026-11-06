@@ -80,6 +80,12 @@ export interface BundleOptions {
    * The runtime entry uses this to call `__testBundle.runTestModule(__userFactory)`.
    */
   globalName?: string;
+  /**
+   * When set, `realpath(absPath)` must sit inside `realpath(allowedRoot)`, else
+   * `bundleTestFile` throws before esbuild reads anything. Callers that take the
+   * test path from an untrusted source (the `run_tests` tool) pass the project root.
+   */
+  allowedRoot?: string;
 }
 
 /**
@@ -514,6 +520,20 @@ function getMethodPacePath(): string {
  * @param opts    - Optional bundling overrides.
  */
 export async function bundleTestFile(absPath: string, opts?: BundleOptions): Promise<BundleResult> {
+  // 경로 처리: 상대 경로는 cwd에 따라 다른 파일을 가리키므로 받지 않는다(계약은 원래 절대 경로).
+  if (!path.isAbsolute(absPath)) {
+    throw new Error('bundleTestFile: absPath must be an absolute path');
+  }
+  if (opts?.allowedRoot !== undefined) {
+    const [realRoot, realFile] = await Promise.all([
+      fs.realpath(opts.allowedRoot),
+      fs.realpath(absPath),
+    ]);
+    const rel = path.relative(realRoot, realFile);
+    if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+      throw new Error('bundleTestFile: test file is outside the allowed project root');
+    }
+  }
   const globalName = opts?.globalName ?? '__testBundle';
   const extraExternals = opts?.extraExternals ?? [];
 

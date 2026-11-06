@@ -1,21 +1,22 @@
 /**
- * RFC 6238 TOTP implementation (Node.js, node:crypto only).
+ * Time-stepped relay auth code (Node.js, node:crypto only).
  *
- * External TOTP libraries (otplib, speakeasy, …) are intentionally NOT used
- * to keep the dependency surface minimal. This hand-roll is ~30 lines and
- * covers exactly what relay-side auth needs.
+ * The construction follows the shape of RFC 6238 (a counter derived from the
+ * wall clock, keyed by a shared secret) but is not interoperable with
+ * authenticator apps: nobody types this code, it travels inside a deep-link
+ * or QR, so it is as wide as it can be instead of being kept human-sized.
  *
- * Algorithm summary (RFC 6238 + RFC 4226):
- *   T  = floor(now / 30)          — 30-second time step counter
- *   K  = Buffer.from(secret, 'hex') — shared secret (raw bytes, hex-encoded)
- *   MAC = HMAC-SHA1(K, T as 8-byte big-endian uint64)
- *   offset = MAC[19] & 0x0f
- *   code = (MAC[offset..offset+4] & 0x7fffffff) % 10^6  — 6 digits
+ *   T    = floor(now / STEP)              — STEP = RELAY_CODE_STEP_SECONDS (10 s)
+ *   K    = Buffer.from(secret, 'hex')     — key (raw bytes, hex-encoded); for relay
+ *                                          codes the per-process key from
+ *                                          relay-code-secret.ts ({@link mintRelayCode})
+ *   MAC  = HMAC-SHA256(K, T as 8-byte big-endian uint64)
+ *   code = first 16 bytes of MAC, lowercase hex — 32 characters (128 bits)
  *
  * Security note (keep this comment accurate):
  *   The baked-in secret in a dog-food build is extractable from the bundle by a
  *   determined reverse engineer. This mechanism raises the bar from
- *   "anyone with the URL" to "URL + bundle extraction + live TOTP calculation".
+ *   "anyone with the URL" to "URL + bundle extraction + live code calculation".
  *   Casual URL leaks (Slack paste, QR screenshot, shoulder-surfing) are
  *   blocked; deliberate reverse engineering is not. See threat model in
  *   src/mcp/chii-relay.ts and docs/design/mcp-strategy.md.
@@ -26,21 +27,31 @@
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
-
-/** Time step window in seconds (RFC 6238 default). */
-const TIME_STEP = 30;
-
-/** Number of digits in the generated code. */
-const DIGITS = 6;
+import { isRelayAuthCode } from '@apps-in-toss/internal-protocol/relay-auth-code';
+import { relayCodeSecret } from './relay-code-secret.js';
 
 /**
- * Derives a 6-digit TOTP code from a hex-encoded secret at the given wall-
+ * Seconds in one code step. Tuning knob: together with
+ * {@link RELAY_VERIFY_SKEW_STEPS} it sets how long a freshly minted code is
+ * accepted (`STEP * SKEW` to `STEP * (SKEW + 1)` seconds). Keep
+ * {@link RELAY_QR_REFRESH_INTERVAL_MS} at or below one step so the QR on screen
+ * changes with every new code.
+ */
+export const RELAY_CODE_STEP_SECONDS = 5;
+
+const TIME_STEP = RELAY_CODE_STEP_SECONDS;
+
+/** Bytes of the MAC kept in the code (128 bits). */
+const CODE_BYTES = 16;
+
+/**
+ * Derives the relay auth code from a hex-encoded secret at the given wall-
  * clock time.
  *
  * @param secret - The shared secret as a hex string (e.g. 64 hex chars = 32
  *   bytes). Must be the output of `generateAttachToken()` or compatible.
  * @param when - Unix timestamp in milliseconds. Defaults to `Date.now()`.
- * @returns A zero-padded 6-digit decimal string, e.g. `"042193"`.
+ * @returns 32 lowercase hex characters (the first 128 bits of the MAC).
  */
 export function generateTotp(secret: string, when: number = Date.now()): string {
   const key = Buffer.from(secret, 'hex');
@@ -57,32 +68,38 @@ export function generateTotp(secret: string, when: number = Date.now()): string 
   counterBuf.writeUInt32BE(hi, 0);
   counterBuf.writeUInt32BE(lo, 4);
 
-  const mac = createHmac('sha1', key).update(counterBuf).digest();
-
-  // Dynamic truncation (RFC 4226 §5.4).
-  const offset = mac[19] & 0x0f;
-  const binCode =
-    ((mac[offset] & 0x7f) << 24) |
-    ((mac[offset + 1] & 0xff) << 16) |
-    ((mac[offset + 2] & 0xff) << 8) |
-    (mac[offset + 3] & 0xff);
-
-  const otp = binCode % 10 ** DIGITS;
-  return otp.toString().padStart(DIGITS, '0');
+  return createHmac('sha256', key)
+    .update(counterBuf)
+    .digest()
+    .subarray(0, CODE_BYTES)
+    .toString('hex');
 }
 
 /**
- * Verifies a TOTP code against the secret, accepting ±`skew` time steps to
- * tolerate clock drift between the relay host and the client device.
+ * Mints the current relay `at` code with this process's in-memory code key
+ * (see `relay-code-secret.ts`). The relay booted in this process accepts it;
+ * no other process can mint or check it.
+ *
+ * @param when - Unix timestamp in milliseconds. Defaults to `Date.now()`.
+ */
+export function mintRelayCode(when: number = Date.now()): string {
+  return generateTotp(relayCodeSecret(), when);
+}
+
+/**
+ * Verifies a relay auth code against the secret, accepting ±`skew` time steps
+ * to tolerate clock drift between the relay host and the client device.
  *
  * Uses `timingSafeEqual` for constant-time comparison to prevent timing
- * side-channel attacks.
+ * side-channel attacks. A code that is not exactly 32 lowercase hex characters
+ * is rejected without being compared.
  *
  * @param secret - Hex-encoded shared secret.
- * @param code - The 6-digit code to verify (string or numeric).
+ * @param code - The 32-character hex code to verify.
  * @param when - Unix timestamp in milliseconds. Defaults to `Date.now()`.
- * @param skew - Number of adjacent steps to accept on either side. Default 1
- *   (accepts T-1, T, T+1 — a 90-second acceptance window).
+ * @param skew - Number of adjacent steps to accept in the past, and in the
+ *   future unless `futureSkew` says otherwise. Default 1 (accepts T-1, T, T+1).
+ * @param futureSkew - Steps to accept in the future. Defaults to `skew`.
  * @returns `true` if the code matches any accepted step, `false` otherwise.
  */
 export function verifyTotp(
@@ -90,15 +107,15 @@ export function verifyTotp(
   code: string,
   when: number = Date.now(),
   skew: number = 1,
+  futureSkew: number = skew,
 ): boolean {
-  const normalised = String(code).padStart(DIGITS, '0');
-  if (normalised.length !== DIGITS || !/^\d{6}$/.test(normalised)) {
+  if (!isRelayAuthCode(code)) {
     return false;
   }
 
-  const candidateBuf = Buffer.from(normalised, 'utf8');
+  const candidateBuf = Buffer.from(code, 'utf8');
 
-  for (let delta = -skew; delta <= skew; delta++) {
+  for (let delta = -skew; delta <= futureSkew; delta++) {
     const stepWhen = when + delta * TIME_STEP * 1000;
     const expected = generateTotp(secret, stepWhen);
     const expectedBuf = Buffer.from(expected, 'utf8');
@@ -192,38 +209,89 @@ export function assertRelayAuthConfigured(env: NodeJS.ProcessEnv = process.env):
   }
 }
 
+/** The step counter a code minted at `when` belongs to. Equal counters mean equal codes. */
+export function relayCodeStep(when: number = Date.now()): number {
+  return Math.max(0, Math.floor(when / 1000 / TIME_STEP));
+}
+
 /**
- * Gate-specific skew for the relay WebSocket upgrade TOTP check.
+ * Gate-specific past skew for the relay WebSocket upgrade TOTP check. Tuning
+ * knob, together with {@link RELAY_CODE_STEP_SECONDS}.
  *
- * Rationale (why 6, not the RFC default of 1):
- *   - Each step is 30 s, so ±6 steps = past 6 steps accepted = 180–210 s of
- *     backwards acceptance. This means a code generated at issuance time is
- *     guaranteed valid for at least 3 minutes (180 s) after it was minted.
- *   - The real-world attach flow (QR issued on desktop → developer picks up
- *     phone → camera scan → Toss app cold-loads the bundle → attach) routinely
- *     exceeds the 90 s window of the RFC default (skew=1), especially when the
- *     phone is not immediately at hand.
- *   - Expanding to ~3.5 min reachability is acceptable under the §4 threat
- *     model: the adversary we guard against is "someone who got the URL but
- *     does NOT have the secret". Without the secret they cannot compute a TOTP
- *     code regardless of the window size — security theater is explicitly
- *     forbidden by the project principle. An attacker WITH the secret (bundle
- *     extractor) is out of scope per CLAUDE.md §4.
+ * Rationale (why 6: a code is good for 30 to 35 seconds, no longer):
+ *   - Each step is {@link RELAY_CODE_STEP_SECONDS} (5 s), so 6 past steps =
+ *     30-35 s of backwards acceptance. A code is valid from the moment it is
+ *     minted until seven step boundaries later, so it is guaranteed usable for
+ *     at least 30 s after it was minted and never for more than 35 s. A cold
+ *     start of the mini-app after a scan has been measured at about 20 s on a
+ *     device, which the 30 s floor covers.
+ *   - The code is checked when the phone requests `target.js` and again at the
+ *     WebSocket upgrade, both a few seconds apart and after the app has
+ *     cold-loaded. Time that counts against the window is therefore the
+ *     scan-to-request gap plus the app's cold start, not the time the QR sat on
+ *     the desktop: the dashboard re-pushes the QR every
+ *     {@link RELAY_QR_REFRESH_INTERVAL_MS} (5 s) and `start_attach` re-mints
+ *     at the same pace (one new code per step), so a QR on screen is at most
+ *     5 s old and still has at least 25 s left when it is scanned.
+ *   - A static terminal QR (headless path) cannot be refreshed, so it has the
+ *     30-35 s from the moment it printed; the tool result says to scan it
+ *     right away. `start_attach` sends a new text QR whenever the code changes.
+ *   - Once a phone has attached, its code is bound to that session (see
+ *     `chii-relay.ts`): a reload or a reconnect after lock/unlock keeps working
+ *     with the aged code for the bound target, so this window only has to cover
+ *     the first scan, not the whole debugging session.
+ *   - Online guessing is bounded separately by the failure backoff in
+ *     relay-auth-throttle.ts, and the code is 128 bits, so a wider or
+ *     narrower window changes the exposure of a leaked URL (how long it works),
+ *     not the odds of a blind guess.
  *
- * `verifyTotp`'s own default (skew=1) is deliberately left unchanged — it is
- * the RFC primitive. Only this relay-gate call site is widened.
+ * `verifyTotp`'s own default (skew=1) is a generic default and is not used by
+ * the relay gate, which always passes this value.
  */
 export const RELAY_VERIFY_SKEW_STEPS = 6;
 
+/** Longest a freshly minted code stays accepted (it is minted at the very start of a step). */
+export const RELAY_CODE_MAX_AGE_SECONDS = (RELAY_VERIFY_SKEW_STEPS + 1) * TIME_STEP;
+
+/** Shortest a freshly minted code stays accepted (it is minted at the very end of a step). */
+export const RELAY_CODE_MIN_AGE_SECONDS = RELAY_VERIFY_SKEW_STEPS * TIME_STEP;
+
 /**
- * Reads `AIT_DEBUG_TOTP_SECRET` from `process.env` at runtime and builds a
- * `verifyAuth` predicate for the Chii relay's WebSocket upgrade gate.
+ * How often the daemon re-pushes the attach QR to an open dashboard and re-mints
+ * the link during `start_attach`. A shown QR is never older than this plus the
+ * rest of its step, so it keeps at least
+ * `RELAY_CODE_MIN_AGE_SECONDS - RELAY_QR_REFRESH_INTERVAL_MS / 1000` seconds.
+ */
+export const RELAY_QR_REFRESH_INTERVAL_MS = 5_000;
+
+/**
+ * Future steps the relay gate accepts: none.
  *
- * The predicate checks the `at` query parameter against the current and
- * adjacent TOTP time steps (±{@link RELAY_VERIFY_SKEW_STEPS} skew) using
- * {@link verifyTotp}. This gives the issued code a minimum validity of ~3
- * minutes, which is enough to cover the QR-scan → attach flow even when the
- * Toss app has to cold-load the bundle first (#490).
+ * Clock skew between devices does not apply here. Every code the relay checks
+ * is minted by the daemon (or by a process on the same host) and only checked
+ * by the relay on that same host and clock. The phone never computes a code, it
+ * carries one it was handed, so a code can be old when it arrives but never
+ * ahead of the host clock. Accepting only T-1..T gives 2 valid codes instead of
+ * 3 (or 5 with two future steps).
+ *
+ * The phone-side gate in `@apps-in-toss/debug-console` may run its own
+ * `verifyTotpCode` on the device clock; that is a separate fail-fast check and
+ * the relay stays authoritative.
+ */
+export const RELAY_VERIFY_FUTURE_SKEW_STEPS = 0;
+
+/**
+ * Builds a `verifyAuth` predicate for the Chii relay's WebSocket upgrade gate
+ * when `AIT_DEBUG_TOTP_SECRET` (the relay secret) is configured. Codes are
+ * checked against this process's in-memory code key ({@link mintRelayCode}),
+ * not against the relay secret; `codeSecret` overrides that key for tests.
+ *
+ * The predicate checks the `at` query parameter against the current step and
+ * the {@link RELAY_VERIFY_SKEW_STEPS} before it (no future steps, see
+ * {@link RELAY_VERIFY_FUTURE_SKEW_STEPS}), using {@link verifyTotp}. This gives the issued code a validity of 30 to 35 s,
+ * enough for the QR-scan → attach flow including an app cold load, given the
+ * QR is re-minted every {@link RELAY_QR_REFRESH_INTERVAL_MS} while `start_attach`
+ * waits.
  *
  * Returns `undefined` when the env var is not set — callers treat that as
  * "auth disabled" (no predicate registered on the relay). Note that since
@@ -236,18 +304,20 @@ export const RELAY_VERIFY_SKEW_STEPS = 6;
  * gate without importing the heavy MCP server module graph. Re-exported from
  * `debug-server.ts` for back-compat.
  *
- * SECRET-HANDLING: The secret value read from env is captured in a closure and
+ * SECRET-HANDLING: The code key is captured in a closure and
  * is NEVER written to any log, error message, or process output.
  */
 export function buildRelayVerifyAuth(
   env: NodeJS.ProcessEnv = process.env,
+  codeSecret: string = relayCodeSecret(),
 ): ((req: import('node:http').IncomingMessage) => boolean) | undefined {
-  const secret = env.AIT_DEBUG_TOTP_SECRET;
-  if (!secret) return undefined;
+  // The relay secret is the switch; the codes themselves use the process key.
+  if (!env.AIT_DEBUG_TOTP_SECRET) return undefined;
+  const secret = codeSecret;
 
   return (req) => {
     // Parse the `at` query param from the upgrade request URL.
-    // req.url is the raw request path + query, e.g. `/client/id?target=…&at=123456`
+    // req.url is the raw request path + query, e.g. `/client/id?target=…&at=<code>`
     const rawUrl = req.url ?? '';
     const qIndex = rawUrl.indexOf('?');
     const queryStr = qIndex === -1 ? '' : rawUrl.slice(qIndex + 1);
@@ -255,8 +325,13 @@ export function buildRelayVerifyAuth(
     const code = params.get('at') ?? '';
 
     // Do NOT log `code`, `secret`, or any derived value here.
-    // Use RELAY_VERIFY_SKEW_STEPS (±6) for a ~3-minute acceptance window (#490).
-    // verifyTotp's own default (skew=1) is unchanged — only this call site is widened.
-    return verifyTotp(secret, code, undefined, RELAY_VERIFY_SKEW_STEPS);
+    // 30-35 s backwards acceptance, no future steps.
+    return verifyTotp(
+      secret,
+      code,
+      undefined,
+      RELAY_VERIFY_SKEW_STEPS,
+      RELAY_VERIFY_FUTURE_SKEW_STEPS,
+    );
   };
 }

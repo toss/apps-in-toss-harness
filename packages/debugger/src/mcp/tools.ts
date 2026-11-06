@@ -45,14 +45,19 @@ import type {
   NetworkResponseReceivedEvent,
   RuntimeExceptionThrownEvent,
 } from './cdp-connection.js';
+import { childProcessEnv } from './child-env.js';
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
 import type { UnbootedEnv } from './envelope.js';
 import type { McpEnvironment } from './environment.js';
 import { isRelayEnv, toLegacyEnv } from './environment.js';
+import { type RelayKeyAge, relayKeyHint } from './relay-key-age.js';
+import { maskRelayUrl, redactRelayText } from './relay-redact.js';
+import { relayRunId } from './relay-run-id.js';
+import { attachSignature } from './relay-signing.js';
 import { RESTART_CMD } from './restart-hint.js';
 import { lookupSignature, warnPassthrough } from './sdk-signatures.js';
 import { isPidAlive } from './server-lock.js';
-import { generateTotp, RELAY_VERIFY_SKEW_STEPS } from './totp.js';
+import { mintRelayCode, RELAY_CODE_MIN_AGE_SECONDS } from './totp.js';
 
 /** Tunnel state surfaced by `list_pages`. */
 export interface TunnelStatus {
@@ -155,7 +160,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'local GUI machine — headless/remote environments fall back to the text QR in the tool output. ' +
       'If a dashboard tab is already connected, no new tab is opened; the existing tab is refreshed in place.' +
       '\n\nTOTP auto re-mint: when AIT_DEBUG_TOTP_SECRET is set on the MCP server, the attachUrl carries ' +
-      'a one-time code (at=<code>) valid for ~3 minutes (the relay gate accepts ±6 TOTP steps). ' +
+      'a one-time code (at=<code>) valid for 30-35 seconds (the relay gate accepts codes up to 6 TOTP steps old). ' +
       'While waiting, start_attach AUTOMATICALLY re-mints a fresh code before the current one expires ' +
       'and refreshes the dashboard QR in place (no browser re-open). You do NOT need to re-call ' +
       'start_attach every time the code would expire — a single call covers the whole wait window. ' +
@@ -163,7 +168,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'codes were issued during the wait. Without AIT_DEBUG_TOTP_SECRET, the attachUrl has no expiry. ' +
       '(That applies to code expiry only — if the call times out, follow the diagnosis in the error text instead of re-calling blindly.)\n\n' +
       'Progress: when the client sends a progressToken, the call emits notifications/progress with the attach stage ' +
-      '(QR issued → phone opened the page → script loaded → phone connected → page matched) and a heartbeat every ~15 s. ' +
+      '(QR issued → phone opened the page → script loaded → phone connected → page matched) and a heartbeat every ~15 s. When no dashboard shows the QR (headless, browser open failed), the text QR is also sent as a progress message while the call waits, and again after each re-mint. ' +
       'Not every client renders these, so the same stage history is also in the timeout error and in get_debug_status ' +
       '(`attachStages`, `attachDiagnosis`). On timeout the error names the last stage reached, the likely cause and what the user should do. ' +
       'Calling start_attach again while a previous call is still waiting cancels the previous wait (it returns "superseded").',
@@ -265,9 +270,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'Throws if the evaluation throws an exception on the page.\n\n' +
       'SECURITY: expression and result are not redacted — never include secrets or auth ' +
       'tokens in the expression.\n\n' +
-      'Positive-allowlist kill-switch (#665): this tool is blocked when the attached ' +
-      'page is on a non-debug host (apps.tossmini.com / env 4). Only localhost, ' +
-      '*.trycloudflare.com, and *.private-apps.tossmini.com are allowed. ' +
+      'Host allowlist kill-switch (#665): this tool is blocked when the attached page is ' +
+      'not on localhost, *.private-apps.tossmini.com or *.private-web.tossmini.com. ' +
       'relay-live (env 4) and the LIVE confirm guard are removed.',
     inputSchema: {
       type: 'object',
@@ -321,8 +325,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'on local (--target=local, env 1) it means the dev bridge is not installed ' +
       '(start the dev server with `npm run dev`).\n\n' +
       'SECURITY: method name, args, and result value are not redacted — never include secrets.\n\n' +
-      'Positive-allowlist kill-switch (#665): blocked when the attached page is on ' +
-      'a non-debug host (apps.tossmini.com / env 4). relay-live and the LIVE guard removed.\n\n' +
+      'Host allowlist kill-switch (#665): blocked when the attached page is not on ' +
+      'localhost, *.private-apps.tossmini.com or *.private-web.tossmini.com. ' +
+      'relay-live and the LIVE guard removed.\n\n' +
       'IMPORTANT — 인자 시그니처 (잘못된 인자로 호출하면 토스 앱 crash 위험):\n' +
       '  setDeviceOrientation:        call_sdk("setDeviceOrientation", [{ type: "landscape" }])  // NOT "landscape"\n' +
       '  setIosSwipeGestureEnabled:   call_sdk("setIosSwipeGestureEnabled", [{ isEnabled: false }])\n' +
@@ -389,11 +394,10 @@ export const DEBUG_TOOL_DEFINITIONS = [
       "the requested family's infra on first use and keeping the inactive one warm so an existing " +
       'attach survives the switch. After switching it emits notifications/tools/list_changed — ' +
       'call tools/list again to see the updated tool surface for the new environment.\n\n' +
-      'Positive-allowlist kill-switch (#665): relay sessions on apps.tossmini.com (env 4, released ' +
-      'production) are silently blocked at both the in-app gate and this MCP layer — ' +
-      'relay-live and the LIVE guard have been removed. Only localhost/loopback (env 1), ' +
-      '*.private-apps.tossmini.com and the cloudflared quick-tunnel host that fronts it (env 3) ' +
-      'are allowed.\n\n' +
+      'Host allowlist kill-switch (#665): the in-app gate and this MCP layer both allow page ' +
+      'hosts on localhost/loopback (env 1), *.private-apps.tossmini.com and ' +
+      '*.private-web.tossmini.com. The relay destination is limited to loopback and ' +
+      '*.trycloudflare.com. relay-live and the LIVE guard have been removed.\n\n' +
       'modes:\n' +
       '  local-browser — env 1: desktop Chromium with the mock SDK and a local CDP attach. ' +
       'Side-effect tools (call_sdk/evaluate) run unguarded against the mock; nothing touches a ' +
@@ -449,6 +453,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'recentErrors (last N server-side errors, PII/secret redacted), ' +
       'authRejects ({count, lastAt} — relay TOTP 401 rejections, secret-free; count > 0 with empty pages ' +
       'means the phone reached the relay but its code was rejected), ' +
+      'relayKey ({status: ok|aging|expired, ageDays, hint} or null — age of the relay key; on aging, relay the hint: `debugger relay-key --rotate`), ' +
+      'tunnelRotations ({count, lastAt} — times the daemon reissued the tunnel after repeated failed code checks; ' +
+      'count > 0 means the relay URL changed and the developer must scan the new QR from start_attach; no URL is included), ' +
       'attachStages (stage history of the latest start_attach attempt: tunnel, qr-issued, device-handshake, auth, ' +
       'target-connected/disconnected, matched — time + result only, no URLs or codes) and ' +
       'attachDiagnosis ({kind, lastStage, summary, actions[]} — where the latest attempt stopped and what the user should do, or null before any attempt), ' +
@@ -499,7 +506,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
           type: 'array',
           items: { type: 'string' },
           description:
-            'Glob patterns or file paths to run (e.g. ["src/**/*.ait.test.ts"]). ' +
+            'Relative glob patterns inside projectRoot (e.g. ["src/**/*.ait.test.ts"]); only *.ait.test.ts files run. ' +
             'Resolved relative to projectRoot when given, else the daemon cwd. Required, non-empty.',
         },
         projectRoot: {
@@ -834,7 +841,14 @@ export function listPages(connection: CdpConnection, tunnel: TunnelStatus): List
     ? `[ait-debug] page crash 감지됨 — 새 attach 필요 (관측 시각: ${crashDetectedAt})`
     : null;
 
-  return { pages, tunnel, crashDetectedAt, crashWarning, singleAttachModel: true };
+  // The tunnel address is shown masked: only start_attach carries the real one.
+  return {
+    pages,
+    tunnel: { ...tunnel, wssUrl: maskRelayUrl(tunnel.wssUrl) },
+    crashDetectedAt,
+    crashWarning,
+    singleAttachModel: true,
+  };
 }
 
 /** A `buildAttachUrl()` result: the spliced deep-link the phone should open. */
@@ -872,9 +886,9 @@ export interface BuildAttachUrlResult {
  * relay URL to splice in) — the caller surfaces that as a tool error.
  *
  * When `AIT_DEBUG_TOTP_SECRET` is set, generates the current TOTP code and
- * splices it as `at=<code>` into the attach URL. The code is valid for ~3
- * minutes (the relay gate uses {@link RELAY_VERIFY_SKEW_STEPS}=6, accepting
- * past 6 steps = 180–210 s backwards from issuance). The start_attach handler
+ * splices it as `at=<code>` into the attach URL. The code is valid for
+ * 30-35 s (the relay gate uses RELAY_VERIFY_SKEW_STEPS=6, accepting
+ * the 6 past steps backwards from issuance). The start_attach handler
  * auto re-mints a fresh code before `totp.expiresAt` elapses during its wait (#490).
  *
  * Also validates the scheme URL's authority. A suspicious authority (empty,
@@ -913,25 +927,28 @@ export function buildAttachUrl(
   let totpMeta: BuildAttachUrlResult['totp'];
   if (totpSecret !== undefined && totpSecret !== '') {
     const now = Date.now();
-    totpCode = generateTotp(totpSecret, now);
-    const STEP_SECONDS = 30;
+    totpCode = mintRelayCode(now);
     // expiresAt reflects the relay gate's actual acceptance window (#490):
-    // the gate uses RELAY_VERIFY_SKEW_STEPS=6, so past 6 steps (180 s) are
-    // accepted. The code issued NOW is valid until step (currentStep + 7)
-    // starts — i.e. the earliest time it can be rejected is 180 s after
-    // the NEXT step boundary, which is (currentStep+1)*30 + 6*30 = now-aligned
-    // ~180–210 s from issuance. We report issuanceTime + 180 s as a conservative
-    // lower bound so callers know the code is safe for at least ~3 minutes.
-    const expiresAtMs = now + RELAY_VERIFY_SKEW_STEPS * STEP_SECONDS * 1000;
+    // the gate uses RELAY_VERIFY_SKEW_STEPS=6 steps of 5 s, so the code issued
+    // NOW is valid until step (currentStep + 7) starts, i.e. 30-35 s from
+    // issuance. We report issuanceTime + RELAY_CODE_MIN_AGE_SECONDS (30 s) as a
+    // conservative lower bound.
+    const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;
     totpMeta = {
       enabled: true,
-      ttlSeconds: RELAY_VERIFY_SKEW_STEPS * STEP_SECONDS,
+      ttlSeconds: RELAY_CODE_MIN_AGE_SECONDS,
       expiresAt: new Date(expiresAtMs).toISOString(),
     };
   }
 
   return {
-    attachUrl: buildDeepLinkAttachUrl(schemeUrl, tunnel.wssUrl, totpCode),
+    attachUrl: buildDeepLinkAttachUrl(
+      schemeUrl,
+      tunnel.wssUrl,
+      totpCode,
+      relayRunId(totpSecret, tunnel.wssUrl),
+      attachSignature(totpSecret, tunnel.wssUrl, totpCode),
+    ),
     relayUrl: tunnel.wssUrl,
     ...(authorityWarning !== undefined ? { authorityWarning } : {}),
     ...(totpMeta !== undefined ? { totp: totpMeta } : {}),
@@ -965,15 +982,16 @@ export function canOpenBrowser(): boolean {
  * Result of `openQrInBrowser`.
  *
  * HTTP URL 기반으로 재구현 — tmp 파일 없음. `httpUrl`이 브라우저에 전달되는 URL이다.
- * SECRET-HANDLING: `httpUrl`은 127.0.0.1 로컬 전용이며 tunnel host·relay wss·TOTP at= 코드를
- * 담지 않는다 (#595). attachUrl은 server-state(getDashboardState)로만 보유된다.
+ * SECRET-HANDLING: `httpUrl`은 127.0.0.1 로컬 전용이며 tunnel host·relay wss·TOTP at= 코드와
+ * 대시보드 접근 토큰을 담지 않는다 (#595). attachUrl은 server-state(getDashboardState)로만 보유된다.
+ * 브라우저를 띄울 때만 토큰이 붙은 `launchUrl`을 쓰고, 결과에는 싣지 않는다.
  */
 export interface OpenQrInBrowserResult {
   /** `true` if the browser was successfully opened. */
   opened: boolean;
   /** `http://127.0.0.1:<port>/` — 브라우저에 전달되는 루트 URL (#595). */
   httpUrl: string;
-  /** `http://127.0.0.1:<port>/qr.png?u=...` — PNG fallback URL. */
+  /** `http://127.0.0.1:<port>/qr.png` — PNG fallback URL (`u`도 토큰도 없다). */
   pngUrl: string;
   /** Error message if `opened` is false (browser spawn failed). */
   error?: string;
@@ -1015,12 +1033,13 @@ function getBrowserCandidates(httpUrl: string): Array<{ cmd: string; args: strin
 }
 
 /**
- * Redacts ONLY the `at=<value>` (TOTP) query param to `at=<redacted>`, leaving
- * every other query param (_deploymentId, debug, relay) intact. SECRET-HANDLING:
- * the TOTP code is the single short-lived secret carried in a CDP page url.
+ * Redacts the relay auth code (`at=<value>`, or the `/at/<code>/` path prefix)
+ * and the relay address (`relay=<value>`) in a page url, leaving every other
+ * query param (_deploymentId, debug) intact. SECRET-HANDLING: the code and the
+ * tunnel host together are what lets a device attach, so neither is shown.
  */
 export function redactAtParam(text: string): string {
-  return text.replace(/\bat=([^&\s"']+)/g, 'at=<redacted>');
+  return redactRelayText(text);
 }
 
 /** stderr에서 at= TOTP 코드 값을 redact한다. */
@@ -1051,16 +1070,20 @@ function isLaunchFailureStderr(stderr: string): boolean {
  *
  * SECRET-HANDLING:
  *   - tmp 파일을 만들지 않는다 (HTML/PNG는 HTTP 서버가 메모리에서 응답).
- *   - httpUrl은 `http://127.0.0.1:<port>/`(루트, 시크릿 없음). pngUrl은 127.0.0.1 로컬 전용.
+ *   - httpUrl은 `http://127.0.0.1:<port>/`(루트, 시크릿·토큰 없음). pngUrl은 `u` 없는 `/qr.png`.
+ *   - 토큰이 붙은 launchUrl은 브라우저 spawn 인자로만 쓴다. 호출자는 결과의 httpUrl에 토큰을 붙여
+ *     사람에게 보여주는 경우(열기 실패 안내)를 제외하고 그대로 노출한다.
  *   - stderr 캡처 결과에서 at= 코드 값을 redact한 후 stderrSummary에 포함.
  *   - attachUrl, deploymentId, TOTP 코드를 stdout/stderr/로그에 직접 출력 금지.
  *
- * @param httpUrl - `http://127.0.0.1:<port>/` 루트 URL (시크릿 없음, #595).
- * @param pngUrl  - `http://127.0.0.1:<port>/qr.png?u=<encoded>` PNG fallback URL.
+ * @param httpUrl - `http://127.0.0.1:<port>/` 루트 URL (시크릿·토큰 없음, #595).
+ * @param pngUrl  - `http://127.0.0.1:<port>/qr.png` PNG fallback URL.
+ * @param launchUrl - 브라우저에 실제로 넘기는 URL(토큰 포함 가능). 생략하면 httpUrl.
  */
 export async function openQrInBrowser(
   httpUrl: string,
   pngUrl: string,
+  launchUrl: string = httpUrl,
 ): Promise<OpenQrInBrowserResult> {
   const { spawnSync } = await import('node:child_process');
 
@@ -1069,9 +1092,13 @@ export async function openQrInBrowser(
    * stderrLines에 각 후보의 stderr를 누적한다.
    */
   function tryOnce(stderrLines: string[]): boolean {
-    const candidates = getBrowserCandidates(httpUrl);
+    const candidates = getBrowserCandidates(launchUrl);
     for (const { cmd, args } of candidates) {
-      const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: 5000 });
+      const result = spawnSync(cmd, args, {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: childProcessEnv(),
+      });
 
       if (result.error) {
         stderrLines.push(`${cmd}: ${result.error.message}`);
@@ -1780,6 +1807,19 @@ export interface AuthRejectsSnapshot {
 }
 
 /**
+ * How often the daemon reissued the tunnel on its own account because a caller
+ * kept the tunnel scope locked. A positive `count` means the relay URL changed:
+ * a phone that scanned an earlier QR cannot attach until it scans a new one.
+ * SECRET-HANDLING: count + timestamp ONLY, never a URL.
+ */
+export interface TunnelRotationsSnapshot {
+  /** Rotations since server start. */
+  count: number;
+  /** ISO timestamp of the latest rotation, or `null` when none. */
+  lastAt: string | null;
+}
+
+/**
  * The next recommended tool for the agent to call, based on the current server
  * state snapshot. `null` means the session looks healthy — no specific action needed.
  */
@@ -1827,6 +1867,21 @@ export interface DiagnosticsResult {
    * rejection occurred. Secret-free: count + last timestamp only.
    */
   authRejects: AuthRejectsSnapshot;
+  /**
+   * Tunnel rotations the daemon ran after repeated failed code checks. When
+   * `count` is above 0 the relay URL changed: tell the developer to scan the new
+   * QR from `start_attach`. Count and time only, no URL.
+   */
+  tunnelRotations: TunnelRotationsSnapshot;
+  /**
+   * Age of the relay key (`.ait_relay`) loaded for this session, or `null` when no
+   * relay session has loaded one or its date is unknown. `status` is `ok`,
+   * `aging` (older than 21 days: rotate soon) or `expired` (older than 30 days:
+   * the daemon refuses to start the relay, so this is only seen on a collector
+   * that outlived the refusal). `hint` says what to do and is `null` when the
+   * key is fine. Age, date and source only, never the key.
+   */
+  relayKey: (RelayKeyAge & { hint: string | null }) | null;
   /**
    * 현재(마지막) `start_attach` 시도의 단계 기록 — 타임아웃 진단·progress·대시보드
    * 타임라인과 같은 기록이다. 시도가 없었으면 `[]`. 시각·단계·결과 enum만 담는다
@@ -1884,6 +1939,7 @@ export interface DiagnosticsResult {
    *   0. tunnel.droppedAt non-null                   → restart (permanent tunnel drop)
    *   1. tunnel.up === false AND relay env            → restart
    *   1b. tunnel.up === false AND mock env, no pages  → wait_for_page (local target is tunnel-less)
+   *   2b. tunnelRotations.count > 0 AND pages empty   → start_attach (터널 URL 교체 — 새 QR 재스캔 안내)
    *   2a. authRejects.count > 0 AND pages empty       → start_attach (TOTP 거부 — QR 재스캔 안내)
    *   2. tunnel.up, pages empty, env === relay        → start_attach
    *   3. pages[0] exists + crashDetectedAt non-null   → start_attach (re-attach)
@@ -1916,12 +1972,21 @@ export interface DiagnosticsCollector {
   recordAuthReject(): void;
   /** Returns the auth-reject counter snapshot ({count: 0, lastAt: null} when none). */
   getAuthRejects(): AuthRejectsSnapshot;
+  /** Records one tunnel rotation. Secret-free: a counter and a timestamp. */
+  recordTunnelRotation(): void;
+  /** Returns the rotation snapshot ({count: 0, lastAt: null} when none). */
+  getTunnelRotations(): TunnelRotationsSnapshot;
+  /**
+   * Records the age of the relay key that was loaded for the session. Optional so
+   * collectors that predate it keep working. Secret-free: age and source only.
+   */
+  recordRelayKeyAge?(age: RelayKeyAge): void;
+  /** The recorded relay key age, or `null` when none was (no relay session, or no date). */
+  getRelayKeyAge?(): RelayKeyAge | null;
 }
 
 /** Secret-redaction patterns applied before error messages enter the buffer. */
 const SECRET_REDACT_PATTERNS: ReadonlyArray<[RegExp, string]> = [
-  // TOTP at= code value.
-  [/\bat=([^&\s"']+)/g, 'at=<redacted>'],
   // Cookie / Set-Cookie header values — replace everything after the colon.
   [/((?:set-)?cookie)\s*:\s*.+/gi, '$1: <redacted>'],
   // AITCC_API_KEY env-var-style references.
@@ -1939,7 +2004,8 @@ const SECRET_REDACT_PATTERNS: ReadonlyArray<[RegExp, string]> = [
  * strings must pass through here before reaching the buffer.
  */
 export function redactErrorMessage(message: string): string {
-  let result = message;
+  // Relay auth code, `relay=` value and tunnel addresses first.
+  let result = redactRelayText(message);
   for (const [pattern, replacement] of SECRET_REDACT_PATTERNS) {
     result = result.replace(pattern, replacement);
   }
@@ -1960,6 +2026,9 @@ export class InMemoryDiagnosticsCollector implements DiagnosticsCollector {
   private lastDetachAt: string | null = null;
   private authRejectCount = 0;
   private lastAuthRejectAt: string | null = null;
+  private tunnelRotationCount = 0;
+  private lastTunnelRotationAt: string | null = null;
+  private relayKeyAge: RelayKeyAge | null = null;
 
   constructor(maxSize = DEFAULT_ERROR_BUFFER_SIZE) {
     this.maxSize = maxSize;
@@ -2008,6 +2077,23 @@ export class InMemoryDiagnosticsCollector implements DiagnosticsCollector {
 
   getAuthRejects(): AuthRejectsSnapshot {
     return { count: this.authRejectCount, lastAt: this.lastAuthRejectAt };
+  }
+
+  recordTunnelRotation(): void {
+    this.tunnelRotationCount += 1;
+    this.lastTunnelRotationAt = new Date().toISOString();
+  }
+
+  getTunnelRotations(): TunnelRotationsSnapshot {
+    return { count: this.tunnelRotationCount, lastAt: this.lastTunnelRotationAt };
+  }
+
+  recordRelayKeyAge(age: RelayKeyAge): void {
+    this.relayKeyAge = age;
+  }
+
+  getRelayKeyAge(): RelayKeyAge | null {
+    return this.relayKeyAge;
   }
 }
 
@@ -2104,6 +2190,7 @@ export function computeNextRecommendedAction(
   env: McpEnvironment,
   authRejects: AuthRejectsSnapshot | null = null,
   attachDiagnosis: AttachDiagnosis | null = null,
+  tunnelRotations: TunnelRotationsSnapshot | null = null,
 ): NextRecommendedAction | null {
   // Rule 0: permanent tunnel drop — highest priority, beats crash / empty-pages rules.
   // droppedAt is set by the health probe after exhausting all reissue attempts.
@@ -2142,6 +2229,25 @@ export function computeNextRecommendedAction(
     }
   }
 
+  // Rule 2b: the daemon replaced the tunnel URL. A phone holding the old QR cannot
+  // attach, so the next step is a fresh scan. More specific than rule 2, and it
+  // outranks 2a: rejections that predate the new URL say nothing about it.
+  if (
+    tunnelRotations !== null &&
+    tunnelRotations.count > 0 &&
+    isRelayEnv(env) &&
+    pages !== null &&
+    pages.pages.length === 0
+  ) {
+    return {
+      tool: 'start_attach',
+      reason:
+        `반복된 인증 실패로 터널 URL을 ${tunnelRotations.count}회 교체했어요 ` +
+        `(last ${tunnelRotations.lastAt ?? 'unknown'}) — 이전 QR은 더 이상 열리지 않아요. ` +
+        'start_attach를 다시 호출하고 개발자에게 새 QR을 다시 스캔하라고 안내하세요',
+    };
+  }
+
   // Rule 2a (issue #467): auth rejections observed while no page is attached —
   // the phone DID reach the relay but its TOTP verification failed. Without
   // this rule the generic rule 2 ("call start_attach") hides the rejection
@@ -2151,7 +2257,7 @@ export function computeNextRecommendedAction(
       tool: 'start_attach',
       reason:
         `relay 인증(TOTP) 거부 ${authRejects.count}건 발생 (last ${authRejects.lastAt ?? 'unknown'}) — ` +
-        'QR을 다시 스캔해 새 코드로 attach하세요(코드는 ~3분마다 만료). 반복되면 폰 페이지 URL에 ' +
+        'QR을 다시 스캔해 새 코드로 attach하세요(코드는 35초 안에 만료). 반복되면 폰 페이지 URL에 ' +
         'at 파라미터가 전달되는지(target-side TOTP 전달 경로)를 확인하세요',
     };
   }
@@ -2238,6 +2344,11 @@ export interface GetDiagnosticsInput {
   attachTimeline?: AttachTimeline;
 }
 
+/** The `relayKey` block of `get_debug_status` for a recorded key age (`null` when none). */
+function relayKeyReport(age: RelayKeyAge | null): DiagnosticsResult['relayKey'] {
+  return age === null ? null : { ...age, hint: relayKeyHint(age) };
+}
+
 /**
  * Builds the `get_debug_status` response. Pure — does not throw; missing data
  * fields are `null`. Async because `readMcpSdkVersion` needs `import()`.
@@ -2245,7 +2356,10 @@ export interface GetDiagnosticsInput {
  * SECRET-HANDLING:
  *   - `recentErrors` messages are already redacted by `recordError` (via
  *     `redactErrorMessage`). No additional redaction needed here.
- *   - `tunnel.wssUrl` is a public cloudflared hostname — not a secret.
+ *   - `tunnel.wssUrl` and the lock holder's `wssUrl` are shown masked
+ *     (`wss://***.<domain>`): the tunnel host is secret-class and only
+ *     `start_attach` returns the real address. It must not be copied into
+ *     stderr, logs or error messages.
  *   - Lock file data contains only pid + startedAt + wssUrl — no secrets.
  */
 export async function getDiagnostics(input: GetDiagnosticsInput): Promise<DiagnosticsResult> {
@@ -2272,7 +2386,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
   // Read lock file for serverLockHolder + tunnel pid/startedAt.
   const lockData = readLockFn();
   const serverLockHolder: DiagnosticsLockHolder | null = lockData
-    ? { pid: lockData.pid, startedAt: lockData.startedAt, wssUrl: lockData.wssUrl }
+    ? { pid: lockData.pid, startedAt: lockData.startedAt, wssUrl: maskRelayUrl(lockData.wssUrl) }
     : null;
 
   // FIX 2 (issue #571): if the cloudflared child PID is known, perform a live
@@ -2297,7 +2411,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
 
   const tunnelInfo: DiagnosticsTunnelInfo = {
     up: effectiveUp,
-    wssUrl: tunnel.wssUrl,
+    wssUrl: maskRelayUrl(tunnel.wssUrl),
     pid: lockData?.pid ?? null,
     startedAt: lockData?.startedAt ?? null,
     droppedAt: tunnel.droppedAt ?? null,
@@ -2350,8 +2464,16 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
         })
       : null;
 
+  const tunnelRotations = collector.getTunnelRotations();
   const nextRecommendedAction = booted
-    ? computeNextRecommendedAction(tunnelInfo, pages, env, authRejects, attachDiagnosis)
+    ? computeNextRecommendedAction(
+        tunnelInfo,
+        pages,
+        env,
+        authRejects,
+        attachDiagnosis,
+        tunnelRotations,
+      )
     : UNBOOTED_NEXT_ACTION;
 
   return {
@@ -2363,6 +2485,8 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     lastDetachAt: collector.getLastDetachAt(),
     recentErrors,
     authRejects,
+    tunnelRotations,
+    relayKey: relayKeyReport(collector.getRelayKeyAge?.() ?? null),
     attachStages,
     attachDiagnosis,
     environment: booted

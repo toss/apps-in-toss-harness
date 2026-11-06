@@ -3,11 +3,10 @@
  *
  * On spawn, the debug server opens an accountless `*.trycloudflare.com` quick
  * tunnel to the local Chii relay so the phone can attach over a public wss URL,
- * then prints a unicode half-block QR + attach instructions. When TOTP auth is
- * enabled (`AIT_DEBUG_TOTP_SECRET` is set), the QR encodes only the base relay
- * URL — the TOTP code (`at=`) is NOT included because it rotates every 30 s
- * and would be stale by the time a human scans. The in-app deep-link builder
- * splices the live code at attach time.
+ * then prints a short stderr notice. The notice never carries the relay URL,
+ * the tunnel host, or a QR of them: the person gets the scannable attach QR
+ * from the dashboard or the `start_attach` tool, which splice the live TOTP
+ * code in at call time.
  *
  * Tunnel health probe (`TunnelHealthProbe`):
  *   After the tunnel is up, a periodic HTTP HEAD probe hits the tunnel's
@@ -25,7 +24,10 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { bin, install, Tunnel } from 'cloudflared';
+import { bin, Tunnel } from 'cloudflared';
+import { withoutRelaySecretEnv } from './child-env.js';
+import { ensureVerifiedCloudflaredBin } from './cloudflared-binary.js';
+import { redactRelayText } from './relay-redact.js';
 import { RESTART_CMD } from './restart-hint.js';
 import type { TunnelStatus } from './tools.js';
 
@@ -108,29 +110,24 @@ export interface QuickTunnel {
 }
 
 /**
- * Ensures the cloudflared binary is installed (downloads + caches on first
- * run). npm runs postinstall by default, so this path is a no-op for the
- * default npm/npx consumer flow. It still matters for pnpm consumers: pnpm's
- * `ignore-scripts` default blocks the package's own postinstall, so this lazy
- * download is what makes a fresh `pnpm add @apps-in-toss/debugger` work out of
- * the box — no `allowBuilds` config required. This only fails when the
- * download itself fails (offline / firewall), in which case we augment the
- * error with a pointer to the pre-cache options instead of surfacing the raw
- * network error alone.
+ * Ensures the pinned, sha256-verified cloudflared binary is at `bin` (downloads on first run).
+ * The `cloudflared` package's own installer follows `latest` with no checksum, so the version
+ * and hashes are pinned in `cloudflared-binary.ts` and any other executable at `bin` (for
+ * example the one npm's postinstall fetched) is replaced. pnpm consumers need no `allowBuilds`
+ * config: pnpm's `ignore-scripts` default blocks the package's postinstall and this lazy path
+ * provisions the binary. On failure (offline / firewall / hash mismatch) the error points at the
+ * README troubleshooting section instead of surfacing the raw error alone.
  */
 async function ensureCloudflaredBin(): Promise<void> {
-  const { existsSync } = await import('node:fs');
-  if (!existsSync(bin)) {
-    try {
-      await install(bin);
-    } catch (err) {
-      throw new Error(
-        `[@apps-in-toss/debugger] cloudflared binary download failed: ${
-          err instanceof Error ? err.message : String(err)
-        }. See README "Troubleshooting → cloudflared binary not installed" for pnpm allowBuilds / pre-cache options.`,
-        { cause: err },
-      );
-    }
+  try {
+    await ensureVerifiedCloudflaredBin(bin);
+  } catch (err) {
+    throw new Error(
+      `[@apps-in-toss/debugger] cloudflared binary download or verification failed: ${
+        err instanceof Error ? err.message : String(err)
+      }. See README "Troubleshooting → cloudflared binary not installed" for pnpm allowBuilds / pre-cache options.`,
+      { cause: err },
+    );
   }
 }
 
@@ -157,7 +154,13 @@ export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> 
   // Go's dialer tries every resolved address of `localhost` (both v4 and v6)
   // before giving up, so this tolerates dev servers bound to either loopback
   // family — e.g. some `vite` setups bind only `[::1]` (IPv6).
-  const tunnel = Tunnel.quick(`http://localhost:${localPort}`);
+  // cloudflared does not get the relay secret (the library spawns synchronously
+  // with `process.env` and takes no env option).
+  // `--no-autoupdate`: the binary is sha256-pinned and provisioned by
+  // ensureVerifiedCloudflaredBin; cloudflared must not replace it at runtime.
+  const tunnel = withoutRelaySecretEnv(() =>
+    Tunnel.quick(`http://localhost:${localPort}`, { '--no-autoupdate': true }),
+  );
 
   // #421: accumulate stderr so a timeout/premature-exit error can attach a
   // diagnostic tail. SECRET-HANDLING: lines are sanitized before inclusion in
@@ -250,13 +253,9 @@ export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> 
 }
 
 export interface AttachBannerInput {
-  wssUrl: string;
   /**
    * Whether TOTP auth is enabled on the relay (`AIT_DEBUG_TOTP_SECRET` is set).
-   *
-   * When `true`, the banner notes that a rotating code (`at=`) will be
-   * appended to attach URLs at call time — the code is NOT printed here
-   * because it rotates every 30 s and would be stale in seconds.
+   * Only changes the auth line of the notice.
    */
   totpEnabled: boolean;
 }
@@ -275,8 +274,7 @@ export interface AttachBannerInput {
  * every surface (terminal, VS Code, JetBrains, web) and can be scanned by a
  * phone camera when shown verbatim in an agent response.
  *
- * Shared by `renderAttachBanner` (relay wssUrl QR) and the `start_attach`
- * MCP tool response (attach deep-link QR).
+ * Used by the `start_attach` MCP tool response (attach deep-link QR).
  */
 export async function renderQr(text: string): Promise<string> {
   // Dynamic import mirrors the cloudflared/qrcode-terminal precedent: keeps the
@@ -306,45 +304,34 @@ export async function renderQr(text: string): Promise<string> {
 }
 
 /**
- * Renders the attach banner (relay URL + unicode half-block QR) as a string.
+ * Renders the attach notice as a string.
  *
- * The QR is produced by `renderQr` (a half-block matrix, not the
- * `qrcode-terminal` ASCII art used by the unplugin banner) and encodes the
- * base `wssUrl` only. When `totpEnabled` is true, a note
- * is added that attach URLs generated by `start_attach` will include a
- * live TOTP code (`at=`) appended at call time.
+ * Deliberately has no relay URL, tunnel host or QR: stderr is captured by
+ * terminals, agent transcripts and CI logs, so the host stays out of it. The
+ * attach QR (relay URL plus the live TOTP code) is shown by the dashboard and
+ * returned by the `start_attach` tool instead.
  *
- * SECRET-HANDLING: no secret value, TOTP code, or intermediate value is
- * included in this output.
+ * SECRET-HANDLING: no secret, TOTP code, relay URL or tunnel host is included.
  */
-export async function renderAttachBanner(input: AttachBannerInput): Promise<string> {
-  // The QR encodes only the relay wssUrl — no token or code. This is safe
-  // because the relay gate enforces the code at WS upgrade time anyway; the
-  // QR is just for locating the relay, not for bypassing auth.
-  const qr = await renderQr(input.wssUrl);
-
+export function renderAttachBanner(input: AttachBannerInput): string {
   const authNote = input.totpEnabled
     ? '  auth:          TOTP enabled — attach URLs include a rotating code (at=).'
     : '  auth:          none (set AIT_DEBUG_TOTP_SECRET to enable TOTP).';
 
   return [
     '',
-    'AIT debug — attach a mini-app to this session',
+    'AIT debug — relay tunnel is up (host not shown)',
     '',
-    `  relay (wss):   ${input.wssUrl}`,
     authNote,
     '',
-    '  Use start_attach to generate a deep link with the current TOTP code.',
-    '  Scan the QR to locate the relay (open the dog-food URL separately with',
-    '  ?debug=1&relay=<wss>&at=<code> or use the start_attach tool):',
+    '  Call start_attach, or open the dashboard, to get the attach QR and deep link.',
     '',
-    qr,
   ].join('\n');
 }
 
 /** Prints the attach banner to stderr (stdout is the MCP stdio channel). */
 export async function printAttachBanner(input: AttachBannerInput): Promise<void> {
-  const banner = await renderAttachBanner(input);
+  const banner = renderAttachBanner(input);
   process.stderr.write(`${banner}\n`);
 }
 
@@ -356,19 +343,40 @@ export async function printAttachBanner(input: AttachBannerInput): Promise<void>
 export const MAX_REISSUE_ATTEMPTS = 3;
 
 /**
- * Probes `https://` URL with an HTTP HEAD request.
- * Returns `true` when the server responds (any HTTP status), `false` on
- * network error or timeout.
+ * HTTP statuses that mean the tunnel itself is gone even though something still
+ * answers. When the connector behind a quick-tunnel hostname is down, the edge
+ * answers for it with a Cloudflare error page (530, error 1033) or a bad-gateway
+ * class status; the relay never produces these for its own `/` route, and
+ * cloudflared itself answers 502 when it cannot reach the local relay. Ordinary
+ * application statuses (404, 403, 401, 429 ...) mean a live relay behind a live
+ * tunnel and stay "alive".
  *
- * We treat any HTTP response (including 4xx/5xx) as "tunnel alive" because
- * cloudflared itself responds to the HEAD — if the tunnel process died, the
- * request fails at the network level rather than returning a status code.
+ * Not observed against a live dead connector: the list rests on Cloudflare's
+ * documented error statuses for tunnels, so it is kept short and exact.
+ */
+export const TUNNEL_DEAD_STATUSES: ReadonlySet<number> = new Set([502, 504, 530]);
+
+/** Whether an HTTP status from a probe means the tunnel is down. */
+export function isTunnelDeadStatus(status: number | undefined): boolean {
+  return status !== undefined && TUNNEL_DEAD_STATUSES.has(status);
+}
+
+/**
+ * Probes `https://` URL with an HTTP HEAD request.
+ * Returns `true` when the tunnel answers with an application status, `false` on
+ * network error, timeout, or a status that says the connector is gone (see
+ * {@link TUNNEL_DEAD_STATUSES}).
  *
  * @param httpsUrl - The `https://` tunnel URL to probe.
  * @param timeoutMs - Abort timeout in ms. Default 10 000.
+ * @param send - HTTPS request function. Tests inject one.
  */
-export async function probeTunnel(httpsUrl: string, timeoutMs = 10_000): Promise<boolean> {
-  const { default: https } = await import('node:https');
+export async function probeTunnel(
+  httpsUrl: string,
+  timeoutMs = 10_000,
+  send?: typeof import('node:https').request,
+): Promise<boolean> {
+  const request = send ?? (await import('node:https')).default.request;
   return new Promise<boolean>((resolve) => {
     const url = new URL(httpsUrl);
     const timer = setTimeout(() => {
@@ -376,12 +384,12 @@ export async function probeTunnel(httpsUrl: string, timeoutMs = 10_000): Promise
       resolve(false);
     }, timeoutMs);
 
-    const req = https.request(
+    const req = request(
       { hostname: url.hostname, port: 443, path: url.pathname || '/', method: 'HEAD' },
       (_res) => {
         clearTimeout(timer);
         _res.resume(); // drain response body to free socket
-        resolve(true);
+        resolve(!isTunnelDeadStatus(_res.statusCode));
       },
     );
     req.on('error', () => {
@@ -391,6 +399,9 @@ export async function probeTunnel(httpsUrl: string, timeoutMs = 10_000): Promise
     req.end();
   });
 }
+
+/** Why a tunnel was replaced. */
+export type TunnelReissueReason = 'drop' | 'rotation';
 
 export interface TunnelHealthProbeOptions {
   /**
@@ -406,9 +417,10 @@ export interface TunnelHealthProbeOptions {
   /**
    * Callback invoked after a successful reissue. The caller (debug-server)
    * uses this to update `tunnelStatus` and reprint the attach banner with the
-   * new `wssUrl`.
+   * new `wssUrl`. `reason` is `'rotation'` when the caller asked for the new
+   * URL through `rotate()` and `'drop'` when the probe replaced a dead tunnel.
    */
-  onReissue: (newTunnel: QuickTunnel) => void;
+  onReissue: (newTunnel: QuickTunnel, reason: TunnelReissueReason) => void;
   /**
    * Callback invoked when the probe permanently gives up (all reissue attempts
    * exhausted). The caller should mark `tunnelStatus.up = false` and surface
@@ -444,12 +456,15 @@ export interface TunnelHealthProbeOptions {
  * waiting for the next probe interval (which could be 60 s away).
  *
  * @returns `stop` — call during server shutdown to clear the probe interval.
+ *   `rotate` — replaces the live tunnel on request through the same path as a
+ *   drop reissue (`onReissue` fires with reason `'rotation'`); resolves `false`
+ *   when a swap is already running, the probe is stopped, or the spawn failed.
  */
 export function startTunnelHealthProbe(
   initialTunnel: QuickTunnel,
   localPort: number,
   options: TunnelHealthProbeOptions,
-): { stop(): void } {
+): { stop(): void; rotate(): Promise<boolean> } {
   const {
     probeIntervalMs = 60_000,
     failuresBeforeReissue = 2,
@@ -465,11 +480,29 @@ export function startTunnelHealthProbe(
   let reissueAttempts = 0;
   let stopped = false;
 
+  // One swap for both reasons: spawn the new tunnel, then stop the old one, so
+  // a failed spawn leaves the old tunnel as it was.
+  let swapping = false;
+  const swapTunnel = async (): Promise<QuickTunnel> => {
+    const newTunnel = await spawnTunnel(localPort);
+    // Stop the old tunnel process to free system resources.
+    try {
+      currentTunnel.stop();
+    } catch {
+      // Ignore stop errors — the process may already be dead.
+    }
+    currentTunnel = newTunnel;
+    consecutiveFailures = 0;
+    // FIX 1: arm child-exit watcher on the newly spawned tunnel too.
+    armChildExitWatch(newTunnel);
+    return newTunnel;
+  };
+
   // FIX 1: shared reissue-or-drop logic — called both from the periodic
   // interval (after failuresBeforeReissue consecutive probe misses) and from
   // the child-exit handler (immediately on unexpected process death).
   const doReissueOrDrop = async (): Promise<void> => {
-    if (stopped) return;
+    if (stopped || swapping) return;
 
     reissueAttempts += 1;
     if (reissueAttempts > MAX_REISSUE_ATTEMPTS) {
@@ -481,23 +514,18 @@ export function startTunnelHealthProbe(
       `[ait-debug] tunnel drop detected — reissuing (attempt ${reissueAttempts}/${MAX_REISSUE_ATTEMPTS})\n`,
     );
 
+    swapping = true;
     try {
-      const newTunnel = await spawnTunnel(localPort);
-      // Stop the old tunnel process to free system resources.
-      try {
-        currentTunnel.stop();
-      } catch {
-        // Ignore stop errors — the process may already be dead.
-      }
-      currentTunnel = newTunnel;
-      consecutiveFailures = 0;
-      // FIX 1: arm child-exit watcher on the newly spawned tunnel too.
-      armChildExitWatch(newTunnel);
-      log(`[ait-debug] tunnel reissued — new relay: ${newTunnel.wssUrl}\n`);
-      onReissue(newTunnel);
+      const newTunnel = await swapTunnel();
+      log(
+        '[ait-debug] tunnel reissued — new relay URL available via start_attach (host not shown)\n',
+      );
+      onReissue(newTunnel, 'drop');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log(`[ait-debug] tunnel reissue attempt ${reissueAttempts} failed: ${message}\n`);
+      log(
+        `[ait-debug] tunnel reissue attempt ${reissueAttempts} failed: ${redactRelayText(message)}\n`,
+      );
 
       if (reissueAttempts >= MAX_REISSUE_ATTEMPTS) {
         clearInterval(handle);
@@ -509,6 +537,31 @@ export function startTunnelHealthProbe(
         );
         onPermanentDrop(droppedAt);
       }
+    } finally {
+      swapping = false;
+    }
+  };
+
+  // Replaces a live tunnel on request so the old URL stops answering. Unlike a
+  // drop, a failed spawn does not count toward the permanent-drop limit: the old
+  // tunnel is still up. Returns whether the URL changed.
+  const rotate = async (): Promise<boolean> => {
+    if (stopped || swapping) return false;
+    swapping = true;
+    log('[ait-debug] tunnel rotation requested — reissuing\n');
+    try {
+      const newTunnel = await swapTunnel();
+      log(
+        '[ait-debug] tunnel rotated — new relay URL available via start_attach (host not shown)\n',
+      );
+      onReissue(newTunnel, 'rotation');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`[ait-debug] tunnel rotation failed: ${redactRelayText(message)}\n`);
+      return false;
+    } finally {
+      swapping = false;
     }
   };
 
@@ -549,7 +602,7 @@ export function startTunnelHealthProbe(
 
       consecutiveFailures += 1;
       log(
-        `[ait-debug] tunnel health probe: failure ${consecutiveFailures}/${failuresBeforeReissue} (url=${httpsUrl})\n`,
+        `[ait-debug] tunnel health probe: failure ${consecutiveFailures}/${failuresBeforeReissue}\n`,
       );
 
       if (consecutiveFailures < failuresBeforeReissue) {
@@ -567,6 +620,7 @@ export function startTunnelHealthProbe(
       stopped = true;
       clearInterval(handle);
     },
+    rotate,
   };
 }
 

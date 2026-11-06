@@ -21,9 +21,18 @@
  * 동작 검증은 아래 "안정 포트 (devtools#752)" describe 블록이 개별 base
  * 포트를 명시로 override해 담당한다.
  */
+import { request as httpRequest } from 'node:http';
 import { createServer, Server } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type DashboardState, MAX_SSE_CLIENTS, startQrHttpServer } from '../qr-http-server.js';
+import {
+  type DashboardState,
+  isCurrentAttachUrl,
+  MAX_SSE_CLIENTS,
+  SSE_EVICTION_BUDGET,
+  SSE_EVICTION_WINDOW_MS,
+} from '../qr-http-server.js';
+import { signRelay } from '../relay-signing.js';
+import { dashboardCookieForPort, startQrHttpServer } from './dashboard-auth-helper.js';
 
 process.env.AIT_DEBUG_HTTP_PORT = '0';
 
@@ -830,15 +839,15 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
 
   it('GET /attach?u= → HTML (back-compat 라우트 유지)', async () => {
     // /attach?u= 라우트는 back-compat으로 유지됨 (#595).
+    const attachUrl =
+      'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl,
       phase: 'active',
     }));
     try {
-      const attachUrl =
-        'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
       const res = await fetch(
         `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`,
         { headers: { 'Accept-Language': 'ko' } },
@@ -872,15 +881,15 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
   it('GET /attach HTML contains EventSource(/events) SSE script (#435)', async () => {
     // buildAttachHtml injects buildSseScript so the /attach page subscribes
     // to /events and can update the QR img live — avoiding expired TOTP at= codes.
+    const attachUrl =
+      'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl,
       phase: 'active',
     }));
     try {
-      const attachUrl =
-        'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
       // /attach?u= 직접 사용 (back-compat 라우트, #595 이후에도 유지됨).
       const res = await fetch(
         `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`,
@@ -899,15 +908,15 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
   it('GET /attach HTML contains id="attach-section" (#435)', async () => {
     // AttachHtml.tsx wraps the QR img in <div id="attach-section"> so the SSE
     // script can target it with querySelector for live QR re-render.
+    const attachUrl =
+      'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl,
       phase: 'active',
     }));
     try {
-      const attachUrl =
-        'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
       // /attach?u= 직접 사용 (back-compat 라우트, #595 이후에도 유지됨).
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`, {
@@ -927,15 +936,15 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
     //
     // SECRET-HANDLING: we use a dummy marker to verify containment; no real
     // TOTP secret or production value is referenced here.
+    const markerCode = '123456'; // 6-digit stand-in (not a real TOTP value)
+    const attachUrl = `intoss-private://app?_deploymentId=test&debug=1&relay=wss%3A%2F%2Fx.tc.com&at=${markerCode}`;
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl,
       phase: 'active',
     }));
     try {
-      const markerCode = '123456'; // 6-digit stand-in (not a real TOTP value)
-      const attachUrl = `intoss-private://app?_deploymentId=test&debug=1&relay=wss%3A%2F%2Fx.tc.com&at=${markerCode}`;
       // /attach?u= 직접 사용 (back-compat 라우트, #595 이후에도 유지됨).
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`)
@@ -1027,10 +1036,10 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
   });
 
   it('GET /attach ?lang=ko → 한국어 HTML (Accept-Language가 en이어도)', async () => {
-    const srv = await startQrHttpServer(() => defaultState);
+    const attachUrl =
+      'intoss-private://app?_deploymentId=test-lang&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    const srv = await startQrHttpServer(() => ({ ...defaultState, attachUrl }));
     try {
-      const attachUrl =
-        'intoss-private://app?_deploymentId=test-lang&debug=1&relay=wss%3A%2F%2Fx.tc.com';
       const encodedU = encodeURIComponent(attachUrl);
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodedU}&lang=ko`, {
@@ -1044,10 +1053,10 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
   });
 
   it('GET /attach ?lang=en → 영어 HTML (Accept-Language가 ko이어도)', async () => {
-    const srv = await startQrHttpServer(() => defaultState);
+    const attachUrl =
+      'intoss-private://app?_deploymentId=test-lang&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    const srv = await startQrHttpServer(() => ({ ...defaultState, attachUrl }));
     try {
-      const attachUrl =
-        'intoss-private://app?_deploymentId=test-lang&debug=1&relay=wss%3A%2F%2Fx.tc.com';
       const encodedU = encodeURIComponent(attachUrl);
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodedU}&lang=en`, {
@@ -1063,9 +1072,9 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
   it('SECRET: lang switcher href가 u= 파라미터(attachUrl, TOTP at= 캡슐)를 보존한다', async () => {
     // switcher 링크는 lang만 추가/교체하고 u= 등 기존 쿼리는 보존해야 한다.
     // SECRET-HANDLING: placeholder URL만 사용 — 실제 secret/wss URL 없음.
-    const srv = await startQrHttpServer(() => defaultState);
+    const attachUrl = 'intoss-private://app?_deploymentId=test-secret&debug=1&relay=placeholder';
+    const srv = await startQrHttpServer(() => ({ ...defaultState, attachUrl }));
     try {
-      const attachUrl = 'intoss-private://app?_deploymentId=test-secret&debug=1&relay=placeholder';
       const encodedU = encodeURIComponent(attachUrl);
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodedU}`, {
@@ -1196,7 +1205,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl: attachUrlDummy,
       phase: 'active',
     }));
     try {
@@ -1220,7 +1229,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl: attachUrlDummy,
       phase: 'active',
     }));
     try {
@@ -1250,7 +1259,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
-      attachUrl: null,
+      attachUrl: attachUrlDummy,
       phase: 'active',
     }));
     try {
@@ -2070,12 +2079,12 @@ describe('startQrHttpServer — SSE watchdog 자동 닫기 (#681)', () => {
     }
   });
 
-  it('기본 sseRefreshIntervalMs(90s) 사용 시 watchdog timeout이 210s(210_000ms)로 계산된다', async () => {
-    // 90_000 >= 5_000 이므로 90_000 * 2 + 30_000 = 210_000
+  it('기본 sseRefreshIntervalMs(5s) 사용 시 watchdog timeout이 40s(40_000ms)로 계산된다', async () => {
+    // 5_000 >= 5_000 이므로 5_000 * 2 + 30_000 = 40_000
     const srv = await startQrHttpServer(() => defaultState);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
-      expect(html).toContain('WATCHDOG_TIMEOUT_MS = 210000');
+      expect(html).toContain('WATCHDOG_TIMEOUT_MS = 40000');
     } finally {
       await srv.close();
     }
@@ -2141,10 +2150,12 @@ describe('startQrHttpServer — SSE watchdog 자동 닫기 (#681)', () => {
   });
 
   it('/attach 페이지에도 watchdog 스크립트가 주입된다', async () => {
-    const srv = await startQrHttpServer(() => defaultState, { sseRefreshIntervalMs: 50 });
+    const attachUrl =
+      'intoss-private://aitc-sdk-example?_deploymentId=test-watchdog&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    const srv = await startQrHttpServer(() => ({ ...defaultState, attachUrl }), {
+      sseRefreshIntervalMs: 50,
+    });
     try {
-      const attachUrl =
-        'intoss-private://aitc-sdk-example?_deploymentId=test-watchdog&debug=1&relay=wss%3A%2F%2Fx.tc.com';
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`, {
           headers: { 'Accept-Language': 'ko' },
@@ -3035,6 +3046,52 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
       await srv.close();
     }
   });
+
+  it(`밀어내기가 ${SSE_EVICTION_WINDOW_MS}ms 안에 ${SSE_EVICTION_BUDGET}번을 넘으면 새 구독은 429이고 기존 구독은 남는다`, async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const srv = await startQrHttpServer(() => baseState);
+    const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
+    try {
+      for (let i = 0; i < MAX_SSE_CLIENTS + SSE_EVICTION_BUDGET; i++) {
+        opened.push(await openSse(srv.port));
+      }
+      // 예산을 다 썼다. 남은 구독은 마지막 MAX_SSE_CLIENTS개.
+      const alive = opened.slice(-MAX_SSE_CLIENTS);
+      const res = await fetch(`http://127.0.0.1:${srv.port}/events?v=2`);
+      expect(res.status).toBe(429);
+      expect(res.headers.get('retry-after')).toBe(String(SSE_EVICTION_WINDOW_MS / 1000));
+      for (const c of alive) expect(c.text()).not.toContain('event: superseded');
+      expect(srv.hasActiveClients()).toBe(true);
+
+      // 창이 지나면 다시 밀어낼 수 있다.
+      vi.setSystemTime(Date.now() + SSE_EVICTION_WINDOW_MS + 1);
+      const again = await openSse(srv.port);
+      opened.push(again);
+      expect(again.text()).toContain('data: {');
+      expect(alive[0]?.text()).toContain('event: superseded');
+    } finally {
+      for (const c of opened) c.abort();
+      await srv.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('자리가 남아 있는 구독은 밀어내기 예산을 쓰지 않는다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      for (let i = 0; i < SSE_EVICTION_BUDGET + 3; i++) {
+        const c = await openSse(srv.port);
+        c.abort();
+        await waitFor(() => !srv.hasActiveClients());
+        expect(c.text()).not.toContain('event: superseded');
+      }
+      const res = await fetch(`http://127.0.0.1:${srv.port}/events?v=2`);
+      expect(res.status).toBe(200);
+      await res.body?.cancel();
+    } finally {
+      await srv.close();
+    }
+  });
 });
 
 describe('startQrHttpServer — 대시보드 SSE 클라이언트 스크립트 (상한/pagehide)', () => {
@@ -3188,7 +3245,10 @@ describe('startQrHttpServer — 이미 열린 미니앱은 스캔해도 새로�
   });
 
   it('/attach 스캔 절차 1단계에도 이미 열린 미니앱을 먼저 닫으라는 안내가 있다', async () => {
-    const srv = await startQrHttpServer(() => stateWithQr);
+    const srv = await startQrHttpServer(() => ({
+      ...stateWithQr,
+      attachUrl: 'intoss-private://app?_deploymentId=x',
+    }));
     try {
       const html = await (
         await fetch(
@@ -3319,10 +3379,279 @@ describe('startQrHttpServer — attach 타임라인과 세션 표시', () => {
         stages: unknown;
       };
       expect(none.stages).toBeNull();
-      expect(JSON.stringify(frame)).not.toMatch(/at=\d{6}/);
+      expect(JSON.stringify(frame)).not.toMatch(/at=[0-9a-f]{32}/);
     } finally {
       await srv.close();
       await srvNone.close();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Host·Origin 검사
+// ---------------------------------------------------------------------------
+
+describe('startQrHttpServer — Host·Origin 검사', () => {
+  const get = (port: number, path: string, headers: Record<string, string>) =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path,
+          headers: { Cookie: dashboardCookieForPort(port), ...headers },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
+          res.on('end', () => {
+            resolve({ status: res.statusCode ?? 0, body });
+          });
+          // SSE는 끝나지 않으니 헤더만 보고 끊는다.
+          if (path === '/events') {
+            resolve({ status: res.statusCode ?? 0, body: '' });
+            res.destroy();
+          }
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+
+  const state = (): DashboardState => ({
+    tunnel: { up: true, wssUrl: 'wss://relay.trycloudflare.com' },
+    pages: [],
+    attachUrl: 'https://x.example/?at=000000',
+    phase: 'active',
+  });
+
+  it.each(['/', '/events', '/inspector', '/attach', '/qr.png'])(
+    '낯선 Host는 %s를 거부',
+    async (path) => {
+      const srv = await startQrHttpServer(state);
+      try {
+        const res = await get(srv.port, path, { Host: 'rebind.example' });
+        expect(res.status).toBe(403);
+        expect(res.body).not.toContain('000000');
+      } finally {
+        await srv.close();
+      }
+    },
+  );
+
+  it('다른 Origin을 거부', async () => {
+    const srv = await startQrHttpServer(state);
+    try {
+      const host = `127.0.0.1:${srv.port}`;
+      expect(
+        (await get(srv.port, '/', { Host: host, Origin: 'https://evil.example' })).status,
+      ).toBe(403);
+      expect((await get(srv.port, '/', { Host: host, Origin: 'null' })).status).toBe(403);
+      expect((await get(srv.port, '/', { Host: host, Origin: `http://${host}` })).status).toBe(200);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it.each(['127.0.0.1', 'localhost', '[::1]'])('로컬 Host %s는 그대로 동작', async (name) => {
+    const srv = await startQrHttpServer(state);
+    try {
+      expect((await get(srv.port, '/', { Host: `${name}:${srv.port}` })).status).toBe(200);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// /attach?u=, /qr.png?u= — 이 데몬이 만든 링크만 그린다
+// ---------------------------------------------------------------------------
+
+describe('startQrHttpServer — attach 링크 검증', () => {
+  const current =
+    'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com&at=111111';
+  const stateWith = (attachUrl: string | null): DashboardState => ({
+    tunnel: { up: true, wssUrl: null },
+    pages: [],
+    attachUrl,
+    phase: 'active',
+  });
+  const arbitrary = 'https://example.invalid/phish?x=1';
+
+  it('/attach?u=에 임의 URL을 주면 403이고 QR도 안내도 그리지 않는다', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(arbitrary)}`,
+      );
+      expect(res.status).toBe(403);
+      const body = await res.text();
+      expect(body).not.toContain('data:image/png');
+      expect(body).not.toContain('example.invalid');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('/qr.png?u=에 임의 URL을 주면 403', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${srv.port}/qr.png?u=${encodeURIComponent(arbitrary)}`,
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get('content-type')).not.toBe('image/png');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('attachUrl이 아직 없으면(null) 어떤 u도 403', async () => {
+    const srv = await startQrHttpServer(() => stateWith(null));
+    try {
+      for (const path of ['/attach', '/qr.png']) {
+        const res = await fetch(
+          `http://127.0.0.1:${srv.port}${path}?u=${encodeURIComponent(current)}`,
+        );
+        expect(res.status).toBe(403);
+      }
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('at= 코드만 다른 옛 링크는 현재 링크로 보고 그린다', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const stale = current.replace('at=111111', 'at=222222');
+      const page = await fetch(
+        `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(stale)}`,
+      );
+      expect(page.status).toBe(200);
+      const png = await fetch(`http://127.0.0.1:${srv.port}/qr.png?u=${encodeURIComponent(stale)}`);
+      expect(png.status).toBe(200);
+      expect(png.headers.get('content-type')).toBe('image/png');
+      await png.arrayBuffer();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('relay 같은 다른 파라미터를 바꾼 링크는 거절한다', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const forged = current.replace('x.tc.com', 'evil.tc.com');
+      const res = await fetch(
+        `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(forged)}`,
+      );
+      expect(res.status).toBe(403);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('at= 자리에 다른 파라미터를 끼워 넣은 링크는 거절한다', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const injected = `intoss-private://app?at=1%26relay%3Dwss%3A%2F%2Fevil.tc.com&${current.split('?')[1]}`;
+      for (const path of ['/attach', '/qr.png']) {
+        const res = await fetch(
+          `http://127.0.0.1:${srv.port}${path}?u=${encodeURIComponent(injected)}`,
+        );
+        expect(res.status).toBe(403);
+      }
+      // 이중 인코딩한 u도 같다.
+      const twice = await fetch(
+        `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(encodeURIComponent(injected))}`,
+      );
+      expect(twice.status).toBe(403);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('통과한 링크는 검증한 문자열 그대로 그린다', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const page = await fetch(
+        `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(current)}`,
+      );
+      expect(page.status).toBe(200);
+      const body = await page.text();
+      expect(body).toContain('relay=wss%3A%2F%2Fx.tc.com');
+      expect(body).not.toContain('relay=wss://x.tc.com');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('u가 비어 있으면 /qr.png는 기존대로 204', async () => {
+    const srv = await startQrHttpServer(() => stateWith(current));
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/qr.png?u=`);
+      expect(res.status).toBe(204);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('isCurrentAttachUrl: 데몬이 실제로 만든 sig(세션 인증서 형태)도 받아들인다', () => {
+    const base = 'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    const sig = signRelay('11'.repeat(32), 'wss://abc-def.trycloudflare.com', 'a'.repeat(32));
+    expect(sig).toContain('.');
+    const link = `${base}&at=${'a'.repeat(32)}&sig=${sig}`;
+    expect(isCurrentAttachUrl(link, `${base}&at=${'b'.repeat(32)}&sig=x`)).toBe(true);
+  });
+
+  it('isCurrentAttachUrl: sig= 도 at= 처럼 값이 바뀌어도 같은 링크로 본다', () => {
+    const base = 'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    const a = `${base}&at=${'a'.repeat(32)}&sig=${'A'.repeat(87)}.1800000000.1800001200.${'A'.repeat(86)}.${'A'.repeat(86)}`;
+    const b = `${base}&at=${'b'.repeat(32)}&sig=${'B'.repeat(87)}.1800000300.1800001500.${'B'.repeat(86)}.${'B'.repeat(86)}`;
+    expect(isCurrentAttachUrl(a, b)).toBe(true);
+    expect(isCurrentAttachUrl(base, b)).toBe(true);
+    // 구분자가 섞인 sig, 중복 sig는 거절한다.
+    expect(isCurrentAttachUrl(`${base}&sig=x%26relay%3Dy`, b)).toBe(false);
+    expect(isCurrentAttachUrl(`${a}&sig=${'C'.repeat(86)}`, b)).toBe(false);
+  });
+
+  it('isCurrentAttachUrl: at= 위치와 값이 달라도 같고, 그 밖의 차이는 다르다', () => {
+    expect(isCurrentAttachUrl(current, current)).toBe(true);
+    expect(
+      isCurrentAttachUrl(
+        'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com',
+        current,
+      ),
+    ).toBe(true);
+    expect(
+      isCurrentAttachUrl(
+        'intoss-private://app?at=9&_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com',
+        current,
+      ),
+    ).toBe(true);
+    expect(isCurrentAttachUrl('intoss-private://app?_deploymentId=other', current)).toBe(false);
+    expect(
+      isCurrentAttachUrl(
+        'intoss-private://app?at=1%26relay%3Dx&_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com',
+        current,
+      ),
+    ).toBe(false);
+    expect(isCurrentAttachUrl(`${current}&at=2`, current)).toBe(false);
+    expect(isCurrentAttachUrl(current, null)).toBe(false);
+    expect(isCurrentAttachUrl(current, undefined)).toBe(false);
+    expect(isCurrentAttachUrl('', '')).toBe(false);
+  });
+
+  it('isCurrentAttachUrl: 32자 hex at= 와 rid= 가 붙은 링크도 같은 링크로 본다', () => {
+    const base =
+      'intoss-private://app?_deploymentId=d&debug=1&relay=wss%3A%2F%2Fx.tc.com&rid=0123456789';
+    const code = '0123456789abcdef0123456789abcdef';
+    const other = 'fedcba9876543210fedcba9876543210';
+    expect(isCurrentAttachUrl(`${base}&at=${code}`, `${base}&at=${other}`)).toBe(true);
+    expect(isCurrentAttachUrl(`${base}&at=`, `${base}&at=${other}`)).toBe(true);
+    expect(
+      isCurrentAttachUrl(`${base}&at=${code}`, `${base.replace('0123456789', '9876543210')}`),
+    ).toBe(false);
   });
 });

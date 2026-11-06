@@ -29,6 +29,7 @@ import type {
   CdpEventName,
   CdpTarget,
 } from './cdp-connection.js';
+import { sanitizeRemoteText } from './errors.js';
 import { logInfo } from './log.js';
 import { generateTotp } from './totp.js';
 
@@ -153,7 +154,7 @@ export interface ChiiCdpConnectionOptions {
   commandTimeoutMs?: number;
   /**
    * Hex-encoded TOTP secret (the SECRET, never a code). When set, each client WS
-   * (re)connect mints a fresh `at=` code so it lands inside the relay's 90s
+   * (re)connect mints a fresh `at=` code so it lands inside the relay's 30-35 s
    * acceptance window. Leave undefined when the relay has TOTP disabled.
    * SECRET-HANDLING: stored privately, never logged; the minted code rides only
    * in the WS URL query.
@@ -506,7 +507,7 @@ export class ChiiCdpConnection implements CdpConnection {
     let clientUrl = `${wsBase}/client/${clientId}?target=${encodeURIComponent(target.id)}`;
     // Append a freshly-minted TOTP code so the relay's WS upgrade gate
     // (chii-relay.ts verifyAuth) accepts this /client upgrade. Minted per-connect
-    // so reconnects stay inside the 90s acceptance window. generateTotp defaults
+    // so reconnects stay inside the 30-35 s acceptance window. generateTotp defaults
     // `when` to Date.now() — rely on that default; never hand-compute the time.
     // SECRET-HANDLING: never log `code` or `this.totpSecret`; the code rides only
     // in the URL query.
@@ -844,7 +845,9 @@ export class ChiiCdpConnection implements CdpConnection {
       const waiter = this.pending.get(message.id);
       this.pending.delete(message.id);
       if (waiter) {
-        if (message.error) waiter.reject(new Error(message.error.message));
+        // message.error.message는 페이지/CDP가 보낸 문구다 — 제어 문자를 접고 길이를 제한해
+        // MCP 에러 결과(classifyToolError)에 지시문·가짜 줄이 실리지 않게 한다.
+        if (message.error) waiter.reject(new Error(sanitizeRemoteText(message.error.message)));
         else waiter.resolve(message.result);
       }
       return;

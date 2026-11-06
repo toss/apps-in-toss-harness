@@ -8,7 +8,10 @@
     "./relay-busy-close": "./src/relay-busy-close.ts",
     "./debug-host": "./src/debug-host.ts",
     "./bridge-observer-state": "./src/bridge-observer-state.ts",
-    "./attach-handshake": "./src/attach-handshake.ts"
+    "./attach-handshake": "./src/attach-handshake.ts",
+    "./relay-auth-code": "./src/relay-auth-code.ts",
+    "./relay-signature": "./src/relay-signature.ts",
+    "./relay-origin-close": "./src/relay-origin-close.ts"
   },
   "license": "BSD-3-Clause"
 }

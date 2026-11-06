@@ -29,6 +29,13 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GateResult } from '../index.js';
 
+/** `<base>/d/<device id>/target.js`: the script URL carries this phone's device id. */
+function deviceScript(base: string): RegExp {
+  return new RegExp(
+    `^${base.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}/d/[A-Za-z0-9_-]{22}/target\\.js$`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // @apps-in-toss/web-framework mock
 // vi.mock is hoisted to the top of the file by vitest. The factory is
@@ -65,7 +72,14 @@ function passResult(relayUrl = 'wss://abc.trycloudflare.com/'): GateResult {
 
 /** A gate result that should block attachment. */
 function blockResult(
-  reason: 'host' | 'entry' | 'opt-in' | 'invalid-relay' | 'auth' = 'opt-in',
+  reason:
+    | 'host'
+    | 'entry'
+    | 'opt-in'
+    | 'invalid-relay'
+    | 'auth'
+    | 'update-required'
+    | 'relay-signature' = 'opt-in',
 ): GateResult {
   return { attach: false, reason };
 }
@@ -78,7 +92,7 @@ describe('deriveHandshakeUrl', () => {
   it('reports the wire protocol (p) and the package version label (v)', async () => {
     const { deriveHandshakeUrl } = await import('../attach.js');
     const url = new URL(deriveHandshakeUrl('wss://abc.trycloudflare.com', '123456'));
-    expect(url.pathname).toBe('/at/123456/ait-attach');
+    expect(url.pathname).toBe('/v2/at/123456/ait-attach');
     expect(url.searchParams.get('p')).toBe(String(PROTOCOL_VERSION));
     expect(url.searchParams.get('v')).toBe('0.0.0-test');
   });
@@ -86,7 +100,11 @@ describe('deriveHandshakeUrl', () => {
 
 describe('deriveTargetScriptUrl', () => {
   // Import once — this function is pure and stateless, no need to reset.
-  let deriveTargetScriptUrl: (url: string, atCode?: string | null) => string;
+  let deriveTargetScriptUrl: (
+    url: string,
+    atCode?: string | null,
+    deviceId?: string | null,
+  ) => string;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -133,22 +151,35 @@ describe('deriveTargetScriptUrl', () => {
   // TOTP path-prefix transport (issue #466)
   // -------------------------------------------------------------------------
 
-  it('embeds the at code as an /at/<code>/ path prefix', () => {
+  it('embeds the at code as a /v2/at/<code>/ path prefix', () => {
     expect(deriveTargetScriptUrl('wss://abc.trycloudflare.com/', '123456')).toBe(
-      'https://abc.trycloudflare.com/at/123456/target.js',
+      'https://abc.trycloudflare.com/v2/at/123456/target.js',
     );
   });
 
   it('embeds the at code with explicit port and deep relay path', () => {
     expect(deriveTargetScriptUrl('wss://h.example.com:9100/some/deep/path', '654321')).toBe(
-      'https://h.example.com:9100/at/654321/target.js',
+      'https://h.example.com:9100/v2/at/654321/target.js',
     );
   });
 
   it('percent-encodes unexpected characters in the at code', () => {
     // TOTP codes are always 6 digits; this pins defense-in-depth behaviour.
     expect(deriveTargetScriptUrl('wss://abc.trycloudflare.com/', 'a/b')).toBe(
-      'https://abc.trycloudflare.com/at/a%2Fb/target.js',
+      'https://abc.trycloudflare.com/v2/at/a%2Fb/target.js',
+    );
+  });
+
+  it('adds the device id after the code, and only a well-formed one', () => {
+    const id = 'AbCdEfGhIjKlMnOpQrStUv';
+    expect(deriveTargetScriptUrl('wss://abc.trycloudflare.com/', '123456', id)).toBe(
+      `https://abc.trycloudflare.com/v2/at/123456/d/${id}/target.js`,
+    );
+    expect(deriveTargetScriptUrl('wss://abc.trycloudflare.com/', '123456', 'x/../y')).toBe(
+      'https://abc.trycloudflare.com/v2/at/123456/target.js',
+    );
+    expect(deriveTargetScriptUrl('wss://abc.trycloudflare.com/', null, id)).toBe(
+      'https://abc.trycloudflare.com/target.js',
     );
   });
 
@@ -260,13 +291,101 @@ describe('maybeAttach', () => {
   // TOTP path-prefix transport — page URL `at` param → script src (issue #466)
   // ---------------------------------------------------------------------------
 
-  it('forwards the page URL at param into the script src as /at/<code>/ prefix', () => {
+  it('forwards the page URL at param into the script src as /v2/at/<code>/ prefix', () => {
     history.replaceState(null, '', '/?at=123456&debug=1');
     try {
       maybeAttach(passResult('wss://abc.trycloudflare.com/'));
       const script = document.head.querySelector('script');
-      expect(script?.src).toBe('https://abc.trycloudflare.com/at/123456/target.js');
+      expect(script?.src).toMatch(deviceScript('https://abc.trycloudflare.com/v2/at/123456'));
     } finally {
+      history.replaceState(null, '', '/');
+    }
+  });
+
+  it('takes at and relay out of the page URL before the script exists', () => {
+    history.replaceState(null, '', '/app?debug=1&at=123456&relay=wss%3A%2F%2Fa.example#frag');
+    const seen: string[] = [];
+    const append = document.head.appendChild.bind(document.head);
+    const spy = vi.spyOn(document.head, 'appendChild').mockImplementation((node) => {
+      seen.push(window.location.href);
+      return append(node);
+    });
+    try {
+      maybeAttach(passResult('wss://abc.trycloudflare.com/'));
+      expect(seen).toEqual([`${window.location.origin}/app?debug=1#frag`]);
+      expect(document.head.querySelector('script')?.src).toMatch(
+        deviceScript('https://abc.trycloudflare.com/v2/at/123456'),
+      );
+    } finally {
+      spy.mockRestore();
+      history.replaceState(null, '', '/');
+    }
+  });
+
+  it('still reaches the code after a reload of the cleaned URL', async () => {
+    history.replaceState(null, '', '/?debug=1&at=123456');
+    try {
+      maybeAttach(passResult('wss://abc.trycloudflare.com/'));
+      document.head.innerHTML = '';
+      vi.resetModules();
+      const reloaded = await import('../attach.js');
+      reloaded.maybeAttach(passResult('wss://abc.trycloudflare.com/'));
+      expect(window.location.search).toBe('?debug=1');
+      expect(document.head.querySelector('script')?.src).toMatch(
+        deviceScript('https://abc.trycloudflare.com/v2/at/123456'),
+      );
+    } finally {
+      history.replaceState(null, '', '/');
+    }
+  });
+
+  it('runs the real gate on a reload of the cleaned URL (relay and code from the history entry)', async () => {
+    const relay = encodeURIComponent('wss://127.0.0.1:9100/');
+    history.replaceState(null, '', `/app?debug=1&relay=${relay}&at=${'a'.repeat(32)}#frag`);
+    try {
+      maybeAttach();
+      expect(window.location.search).toBe('?debug=1');
+      expect(window.location.hash).toBe('#frag');
+      const first = document.head.querySelector('script')?.src;
+      expect(first).toMatch(deviceScript(`https://127.0.0.1:9100/v2/at/${'a'.repeat(32)}`));
+      document.head.innerHTML = '';
+      vi.resetModules();
+      const reloaded = await import('../attach.js');
+      reloaded.maybeAttach();
+      expect(window.location.search).toBe('?debug=1');
+      // Same device id after the reload: the relay sees the same phone.
+      expect(document.head.querySelector('script')?.src).toBe(first);
+    } finally {
+      history.replaceState(null, '', '/');
+    }
+  });
+
+  it('attaches with the code left in the URL when replaceState refuses', () => {
+    history.replaceState(null, '', '/?at=123456');
+    const spy = vi.spyOn(history, 'replaceState').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    try {
+      maybeAttach(passResult('wss://abc.trycloudflare.com/'));
+      expect(document.head.querySelector('script')?.src).toMatch(
+        deviceScript('https://abc.trycloudflare.com/v2/at/123456'),
+      );
+    } finally {
+      spy.mockRestore();
+      history.replaceState(null, '', '/');
+    }
+  });
+
+  it('a second call after the URL was cleaned stays silent', () => {
+    history.replaceState(null, '', '/?at=123456');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      maybeAttach(passResult('wss://abc.trycloudflare.com/'));
+      maybeAttach();
+      expect(document.head.querySelectorAll('script')).toHaveLength(1);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
       history.replaceState(null, '', '/');
     }
   });
@@ -299,7 +418,7 @@ describe('maybeAttach', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0]?.[0])).toMatch(/relay rejected the TOTP code/);
     // SECRET-HANDLING: no code, secret, host, or relay URL in the message.
-    expect(String(warnSpy.mock.calls[0]?.[0])).not.toMatch(/wss?:\/\/|\d{6}/);
+    expect(String(warnSpy.mock.calls[0]?.[0])).not.toMatch(/wss?:\/\/|[0-9a-f]{32}/);
 
     warnSpy.mockRestore();
   });
@@ -717,6 +836,17 @@ describe('script.onerror fetch probe', () => {
     expect(String(warnSpy.mock.calls[0]?.[0])).toMatch(/relay rejected the TOTP code/);
     // The probe re-fetches exactly the injected script URL.
     expect(fetchMock).toHaveBeenCalledWith(script.src);
+  });
+
+  it('reports a retryable lock, not an expired code, when the probe returns 429', async () => {
+    fetchMock.mockResolvedValue({ status: 429 });
+
+    injectAndFailScript();
+
+    await vi.waitFor(() => expect(warnSpy).toHaveBeenCalledTimes(1));
+    const message = String(warnSpy.mock.calls[0]?.[0]);
+    expect(message).toMatch(/temporarily refusing/);
+    expect(message).not.toMatch(/expired/);
   });
 
   it('stays silent when the probe returns a non-401 status (tunnel error page)', async () => {

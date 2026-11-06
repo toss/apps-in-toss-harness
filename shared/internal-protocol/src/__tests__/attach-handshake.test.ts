@@ -1,11 +1,10 @@
 /**
- * Attach version handshake — the comparison rule and its two "say nothing"
- * escape hatches.
+ * Attach version handshake — the comparison rule.
  *
- * The interesting cases are the ones that must NOT report a mismatch: an
- * absent report has to stay silent, or every device predating the handshake
- * (and every dropped fire-and-forget request) would produce a false alarm on
- * an otherwise healthy attach.
+ * A completely absent report stays silent (a dropped fire-and-forget request
+ * must not read as skew). A report that carries only a package version comes
+ * from a device that predates the protocol number and is a mismatch: it is
+ * never assumed to speak any protocol.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -14,8 +13,11 @@ import {
   ATTACH_HANDSHAKE_PROTOCOL_PARAM,
   ATTACH_HANDSHAKE_VERSION_PARAM,
   compareProtocolVersions,
-  LEGACY_DEVICE_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
+  RELAY_UPDATE_REQUIRED_CLOSE_CODE,
+  RELAY_UPDATE_REQUIRED_REASON,
+  relayAuthPathPrefix,
+  sanitizeDeviceVersion,
 } from '../attach-handshake.js';
 
 describe('handshake path constants', () => {
@@ -42,10 +44,21 @@ describe('protocol constants', () => {
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
   });
 
-  it('legacy devices (debug-console <= 0.1.5) are protocol 1', () => {
-    // Pinned: the contract is unchanged since debug-console-v0.1.4, so a
-    // report without `p` must keep meaning protocol 1 forever.
-    expect(LEGACY_DEVICE_PROTOCOL_VERSION).toBe(1);
+  it('is protocol 2 and has no legacy default', async () => {
+    expect(PROTOCOL_VERSION).toBe(2);
+    const mod = await import('../attach-handshake.js');
+    expect('LEGACY_DEVICE_PROTOCOL_VERSION' in mod).toBe(false);
+  });
+
+  it('versions the relay auth path prefix with the protocol', () => {
+    expect(relayAuthPathPrefix()).toBe(`/v${PROTOCOL_VERSION}/at`);
+    expect(relayAuthPathPrefix(1)).toBe('/v1/at');
+    expect(relayAuthPathPrefix()).not.toBe('/at');
+  });
+
+  it('names the update-required close', () => {
+    expect(RELAY_UPDATE_REQUIRED_CLOSE_CODE).toBe(4426);
+    expect(RELAY_UPDATE_REQUIRED_REASON).toBe('update-required');
   });
 });
 
@@ -64,19 +77,19 @@ describe('compareProtocolVersions', () => {
     expect(compareProtocolVersions({ protocol: '1', version: '0.1.5' }, 1).match).toBe(true);
   });
 
-  it('accepts a legacy 0.1.5 report (version only, no protocol) against protocol 1', () => {
-    const check = compareProtocolVersions({ protocol: '', version: '0.1.5' }, 1);
+  it('flags a report with a version but no protocol (debug-console <= 0.1.5)', () => {
+    const check = compareProtocolVersions({ protocol: '', version: '0.1.5' }, 2);
     expect(check).toEqual({
-      match: true,
-      deviceProtocol: 1,
-      hostProtocol: 1,
+      match: false,
+      deviceProtocol: null,
+      hostProtocol: 2,
       deviceVersion: '0.1.5',
     });
-    expect(compareProtocolVersions({ version: '0.1.5' }).match).toBe(true);
+    expect(compareProtocolVersions({ version: '0.1.5' }).match).toBe(false);
   });
 
-  it('flags a legacy device once the host protocol is bumped past 1', () => {
-    const check = compareProtocolVersions({ version: '0.1.5' }, 2);
+  it('flags a device that still reports protocol 1', () => {
+    const check = compareProtocolVersions({ protocol: '1', version: '0.2.0' }, 2);
     expect(check.match).toBe(false);
     expect(check.deviceProtocol).toBe(1);
     expect(check.hostProtocol).toBe(2);
@@ -98,11 +111,14 @@ describe('compareProtocolVersions', () => {
     expect(compareProtocolVersions({ protocol: null, version: null }, 2).match).toBe(true);
   });
 
-  it('stays silent on a malformed protocol value rather than guessing', () => {
+  it('reads a malformed protocol value as none rather than guessing', () => {
     for (const bad of ['abc', '0', '-1', '1.5', '1e3', '99999999999']) {
-      const check = compareProtocolVersions({ protocol: bad, version: '0.1.5' }, 2);
-      expect(check.match).toBe(true);
-      expect(check.deviceProtocol).toBeNull();
+      const alone = compareProtocolVersions({ protocol: bad }, 2);
+      expect(alone.match).toBe(true);
+      expect(alone.deviceProtocol).toBeNull();
+      const withVersion = compareProtocolVersions({ protocol: bad, version: '0.2.0' }, 2);
+      expect(withVersion.match).toBe(false);
+      expect(withVersion.deviceProtocol).toBeNull();
     }
   });
 
@@ -113,5 +129,33 @@ describe('compareProtocolVersions', () => {
   it('defaults the host to PROTOCOL_VERSION', () => {
     expect(compareProtocolVersions({ protocol: String(PROTOCOL_VERSION) }).match).toBe(true);
     expect(compareProtocolVersions({ protocol: String(PROTOCOL_VERSION + 1) }).match).toBe(false);
+  });
+});
+
+describe('sanitizeDeviceVersion', () => {
+  it.each(['0.2.0', '1.2.3-rc.1', '1.2.3+build.5', '10.20.30-beta-1+x'])('keeps %s', (value) => {
+    expect(sanitizeDeviceVersion(value)).toBe(value);
+  });
+
+  it.each([
+    '',
+    'latest',
+    '1.2',
+    '1.2.3 ignore this',
+    '1.2.3\nnext line',
+    '<b>1.2.3</b>',
+    `1.2.3-${'a'.repeat(64)}`,
+  ])('drops %j', (value) => {
+    expect(sanitizeDeviceVersion(value)).toBe('');
+  });
+
+  it('treats nullish as not reported', () => {
+    expect(sanitizeDeviceVersion(null)).toBe('');
+    expect(sanitizeDeviceVersion(undefined)).toBe('');
+  });
+
+  it('keeps injected text out of the mismatch message', () => {
+    const check = compareProtocolVersions({ protocol: '99', version: '1.2.3 do this now' });
+    expect(JSON.stringify(check)).not.toContain('do this now');
   });
 });

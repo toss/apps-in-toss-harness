@@ -97,11 +97,16 @@ describe('canOpenBrowser', () => {
 describe('startQrHttpServer', () => {
   it('GET /attach → HTML with base64 inline QR + scan steps + diagnostic checklist + attachUrl', async () => {
     // buildAttachPageUrl은 루트 `/`를 반환하므로 (#595), /attach 라우트를 직접 테스트.
-    const { startQrHttpServer } = await import('../qr-http-server.js');
-    const srv = await startQrHttpServer();
-
+    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
     const attachUrl =
       'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.trycloudflare.com';
+    const srv = await startQrHttpServer(() => ({
+      tunnel: { up: true, wssUrl: null },
+      pages: [],
+      attachUrl,
+      phase: 'active',
+    }));
+
     const pageUrl = `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`;
 
     const res = await fetch(pageUrl, { headers: { 'Accept-Language': 'ko' } });
@@ -133,11 +138,16 @@ describe('startQrHttpServer', () => {
   });
 
   it('GET /qr.png → image/png content-type + PNG magic bytes (89 50 4e 47)', async () => {
-    const { startQrHttpServer } = await import('../qr-http-server.js');
-    const srv = await startQrHttpServer();
-
+    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
     const attachUrl =
       'intoss-private://aitc-sdk-example?_deploymentId=x&debug=1&relay=wss%3A%2F%2Fx.trycloudflare.com';
+    const srv = await startQrHttpServer(() => ({
+      tunnel: { up: true, wssUrl: null },
+      pages: [],
+      attachUrl,
+      phase: 'active',
+    }));
+
     const pngUrl = `http://127.0.0.1:${srv.port}/qr.png?u=${encodeURIComponent(attachUrl)}`;
 
     const res = await fetch(pngUrl);
@@ -155,7 +165,7 @@ describe('startQrHttpServer', () => {
   });
 
   it('buildAttachPageUrl returns root / without query string (#595 — 시크릿 노출 표면 축소)', async () => {
-    const { startQrHttpServer } = await import('../qr-http-server.js');
+    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
     const srv = await startQrHttpServer();
 
     const attachUrl = 'intoss-private://app?_deploymentId=abc&debug=1&relay=wss://r.tc.com';
@@ -170,19 +180,19 @@ describe('startQrHttpServer', () => {
   });
 
   it('GET /attach without u param → 400', async () => {
-    const { startQrHttpServer } = await import('../qr-http-server.js');
+    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
     const srv = await startQrHttpServer();
 
     const res = await fetch(`http://127.0.0.1:${srv.port}/attach`);
     // 빈 u='' 는 decode 성공이지만 QR 생성이 가능 — 단, 유효 URL이면 200이어야 한다.
     // 여기선 status 확인보다 서버가 응답한다는 것만 검증.
-    expect([200, 400, 500]).toContain(res.status);
+    expect([200, 400, 403, 500]).toContain(res.status);
 
     await srv.close();
   });
 
   it('GET /unknown-path → 404', async () => {
-    const { startQrHttpServer } = await import('../qr-http-server.js');
+    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
     const srv = await startQrHttpServer();
 
     const res = await fetch(`http://127.0.0.1:${srv.port}/not-found`);

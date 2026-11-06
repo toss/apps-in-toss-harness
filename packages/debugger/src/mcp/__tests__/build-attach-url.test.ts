@@ -75,7 +75,7 @@ describe('buildAttachUrl — TOTP enabled', () => {
   it('splices at=<code> into attachUrl when totpSecret is provided', () => {
     const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, DUMMY_SECRET);
     // The `at=` param must be present and be a 6-digit string.
-    const match = result.attachUrl.match(/[?&]at=(\d{6})(&|$)/);
+    const match = result.attachUrl.match(/[?&]at=([0-9a-f]{32})(&|$)/);
     expect(match).not.toBeNull();
   });
 
@@ -84,15 +84,15 @@ describe('buildAttachUrl — TOTP enabled', () => {
     expect(result.totp?.enabled).toBe(true);
   });
 
-  it('includes totp.ttlSeconds = 180 (RELAY_VERIFY_SKEW_STEPS × 30 s, #490)', () => {
-    // The relay gate uses RELAY_VERIFY_SKEW_STEPS=6, so the effective window
-    // is 6 × 30 = 180 s. ttlSeconds reflects this so callers know the real
-    // expiry, not just the TOTP step duration.
+  it('includes totp.ttlSeconds = 30 (RELAY_VERIFY_SKEW_STEPS × 5 s)', () => {
+    // The relay gate uses RELAY_VERIFY_SKEW_STEPS=6, so the guaranteed window
+    // is 6 × 5 = 30 s (up to 35 s). ttlSeconds reflects the guarantee so
+    // callers know the real expiry, not just the TOTP step duration.
     const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, DUMMY_SECRET);
-    expect(result.totp?.ttlSeconds).toBe(180);
+    expect(result.totp?.ttlSeconds).toBe(30);
   });
 
-  it('includes totp.expiresAt ~3 minutes in the future (#490)', () => {
+  it('includes totp.expiresAt 30 s in the future', () => {
     const before = Date.now();
     const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, DUMMY_SECRET);
     const after = Date.now();
@@ -100,10 +100,10 @@ describe('buildAttachUrl — TOTP enabled', () => {
     const expiresAt = result.totp?.expiresAt;
     expect(typeof expiresAt).toBe('string');
     const expiresMs = new Date(expiresAt as string).getTime();
-    // expiresAt must be >= before + 180 s (the relay gate's minimum window).
-    expect(expiresMs).toBeGreaterThanOrEqual(before + 180_000);
-    // expiresAt must be at most before + 180 s + a small tolerance (after is ~0 ms later).
-    expect(expiresMs).toBeLessThanOrEqual(after + 180_000 + 1_000);
+    // expiresAt must be >= before + 30 s (the relay gate's minimum window).
+    expect(expiresMs).toBeGreaterThanOrEqual(before + 30_000);
+    // expiresAt must be at most before + 30 s + a small tolerance (after is ~0 ms later).
+    expect(expiresMs).toBeLessThanOrEqual(after + 30_000 + 1_000);
   });
 
   it('does not duplicate at= when called twice on the same schemeUrl', () => {

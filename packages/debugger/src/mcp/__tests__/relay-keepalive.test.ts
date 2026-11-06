@@ -148,7 +148,7 @@ describe('relay WS keepalive — ping is delivered when TOTP gate is active', ()
 
   beforeAll(async () => {
     const { buildRelayVerifyAuth } = await import('../debug-server.js');
-    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET });
+    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET }, TEST_SECRET);
     if (verifyAuth === undefined) throw new Error('verifyAuth not built');
 
     relay = await startChiiRelay({
@@ -165,7 +165,7 @@ describe('relay WS keepalive — ping is delivered when TOTP gate is active', ()
   it('connected target leg (valid TOTP) receives a ping within 2× interval', async () => {
     const code = generateTotp(TEST_SECRET);
     const wsUrl =
-      `ws://127.0.0.1:${relay.port}/at/${code}/target/totp-keepalive-id` +
+      `ws://127.0.0.1:${relay.port}/v2/at/${code}/target/totp-keepalive-id` +
       `?${new URLSearchParams({ url: 'https://example.invalid/', title: 'totp-keepalive' })}`;
 
     const ws = await dialWs(wsUrl);

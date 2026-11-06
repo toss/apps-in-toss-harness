@@ -17,6 +17,10 @@
 #   src/ 아래 .css/.scss의 `:root` 커스텀 프로퍼티가 서로 다른 이름으로 8개
 #   이상이면 자체 토큰 체계로 보고 ds=자체 토큰(auto)로 같은 경로를 탄다.
 #
+# 쓰기 안전: 프로젝트 경로는 `cd -P`로 실제 경로로 풀어 쓰고, 쓰는 파일·디렉터리가
+# 프로젝트 안에서 심볼릭 링크를 지나거나 `..` 구간을 지나면 그 항목은 쓰지 않고
+# `<항목>=unsafe`로 보고한다(링크가 프로젝트 밖의 파일을 가리키면 거기에 쓰게 되기 때문).
+#
 # fail-soft 계약: set -e 없음 — 항목마다 test -f/grep로 멱등 가드를 걸고
 # 개별 실패가 나머지를 죽이지 않는다. 항상 exit 0으로 끝나고, 마지막 줄
 # `5-B:<요약>`이 항목별 결과(new|skip|FAIL 등)를 한 줄로 보고한다.
@@ -61,6 +65,45 @@ if [ ! -d "$PROJ" ]; then
   echo "5-B:proj=missing($PROJ)"
   exit 0
 fi
+PROJ_REAL="$(cd -P -- "$PROJ" 2>/dev/null && pwd -P)"
+if [ -z "$PROJ_REAL" ]; then
+  echo "5-B:proj=missing($PROJ)"
+  exit 0
+fi
+PROJ="$PROJ_REAL"
+
+# 쓸 경로($1, $PROJ 아래)가 안전한지 본다. 이미 있는 구성요소가 하나라도 심볼릭 링크이거나
+# `..` 구간이 있으면 실패(1)한다. 없는 구성요소는 이후 mkdir/cp가 만들 것이므로 통과한다.
+safe() {
+  local rel cur seg old had=0
+  case "$1" in "$PROJ"/*) ;; *) return 1 ;; esac
+  rel="${1#"$PROJ"/}"
+  cur="$PROJ"
+  old="$IFS"
+  case "$-" in *f*) had=1 ;; esac
+  set -f
+  IFS=/
+  for seg in $rel; do
+    case "$seg" in
+      '' | .) continue ;;
+      ..)
+        IFS="$old"
+        if [ "$had" = 0 ]; then set +f; fi
+        return 1
+        ;;
+    esac
+    cur="$cur/$seg"
+    if [ -L "$cur" ]; then
+      IFS="$old"
+      if [ "$had" = 0 ]; then set +f; fi
+      return 1
+    fi
+    [ -e "$cur" ] || break
+  done
+  IFS="$old"
+  if [ "$had" = 0 ]; then set +f; fi
+  return 0
+}
 
 # 자산 디렉터리(SRC)는 자동 감지가 정본 tokens.css와 대조하므로 먼저 푼다.
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -154,32 +197,46 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
   elif [ "$TDS" = 1 ]; then
     T="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/^아이콘: React/{print "이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다)."; next} /^아이콘: vanilla/{print "1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다."; next} {print}' "$DG" > "$T" && DG="$T"
   fi
-  mkdir -p "$PROJ/docs" 2>/dev/null
-  if [ -f "$PROJ/docs/design-guide.md" ]; then R="$R guide=skip"
-  elif cp "$SRC/design-guide.md" "$PROJ/docs/design-guide.md" 2>/dev/null; then R="$R guide=new"
-  else R="$R guide=FAIL"; fi
+  if ! safe "$PROJ/docs/design-guide.md"; then R="$R guide=unsafe"
+  else
+    mkdir -p "$PROJ/docs" 2>/dev/null
+    if [ -f "$PROJ/docs/design-guide.md" ]; then R="$R guide=skip"
+    elif cp "$SRC/design-guide.md" "$PROJ/docs/design-guide.md" 2>/dev/null; then R="$R guide=new"
+    else R="$R guide=FAIL"; fi
+  fi
   if [ "$EXDS" = 1 ]; then R="$R ds=${DSNAME:-existing}${AUTO:+(auto)} css=ds-skip icons=ds-skip entry=ds-skip"
   elif [ "$TDS" = 1 ]; then R="$R css=tds-skip icons=tds-skip entry=tds-skip"; else
-    mkdir -p "$PROJ/src/styles" 2>/dev/null
-    if [ -f "$PROJ/src/styles/tokens.css" ]; then R="$R tokens=skip"
-    elif cp "$SRC/tokens.css" "$PROJ/src/styles/tokens.css" 2>/dev/null; then R="$R tokens=new"
-    else R="$R tokens=FAIL"; fi
-    if [ -f "$PROJ/src/styles/base.css" ]; then R="$R base=skip"
-    elif cp "$SRC/base.css" "$PROJ/src/styles/base.css" 2>/dev/null; then R="$R base=new"
-    else R="$R base=FAIL"; fi
-    if [ "$NO_TOSSFACE" = 1 ] && grep -q 'tossface' "$PROJ/src/styles/base.css" 2>/dev/null; then
+    STYLES_OK=1
+    if ! safe "$PROJ/src/styles/tokens.css" || ! safe "$PROJ/src/styles/base.css"; then STYLES_OK=0; R="$R tokens=unsafe base=unsafe"
+    else
+      mkdir -p "$PROJ/src/styles" 2>/dev/null
+      if [ -f "$PROJ/src/styles/tokens.css" ]; then R="$R tokens=skip"
+      elif cp "$SRC/tokens.css" "$PROJ/src/styles/tokens.css" 2>/dev/null; then R="$R tokens=new"
+      else R="$R tokens=FAIL"; fi
+      if [ -f "$PROJ/src/styles/base.css" ]; then R="$R base=skip"
+      elif cp "$SRC/base.css" "$PROJ/src/styles/base.css" 2>/dev/null; then R="$R base=new"
+      else R="$R base=FAIL"; fi
+    fi
+    if [ "$STYLES_OK" = 1 ] && [ "$NO_TOSSFACE" = 1 ] && grep -q 'tossface' "$PROJ/src/styles/base.css" 2>/dev/null; then
       sed -i.aitbak -e '/tossface\.css/d' -e 's/"Tossface", -apple-system/-apple-system/' "$PROJ/src/styles/base.css" && rm -f "$PROJ/src/styles/base.css.aitbak" && R="$R tossface=off"
     fi
-    if node -e "const p=require('node:path').resolve('$PROJ','package.json');process.exit(require(p).dependencies?.react?0:1)" 2>/dev/null; then
-      mkdir -p "$PROJ/src/components" 2>/dev/null
-      if [ -f "$PROJ/src/components/icons.tsx" ]; then R="$R icons=skip"
-      elif cp "$SRC/icons.tsx" "$PROJ/src/components/icons.tsx" 2>/dev/null; then R="$R icons=new"
-      else R="$R icons=FAIL"; fi
+    # 경로는 코드에 끼워 넣지 않고 인자로 넘긴다(경로에 따옴표가 있어도 코드로 해석되지 않는다).
+    if node -e "const p=require('node:path').resolve(process.argv[1],'package.json');process.exit(require(p).dependencies?.react?0:1)" -- "$PROJ" 2>/dev/null; then
+      if ! safe "$PROJ/src/components/icons.tsx"; then R="$R icons=unsafe"
+      else
+        mkdir -p "$PROJ/src/components" 2>/dev/null
+        if [ -f "$PROJ/src/components/icons.tsx" ]; then R="$R icons=skip"
+        elif cp "$SRC/icons.tsx" "$PROJ/src/components/icons.tsx" 2>/dev/null; then R="$R icons=new"
+        else R="$R icons=FAIL"; fi
+      fi
     else
-      mkdir -p "$PROJ/src/assets/icons" 2>/dev/null
-      if [ -f "$PROJ/src/assets/icons/close.svg" ]; then R="$R icons=skip"
-      elif cp -n "$SRC/icons/"*.svg "$PROJ/src/assets/icons/" 2>/dev/null; then R="$R icons=new"
-      else R="$R icons=FAIL"; fi
+      if ! safe "$PROJ/src/assets/icons/close.svg"; then R="$R icons=unsafe"
+      else
+        mkdir -p "$PROJ/src/assets/icons" 2>/dev/null
+        if [ -f "$PROJ/src/assets/icons/close.svg" ]; then R="$R icons=skip"
+        elif cp -n "$SRC/icons/"*.svg "$PROJ/src/assets/icons/" 2>/dev/null; then R="$R icons=new"
+        else R="$R icons=FAIL"; fi
+      fi
     fi
     # 진입점 탐지(프레임워크 무관): src/index.css → index.html 이 가리키는 모듈
     # 스크립트(React·Vue·Svelte·vanilla 어디든 엔트리 이름을 가정하지 않는다) →
@@ -188,9 +245,10 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
     if [ -f "$PROJ/index.html" ]; then
       HE="$(grep -o '<script[^>]*>' "$PROJ/index.html" 2>/dev/null | grep 'type="module"' | sed -n 's/.*src="\([^"]*\)".*/\1/p' | head -1 | sed -e 's/[?#].*//' -e 's|^\./||' -e 's|^/||')"
     fi
+    # index.html이 가리키는 경로는 신뢰하지 않는다: `..` 구간이나 심볼릭 링크를 지나면 후보에서 뺀다.
     E=""
     for C in src/index.css "$HE" src/main.tsx src/main.ts src/index.tsx src/index.ts index.tsx index.ts; do
-      if [ -n "$C" ] && [ -f "$PROJ/$C" ]; then E="$PROJ/$C"; break; fi
+      if [ -n "$C" ] && [ -f "$PROJ/$C" ] && safe "$PROJ/$C"; then E="$PROJ/$C"; break; fi
     done
     # JS import 가능 여부: .js 계열은 그대로, .ts 계열은 vite/client 앰비언트 타입이 있을 때만.
     JSOK=0
@@ -205,16 +263,19 @@ if [ -z "$SRC" ]; then R="$R assets=UNRESOLVED"; else
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "@import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=index.css" || R="$R entry=FAIL"
     elif [ -n "$E" ] && [ "$JSOK" = 1 ]; then
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && printf '%s\n' "import './styles/base.css';" | cat - "$E" > "$T2" && mv "$T2" "$E" && R="$R entry=js" || R="$R entry=FAIL"
+    elif [ -f "$PROJ/index.html" ] && ! safe "$PROJ/index.html"; then R="$R entry=unsafe"
     elif [ -f "$PROJ/index.html" ] && ! grep -q 'styles/base.css' "$PROJ/index.html"; then
       T2="$(mktemp "${TMPDIR:-/tmp}/ait.XXXXXX")" && awk '/<\/head>/&&!d{print "    <link rel=\"stylesheet\" href=\"/src/styles/base.css\" />";d=1}{print}' "$PROJ/index.html" > "$T2" && mv "$T2" "$PROJ/index.html" && R="$R entry=index.html" || R="$R entry=FAIL"
     else R="$R entry=skip"; fi
   fi
   AG="$PROJ/AGENTS.md"; MK="$(grep -o "$MKR v[0-9]*" "$AG" 2>/dev/null | head -1)"
-  if [ -n "$MK" ]; then R="$R agents=skip($MK)"
+  if ! safe "$AG"; then R="$R agents=unsafe"
+  elif [ -n "$MK" ]; then R="$R agents=skip($MK)"
   elif { [ -s "$AG" ] && printf '\n'; printf '<!-- %s v%s -->\n' "$MKR" "$MV"; cat "$DG"; printf '<!-- /%s -->\n' "$MKR"; } >> "$AG" 2>/dev/null; then R="$R agents=new"
   else R="$R agents=FAIL"; fi
   CL="$PROJ/CLAUDE.md"
-  if grep -q "$MKR v" "$CL" 2>/dev/null; then R="$R claude=skip"
+  if ! safe "$CL"; then R="$R claude=unsafe"
+  elif grep -q "$MKR v" "$CL" 2>/dev/null; then R="$R claude=skip"
   elif { [ -s "$CL" ] && printf '\n'; printf '<!-- %s v%s -->\n@AGENTS.md\n<!-- /%s -->\n' "$MKR" "$MV" "$MKR"; } >> "$CL" 2>/dev/null; then R="$R claude=new"
   else R="$R claude=FAIL"; fi
   rm -f "$T" "$T2" 2>/dev/null

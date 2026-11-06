@@ -23,7 +23,18 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Query params for a test. A well-formed `sig` is appended unless the query
+ * already names one, so the cases that exercise other layers do not have to
+ * restate it. Use `rawParams` to build a query exactly as written.
+ */
 function params(query: string): URLSearchParams {
+  const built = new URLSearchParams(query);
+  if (!built.has('sig')) built.set('sig', SIG);
+  return built;
+}
+
+function rawParams(query: string): URLSearchParams {
   return new URLSearchParams(query);
 }
 
@@ -35,14 +46,18 @@ function params(query: string): URLSearchParams {
  */
 const VALID_HOST = 'example-app.private-apps.tossmini.com';
 
+/** A well-formed signature (86 base64url characters). The gate checks its shape only. */
+/** Well-formed v2 `sig` shape (session key, window, cert and link signatures); never verifies. */
+const SIG = `${'A'.repeat(8)}.${'A'.repeat(86)}`;
+
 /** A valid dogfood gate-passing set of query params. */
 const VALID_PARAMS = params(
-  '_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com%2F&at=123456',
+  `_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com%2F&at=0123456789abcdef0123456789abcdef&sig=${SIG}`,
 );
 
 /** The same set without the TOTP `at=` code (mandatory on every tossmini host). */
 const PARAMS_NO_AT = params(
-  '_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com%2F',
+  `_deploymentId=019e3b40-abcd-1234-efgh-000000000001&debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com%2F&sig=${SIG}`,
 );
 
 /**
@@ -59,14 +74,14 @@ function gate(searchParams: URLSearchParams, hostname: string = VALID_HOST) {
 // ---------------------------------------------------------------------------
 
 describe('Layer B1 — host allowlist', () => {
-  it('3.0-family host passes B1 but blocks at C3 without an at= code (#760)', () => {
-    // Pre-#760 this host was blocked at B1 outright ('host'). The 3.0 loader
-    // serves dogfood candidates from the same tossmini family, so B1 now
-    // passes and the #665 invariant moves to C3: missing `at=` → 'auth'.
-    const result = gate(PARAMS_NO_AT, 'example-app.apps.tossmini.com');
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
-  });
+  it.each(['example-app.apps.tossmini.com', 'example-app.web.tossmini.com'])(
+    'production host %s is refused at B1 even with a full valid parameter set',
+    (host) => {
+      const result = gate(VALID_PARAMS, host);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('host');
+    },
+  );
 
   it('blocks an arbitrary unrelated host', () => {
     const result = gate(VALID_PARAMS, 'example.com');
@@ -87,13 +102,29 @@ describe('Layer B1 — host allowlist', () => {
     if (!result.attach) expect(result.reason).toBe('host');
   });
 
-  it('bare private-apps.tossmini.com is not a private-apps host — 3.0-family C3 applies (#760)', () => {
-    // No mini-app subdomain → isPrivateAppsHost is false, but the host still
-    // ends in `.tossmini.com`, so B1 passes on the family filter and the
-    // mandatory-TOTP C3 branch applies: VALID_PARAMS has no `at=` → 'auth'.
-    const result = gate(PARAMS_NO_AT, 'private-apps.tossmini.com');
+  it.each([
+    'private-apps.tossmini.com',
+    'private-web.tossmini.com',
+    'evil-private-apps.tossmini.com',
+    'evil-private-web.tossmini.com',
+    'example-app.private-apps.tossmini.com.evil.example',
+    'example-app.private-web.tossmini.com.evil.example',
+    'example-app.private-apps.tossmini.com.',
+    'example-app.private-apps.tossmini.com:443',
+  ])('refuses the lookalike host %s at B1', (host) => {
+    const result = gate(VALID_PARAMS, host);
     expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
+    if (!result.attach) expect(result.reason).toBe('host');
+  });
+
+  it('passes a *.private-web.tossmini.com QR test host', () => {
+    const result = gate(VALID_PARAMS, 'example-app.private-web.tossmini.com');
+    expect(result.attach).toBe(true);
+  });
+
+  it('matches the QR test host case-insensitively', () => {
+    const result = gate(VALID_PARAMS, 'Example-App.PRIVATE-APPS.tossmini.com');
+    expect(result.attach).toBe(true);
   });
 
   it('passes a *.private-apps.tossmini.com dogfood host', () => {
@@ -140,7 +171,7 @@ describe('Layer B2 — _deploymentId is optional', () => {
   // Regression (real device, web-framework 3.7.0, 2026-10-14): the runtime
   // consumes `_deploymentId` and forwards only debug/relay/at to the page URL.
   it('private-apps host: attaches without _deploymentId when debug, relay and at are present', () => {
-    const result = gate(params(`debug=1&${RELAY}&at=123456`));
+    const result = gate(params(`debug=1&${RELAY}&at=0123456789abcdef0123456789abcdef`));
     expect(result.attach).toBe(true);
     if (result.attach) expect(result.deploymentId).toBe('');
   });
@@ -158,13 +189,17 @@ describe('Layer B2 — _deploymentId is optional', () => {
   });
 
   it('private-apps host: still reports _deploymentId when present', () => {
-    const result = gate(params(`_deploymentId=abc-123&debug=1&${RELAY}&at=123456`));
+    const result = gate(
+      params(`_deploymentId=abc-123&debug=1&${RELAY}&at=0123456789abcdef0123456789abcdef`),
+    );
     expect(result.attach).toBe(true);
     if (result.attach) expect(result.deploymentId).toBe('abc-123');
   });
 
   it('private-apps host: an empty _deploymentId no longer blocks', () => {
-    const result = gate(params(`_deploymentId=&debug=1&${RELAY}&at=123456`));
+    const result = gate(
+      params(`_deploymentId=&debug=1&${RELAY}&at=0123456789abcdef0123456789abcdef`),
+    );
     expect(result.attach).toBe(true);
     if (result.attach) expect(result.deploymentId).toBe('');
   });
@@ -259,14 +294,18 @@ describe('Layer C — relay URL validation', () => {
 
   it('passes when relay uses wss: scheme', () => {
     const result = gate(
-      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'),
+      params(
+        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=0123456789abcdef0123456789abcdef',
+      ),
     );
     expect(result.attach).toBe(true);
   });
 
   it('accepts a trycloudflare wss URL (typical Phase 1 value)', () => {
     const result = gate(
-      params('_deploymentId=019e3b40&debug=1&relay=wss://abc-def.trycloudflare.com/&at=123456'),
+      params(
+        '_deploymentId=019e3b40&debug=1&relay=wss://abc-def.trycloudflare.com/&at=0123456789abcdef0123456789abcdef',
+      ),
     );
     expect(result.attach).toBe(true);
     if (result.attach) {
@@ -299,7 +338,9 @@ describe('Layer C — relay URL validation', () => {
 
   it('(c) passes a normal trycloudflare relay host', () => {
     const result = gate(
-      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'),
+      params(
+        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=0123456789abcdef0123456789abcdef',
+      ),
     );
     expect(result.attach).toBe(true);
   });
@@ -313,19 +354,19 @@ describe('GateResultAttach field values', () => {
   it('exposes relayUrl as the normalised wss URL', () => {
     const result = gate(
       params(
-        '_deploymentId=deploy-123&debug=1&relay=wss%3A%2F%2Fabc-def-ghi.trycloudflare.com%2Fpath&at=123456',
+        '_deploymentId=deploy-123&debug=1&relay=wss%3A%2F%2Fabc-def-ghi.trycloudflare.com&at=0123456789abcdef0123456789abcdef',
       ),
     );
     expect(result.attach).toBe(true);
     if (result.attach) {
-      expect(result.relayUrl).toBe('wss://abc-def-ghi.trycloudflare.com/path');
+      expect(result.relayUrl).toBe('wss://abc-def-ghi.trycloudflare.com/');
     }
   });
 
   it('exposes deploymentId from the _deploymentId param', () => {
     const result = gate(
       params(
-        '_deploymentId=019e3b40-the-real-id&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456',
+        '_deploymentId=019e3b40-the-real-id&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=0123456789abcdef0123456789abcdef',
       ),
     );
     expect(result.attach).toBe(true);
@@ -337,7 +378,7 @@ describe('GateResultAttach field values', () => {
   it('tolerates extra unrelated query params', () => {
     const result = gate(
       params(
-        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&foo=bar&extra=123&at=123456',
+        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&foo=bar&extra=123&at=0123456789abcdef0123456789abcdef',
       ),
     );
     expect(result.attach).toBe(true);
@@ -345,94 +386,58 @@ describe('GateResultAttach field values', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Layer C3 — TOTP auth gate (verifyTotpCode injected)
+// Layer C3 — auth code shape (the page holds no secret and verifies no value)
 // ---------------------------------------------------------------------------
 
-describe('Layer C3 — TOTP auth gate', () => {
-  /** A verifier that always passes (TOTP disabled / always accept). */
-  const alwaysPass = (_code: string) => true;
-  /** A verifier that always fails (simulates invalid/expired code). */
-  const alwaysFail = (_code: string) => false;
-  /** A verifier that only accepts the literal string '123456'. */
-  const acceptsOnly123456 = (code: string) => code === '123456';
-
-  it('passes when verifyTotpCode is undefined and at= is present', () => {
+describe('Layer C3 — auth code shape', () => {
+  it('passes when at= is a well-formed code', () => {
     const result = gate(VALID_PARAMS);
     expect(result.attach).toBe(true);
   });
 
-  it('passes when verifyTotpCode accepts the code', () => {
-    const params_ = new URLSearchParams(
-      '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456',
-    );
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: acceptsOnly123456,
-    });
-    expect(result.attach).toBe(true);
+  it('blocks a malformed or absent code on a QR host (reason: auth)', () => {
+    for (const bad of ['12345', 'SHORT', '0123456789ABCDEF0123456789ABCDEF', 'g'.repeat(32), '']) {
+      const result = evaluateDebugGate({
+        hostname: VALID_HOST,
+        searchParams: new URLSearchParams({
+          debug: '1',
+          relay: 'wss://abc-def-ghi.trycloudflare.com/',
+          at: bad,
+        }),
+      });
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('auth');
+    }
   });
 
-  it('blocks when verifyTotpCode rejects the code (reason: auth)', () => {
-    const params_ = new URLSearchParams(
-      '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=000000',
-    );
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: acceptsOnly123456,
-    });
+  it('reports a six-digit code (an older debugger) as update-required, not as an expired code', () => {
+    const result = gate(params('debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'));
     expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
+    if (!result.attach) expect(result.reason).toBe('update-required');
   });
 
-  it('blocks when `at` param is absent and verifyTotpCode is provided', () => {
-    // alwaysFail returns false for '' — same as any invalid code.
-    const params_ = new URLSearchParams(
-      '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456',
+  it('blocks a 33-character code on a tossmini host', () => {
+    const result = gate(
+      params(`debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=${'a'.repeat(33)}`),
     );
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: alwaysFail,
-    });
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
-  });
-
-  it('blocks when verifyTotpCode always fails (simulates expired code)', () => {
-    const params_ = new URLSearchParams(
-      '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=999999',
-    );
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: alwaysFail,
-    });
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('auth');
   });
 
   it('auth check runs AFTER relay URL validation (invalid-relay still wins)', () => {
     const params_ = new URLSearchParams(
-      '_deploymentId=uuid&debug=1&relay=http://r.example.com/&at=123456',
+      '_deploymentId=uuid&debug=1&relay=http://r.example.com/&at=0123456789abcdef0123456789abcdef',
     );
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: alwaysPass,
-    });
+    const result = evaluateDebugGate({ hostname: VALID_HOST, searchParams: params_ });
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('invalid-relay');
   });
 
   it('auth check runs AFTER opt-in check (opt-in still wins when debug absent)', () => {
-    const params_ = new URLSearchParams('_deploymentId=uuid&relay=wss://r.example.com/&at=123456');
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: alwaysPass,
-    });
+    const params_ = new URLSearchParams(
+      '_deploymentId=uuid&relay=wss://r.example.com/&at=0123456789abcdef0123456789abcdef',
+    );
+    const result = evaluateDebugGate({ hostname: VALID_HOST, searchParams: params_ });
     expect(result.attach).toBe(false);
     if (!result.attach) expect(result.reason).toBe('opt-in');
   });
@@ -441,11 +446,7 @@ describe('Layer C3 — TOTP auth gate', () => {
     const params_ = new URLSearchParams(
       '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=SECRET_CODE',
     );
-    const result = evaluateDebugGate({
-      hostname: VALID_HOST,
-      searchParams: params_,
-      verifyTotpCode: alwaysFail,
-    });
+    const result = evaluateDebugGate({ hostname: VALID_HOST, searchParams: params_ });
     expect(result.attach).toBe(false);
     // The reason must be an enum value, not contain any code fragment.
     if (!result.attach) {
@@ -466,12 +467,23 @@ describe('Full decision matrix', () => {
   // release bundles. There is nothing to assert about it here; the guarantee
   // is the absence of code, verified by the consumer's bundle output.
 
-  it('row: tossmini(3.0) host / at absent → BLOCKED (auth — TOTP mandatory, #760)', () => {
-    // Pre-#760 this row was BLOCKED (host). The 3.0 loader serves dogfood
-    // candidates from this family, so the block moved from B1 to C3.
-    const result = gate(PARAMS_NO_AT, 'example-app.apps.tossmini.com');
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
+  it('row: production host / any / any → BLOCKED (host)', () => {
+    for (const host of ['example-app.apps.tossmini.com', 'example-app.web.tossmini.com']) {
+      const result = gate(VALID_PARAMS, host);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('host');
+    }
+  });
+
+  it('row: QR test host / at absent → BLOCKED (auth — code mandatory)', () => {
+    for (const host of [
+      'example-app.private-apps.tossmini.com',
+      'example-app.private-web.tossmini.com',
+    ]) {
+      const result = gate(PARAMS_NO_AT, host);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('auth');
+    }
   });
 
   it('row: non-tossmini host / any / any → BLOCKED (host)', () => {
@@ -500,13 +512,15 @@ describe('Full decision matrix', () => {
 
   it('row: private-apps host / _deploymentId present / debug=1 / valid wss relay / at present → ATTACH', () => {
     const result = gate(
-      params('_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=123456'),
+      params(
+        '_deploymentId=uuid&debug=1&relay=wss://abc-def-ghi.trycloudflare.com/&at=0123456789abcdef0123456789abcdef',
+      ),
     );
     expect(result.attach).toBe(true);
   });
 
   it('row: localhost / _deploymentId (skipped) / debug=1 / valid wss relay → ATTACH', () => {
-    const result = gate(params('debug=1&relay=wss://abc-def-ghi.trycloudflare.com/'), '127.0.0.1');
+    const result = gate(params('debug=1&relay=wss://127.0.0.1:9100/'), '127.0.0.1');
     expect(result.attach).toBe(true);
     if (result.attach) expect(result.deploymentId).toBe('');
   });
@@ -543,14 +557,8 @@ describe('isDebugAllowedHost — positive-allowlist kill-switch (#665)', () => {
     expect(isDebugAllowedHost('my-app.private-apps.tossmini.com')).toBe(true);
   });
 
-  // ── tossmini family — #760: the 3.0 loader serves dogfood candidates from
-  // non-private-apps tossmini hosts, so the family passes the coarse filter.
-  // The #665 "no naked attach on production" invariant is enforced at Layer
-  // C3 instead (mandatory at= code) — see the evaluateDebugGate #760 block.
-
-  it('allows apps.tossmini.com family (3.0 unified serving, gated by C3 TOTP — #760)', () => {
-    expect(isDebugAllowedHost('apps.tossmini.com')).toBe(true);
-    expect(isDebugAllowedHost('example-app.apps.tossmini.com')).toBe(true);
+  it('allows *.private-web.tossmini.com (QR test, web-framework 3.0.0 to 3.1.0)', () => {
+    expect(isDebugAllowedHost('example-app.private-web.tossmini.com')).toBe(true);
   });
 
   // ── Blocked hosts ──────────────────────────────────────────────────────────
@@ -569,21 +577,40 @@ describe('isDebugAllowedHost — positive-allowlist kill-switch (#665)', () => {
     expect(isDebugAllowedHost('tossmini.com')).toBe(false);
   });
 
+  it('blocks both production host families', () => {
+    expect(isDebugAllowedHost('example-app.apps.tossmini.com')).toBe(false);
+    expect(isDebugAllowedHost('example-app.web.tossmini.com')).toBe(false);
+    expect(isDebugAllowedHost('apps.tossmini.com')).toBe(false);
+  });
+
+  it('blocks suffix tricks, a trailing dot and a port', () => {
+    for (const host of [
+      'private-apps.tossmini.com.evil.example',
+      'private-web.tossmini.com.evil.example',
+      'evil-private-apps.tossmini.com',
+      'evil-private-web.tossmini.com',
+      'example-app.private-apps.tossmini.com.',
+      'example-app.private-web.tossmini.com:8080',
+    ]) {
+      expect(isDebugAllowedHost(host)).toBe(false);
+    }
+  });
+
   it('blocks a spoofed tossmini suffix that is not a real subdomain segment', () => {
     expect(isDebugAllowedHost('x.tossmini.com.evil.example')).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// isTossminiHost (#760)
+// isTossminiHost
 // ---------------------------------------------------------------------------
 
 describe('isTossminiHost', () => {
-  it('accepts private-apps hosts (2.x family is a subset)', () => {
+  it('accepts QR test hosts', () => {
     expect(isTossminiHost('example-app.private-apps.tossmini.com')).toBe(true);
   });
 
-  it('accepts a 3.0 unified serving host (non-private-apps subdomain)', () => {
+  it('accepts production hosts (a family filter, not an allow rule)', () => {
     expect(isTossminiHost('example-app.apps.tossmini.com')).toBe(true);
     expect(isTossminiHost('apps.tossmini.com')).toBe(true);
   });
@@ -598,78 +625,99 @@ describe('isTossminiHost', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3.0-family gate flow (#760) — non-private-apps tossmini hosts
+// Gate flow on the QR test host families
 //
-// Live observation (2026-07-08, mini-app 31146, 3.0-beta bundle): the 3.0
-// loader serves the page from a 4-label *.tossmini.com host whose middle
-// label is not `private-apps`, consumes `_deploymentId` natively (not
-// propagated to location.search), and DOES propagate appended debug/relay/at
-// params. So on these hosts: B1 passes on the family filter, B2 must not
-// require `_deploymentId`, and C3 makes the `at=` code mandatory even
-// without an injected verifier (the relay stays the authoritative verifier).
+// Both QR test families (`private-apps`, `private-web`) take the same path:
+// B1 passes on the host, B2 does not require `_deploymentId`, and C3 makes the
+// `at=` code mandatory even without an injected verifier (the relay stays the
+// authoritative verifier of the code value).
 // ---------------------------------------------------------------------------
 
-describe('3.0-family gate flow (#760)', () => {
-  const HOST_30 = 'example-app.apps.tossmini.com';
+describe.each(['example-app.private-apps.tossmini.com', 'example-app.private-web.tossmini.com'])(
+  'QR test host gate flow (%s)',
+  (HOST) => {
+    const RELAY = 'relay=wss%3A%2F%2Fabc.trycloudflare.com%2F';
+
+    it('attaches with debug + wss relay + at code, no _deploymentId', () => {
+      const result = gate(params(`debug=1&${RELAY}&at=0123456789abcdef0123456789abcdef`), HOST);
+      expect(result.attach).toBe(true);
+      if (result.attach) expect(result.deploymentId).toBe('');
+    });
+
+    it('reports _deploymentId when it is present', () => {
+      const result = gate(
+        params(`_deploymentId=abc-123&debug=1&${RELAY}&at=0123456789abcdef0123456789abcdef`),
+        HOST,
+      );
+      expect(result.attach).toBe(true);
+      if (result.attach) expect(result.deploymentId).toBe('abc-123');
+    });
+
+    it('blocks without an at= code even when no verifier is injected (mandatory code)', () => {
+      const result = gate(params(`debug=1&${RELAY}`), HOST);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('auth');
+    });
+
+    it('blocks an empty at= value the same as an absent one', () => {
+      const result = gate(params(`debug=1&${RELAY}&at=`), HOST);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('auth');
+    });
+
+    it.each(['a'.repeat(31), 'A'.repeat(32), 'g'.repeat(32)])(
+      'blocks a malformed at= code (%s) without a verifier',
+      (at) => {
+        const result = gate(params(`debug=1&${RELAY}&at=${at}`), HOST);
+        expect(result.attach).toBe(false);
+        if (!result.attach) expect(result.reason).toBe('auth');
+      },
+    );
+
+    it('still requires debug=1 opt-in', () => {
+      const result = gate(params(`${RELAY}&at=0123456789abcdef0123456789abcdef`), HOST);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('opt-in');
+    });
+
+    it('still rejects a non-wss relay', () => {
+      const result = gate(
+        params(
+          'debug=1&relay=https%3A%2F%2Fabc.trycloudflare.com%2F&at=0123456789abcdef0123456789abcdef',
+        ),
+        HOST,
+      );
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('invalid-relay');
+    });
+
+    it('the gate does not judge the code value (the relay does)', () => {
+      const result = evaluateDebugGate({
+        hostname: HOST,
+        searchParams: params(`debug=1&${RELAY}&at=99999999999999999999999999999999`),
+      });
+      expect(result.attach).toBe(true);
+    });
+  },
+);
+
+describe('production hosts never attach', () => {
   const RELAY = 'relay=wss%3A%2F%2Fabc.trycloudflare.com%2F';
 
-  it('attaches with debug + wss relay + at code, no _deploymentId', () => {
-    const result = gate(params(`debug=1&${RELAY}&at=123456`), HOST_30);
-    expect(result.attach).toBe(true);
-    if (result.attach) expect(result.deploymentId).toBe('');
-  });
+  it.each(['example-app.apps.tossmini.com', 'example-app.web.tossmini.com'])(
+    '%s is refused with every other layer satisfied',
+    (host) => {
+      const search = params(
+        `_deploymentId=abc&debug=1&${RELAY}&at=0123456789abcdef0123456789abcdef`,
+      );
+      const result = gate(search, host);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('host');
+    },
+  );
 
-  it('reports _deploymentId when the loader does propagate it', () => {
-    const result = gate(params(`_deploymentId=abc-123&debug=1&${RELAY}&at=123456`), HOST_30);
-    expect(result.attach).toBe(true);
-    if (result.attach) expect(result.deploymentId).toBe('abc-123');
-  });
-
-  it('blocks without an at= code even when no verifier is injected (mandatory TOTP)', () => {
-    const result = gate(params(`debug=1&${RELAY}`), HOST_30);
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
-  });
-
-  it('blocks an empty at= value the same as an absent one', () => {
-    const result = gate(params(`debug=1&${RELAY}&at=`), HOST_30);
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
-  });
-
-  it('still requires debug=1 opt-in', () => {
-    const result = gate(params(`${RELAY}&at=123456`), HOST_30);
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('opt-in');
-  });
-
-  it('still rejects a non-wss relay', () => {
-    const result = gate(
-      params('debug=1&relay=https%3A%2F%2Fabc.trycloudflare.com%2F&at=123456'),
-      HOST_30,
-    );
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('invalid-relay');
-  });
-
-  it('an injected verifier still runs and can reject the code value', () => {
-    const result = evaluateDebugGate({
-      hostname: HOST_30,
-      searchParams: params(`debug=1&${RELAY}&at=999999`),
-      verifyTotpCode: () => false,
-    });
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
-  });
-
-  it('private-apps hosts get the same mandatory at= code as the rest of the family', () => {
-    const result = gate(params(`_deploymentId=abc&debug=1&${RELAY}`), VALID_HOST);
-    expect(result.attach).toBe(false);
-    if (!result.attach) expect(result.reason).toBe('auth');
-  });
-
-  it('localhost with no verifier still ignores at=', () => {
-    const result = gate(params(`debug=1&${RELAY}`), 'localhost');
+  it('localhost still ignores at=', () => {
+    const result = gate(params('debug=1&relay=wss%3A%2F%2Flocalhost%3A9100'), 'localhost');
     expect(result.attach).toBe(true);
   });
 });
@@ -740,5 +788,140 @@ describe('evaluateDebugGate — localhost (env 1) attach path', () => {
     });
     expect(result.attach).toBe(true);
     if (result.attach) expect(result.deploymentId).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Relay shape, host pairing and signature (Layers C2 and C4)
+// ---------------------------------------------------------------------------
+
+describe('relay URL shape and host pairing', () => {
+  const AT = 'at=0123456789abcdef0123456789abcdef';
+  const QR_HOST = 'example-app.private-apps.tossmini.com';
+
+  /** Gate result for a relay value on a given page host (signature supplied). */
+  function relayOn(relay: string, host: string) {
+    return gate(params(`debug=1&relay=${encodeURIComponent(relay)}&${AT}`), host);
+  }
+
+  it.each([
+    'wss://abc-def.trycloudflare.com',
+    'wss://abc-def.trycloudflare.com/',
+    'wss://ABC-DEF.trycloudflare.com',
+  ])('QR test page accepts the tunnel relay %s', (relay) => {
+    expect(relayOn(relay, QR_HOST).attach).toBe(true);
+  });
+
+  it.each([
+    ['userinfo', 'wss://user:pass@abc.trycloudflare.com'],
+    ['username only', 'wss://user@abc.trycloudflare.com'],
+    ['explicit port', 'wss://abc.trycloudflare.com:8443'],
+    ['explicit default port', 'wss://abc.trycloudflare.com:443'],
+    ['path', 'wss://abc.trycloudflare.com/relay'],
+    ['query', 'wss://abc.trycloudflare.com/?x=1'],
+    ['empty query', 'wss://abc.trycloudflare.com/?'],
+    ['hash', 'wss://abc.trycloudflare.com/#x'],
+    ['empty hash', 'wss://abc.trycloudflare.com/#'],
+    ['multi-label tunnel', 'wss://a.b.trycloudflare.com'],
+    ['foreign host', 'wss://attacker.example'],
+    ['suffix lookalike', 'wss://abc.trycloudflare.com.attacker.example'],
+    ['bare suffix', 'wss://trycloudflare.com'],
+    ['loopback relay on a QR page', 'wss://127.0.0.1:9100'],
+    ['localhost relay on a QR page', 'wss://localhost'],
+  ])('QR test page refuses %s', (_name, relay) => {
+    const result = relayOn(relay, QR_HOST);
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('invalid-relay');
+  });
+
+  it.each(['wss://localhost:9100', 'wss://127.0.0.1', 'wss://127.0.0.1:9100/', 'wss://[::1]:9100'])(
+    'loopback page accepts the loopback relay %s',
+    (relay) => {
+      expect(relayOn(relay, 'localhost').attach).toBe(true);
+    },
+  );
+
+  it.each([
+    'wss://abc-def.trycloudflare.com',
+    'wss://attacker.example',
+    'wss://localhost:9100/path',
+    'wss://user@localhost:9100',
+    'wss://localhost:9100/?x=1',
+  ])('loopback page refuses %s', (relay) => {
+    const result = relayOn(relay, 'localhost');
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('invalid-relay');
+  });
+
+  it.each(['a.b.private-apps.tossmini.com', 'a.b.private-web.tossmini.com'])(
+    'multi-label page host %s is refused at B1',
+    (host) => {
+      const result = gate(VALID_PARAMS, host);
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('host');
+    },
+  );
+});
+
+describe('relay signature shape (Layer C4)', () => {
+  const BASE =
+    'debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com&at=0123456789abcdef0123456789abcdef';
+  const HOST = 'example-app.private-web.tossmini.com';
+
+  it('QR test page without sig is blocked as relay-signature', () => {
+    const result = gate(rawParams(BASE), HOST);
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('relay-signature');
+  });
+
+  it.each([
+    '',
+    'short',
+    'S'.repeat(85),
+    'S'.repeat(86), // the retired single-signature (v1) shape
+    'S'.repeat(87),
+    `${'S'.repeat(85)}=`,
+    `${'S'.repeat(85)}+`,
+    // the retired self-contained certificate shape (key, window, cert sig, link sig)
+    `BA${'A'.repeat(85)}.1800000000.1800001200.${'A'.repeat(86)}.${'A'.repeat(86)}`,
+    `${'A'.repeat(7)}.${'A'.repeat(86)}`,
+    `${'A'.repeat(9)}.${'A'.repeat(86)}`,
+    `${'A'.repeat(8)}.${'A'.repeat(85)}`,
+    `${'A'.repeat(8)}${'A'.repeat(86)}`,
+  ])('QR test page with malformed sig %j is blocked as relay-signature', (sig) => {
+    const result = gate(rawParams(`${BASE}&sig=${encodeURIComponent(sig)}`), HOST);
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('relay-signature');
+  });
+
+  it('QR test page with a well-formed sig attaches (verification happens in attach.ts)', () => {
+    expect(gate(rawParams(`${BASE}&sig=${SIG}`), HOST).attach).toBe(true);
+  });
+
+  it('a bad at code is reported before the signature', () => {
+    const result = gate(rawParams('debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com&at=zz'), HOST);
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('auth');
+  });
+
+  it('loopback page needs no sig', () => {
+    const result = gate(rawParams('debug=1&relay=wss%3A%2F%2F127.0.0.1%3A9100'), '127.0.0.1');
+    expect(result.attach).toBe(true);
+  });
+});
+
+describe('update-required (six-digit code from an older debugger)', () => {
+  it.each(['123456', '000000'])('at=%s is update-required on a QR test host', (at) => {
+    const result = gate(rawParams(`debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com&at=${at}`));
+    expect(result.attach).toBe(false);
+    if (!result.attach) expect(result.reason).toBe('update-required');
+  });
+
+  it('a seven-digit or non-numeric short code stays an auth failure', () => {
+    for (const at of ['1234567', '12345a']) {
+      const result = gate(rawParams(`debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com&at=${at}`));
+      expect(result.attach).toBe(false);
+      if (!result.attach) expect(result.reason).toBe('auth');
+    }
   });
 });

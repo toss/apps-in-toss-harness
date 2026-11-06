@@ -2,8 +2,9 @@
 
 `/ait:debug` §5-C(attach — `start_attach` QR)의 실행 단계 상세다. SKILL.md의 요약만으로 부족할 때, 또는 각 단계에서 에러가 나서 원인을 짚어야 할 때 참조한다.
 
-0. **사전 조건 확인**: candidate 번들에 `@apps-in-toss/debug-console`이 `dependencies`로
-   들어가 있어야 attach 표면이 남는다. 없으면 **환경 3 attach 표면이 아직 설치되지
+0. **사전 조건 확인**: `@apps-in-toss/debug-console`이 `devDependencies`로 설치되고 진입점의
+   `__DEBUG_BUILD__` 게이트 import가 배선돼 있어야 하며, 디버그 번들은
+   `AIT_DEBUG_BUILD=1`로 만들어 그 값이 `true`여야 attach 표면이 남는다. 없으면 **환경 3 attach 표면이 아직 설치되지
    않았습니다. 먼저 `/ait:inject-debug-console`을 실행하세요.** 여기서 중단.
 
 1. **`start_attach({mode: 'relay-staging', scheme_url, projectRoot})`** 도구를 호출한다
@@ -22,7 +23,7 @@
    동작한다. `devicectl`/`adb` 같은 device-control 발사는 쓰지 않는다(brittle,
    실유저 플로우 아님).
 
-3. 폰 토스 앱 WebView가 deep-link를 열면 in-app gate를 통과해 relay에 attach된다.
+3. 폰 토스 앱 WebView가 deep-link를 열면 in-app gate를 통과한 뒤, 처음 붙는 relay면 폰 화면에 "디버거에 연결할까요?" 확인 창이 뜬다. 사용자가 **"연결"을 눌러야** relay에 요청이 나가고 attach된다("취소"면 아무것도 보내지 않고 끝난다). 같은 relay(같은 터널)로 24시간 안에 다시 붙거나 같은 페이지를 새로고침하면 다시 묻지 않는다. QR 스캔을 안내할 때 이 창에서 "연결"을 누르라고 함께 말한다. 코드 하나는 폰 한 대만 쓴다: 다른 폰이 같은 QR을 스캔하면 relay가 거부하니 새 QR을 쓰게 한다.
 
 ## attach 단계 모델
 
@@ -43,36 +44,36 @@
 | 진단(`kind`) | 의미 | 사용자 조치 |
 |---|---|---|
 | `tunnel-down` | cloudflared 터널이 끊김 | 터널 재기동 안내를 따른다 |
-| `page-not-opened` | 폰이 이번 QR의 페이지를 열지 않음(폰에서 relay로 온 요청 없음) | 미니앱이 열려 있으면 X로 닫고 다시 스캔 → 폰 화면 상태 표시 확인 → 사내망·MDM이 `*.trycloudflare.com`을 막으면 Wi-Fi를 바꿔 본다 |
+| `page-not-opened` | 폰이 이번 QR의 페이지를 열지 않음(폰에서 relay로 온 요청 없음) | 폰에 "디버거에 연결할까요?" 창이 떠 있으면 "연결"을 누르게 한다(누르기 전에는 relay로 요청이 가지 않는다) → 미니앱이 열려 있으면 X로 닫고 다시 스캔 → 폰 화면 상태 표시 확인 → 사내망·MDM이 `*.trycloudflare.com`을 막으면 Wi-Fi를 바꿔 본다 |
 | `qr-expired` | relay가 폰의 코드를 거부(만료·지난 QR) | 대시보드를 새로고침해 새 QR을 스캔 |
 | `script-not-loaded` | 페이지는 열렸지만 `target.js` 로드·WebSocket이 끝나지 않음 | 폰 화면 상태 표시 확인, Wi-Fi 변경, 새 QR 스캔 |
 | `wrong-page` | 폰이 붙었지만 이번 배포의 미니앱이 아님 | 붙은 페이지 목록을 보여 주고, 다르면 X로 닫고 새 QR 스캔. `scheme_url`의 `_deploymentId`가 방금 올린 번들인지 확인 |
 | `rejected-busy` | 다른 미니앱이 같은 QR로 붙으려 해서 relay가 거부함(먼저 붙은 미니앱 유지, close 4409). 거부된 미니앱 화면에는 "디버거가 이미 다른 미니앱(이름)에 연결돼 있어서…" 막대가 뜬다 | 진단에 나온 두 미니앱 이름을 사용자에게 알린다. 새 미니앱을 디버깅하려면 먼저 붙은 미니앱을 X로 닫고 `start_attach`를 다시 호출해 새 QR을 스캔 |
 | `session-dropped` | 붙었다가 끊김(앱 백그라운드, 네트워크) | 앱을 앞에 두고, X로 닫은 뒤 새 QR 스캔 |
 
-relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데몬이 가진 `.ait_relay` secret이 relay와 다르거나 PC 시계가 어긋난 경우이므로, 에러 안내대로 `start_attach`를 다시 부르고 반복되면 시스템 시계를 동기화한다.
+relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데몬이 다른 디버거 프로세스가 띄운 relay에 붙으려 했거나 PC 시계가 어긋난 경우이므로, 에러 안내대로 `start_attach`를 다시 부르고 반복되면 디버거를 다시 시작하고 시스템 시계를 동기화한다.
 
 ## 폰 화면 상태 표시 읽는 법
 
-`debug-console`은 URL에 `debug=1` 또는 `relay=`가 있을 때(QR로 연 경우) 화면 하단에 상태 막대를 띄운다. 탭하면 닫히며 코드·relay 주소는 표시하지 않는다. 사용자에게 막대 문구를 읽어 달라고 하면 원인이 거의 가려진다. 개발자 도구에서는 `window.__ait_debug_status`로 같은 상태 값을 읽을 수 있다.
+`debug-console`은 QR 테스트 호스트에서 URL에 `debug=1` 또는 `relay=`가 있을 때(QR로 연 경우) 화면 하단에 상태 막대를 띄운다. 막대 문구는 일부러 짧고 어느 검사가 실패했는지 말하지 않는다. 그래서 문구만으로는 원인을 가릴 수 없다. 원인은 `window.__ait_debug_status`(CDP로 읽는 enum)와 데몬의 `get_debug_status`·`attachDiagnosis`·대시보드 타임라인으로 가린다. 프로덕션 호스트 등 QR 테스트 호스트가 아닌 곳에서는 막대도 상태 값도 없다. 탭하면 막대가 닫히며 코드·relay 주소는 표시하지 않는다.
 
-| 상태 | 막대 문구(요지) | 조치 |
+| 막대 문구 | 가능한 상태 값 | 원인을 가르는 법과 조치 |
 |---|---|---|
-| `blocked-host` | 이 주소에서는 디버거를 연결할 수 없어요 | 토스 앱에서 테스트 번들로 연 화면인지 확인 |
-| `blocked-entry` | 디버거 연결 조건이 맞지 않아요 | X로 닫고 대시보드의 QR을 다시 스캔 |
-| `blocked-opt-in` | 디버그 연결 요청(debug=1)이 빠졌어요 | X로 닫고 QR을 다시 스캔 |
-| `blocked-invalid-relay` | 디버거 서버 주소가 올바르지 않아요 | X로 닫고 QR을 다시 스캔 |
-| `blocked-auth` / `code-expired` | QR 코드가 없거나 만료됐어요 | 대시보드를 새로고침하고 새 QR을 스캔 |
-| `connecting` | 디버거에 연결하는 중이에요 | 잠시 기다린다 |
-| `connected` | 디버거에 연결됐어요(3초 뒤 자동 숨김) | — |
-| `session-ended` | 디버거 세션이 끝났어요 | X로 닫고 QR을 다시 스캔 |
-| `server-unreachable` | 디버거 서버에 접속할 수 없어요 | 사내망·MDM이 `*.trycloudflare.com`을 막고 있을 수 있다 — Wi-Fi 변경 |
-| `relay-busy` | 이 디버거는 이미 다른 미니앱에 연결돼 있어요 | 먼저 연결된 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔 |
+| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-entry` / `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 그 사람의 `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })` 배열에 추가하고 다시 빌드한다 |
+| 디버거를 최신 버전으로 올리세요. | `blocked-update-required` | 디버거를 최신으로 올리고 새 QR을 스캔 |
+| 이 번들에 디버거 키가 없어요. | `blocked-relay-key` | `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })`에 넣고 다시 빌드 |
+| 이 화면에서는 디버거를 쓸 수 없어요. / 디버거와 debug-console 버전이 맞지 않아요. | `relay-origin-rejected` / `relay-version-mismatch` | relay가 연결을 거부했다(close 4403 / 4426). 4426은 디버거와 debug-console 중 오래된 쪽을 올리고 새 QR을 스캔 |
+| 디버거에 연결하는 중이에요… / 디버거에 연결됐어요. | `connecting` / `connected` | 잠시 기다린다(`connected`는 3초 뒤 자동 숨김) |
+| 디버거 연결이 끝났어요. QR을 다시 스캔하세요. | `session-ended` | X로 닫고 QR을 다시 스캔 |
+| 디버거 서버에 접속할 수 없어요. | `server-unreachable` | 사내망·MDM이 `*.trycloudflare.com`을 막고 있을 수 있다 — Wi-Fi 변경 |
+| 디버거가 다른 미니앱에 연결돼 있어요. | `relay-busy` | 먼저 연결된 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔 |
+| 잠시 뒤 다시 시도하세요. | `relay-locked` | relay가 코드 확인을 잠시 잠갔다. 1분쯤 뒤 다시 시도하고, 계속되면 새 QR을 스캔 |
 
 막대가 아예 없으면 폰이 이번 QR의 페이지를 열지 않았거나(`page-not-opened`), 구버전 `debug-console`이 설치된 것이다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 안내한다.
 
 ## 대시보드와 재스캔 규칙
 
+- 대시보드 주소는 `start_attach`가 알려 주는 것을 그대로 쓴다. 데몬이 뜰 때마다 바뀌는 접근 토큰(`dashtoken=`)이 붙어 있고, 토큰 없이 `http://127.0.0.1:<포트>/`만 열면 403이다. 이 주소를 로그나 이슈에 붙이지 않는다(데몬을 다시 띄우면 무효가 된다). 데몬을 재시작했다면 이전 탭이 아니라 새 주소를 쓴다.
 - 대시보드 탭은 **하나만** 쓴다. `start_attach`는 이미 연결된 탭이 있으면 새 탭을 열지 않고 그 탭의 QR을 갱신한다. 탭이 쌓이면 브라우저 호스트당 연결 한도(Firefox 6개)에 걸려 QR 이미지가 안 뜨고 "연결 끊김"으로 보일 수 있다. SSE 구독은 2개까지만 유지되고 초과분은 "다른 탭에서 대시보드가 열려 있어요" 안내만 남는다.
 - 토스 앱에 같은 미니앱이 이미 열려 있으면 QR을 스캔해도 새 relay로 붙지 않는다. **미니앱을 X 버튼으로 먼저 닫은 뒤** 스캔하게 한다.
 - `debugger-test`(터미널 test runner)와 MCP 데몬은 relay를 따로 쓴다. 데몬이 이미 relay를 운영 중이면 `debugger-test`는 PID와 안내를 남기고 멈춘다. 같은 테스트는 attach된 세션에서 `run_tests` 도구로 돌린다(5-E). 굳이 별도 relay가 필요하면 `debugger-test --separate-relay`.

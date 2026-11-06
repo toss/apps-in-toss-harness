@@ -28,7 +28,7 @@
  *   When a TOTP secret is active, `buildDeepLinkAttachUrl` accepts an optional
  *   `totpCode` argument and splices `at=<code>` alongside `debug` and `relay`.
  *   The code must be computed by the caller at call time — do NOT pre-compute
- *   and cache it, because the 30-second window expires quickly. The in-app gate
+ *   and cache it, because the 30-35 second window expires quickly. The in-app gate
  *   (`src/in-app/gate.ts` Layer C) validates this code against the baked secret.
  *
  * Why not `URL`/`URLSearchParams`: `intoss-private:` is a non-special scheme.
@@ -110,10 +110,16 @@ function stripExisting(query: string, key: string): string {
  *   of the gate); this helper does not invent one.
  * @param wssUrl - The live relay URL (`wss://…trycloudflare.com`) from the
  *   running debug MCP server's quick tunnel.
- * @param totpCode - Optional current TOTP code (6 digits). When provided, it
+ * @param totpCode - Optional current relay auth code (32 hex characters). When provided, it
  *   is spliced as `at=<totpCode>`. Must be computed at call time — it rotates
- *   every 30 s. Pass `undefined` or omit when TOTP is disabled.
- * @returns The same URL with `debug=1&relay=<encoded wssUrl>[&at=<totpCode>]`
+ *   every 5 s. Pass `undefined` or omit when TOTP is disabled.
+ * @param runId - Optional run marker (`rid=<runId>`, see `relay-run-id.ts`). The page
+ *   URL keeps it after debug-console has removed `relay=` and `at=`, so the daemon
+ *   can still recognise a page that belongs to this tunnel.
+ * @param sig - Optional signature of the relay origin and `at` code (see
+ *   `relay-signing.ts`), spliced as `sig=<sig>`. It belongs to one `at` code, so a
+ *   caller that mints a new code passes the signature made for that code.
+ * @returns The same URL with `debug=1&relay=<encoded wssUrl>[&at=<totpCode>][&sig=<sig>][&rid=<runId>]`
  *   appended.
  * @throws If `wssUrl` is not a `wss:` URL (the gate rejects anything else, so
  *   producing such a link would be a silent dead end).
@@ -122,15 +128,17 @@ export function buildDeepLinkAttachUrl(
   schemeUrl: string,
   wssUrl: string,
   totpCode?: string,
+  runId?: string,
+  sig?: string,
 ): string {
   let relay: URL;
   try {
     relay = new URL(wssUrl);
   } catch {
-    throw new Error(`relay URL is not a valid URL: ${wssUrl}`);
+    throw new Error('relay URL is not a valid URL');
   }
   if (relay.protocol !== 'wss:') {
-    throw new Error(`relay URL must use the wss: scheme, got ${relay.protocol} (${wssUrl})`);
+    throw new Error(`relay URL must use the wss: scheme, got ${relay.protocol}`);
   }
 
   const hashIndex = schemeUrl.indexOf('#');
@@ -151,10 +159,18 @@ export function buildDeepLinkAttachUrl(
   if (totpCode !== undefined && totpCode !== '') {
     appended.push(['at', totpCode]);
   }
+  if (sig !== undefined && sig !== '') {
+    appended.push(['sig', sig]);
+  }
+  if (runId !== undefined && runId !== '') {
+    appended.push(['rid', runId]);
+  }
 
   // Always strip the `at` key from the existing query so a stale code from a
   // previous run is removed even when the caller does not provide a fresh code.
   query = stripExisting(query, 'at');
+  query = stripExisting(query, 'sig');
+  query = stripExisting(query, 'rid');
 
   for (const [key] of appended) {
     query = stripExisting(query, key);

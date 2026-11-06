@@ -12,12 +12,20 @@
  * TOTP auth (relay-side, authoritative gate):
  *   When `verifyAuth` is provided, this module gates both inbound surfaces:
  *
- *   - HTTP 'request': a listener registered BEFORE `chii.start({server})`.
- *     Node's `http.Server` calls listeners in registration order; the first
- *     to call `res.end()` wins. Invalid auth → 401 + CORS header + a tiny
+ *   - HTTP 'request': after `chii.start()` has registered Koa, we take over
+ *     the request chain the same way as the upgrade chain below. Koa is
+ *     reached only by explicit dispatch of the routes {@link classifyRelayPath}
+ *     allows, default-deny. Invalid auth → 401 + CORS header + a tiny
  *     JSON body (`{"error":"totp-rejected"}`) so a cross-origin script
- *     `fetch()` probe can READ the status (issue #478). Valid auth → return
- *     without side-effect (chii's Koa handler serves it).
+ *     `fetch()` probe can READ the status (issue #478).
+ *
+ *   - Origin (relay-origin.ts): checked before the code. Only the private
+ *     sandbox mini-app origins (and, off the tunnel, loopback or the relay's
+ *     own origin) are answered, with that origin echoed and `Vary: Origin`.
+ *     Through the tunnel a request with no `Origin` keeps only GET/HEAD of
+ *     `/target.js` and the handshake ping; the target WebSocket
+ *     needs an allowed `Origin`. A refused origin gets 403 / close 4403 and
+ *     never counts toward the code throttle.
  *
  *   - WS 'upgrade': after `chii.start()` has registered chii's own upgrade
  *     listener, we take over the upgrade chain (remove chii's listeners,
@@ -32,23 +40,33 @@
  *     chii's later listener complete a SECOND handshake on the same socket
  *     — an auth bypass. Valid auth → forward to chii's captured listeners.
  *
- * TOTP code transports (issue #466) — two equivalent ways to carry the code:
+ * There is no `/proxy` route: the relay never fetches anything for a caller. chii's
+ *   `target.js` loads sources in the page first and falls back to `<relay>/proxy`
+ *   only when that fails; the fallback treats a refusal as an empty result, so
+ *   `/proxy` is answered like any unknown route.
+ *
+ * Code transports (issue #466) — two equivalent ways to carry the code:
  *   1. Query param `at=<code>` — used by the daemon-side `/client` connection
  *      (`chii-connection.ts` appends it; it holds the secret).
- *   2. Path prefix `/at/<code>/…` — used by the phone-side target. Chii's
+ *   2. Path prefix `/v<protocol>/at/<code>/…` — used by the phone-side target. Chii's
  *      stock `target.js` derives its WS endpoint from the script `src`
  *      (`scriptEl.src.replace('target.js','')`), so the only way for the
  *      phone to carry a code is to embed it in the script URL path. The
- *      in-app attach injects `https://<host>/at/<code>/target.js`; both the
- *      script fetch and the derived `wss://<host>/at/<code>/target/<id>` WS
- *      dial then carry the prefix. The listeners below rewrite the prefix
+ *      in-app attach injects `https://<host>/v2/at/<code>/target.js`; both the
+ *      script fetch and the derived `wss://<host>/v2/at/<code>/target/<id>` WS
+ *      dial then carry the prefix. The prefix is versioned: a device on another
+ *      protocol (the unversioned `/at/…` is protocol 1) gets the code check, then
+ *      an update-required answer instead of service. The handlers below rewrite the prefix
  *      into the query form (`rewriteAtPathPrefix`) and MUTATE `req.url`
- *      before chii's own handlers (registered later) parse it — chii only
- *      ever sees the stripped URL.
+ *      before dispatching to chii — chii only ever sees the stripped URL.
  *
  * Threat model: "URL leak" — someone obtains the tunnel URL (Slack paste, QR
  *   screenshot, shoulder-surfing) but does not have the shared TOTP secret.
- *   Rotating 6-digit code makes the URL stale after 30 s.
+ *   The 32-hex-character code rotates every 5 s, but the gate accepts the current step
+ *   and the 6 before it, so a leaked URL with its code stays usable for 30 to
+ *   35 seconds (longer only for a phone that already attached: its code is bound
+ *   to that session, see `sessions` below). Blind guessing is slowed by the failure backoff in
+ *   relay-auth-throttle.ts, not by the rotation alone.
  *   A determined attacker who extracts the secret from the dogfood bundle can
  *   still compute valid codes; that is out of scope (see docs/design/mcp-strategy.md).
  *
@@ -57,7 +75,7 @@
  *   predicate from the caller's perspective; this module only forwards pass/fail.
  */
 
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
@@ -69,24 +87,57 @@ import {
   ATTACH_HANDSHAKE_PATH,
   ATTACH_HANDSHAKE_PROTOCOL_PARAM,
   ATTACH_HANDSHAKE_VERSION_PARAM,
+  PROTOCOL_VERSION,
+  RELAY_UPDATE_REQUIRED_CLOSE_CODE,
+  RELAY_UPDATE_REQUIRED_REASON,
+  sanitizeDeviceVersion,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
 import {
+  RELAY_AUTH_LOCKED_CLOSE_CODE,
+  RELAY_AUTH_LOCKED_REASON,
   RELAY_AUTH_REJECT_CLOSE_CODE,
   RELAY_AUTH_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-auth-close';
+import { isRelayAuthCode, isRelayDeviceId } from '@apps-in-toss/internal-protocol/relay-auth-code';
 import {
   RELAY_BUSY_CLOSE_CODE,
   RELAY_BUSY_REASON,
 } from '@apps-in-toss/internal-protocol/relay-busy-close';
+import {
+  RELAY_CERT_PATH,
+  type RelayCertDocument,
+} from '@apps-in-toss/internal-protocol/relay-signature';
 import { type WebSocket, WebSocketServer } from 'ws';
+import {
+  createRelayAuthThrottle,
+  type RelayAuthScope,
+  type RelayAuthThrottleOptions,
+} from './relay-auth-throttle.js';
+import {
+  applyOriginHeaders,
+  judgeRelayOrigin,
+  RELAY_ORIGIN_REJECT_CLOSE_CODE,
+  RELAY_ORIGIN_REJECT_REASON,
+} from './relay-origin.js';
 import { extractTargetPageHost } from './target-busy.js';
-import { buildGuardedTargetScript, readChiiTargetScript } from './target-guard.js';
+import {
+  buildGuardedTargetScript,
+  buildUpdateRequiredScript,
+  readChiiTargetScript,
+} from './target-guard.js';
 import { restoreTlsRejectUnauthorized, snapshotTlsRejectUnauthorized } from './tls-guard.js';
 
 const require = createRequire(import.meta.url);
 
 /** Path the phone page loads the debug script from (chii's static `target.js`). */
 const TARGET_SCRIPT_PATH = '/target.js';
+
+/** How long a phone session outlives its last socket (see `sessions` in `startChiiRelay`). */
+const SESSION_GRACE_MS = 5 * 60_000;
+/** Bound on remembered phone sessions. */
+const MAX_SESSIONS = 32;
+/** Target ids one code may carry at once (two phones on one QR, a reload overlapping its predecessor). */
+const MAX_TARGETS_PER_CODE = 4;
 
 /**
  * WS keepalive ping interval (ms).
@@ -206,6 +257,13 @@ export interface ChiiRelay {
   port: number;
   /** Base URL for the relay HTTP/WS server, e.g. `http://127.0.0.1:54321`. */
   baseUrl: string;
+  /** Number of accepted `/target/<id>` sockets that are open right now. */
+  attachedTargetCount(): number;
+  /**
+   * Clears the code-check failures and lock of one source scope. The daemon
+   * resets the tunnel scope after it reissues the tunnel.
+   */
+  resetAuthLock(scope: RelayAuthScope): void;
   close(): Promise<void>;
 }
 
@@ -255,13 +313,21 @@ export interface RelayWsUpgradeEvent {
   accepted: boolean;
 }
 
+/** `/v<N>/at/<code>[/rest][?query]`; `/at/…` without `v<N>` is protocol 1. */
+const AT_PREFIX_RE =
+  /^\/(?:v([1-9][0-9]{0,8})\/)?at\/([^/?]+)(?:\/d\/([A-Za-z0-9_-]{22}))?(\/[^?]*)?(\?.*)?$/;
+
 /**
- * Rewrites a `/at/<code>/…` path-prefixed request URL into the equivalent
- * query-based form, e.g.:
+ * Rewrites a path-prefixed request URL (`/v<N>/at/<code>/…`, or the unversioned
+ * `/at/<code>/…` of protocol 1) into the equivalent query-based form, e.g.:
  *
- *   `/at/123456/target.js`        → `/target.js?at=123456`
- *   `/at/123456/target/x?url=u`   → `/target/x?url=u&at=123456`
- *   `/at/123456/`                 → `/?at=123456`
+ *   `/v2/at/<code>/target.js`        → `/target.js?at=<code>`
+ *   `/v2/at/<code>/target/x?url=u`   → `/target/x?url=u&at=<code>`
+ *   `/v2/at/<code>/`                 → `/?at=<code>`
+ *
+ * Every protocol's prefix is rewritten, so the code check treats them all the
+ * same; {@link atPrefixProtocol} says which protocol the caller spoke, and the
+ * handlers refuse the ones that are not this relay's own.
  *
  * Returns `null` when the URL does not carry the prefix (including an empty
  * code segment) — callers fall back to the unmodified URL and the existing
@@ -272,16 +338,226 @@ export interface RelayWsUpgradeEvent {
  * predicate (which parses the query). The raw path segment is appended
  * verbatim to the query: both path segments and query values are
  * percent-decoded exactly once by their consumers, so no re-encoding is
- * needed (TOTP codes are 6 digits and never percent-encoded in practice).
+ * needed (codes are lowercase hex and never percent-encoded).
  */
 export function rewriteAtPathPrefix(rawUrl: string): string | null {
-  const match = /^\/at\/([^/?]+)(\/[^?]*)?(\?.*)?$/.exec(rawUrl);
+  const match = AT_PREFIX_RE.exec(rawUrl);
   if (match === null) return null;
-  const code = match[1];
-  const path = match[2] === undefined || match[2] === '' ? '/' : match[2];
-  const query = match[3] ?? '';
+  const code = match[2];
+  const path = match[4] === undefined || match[4] === '' ? '/' : match[4];
+  const query = match[5] ?? '';
   const separator = query === '' ? '?' : '&';
   return `${path}${query}${separator}at=${code}`;
+}
+
+/**
+ * The device id a prefixed URL carries (`/v<N>/at/<code>/d/<deviceId>/…`), or
+ * `null` when it carries none. Read from the path only, never from the query, so
+ * a caller cannot add one with `?…`.
+ */
+export function atPrefixDevice(rawUrl: string): string | null {
+  const match = AT_PREFIX_RE.exec(rawUrl);
+  if (match === null) return null;
+  const device = match[3];
+  return device !== undefined && isRelayDeviceId(device) ? device : null;
+}
+
+/**
+ * The protocol a prefixed URL speaks: the number in `/v<N>/at/…`, or 1 for the
+ * unversioned `/at/…`. `undefined` when the URL carries no prefix at all.
+ */
+export function atPrefixProtocol(rawUrl: string): number | undefined {
+  const match = AT_PREFIX_RE.exec(rawUrl);
+  if (match === null) return undefined;
+  return match[1] === undefined ? 1 : Number(match[1]);
+}
+
+/**
+ * Whether the raw path (everything before the first `?`) holds a character that
+ * different parsers read differently: `\\` (the legacy `url.parse` chii's
+ * WebSocketServer uses turns it into `/`, the gate's regex does not), `#` and `;`
+ * (fragment / matrix-parameter handling differs), or a control character. The
+ * gate and chii must see the same path, so such a request is refused outright,
+ * before the code check, and never counts toward a lock.
+ */
+export function hasAmbiguousPathChar(rawUrl: string): boolean {
+  for (let i = 0; i < rawUrl.length; i++) {
+    const c = rawUrl.charCodeAt(i);
+    if (c === 0x3f) return false; // `?` ends the path
+    if (c === 0x5c || c === 0x23 || c === 0x3b || c < 0x20 || c === 0x7f) return true;
+  }
+  return false;
+}
+
+/** What a relay HTTP path resolves to. Anything else is refused. */
+export interface RelayRoute {
+  kind: 'target-script' | 'handshake' | 'targets' | 'front-end';
+  /** Canonical path. This, not the caller's spelling, is what chii receives. */
+  path: string;
+}
+
+const EXACT_ROUTES: Readonly<Record<string, Exclude<RelayRoute['kind'], 'front-end'>>> = {
+  [TARGET_SCRIPT_PATH]: 'target-script',
+  [ATTACH_HANDSHAKE_PATH]: 'handshake',
+  '/targets': 'targets',
+};
+
+const FRONT_END_PREFIX = '/front_end/';
+
+/**
+ * Routes a raw path (no query) to a known route, so the gate and chii agree about
+ * which route a spelling means. Matching is case-insensitive and tolerates one
+ * trailing slash.
+ *
+ * Percent-decodes once, folds case for the exact routes, drops one trailing
+ * slash. Returns `null` for everything else, including empty, `.` or `..`
+ * segments, backslashes, NUL, and leftover `%` from double encoding.
+ */
+export function classifyRelayPath(rawPath: string): RelayRoute | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPath);
+  } catch {
+    return null;
+  }
+  if (!decoded.startsWith('/') || /[\\%\0]/.test(decoded)) return null;
+  const path = decoded.length > 1 && decoded.endsWith('/') ? decoded.slice(0, -1) : decoded;
+  const segments = path.split('/').slice(1);
+  if (segments.some((s) => s === '' || s === '.' || s === '..')) return null;
+
+  const canonical = path.toLowerCase();
+  const kind = Object.hasOwn(EXACT_ROUTES, canonical) ? EXACT_ROUTES[canonical] : undefined;
+  if (kind !== undefined) return { kind, path: canonical };
+  // Case-sensitive on purpose: the frontend only ever links itself this way.
+  if (path.startsWith(FRONT_END_PREFIX)) return { kind: 'front-end', path };
+  return null;
+}
+
+/**
+ * The routes a tunnel request may reach: exactly what a phone uses. `/targets`,
+ * `/client/*` and the inspector frontend all go through `relay.baseUrl` on
+ * loopback (`ChiiCdpConnection`, `buildChiiInspectorUrl`), so a tunnel caller has
+ * no business there, code or no code.
+ */
+const TUNNEL_ROUTES: ReadonlySet<RelayRoute['kind']> = new Set<RelayRoute['kind']>([
+  'target-script',
+  'handshake',
+]);
+
+/** Hostnames a same-machine caller uses for a loopback-bound relay. */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+function hostnameOf(hostHeader: string | undefined): string | null {
+  if (hostHeader === undefined) return null;
+  try {
+    return new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a request came in through the tunnel rather than from this machine.
+ *
+ * cloudflared dials the relay over loopback, so the socket peer says nothing.
+ * The edge adds `cf-*` and `x-forwarded-for`, and cloudflared preserves the
+ * public `Host`. A missing or foreign `Host` counts as tunnel: that is the
+ * restrictive side, and also what a DNS-rebound browser page looks like.
+ */
+export function isTunnelRequest(req: IncomingMessage, boundHost = '127.0.0.1'): boolean {
+  const { headers } = req;
+  if (
+    headers['cf-connecting-ip'] !== undefined ||
+    headers['cf-ray'] !== undefined ||
+    headers['x-forwarded-for'] !== undefined
+  ) {
+    return true;
+  }
+  const hostname = hostnameOf(headers.host);
+  return hostname === null || !(LOOPBACK_HOSTNAMES.has(hostname) || hostname === boundHost);
+}
+
+/**
+ * Whether a request has neither the tunnel's marks nor a loopback `Host`. Real
+ * tunnel traffic always carries the edge's `cf-*` / `x-forwarded-for` headers, so
+ * a request that has none and still names another host reached the socket
+ * directly under a name that is not ours (a DNS-rebound page, a stray client).
+ * It is neither the daemon's own client nor a phone, so it is refused before the
+ * code is looked at and never counts toward the local or the tunnel lock.
+ */
+export function isForeignHostRequest(req: IncomingMessage, boundHost = '127.0.0.1'): boolean {
+  const { headers } = req;
+  if (
+    headers['cf-connecting-ip'] !== undefined ||
+    headers['cf-ray'] !== undefined ||
+    headers['x-forwarded-for'] !== undefined
+  ) {
+    return false;
+  }
+  const hostname = hostnameOf(headers.host);
+  return hostname === null || !(LOOPBACK_HOSTNAMES.has(hostname) || hostname === boundHost);
+}
+
+/**
+ * Whether a `/client/<id>` upgrade may come from the browser page that sent it.
+ * A request without an `Origin` header is not from a page (the daemon's `ws`
+ * client, curl), so it passes. When `Origin` is present it has to be this relay
+ * itself on a loopback name: chii's own front end is served from here, so its
+ * origin equals the `Host` header. Any other page (another site, a rebound DNS
+ * name, the opaque `null` origin) cannot drive the inspected page through the
+ * visitor's browser.
+ */
+export function isAllowedClientOrigin(req: IncomingMessage, boundHost = '127.0.0.1'): boolean {
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (!(LOOPBACK_HOSTNAMES.has(parsed.hostname) || parsed.hostname === boundHost)) return false;
+  const hostHeader = req.headers.host;
+  return hostHeader !== undefined && parsed.host === hostHeader.toLowerCase();
+}
+
+function headerString(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** Reads the `at` code from a query-form URL. `''` when absent. */
+function readAtParam(rawUrl: string): string {
+  const q = rawUrl.indexOf('?');
+  return q === -1 ? '' : (new URLSearchParams(rawUrl.slice(q + 1)).get('at') ?? '');
+}
+
+/**
+ * Drops `at` from the page URL a target reports in its `url` query parameter, so
+ * chii's `/targets` listing never holds a usable code. debug-console 0.2.1 and
+ * later strip it from the page itself; this covers older builds.
+ *
+ * String surgery on that one parameter: re-serialising the whole query would
+ * change how chii decodes `title` and `favicon`.
+ */
+export function redactTargetPageUrl(rawUrl: string): string {
+  const q = rawUrl.indexOf('?');
+  if (q === -1) return rawUrl;
+  const params = rawUrl
+    .slice(q + 1)
+    .split('&')
+    .map((pair) => {
+      if (!pair.startsWith('url=')) return pair;
+      try {
+        const page = new URL(decodeURIComponent(pair.slice('url='.length)));
+        if (!page.searchParams.has('at')) return pair;
+        page.searchParams.delete('at');
+        return `url=${encodeURIComponent(page.href)}`;
+      } catch {
+        return pair;
+      }
+    });
+  return `${rawUrl.slice(0, q)}?${params.join('&')}`;
 }
 
 export interface StartChiiRelayOptions {
@@ -299,6 +575,13 @@ export interface StartChiiRelayOptions {
   port?: number;
   /** Bind host. Default 127.0.0.1 (tunnel reaches it locally). */
   host?: string;
+  /**
+   * Source of the public session certificates served at `GET /relay-cert`
+   * (see `@apps-in-toss/internal-protocol/relay-signature`). The route needs no
+   * code, never counts toward the code lock, and follows the same Origin rule
+   * as the rest of the relay. Absent, or an empty list → 404.
+   */
+  getRelayCertDocument?: () => RelayCertDocument;
   /**
    * Optional auth predicate for WebSocket upgrade requests.
    *
@@ -327,6 +610,16 @@ export interface StartChiiRelayOptions {
    * by the callback are swallowed so observability can never break the gate.
    */
   onAuthReject?: (event: RelayAuthRejectEvent) => void;
+  /**
+   * Fired when repeated failed checks lock a source scope. While locked, every
+   * check in that scope fails without reaching `verifyAuth`, valid codes
+   * included. Exceptions are swallowed.
+   *
+   * SECRET-HANDLING: the scope and a duration only.
+   */
+  onAuthLockout?: (event: { scope: RelayAuthScope; lockMs: number }) => void;
+  /** Overrides the failure backoff. Tests shorten it; production uses the defaults. */
+  authThrottle?: RelayAuthThrottleOptions;
   /**
    * Fired when a device reports its package version on the attach handshake
    * path, just before it injects `target.js`.
@@ -409,6 +702,22 @@ export interface StartChiiRelayOptions {
    * timers (`vi.useFakeTimers()`) or a short sleep.
    */
   keepaliveIntervalMs?: number;
+  /**
+   * Exact mini-app name when the daemon knows it (from the `scheme_url` of
+   * `start_attach`). With a name, only `https://<name>.private-apps.tossmini.com`
+   * and `https://<name>.private-web.tossmini.com` pass the origin rule; without
+   * one, any single label under those two suffixes does. See relay-origin.ts.
+   */
+  getAppName?: () => string | null;
+  /**
+   * Secret-free callback for a request or upgrade refused because of its
+   * `Origin` (or the lack of one through the tunnel). The event names the surface
+   * and whether an origin was sent; never the origin, URL or code.
+   */
+  onOriginReject?: (event: {
+    kind: 'http-request' | 'ws-upgrade';
+    reason: 'origin' | 'no-origin';
+  }) => void;
 }
 
 /**
@@ -433,12 +742,16 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   const {
     verifyAuth,
     onAuthReject,
+    onAuthLockout,
     onAttachHandshake,
     onTargetScriptServed,
     onWsUpgrade,
     onTargetClose,
     shouldRejectTarget,
     onTargetRejectedBusy,
+    getAppName,
+    onOriginReject,
+    getRelayCertDocument,
   } = options;
   const keepaliveIntervalMs =
     options.keepaliveIntervalMs !== undefined
@@ -458,174 +771,171 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     }
   };
 
-  // Register the HTTP-request auth listener BEFORE chii.start() so it fires
-  // first. Node's http.Server emits 'request' to all listeners in registration
-  // order; the first to end() the response wins. Valid requests return without
-  // side-effect so chii's own handler takes over normally — and because
-  // listeners run synchronously in order, mutating `req.url` here (path-prefix
-  // strip, issue #466) means chii's later-registered handler only ever sees
-  // the stripped URL.
+  // Secret-free: the surface and whether an origin was sent at all. Never the origin.
+  const notifyOriginReject = (kind: 'http-request' | 'ws-upgrade', hadOrigin: boolean): void => {
+    if (onOriginReject === undefined) return;
+    try {
+      onOriginReject({ kind, reason: hadOrigin ? 'origin' : 'no-origin' });
+    } catch {
+      // Ignore — observability is best-effort.
+    }
+  };
+
+  const authThrottle = createRelayAuthThrottle(options.authThrottle);
+
+  // Phone sessions (reconnect support). chii redials the same `/at/<code>/target/<id>`
+  // URL after a dropped socket, possibly after the code has aged out. After the
+  // first authenticated `/target/<id>` upgrade the relay remembers (code, id): the
+  // same pair may upgrade again, and the code may reach the target script and
+  // the attach handshake while a socket is open and for SESSION_GRACE_MS after
+  // the last one closed. One code may carry a few target
+  // ids (several pages of one phone); another id with an aged code is still refused.
   //
-  // We only register when verifyAuth is provided so the no-auth path is
-  // zero-overhead for tests and local-only dev sessions. (The phone-side
-  // `/at/<code>/` prefix only ever appears when TOTP is armed — the launcher
-  // QR carries the `at` code — so the no-auth path never needs the strip.)
-  if (verifyAuth) {
-    // Plain HTTP requests: two cases are gated, everything else passes through.
-    //
-    // Case 1 — path-prefixed form (`/at/<code>/…`): the phone fetches
-    //   `target.js` via `https://<host>/at/<code>/target.js` (issue #466).
-    //   The prefix is rewritten to the query form and then verified; chii's Koa
-    //   static handler sees the stripped URL.
-    //
-    // Case 2 — `/targets` read route (issue #474): without gating this route a
-    //   URL-leaker (threat model: someone who obtained the tunnel URL but not
-    //   the secret) can read session metadata (id/url/title, including any query
-    //   params in the page URL) without a code. Debugger attach stays blocked by
-    //   the WS gate, but /targets is an HTTP read that was previously ungated.
-    //   The `at` code may arrive as a query param (`/targets?at=<code>`) — which
-    //   buildRelayVerifyAuth already handles — or via the `/at/<code>/` path
-    //   prefix (rewriteAtPathPrefix normalises that to the query form first).
-    //
-    // Static assets (target.js, chii front-end HTML/JS/CSS) and any other
-    // non-prefixed, non-/targets request keep today's ungated pass-through — the
-    // phone fetches some via the legacy no-prefix path and gating them would
-    // break the relay attach.
-    //
-    // SECRET-HANDLING: We do NOT log req.url or any auth value in this listener.
-    httpServer.on('request', (req, res) => {
-      const rewritten = rewriteAtPathPrefix(req.url ?? '');
-      if (rewritten !== null) {
-        // Path-prefix form: normalise to query form, then verify.
-        req.url = rewritten;
-        if (!verifyAuth(req)) {
-          // CORS header + tiny JSON body (issue #478): the script URL is
-          // cross-origin from the phone page (tunnel origin ≠ relay origin), so
-          // without ACAO a fetch() probe sees an opaque error and cannot tell
-          // auth rejection from a network failure. The header rides ONLY on
-          // this error response — no relay asset is exposed through it.
-          res.statusCode = 401;
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: RELAY_AUTH_REJECT_REASON }));
-          notifyAuthReject('http-request');
-        }
-        // Auth passed (or was rejected above): return so the path-prefix branch
-        // never falls through to the /targets check below.
-        return;
-      }
-
-      // Non-prefixed request: check if this is the /targets read route (issue
-      // #474). Extract the pathname robustly — req.url is a raw path+query
-      // string like `/targets?at=123456` so we split on `?`.
-      const pathname = (req.url ?? '').split('?')[0];
-      if (pathname === '/targets' || pathname === '/targets/') {
-        // The `at` code must be present as a query param — verifyAuth reads it
-        // from req.url via URLSearchParams, which already handles `?at=<code>`
-        // without any URL rewrite needed.
-        if (!verifyAuth(req)) {
-          // Same 401 shape as the path-prefix branch (issue #478 contract).
-          res.statusCode = 401;
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: RELAY_AUTH_REJECT_REASON }));
-          notifyAuthReject('http-request');
-          // res.end() wins — chii's Koa handler will not write.
-          return;
-        }
-        // Auth passed: return without ending the response. Node invokes every
-        // 'request' listener in registration order, so chii's Koa listener
-        // (registered later by chii.start) still runs and serves the /targets
-        // JSON — this return only means "this gate listener is done", not "end
-        // the response".
-        return;
-      }
-
-      // Any other non-prefixed request (static assets, chii front-end, etc.):
-      // ungated pass-through to chii. Auth passed: no-op — chii's Koa
-      // 'request' listener (registered below by chii.start) serves the URL.
-      // (Koa skips writing when an earlier listener already ended the response,
-      // so the 401 paths above are safe even though Koa still runs.)
-    });
+  // One phone per code: the session also remembers the device id the first
+  // target socket carried (`/d/<deviceId>/` after the code, see
+  // `atPrefixDevice`). Every later phone request with that code (script,
+  // handshake, target socket) must carry the same id, or it is refused
+  // like a wrong code. The daemon's own `/client` and `/targets` calls are not
+  // phone requests and are not bound.
+  const sessionNow = options.authThrottle?.now ?? Date.now;
+  interface PhoneTarget {
+    open: number;
+    lastCloseAt: number;
   }
-
-  // Attach version handshake. Registered AFTER the auth listener above and
-  // BEFORE chii.start(), which puts it in exactly the right slot: a rejected
-  // request has already been ended (the `writableEnded` guard below skips it),
-  // an authorised path-prefixed request has already had `req.url` normalised to
-  // the query form, and chii's Koa handler never sees a route it does not own.
-  //
-  // Unlike the auth listener this one is registered unconditionally — the
-  // handshake exists to diagnose version skew, which is just as likely on a
-  // local no-TOTP session as on a tunnelled one.
-  //
-  // SECRET-HANDLING: only the version string is read out and forwarded. The URL
-  // (which carries the TOTP code in its path prefix) is never logged, and the
-  // response body is empty.
-  httpServer.on('request', (req, res) => {
-    if (res.writableEnded) return;
-    const raw = req.url ?? '';
-    // Normalise for READING only — the auth listener above owns mutation of
-    // `req.url`, and it does not run when no verifier is configured.
-    const normalised = rewriteAtPathPrefix(raw) ?? raw;
-    const questionMark = normalised.indexOf('?');
-    const pathname = questionMark === -1 ? normalised : normalised.slice(0, questionMark);
-    if (pathname === TARGET_SCRIPT_PATH) {
-      // The auth listener above ends a rejected request (401) before this one
-      // runs (`writableEnded` guard), so reaching here means the phone page is
-      // being served the debug script. Chii's Koa handler still serves it.
-      if (onTargetScriptServed !== undefined) {
-        try {
-          onTargetScriptServed();
-        } catch {
-          // Observability is best-effort — never let it break the relay.
-        }
-      }
-      // 먼저 붙은 미니앱이 있으면 chii의 target.js 앞에 호스트 가드를 붙여 직접 내려준다.
-      // 거부된 미니앱의 debug-console 버전이 옛것이어도(4409를 화면에 못 그려도) 이 스크립트는
-      // 실행되므로 미니앱 화면에 경고를 띄울 수 있다. 응답을 여기서 끝내므로 Koa는 쓰지 않는다.
-      // 붙은 target이 없거나 원본을 못 읽으면 chii 기본 응답 그대로(fail-open).
-      if (req.method === 'GET' && openTargetHosts.size > 0) {
-        try {
-          const body = readChiiTargetScript();
-          const guarded =
-            body === null
-              ? null
-              : buildGuardedTargetScript(
-                  body,
-                  [...openTargetHosts].map((e) => e.host),
-                );
-          if (guarded !== null) {
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-            res.setHeader('Cache-Control', 'no-store');
-            res.end(guarded);
-          }
-        } catch {
-          // fail-open: chii serves the stock script.
-        }
-      }
-      return;
+  interface PhoneSession {
+    targets: Map<string, PhoneTarget>;
+    /** Device id of the phone the code is bound to (`null`: the page sent none). */
+    device: string | null;
+  }
+  /** Device id from the path prefix, recorded before the URL is rewritten. */
+  const requestDevice = new WeakMap<IncomingMessage, string | null>();
+  /** Whether `code` is bound to a live session of another device. */
+  const sessionOfOtherDevice = (code: string, device: string | null): boolean => {
+    const session = sessions.get(code);
+    if (session === undefined) return false;
+    if (!sessionLive(session)) {
+      sessions.delete(code);
+      return false;
     }
-    if (pathname !== ATTACH_HANDSHAKE_PATH) return;
+    return session.device !== device;
+  };
+  const sessions = new Map<string, PhoneSession>();
+  const targetLive = (target: PhoneTarget): boolean =>
+    target.open > 0 || sessionNow() - target.lastCloseAt <= SESSION_GRACE_MS;
+  /** Drops targets whose socket is gone and whose grace ran out. */
+  const pruneSession = (session: PhoneSession): void => {
+    for (const [id, target] of session.targets) {
+      if (!targetLive(target)) session.targets.delete(id);
+    }
+  };
+  const sessionLive = (session: PhoneSession): boolean => {
+    pruneSession(session);
+    return session.targets.size > 0;
+  };
+  /**
+   * Binds `targetId` to `code`. Returns the target's record, or `null` when the code
+   * already carries {@link MAX_TARGETS_PER_CODE} live ids: a new id never evicts a
+   * live one (non-live entries are dropped first).
+   */
+  const bindSession = (
+    code: string,
+    targetId: string,
+    device: string | null,
+  ): PhoneTarget | null => {
+    let session = sessions.get(code);
+    if (session === undefined || !sessionLive(session)) {
+      session = { targets: new Map(), device };
+    } else if (session.device !== device) {
+      return null; // another phone holds this code
+    }
+    sessions.delete(code); // re-insert at the end: Map order doubles as recency.
+    sessions.set(code, session);
+    let target = session.targets.get(targetId);
+    if (target === undefined) {
+      pruneSession(session);
+      if (session.targets.size >= MAX_TARGETS_PER_CODE) {
+        return null;
+      }
+      target = { open: 0, lastCloseAt: sessionNow() };
+      session.targets.set(targetId, target);
+    }
+    if (sessions.size > MAX_SESSIONS) {
+      for (const [key, value] of sessions) {
+        if (key === code) continue;
+        if (!sessionLive(value) || sessions.size > MAX_SESSIONS) sessions.delete(key);
+        if (sessions.size <= MAX_SESSIONS && sessionLive(value)) break;
+      }
+    }
+    return target;
+  };
+  /**
+   * What a bound session may reach: the same target id, the script and the
+   * handshake (`other`).
+   */
+  type SessionUse = { kind: 'target'; targetId: string } | { kind: 'other' };
+  const sessionAllows = (code: string, use: SessionUse | undefined): boolean => {
+    if (use === undefined) return false;
+    const session = sessions.get(code);
+    if (session === undefined) return false;
+    if (!sessionLive(session)) {
+      sessions.delete(code);
+      return false;
+    }
+    // A new target id is let in under an aged code only for a session bound to
+    // a device id: the caller already proved it is that phone (checked in
+    // `passesAuth` before this), so it is another page of the same phone.
+    return use.kind === 'other' || session.targets.has(use.targetId) || session.device !== null;
+  };
 
-    const query = questionMark === -1 ? '' : normalised.slice(questionMark + 1);
-    const deviceVersion = new URLSearchParams(query).get(ATTACH_HANDSHAKE_VERSION_PARAM) ?? '';
-    const deviceProtocol = new URLSearchParams(query).get(ATTACH_HANDSHAKE_PROTOCOL_PARAM) ?? '';
-    if (onAttachHandshake !== undefined) {
+  type AuthVerdict = 'ok' | 'rejected' | 'locked';
+
+  // Single entry point for the code check, shared by HTTP and WS. Only a code of
+  // the right shape counts toward a lock: a missing or malformed one cannot be a
+  // guess. A correct code is honoured even while the scope is locked (a lock
+  // started by someone else must not end the phone's session). A correct code
+  // always passes, lock or not: a code has 128 bits, so a lock adds nothing
+  // against guessing, and it must not let noise shut the phone out.
+  //
+  // SECRET-HANDLING: We do NOT log req.url or any auth value here.
+  const passesAuth = (
+    req: IncomingMessage,
+    kind: RelayAuthRejectEvent['kind'],
+    use?: SessionUse,
+  ): AuthVerdict => {
+    if (verifyAuth === undefined) return 'ok';
+    const scope: RelayAuthScope = isTunnelRequest(req, host) ? 'tunnel' : 'local';
+    const code = readAtParam(req.url ?? '');
+    const locked = authThrottle.lockRemainingMs(scope) > 0;
+    if (!isRelayAuthCode(code)) {
+      notifyAuthReject(kind);
+      return locked ? 'locked' : 'rejected';
+    }
+    // A phone request for a code another phone holds. Not a guess (the code is
+    // right), so it does not count toward the lock.
+    if (use !== undefined && sessionOfOtherDevice(code, requestDevice.get(req) ?? null)) {
+      notifyAuthReject(kind);
+      return locked ? 'locked' : 'rejected';
+    }
+    if (sessionAllows(code, use)) return 'ok';
+    if (verifyAuth(req)) {
+      authThrottle.noteAccepted(code);
+      return 'ok';
+    }
+    if (locked) {
+      notifyAuthReject(kind);
+      return 'locked';
+    }
+    const lockMs = authThrottle.noteFailure(scope, code);
+    if (lockMs > 0 && onAuthLockout !== undefined) {
       try {
-        onAttachHandshake({ deviceVersion, deviceProtocol });
+        onAuthLockout({ scope, lockMs });
       } catch {
-        // Observability is best-effort — never let it break the relay.
+        // Ignore — observability is best-effort.
       }
     }
-    // 204 + CORS: the device pings this cross-origin with `mode: 'no-cors'` and
-    // ignores the response entirely. The header rides only on this empty
-    // response and exposes no relay asset.
-    res.statusCode = 204;
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.end();
-  });
+    notifyAuthReject(kind);
+    return 'rejected';
+  };
 
   // WS keepalive (issue #483): capture chii's WebSocketServer instance so we
   // can read `_wss.clients` and send periodic ping frames.
@@ -643,8 +953,8 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   // TLS guard (issue #1 comment 5434190154): chii's `server/lib/proxy.js`
   // sets `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` as a load-time side
   // effect, which silently disables outbound TLS cert verification for the
-  // ENTIRE process (tunnel health probe included), not just chii's own
-  // `/proxy` route. The snapshot MUST be taken before any chii module below
+  // ENTIRE process (tunnel health probe included). The relay no longer serves
+  // chii's `/proxy` route, but the module is still loaded by chii itself. The snapshot MUST be taken before any chii module below
   // is required — see tls-guard.ts for why. This is the single choke point
   // both the `debugger` MCP daemon (bootRelayFamily) and the `debugger-test`
   // CLI/Vitest pool (createRelayConnectionFactory) boot chii through, so
@@ -658,6 +968,252 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   );
   restoreTlsRejectUnauthorized(tlsSnapshot);
 
+  // 수락돼 열려 있는 target 소켓의 페이지 호스트(= relay가 직접 센 "지금 붙어 있는 미니앱").
+  const openTargetHosts = new Set<{ host: string | null }>();
+
+  // HTTP gate: take over the request chain AFTER chii.start() has registered
+  // Koa. Koa is reached only by an explicit dispatch below.
+  const chiiRequestListeners = httpServer.listeners('request') as Array<
+    (req: IncomingMessage, res: ServerResponse) => void
+  >;
+  httpServer.removeAllListeners('request');
+  const dispatchToChii = (req: IncomingMessage, res: ServerResponse): void => {
+    for (const listener of chiiRequestListeners) listener(req, res);
+  };
+
+  const refuse = (res: ServerResponse, status: number, error: string): void => {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error }));
+  };
+
+  // A device that speaks another protocol reaches the daemon through the same
+  // callback as a normal handshake, with the protocol its path prefix proves.
+  // SECRET-HANDLING: version values only; the query is read for `v` and nothing else.
+  const reportProtocolSkew = (pathProtocol: number, handshakeQuery: string): void => {
+    if (onAttachHandshake === undefined) return;
+    try {
+      onAttachHandshake({
+        deviceVersion: sanitizeDeviceVersion(
+          new URLSearchParams(handshakeQuery).get(ATTACH_HANDSHAKE_VERSION_PARAM),
+        ),
+        deviceProtocol: String(pathProtocol),
+      });
+    } catch {
+      // Observability is best-effort — never let it break the relay.
+    }
+  };
+
+  httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+    // A path another parser would read differently (backslash, `#`, `;`, control
+    // characters) is refused before the code check, like any other malformed path.
+    if (hasAmbiguousPathChar(req.url ?? '')) {
+      refuse(res, 404, 'not-found');
+      return;
+    }
+    // Path-prefix transport (issue #466): normalise to the query form first, so
+    // everything below and chii itself see one shape.
+    const pathProtocol = atPrefixProtocol(req.url ?? '');
+    requestDevice.set(req, atPrefixDevice(req.url ?? ''));
+    const rewritten = rewriteAtPathPrefix(req.url ?? '');
+    if (rewritten !== null) req.url = rewritten;
+    const url = req.url ?? '';
+    const questionMark = url.indexOf('?');
+    const rawPath = questionMark === -1 ? url : url.slice(0, questionMark);
+    const query = questionMark === -1 ? '' : url.slice(questionMark);
+    const route = classifyRelayPath(rawPath);
+    const tunnel = isTunnelRequest(req, host);
+
+    if (route !== null && !TUNNEL_ROUTES.has(route.kind) && tunnel) {
+      refuse(res, 404, 'not-found');
+      return;
+    }
+
+    // Neither loopback nor the tunnel: refused before anything that could count
+    // toward a lock.
+    if (isForeignHostRequest(req, host)) {
+      refuse(res, 403, 'host-not-allowed');
+      return;
+    }
+
+    // Origin rule (relay-origin.ts). The response carries the matched origin
+    // (never `*`) and `Vary: Origin`. A browser origin that is not allowed, and a
+    // tunnel request without an origin on any route but the two a script tag and
+    // a no-cors ping use, is refused before the code is looked at, so it never
+    // counts toward a code lock.
+    const verdict = judgeRelayOrigin({
+      origin: req.headers.origin,
+      tunnel,
+      host: req.headers.host,
+      appName: getAppName?.() ?? null,
+      secFetchSite: headerString(req.headers['sec-fetch-site']),
+      originlessTunnelOk:
+        route !== null &&
+        (route.kind === 'target-script' || route.kind === 'handshake') &&
+        (req.method === 'GET' || req.method === 'HEAD'),
+    });
+    applyOriginHeaders(res, verdict);
+    if (
+      !verdict.ok &&
+      (route !== null ||
+        req.headers.origin !== undefined ||
+        headerString(req.headers['sec-fetch-site'])?.toLowerCase() === 'cross-site')
+    ) {
+      notifyOriginReject('http-request', req.headers.origin !== undefined);
+      refuse(res, 403, RELAY_ORIGIN_REJECT_REASON);
+      return;
+    }
+
+    // Public session certificates. Unprefixed only, no code, never counted
+    // toward the code lock (it returns before the code check). A tunnel request
+    // must come from an allowed mini-app origin; loopback follows the same rule
+    // as the other routes.
+    if (rewritten === null && rawPath === RELAY_CERT_PATH) {
+      if (!verdict.ok) {
+        notifyOriginReject('http-request', req.headers.origin !== undefined);
+        refuse(res, 403, RELAY_ORIGIN_REJECT_REASON);
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.setHeader('Allow', 'GET, HEAD');
+        refuse(res, 405, 'method-not-allowed');
+        return;
+      }
+      let doc: RelayCertDocument | undefined;
+      try {
+        doc = getRelayCertDocument?.();
+      } catch {
+        doc = undefined;
+      }
+      if (doc === undefined || doc.certs.length === 0) {
+        refuse(res, 404, 'not-found');
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(req.method === 'HEAD' ? undefined : JSON.stringify(doc));
+      return;
+    }
+
+    // A prefixed request always answers the code check first, whatever its path
+    // (the 401 contract the phone's fetch() probe reads, issue #478). Unprefixed,
+    // only the inspector frontend is public: it fetches its own relative assets
+    // with no way to carry a code, and they are stock chii files.
+    const needsAuth = rewritten !== null || (route !== null && route.kind !== 'front-end');
+    if (needsAuth) {
+      const verdict = passesAuth(
+        req,
+        'http-request',
+        route === null
+          ? undefined
+          : route.kind === 'target-script' || route.kind === 'handshake'
+            ? { kind: 'other' }
+            : undefined,
+      );
+      if (verdict !== 'ok') {
+        res.statusCode = verdict === 'locked' ? 429 : 401;
+        res.setHeader('Content-Type', 'application/json');
+        if (verdict === 'locked') res.setHeader('Retry-After', '5');
+        res.end(
+          JSON.stringify({
+            error: verdict === 'locked' ? RELAY_AUTH_LOCKED_REASON : RELAY_AUTH_REJECT_REASON,
+          }),
+        );
+        return;
+      }
+    }
+
+    if (route === null) {
+      refuse(res, 404, 'not-found');
+      return;
+    }
+
+    // The code was good, but the caller speaks another protocol: say so instead
+    // of serving it. The phone gets a banner where `target.js` would have been.
+    if (pathProtocol !== undefined && pathProtocol !== PROTOCOL_VERSION) {
+      reportProtocolSkew(pathProtocol, route.kind === 'handshake' ? query : '');
+      if (route.kind === 'target-script' && req.method === 'GET') {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(buildUpdateRequiredScript(pathProtocol, PROTOCOL_VERSION));
+        return;
+      }
+      refuse(res, 426, RELAY_UPDATE_REQUIRED_REASON);
+      return;
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.setHeader('Allow', 'GET, HEAD');
+      refuse(res, 405, 'method-not-allowed');
+      return;
+    }
+
+    switch (route.kind) {
+      case 'handshake': {
+        // SECRET-HANDLING: only version values are read out and forwarded. The
+        // URL carries a TOTP code and is never logged; the response body is empty.
+        const params = new URLSearchParams(query);
+        const deviceVersion = sanitizeDeviceVersion(params.get(ATTACH_HANDSHAKE_VERSION_PARAM));
+        const deviceProtocol = params.get(ATTACH_HANDSHAKE_PROTOCOL_PARAM) ?? '';
+        if (onAttachHandshake !== undefined) {
+          try {
+            onAttachHandshake({ deviceVersion, deviceProtocol });
+          } catch {
+            // Observability is best-effort — never let it break the relay.
+          }
+        }
+        // 204: the device pings this cross-origin with `mode: 'no-cors'` (no
+        // `Origin` is sent) and ignores the response.
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      case 'target-script':
+        // The phone page got past its gate and is being served the debug script.
+        if (onTargetScriptServed !== undefined) {
+          try {
+            onTargetScriptServed();
+          } catch {
+            // Observability is best-effort — never let it break the relay.
+          }
+        }
+        // 먼저 붙은 미니앱이 있으면 chii의 target.js 앞에 호스트 가드를 붙여 직접 내려준다.
+        // 거부된 미니앱의 debug-console 버전이 옛것이어도(4409를 화면에 못 그려도) 이 스크립트는
+        // 실행되므로 미니앱 화면에 경고를 띄울 수 있다.
+        // 붙은 target이 없거나 원본을 못 읽으면 chii 기본 응답 그대로(fail-open).
+        if (req.method === 'GET' && openTargetHosts.size > 0) {
+          try {
+            const body = readChiiTargetScript();
+            const guarded =
+              body === null
+                ? null
+                : buildGuardedTargetScript(
+                    body,
+                    [...openTargetHosts].map((e) => e.host),
+                  );
+            if (guarded !== null) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+              res.setHeader('Cache-Control', 'no-store');
+              res.end(guarded);
+              return;
+            }
+          } catch {
+            // fail-open: chii serves the stock script.
+          }
+        }
+        break;
+      case 'targets':
+      case 'front-end':
+        break;
+    }
+    // Hand chii the canonical spelling, never the one the caller typed.
+    req.url = `${route.path}${query}`;
+    dispatchToChii(req, res);
+  });
+
   // WS upgrade gate (issue #478, accept-then-close): take over the upgrade
   // chain AFTER chii.start() has registered chii's own upgrade listener.
   // Listener ordering alone protected chii when rejection meant
@@ -668,83 +1224,214 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   // chii's listeners and re-dispatching only on auth pass closes that hole.
   // Upgrades the gate below rejected, so the observer after it can report
   // `accepted: false` without re-running the verifier (and re-reading the code).
+  // The gate is unconditional: without a verifier it still enforces the path
+  // shape, and `passesAuth` simply says yes.
   const rejectedUpgrades = new WeakSet<IncomingMessage>();
-  // 수락돼 열려 있는 target 소켓의 페이지 호스트(= relay가 직접 센 "지금 붙어 있는 미니앱").
-  const openTargetHosts = new Set<{ host: string | null }>();
-  if (verifyAuth || shouldRejectTarget) {
-    const chiiUpgradeListeners = httpServer.listeners('upgrade') as Array<
-      (req: IncomingMessage, socket: Duplex, head: Buffer) => void
-    >;
-    httpServer.removeAllListeners('upgrade');
-    // noServer: handshake-only — never binds a port; used purely to send a
-    // spec-compliant close frame with a code the browser can read.
-    const rejectWss = new WebSocketServer({ noServer: true });
-    httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-      // Phone-target transport (issue #466): normalise a `/at/<code>/…` path
-      // prefix into the query form before verification, and strip it from the
-      // URL chii will see. No-prefix URLs pass through untouched (daemon
-      // client query transport — back-compat).
-      const rewritten = rewriteAtPathPrefix(req.url ?? '');
-      if (rewritten !== null) {
-        req.url = rewritten;
+  const chiiUpgradeListeners = httpServer.listeners('upgrade') as Array<
+    (req: IncomingMessage, socket: Duplex, head: Buffer) => void
+  >;
+  httpServer.removeAllListeners('upgrade');
+  // noServer: handshake-only — never binds a port; used purely to send a
+  // spec-compliant close frame with a code the browser can read.
+  const rejectWss = new WebSocketServer({ noServer: true });
+  httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    // chii's WebSocketServer reads the path with legacy `url.parse` (backslash
+    // becomes `/`) and takes its last two segments, while the gate below matches
+    // the raw string. A path the two could read differently is refused here,
+    // before the code check, so it never counts toward a lock.
+    if (hasAmbiguousPathChar(req.url ?? '')) {
+      rejectedUpgrades.add(req);
+      socket.destroy();
+      return;
+    }
+    // Phone-target transport (issue #466): normalise a `/at/<code>/…` path
+    // prefix into the query form before verification, and strip it from the
+    // URL chii will see. No-prefix URLs pass through untouched (daemon
+    // client query transport — back-compat).
+    const pathProtocol = atPrefixProtocol(req.url ?? '');
+    requestDevice.set(req, atPrefixDevice(req.url ?? ''));
+    const rewritten = rewriteAtPathPrefix(req.url ?? '');
+    if (rewritten !== null) {
+      req.url = rewritten;
+    }
+    // A name that is neither loopback nor the tunnel is refused before anything
+    // that could count toward a lock.
+    if (isForeignHostRequest(req, host)) {
+      rejectedUpgrades.add(req);
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    // A browser page on another origin must not reach `/client` locally. Checked
+    // before the code gate so such a page cannot burn the local scope's failure
+    // budget. Tunnel requests are answered by the origin rule and the code check
+    // below (they never get a `/client` socket).
+    if (
+      /^\/client\/[^/]+$/.test((req.url ?? '').split('?')[0] ?? '') &&
+      !isTunnelRequest(req, host) &&
+      !isAllowedClientOrigin(req, host)
+    ) {
+      notifyOriginReject('ws-upgrade', req.headers.origin !== undefined);
+      rejectWss.handleUpgrade(req, socket, head, (ws) => {
+        ws.close(RELAY_ORIGIN_REJECT_CLOSE_CODE, RELAY_ORIGIN_REJECT_REASON);
+      });
+      rejectedUpgrades.add(req);
+      return;
+    }
+    // The id segment is a plain token (`[^/%]`): a percent escape there is never
+    // ours and is refused before the code is looked at.
+    const wsIdSegment = /^\/(?:target|client)\/([^/]+)$/.exec(
+      (req.url ?? '').split('?')[0] ?? '',
+    )?.[1];
+    if (wsIdSegment?.includes('%') === true) {
+      rejectedUpgrades.add(req);
+      socket.destroy();
+      return;
+    }
+    // Origin first (relay-origin.ts): a browser WebSocket always sends one, so a
+    // tunnel upgrade without it is not a phone page. Refused before the code is
+    // looked at, so it never counts toward a code lock.
+    const wsVerdict = judgeRelayOrigin({
+      origin: req.headers.origin,
+      tunnel: isTunnelRequest(req, host),
+      host: req.headers.host,
+      appName: getAppName?.() ?? null,
+      secFetchSite: headerString(req.headers['sec-fetch-site']),
+      originlessTunnelOk: false,
+    });
+    if (!wsVerdict.ok) {
+      notifyOriginReject('ws-upgrade', req.headers.origin !== undefined);
+      rejectWss.handleUpgrade(req, socket, head, (ws) => {
+        ws.close(RELAY_ORIGIN_REJECT_CLOSE_CODE, RELAY_ORIGIN_REJECT_REASON);
+      });
+      rejectedUpgrades.add(req);
+      return;
+    }
+    const upgradeTarget = /^\/target\/([^/]+)$/.exec((req.url ?? '').split('?')[0] ?? '')?.[1];
+    const authVerdict = passesAuth(
+      req,
+      'ws-upgrade',
+      upgradeTarget === undefined ? undefined : { kind: 'target', targetId: upgradeTarget },
+    );
+    if (authVerdict !== 'ok') {
+      // Reject: complete the handshake, then close with a NAMED code so the
+      // browser-side observer (in-app attach.ts) can distinguish "stale
+      // TOTP code" (4401) from "tunnel down" (1006). Raw-401-destroy only
+      // ever produced 1006 client-side — the in-page silence gap (#478).
+      // We do NOT log req.url or any auth param here to avoid leaking codes;
+      // the close reason is a fixed enum string.
+      rejectWss.handleUpgrade(req, socket, head, (ws) => {
+        if (authVerdict === 'locked')
+          ws.close(RELAY_AUTH_LOCKED_CLOSE_CODE, RELAY_AUTH_LOCKED_REASON);
+        else ws.close(RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
+      });
+      rejectedUpgrades.add(req);
+      // Early return — chii's captured listeners are NOT called.
+      return;
+    }
+    // Authenticated, but from a device that speaks another protocol: name it.
+    if (pathProtocol !== undefined && pathProtocol !== PROTOCOL_VERSION) {
+      reportProtocolSkew(pathProtocol, '');
+      rejectWss.handleUpgrade(req, socket, head, (ws) => {
+        ws.close(RELAY_UPDATE_REQUIRED_CLOSE_CODE, RELAY_UPDATE_REQUIRED_REASON);
+      });
+      rejectedUpgrades.add(req);
+      return;
+    }
+    // chii keys on the last two path segments, so `/x/target/id` would reach
+    // it and skip the checks below. Only the two canonical shapes go through.
+    const upgradePath = (req.url ?? '').split('?')[0] ?? '';
+    const upgradeMatch = /^\/(target|client)\/([^/]+)$/.exec(upgradePath);
+    const upgradeKind = upgradeMatch?.[1];
+    if (upgradeMatch === null || upgradeKind === undefined) {
+      rejectedUpgrades.add(req);
+      socket.destroy();
+      return;
+    }
+    // Hand chii the canonical spelling the gate just checked, never the caller's.
+    {
+      const current = req.url ?? '';
+      const q = current.indexOf('?');
+      req.url = `/${upgradeKind}/${upgradeMatch[2]}${q === -1 ? '' : current.slice(q)}`;
+    }
+    // `/client` drives the page over CDP. The daemon and inspector dial it on
+    // loopback; a tunnel caller holding a phone's code does not get it.
+    if (upgradeKind === 'client' && isTunnelRequest(req, host)) {
+      rejectWss.handleUpgrade(req, socket, head, (ws) => {
+        ws.close(RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
+      });
+      rejectedUpgrades.add(req);
+      notifyAuthReject('ws-upgrade');
+      return;
+    }
+    // Auth passed. A phone `/target/<id>` upgrade may still lose to a page
+    // that is already attached from a DIFFERENT mini-app (first wins).
+    if (upgradeKind === 'target') {
+      req.url = redactTargetPageUrl(req.url ?? '');
+      const pageHost = extractTargetPageHost(req.url ?? '');
+      const attachedHosts = [...openTargetHosts].map((e) => e.host);
+      let reject = false;
+      if (shouldRejectTarget) {
+        try {
+          reject = shouldRejectTarget({ pageHost, attachedHosts }) === true;
+        } catch {
+          reject = false; // fail-open: a broken policy must not block attach.
+        }
       }
-      if (verifyAuth && !verifyAuth(req)) {
-        // Reject: complete the handshake, then close with a NAMED code so the
-        // browser-side observer (in-app attach.ts) can distinguish "stale
-        // TOTP code" (4401) from "tunnel down" (1006). Raw-401-destroy only
-        // ever produced 1006 client-side — the in-page silence gap (#478).
-        // We do NOT log req.url or any auth param here to avoid leaking codes;
-        // the close reason is a fixed enum string.
+      if (reject) {
+        // SECRET-HANDLING: the close reason is a fixed enum; req.url is never logged.
+        rejectWss.handleUpgrade(req, socket, head, (ws) => {
+          ws.close(RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON);
+        });
+        rejectedUpgrades.add(req);
+        if (onTargetRejectedBusy) {
+          try {
+            onTargetRejectedBusy({ pageHost, attachedHosts });
+          } catch {
+            // Observability is best-effort.
+          }
+        }
+        return;
+      }
+      const boundCode = readAtParam(req.url ?? '');
+      const bound =
+        verifyAuth !== undefined && upgradeTarget !== undefined && isRelayAuthCode(boundCode)
+          ? bindSession(boundCode, upgradeTarget, requestDevice.get(req) ?? null)
+          : undefined;
+      if (bound === null) {
+        // The code already carries MAX_TARGETS_PER_CODE live ids (a live one is
+        // never evicted), or another phone holds it.
         rejectWss.handleUpgrade(req, socket, head, (ws) => {
           ws.close(RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
         });
         rejectedUpgrades.add(req);
         notifyAuthReject('ws-upgrade');
-        // Early return — chii's captured listeners are NOT called.
         return;
       }
-      // Auth passed. A phone `/target/<id>` upgrade may still lose to a page
-      // that is already attached from a DIFFERENT mini-app (first wins).
-      const upgradePath = (req.url ?? '').split('?')[0] ?? '';
-      if (upgradePath.startsWith('/target/')) {
-        const pageHost = extractTargetPageHost(req.url ?? '');
-        const attachedHosts = [...openTargetHosts].map((e) => e.host);
-        let reject = false;
-        if (shouldRejectTarget) {
-          try {
-            reject = shouldRejectTarget({ pageHost, attachedHosts }) === true;
-          } catch {
-            reject = false; // fail-open: a broken policy must not block attach.
-          }
+      const entry = { host: pageHost };
+      openTargetHosts.add(entry);
+      if (bound !== undefined) bound.open += 1;
+      socket.once('close', () => {
+        openTargetHosts.delete(entry);
+        if (bound !== undefined) {
+          bound.open = Math.max(0, bound.open - 1);
+          bound.lastCloseAt = sessionNow();
         }
-        if (reject) {
-          // SECRET-HANDLING: the close reason is a fixed enum; req.url is never logged.
-          rejectWss.handleUpgrade(req, socket, head, (ws) => {
-            ws.close(RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON);
-          });
-          rejectedUpgrades.add(req);
-          if (onTargetRejectedBusy) {
-            try {
-              onTargetRejectedBusy({ pageHost, attachedHosts });
-            } catch {
-              // Observability is best-effort.
-            }
-          }
-          return;
-        }
-        const entry = { host: pageHost };
-        openTargetHosts.add(entry);
-        socket.once('close', () => {
-          openTargetHosts.delete(entry);
-        });
-      }
-      // Hand the upgrade to chii's own listeners (it sees the stripped URL —
-      // same observable behaviour as the pre-#478 ordering).
+      });
+    }
+    // Hand the upgrade to chii's own listeners (it sees the stripped URL —
+    // same observable behaviour as the pre-#478 ordering).
+    // A listener that throws (for example on a malformed `/target` request) must
+    // end this one socket, never the process.
+    try {
       for (const listener of chiiUpgradeListeners) {
         listener(req, socket, head);
       }
-    });
-  }
+    } catch {
+      rejectedUpgrades.add(req);
+      socket.destroy();
+    }
+  });
 
   // Upgrade observer (phone-leg vs daemon-leg, accepted vs rejected). Registered
   // OUTSIDE the `verifyAuth` block on purpose — a no-TOTP relay must be observable
@@ -827,6 +1514,12 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   return {
     port: actualPort,
     baseUrl: `http://${host}:${actualPort}`,
+    attachedTargetCount: () => openTargetHosts.size,
+    resetAuthLock: (scope) => {
+      authThrottle.resetScope(scope);
+      // The sessions came in through the old tunnel URL.
+      if (scope === 'tunnel') sessions.clear();
+    },
     close: () =>
       new Promise<void>((resolve) => {
         if (keepaliveHandle !== null) {

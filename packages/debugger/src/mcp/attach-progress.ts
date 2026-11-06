@@ -50,9 +50,19 @@ function describeStatus(events: AttachStageEvent[]): string {
   return last ? formatStageLabel(last) : '폰 응답 없음';
 }
 
-export function startAttachProgress(opts: StartAttachProgressOptions): { stop(): void } {
+export interface AttachProgressHandle {
+  stop(): void;
+  /**
+   * Sends one free-form message on the progress channel (no-op without a
+   * `progressToken`, after `stop`, or after abort). Used to hand the text QR to
+   * a client while the call is still waiting for the scan.
+   */
+  announce(message: string): void;
+}
+
+export function startAttachProgress(opts: StartAttachProgressOptions): AttachProgressHandle {
   const { timeline, progressToken, sendNotification, signal, totalSec } = opts;
-  if (progressToken === undefined || progressToken === null) return { stop() {} };
+  if (progressToken === undefined || progressToken === null) return { stop() {}, announce() {} };
   const nowMs = opts.nowMs ?? (() => Date.now());
   const heartbeatMs = opts.heartbeatMs ?? ATTACH_PROGRESS_HEARTBEAT_MS;
 
@@ -91,5 +101,5 @@ export function startAttachProgress(opts: StartAttachProgressOptions): { stop():
     unsubscribe();
   };
   signal?.addEventListener('abort', stop, { once: true });
-  return { stop };
+  return { stop, announce: send };
 }

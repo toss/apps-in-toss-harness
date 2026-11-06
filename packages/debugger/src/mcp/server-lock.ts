@@ -17,6 +17,13 @@
  * ## Behaviour
  *
  * - **Acquire**: write PID + wssUrl + startedAt. Returns a `release()` handle.
+ *   The file is written complete to a private temp file (mode 0600) and then
+ *   linked into place, so the create is exclusive and no reader ever sees half a
+ *   file. Two daemons starting together cannot both win: the loser re-reads the
+ *   winner's lock and takes the conflict path. A stale lock is deleted only if it
+ *   still has the bytes that were judged stale. `updateWssUrl` and
+ *   `updateTunnelChildPid` replace the file with an atomic rename, and only while
+ *   the file still names this process.
  * - **Stale lock recovery**: if the stored PID is no longer alive
  *   (`process.kill(pid, 0)` throws ESRCH), the lock is silently replaced.
  * - **Same-client takeover**: if the holder is alive but belongs to the same MCP
@@ -39,9 +46,22 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { childProcessEnv } from './child-env.js';
 import { isPidAlive as _isPidAlive } from './parent-watcher.js';
 
 // ---------------------------------------------------------------------------
@@ -127,7 +147,17 @@ export function lockFilePath(): string {
 
 function ensureLockDir(lockPath: string): void {
   const dir = join(lockPath, '..');
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // `mode` only applies to a directory this call creates. The default directory
+  // holds the relay URL, so tighten one an older version made. An overridden
+  // directory belongs to whoever chose it and is left alone.
+  if (process.env.AIT_DEVTOOLS_LOCK_DIR === undefined) {
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // Not ours to change — the file mode below still keeps the lock private.
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,10 +176,15 @@ export const isPidAlive: (pid: number) => boolean = _isPidAlive;
 // Read / write helpers
 // ---------------------------------------------------------------------------
 
-function readLock(lockPath: string): LockData | null {
-  if (!existsSync(lockPath)) return null;
+/** The lock file as bytes plus its parse. */
+interface LockFileRead {
+  raw: string;
+  /** `null` when the contents are corrupt or not a lock. */
+  data: LockData | null;
+}
+
+function parseLock(raw: string): LockData | null {
   try {
-    const raw = readFileSync(lockPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);
     if (
       typeof parsed === 'object' &&
@@ -174,14 +209,95 @@ function readLock(lockPath: string): LockData | null {
     // Unrecognised schema — treat as stale.
     return null;
   } catch {
-    // Corrupt / unreadable — treat as stale.
+    // Corrupt — treat as stale.
     return null;
   }
 }
 
-function writeLock(lockPath: string, data: LockData): void {
+/** `null` when there is no file. */
+function readLockFile(lockPath: string): LockFileRead | null {
+  if (!existsSync(lockPath)) return null;
+  try {
+    const raw = readFileSync(lockPath, 'utf8');
+    return { raw, data: parseLock(raw) };
+  } catch {
+    // Unreadable — treat as stale.
+    return { raw: '', data: null };
+  }
+}
+
+function readLock(lockPath: string): LockData | null {
+  return readLockFile(lockPath)?.data ?? null;
+}
+
+/** Writes `data` to a new private file next to the lock and returns its path. */
+function writeTempLock(lockPath: string, data: LockData): string {
   ensureLockDir(lockPath);
-  writeFileSync(lockPath, JSON.stringify(data, null, 2), { encoding: 'utf8' });
+  const tmp = `${lockPath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    });
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
+  return tmp;
+}
+
+/**
+ * Creates the lock only if none exists. `false` means the path is taken (a
+ * corrupt or unreadable file counts). The content is complete before the name
+ * appears: the temp file is hard-linked into place, which fails with EEXIST
+ * instead of replacing. A filesystem without hard links falls back to an
+ * exclusive create.
+ */
+function createLockExclusive(lockPath: string, data: LockData): boolean {
+  const tmp = writeTempLock(lockPath, data);
+  try {
+    linkSync(tmp, lockPath);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    try {
+      const fd = openSync(lockPath, 'wx', 0o600);
+      try {
+        writeFileSync(fd, JSON.stringify(data, null, 2), 'utf8');
+      } finally {
+        closeSync(fd);
+      }
+      return true;
+    } catch (inner) {
+      if ((inner as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw inner;
+    }
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+/**
+ * Replaces the lock this process holds. Skips when the file no longer names us
+ * (another daemon took the lock over): a late update must not overwrite it.
+ */
+function replaceOwnLock(lockPath: string, data: LockData): void {
+  const current = readLock(lockPath);
+  if (current === null || current.pid !== data.pid || current.startedAt !== data.startedAt) return;
+  const tmp = writeTempLock(lockPath, data);
+  try {
+    renameSync(tmp, lockPath);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
+/** Removes the lock only if it still has the bytes that were judged stale. */
+function removeLockIfUnchanged(lockPath: string, raw: string): void {
+  if (readLockFile(lockPath)?.raw !== raw) return;
+  removeLock(lockPath);
 }
 
 function removeLock(lockPath: string): void {
@@ -253,6 +369,7 @@ function psField(field: 'ppid' | 'command', pid: number): string | null {
       encoding: 'utf8',
       timeout: 2_000,
       stdio: ['ignore', 'pipe', 'ignore'],
+      env: childProcessEnv(),
     }).trim();
     return out === '' ? null : out;
   } catch {
@@ -345,6 +462,12 @@ function looksLikeDebugger(pid: number, insp: ProcInspector): boolean {
   return cmd !== null && /debugger/.test(cmd);
 }
 
+/** Same check for the recorded tunnel child. */
+function looksLikeTunnel(pid: number, insp: ProcInspector): boolean {
+  const cmd = insp.commandOf(pid);
+  return cmd !== null && /cloudflared/.test(cmd);
+}
+
 /**
  * Reaps an orphaned cloudflared tunnel child left behind by a previous session
  * (issue #628). The normal shutdown path TERM-cascades to the child, but a
@@ -360,6 +483,7 @@ function looksLikeDebugger(pid: number, insp: ProcInspector): boolean {
 function reapOrphanTunnelChild(existing: LockData, insp: ProcInspector = defaultInspector): void {
   const childPid = existing.tunnelChildPid;
   if (typeof childPid !== 'number' || !insp.isAlive(childPid)) return;
+  if (!looksLikeTunnel(childPid, insp)) return;
   process.stderr.write(
     `[ait-debug] reaping orphaned tunnel child PID=${childPid} from previous session.\n`,
   );
@@ -411,14 +535,15 @@ export interface AcquireLockOptions {
 export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
   const { force = false, inspector: insp = defaultInspector, takeoverGraceMs = 5_000 } = options;
   const lockPath = lockFilePath();
-  const existing = readLock(lockPath);
   let clientPidCache: number | null | undefined;
   const myClientPid = (): number | null => {
     clientPidCache ??= findClientPid(process.pid, insp);
     return clientPidCache;
   };
 
-  if (existing !== null) {
+  // Judges a lock found on disk: throws when another live client holds it,
+  // otherwise reclaims it (ends a same-client leftover, reaps an orphan tunnel).
+  const settleExisting = (existing: LockData): void => {
     if (insp.isAlive(existing.pid)) {
       // FIX 3 (issue #571): even if the Node process is alive, check whether
       // its cloudflared child has died. A zombie daemon whose tunnel is dead
@@ -434,10 +559,12 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
         // Fall through to write a fresh lock.
       } else if (force) {
         // Force takeover: SIGTERM → 2 s grace → SIGKILL.
+        // A recycled PID that is no longer a debugger is left alone: the lock is
+        // stale either way, and the signal would hit an unrelated process.
         process.stderr.write(
           `[ait-debug] --force: terminating existing session PID=${existing.pid} …\n`,
         );
-        killAndWait(existing.pid, 2_000, insp);
+        if (looksLikeDebugger(existing.pid, insp)) killAndWait(existing.pid, 2_000, insp);
         // Issue #628: killing the Node holder doesn't reliably cascade to a
         // detached cloudflared child — reap it explicitly so --force leaves no
         // orphaned tunnel.
@@ -474,7 +601,7 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
       // Reap it before the new session boots its own tunnel.
       reapOrphanTunnelChild(existing, insp);
     }
-  }
+  };
 
   const data: LockData = {
     pid: process.pid,
@@ -482,7 +609,24 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
     startedAt: new Date().toISOString(),
     clientPid: myClientPid(),
   };
-  writeLock(lockPath, data);
+
+  // The create is exclusive, so the check and the claim cannot be split by
+  // another daemon starting at the same time. If the exclusive create loses, the
+  // file changed since it was read: judge the new one. A few rounds is plenty.
+  let claimed = false;
+  for (let round = 0; round < 5 && !claimed; round++) {
+    const found = readLockFile(lockPath);
+    if (found !== null) {
+      if (found.data !== null) settleExisting(found.data);
+      removeLockIfUnchanged(lockPath, found.raw);
+    }
+    claimed = createLockExclusive(lockPath, data);
+  }
+  if (!claimed) {
+    throw new Error(
+      `잠금 파일을 만들지 못했습니다. 다른 debugger가 동시에 시작했거나 파일을 지울 수 없습니다. 잠금 파일을 지우고 다시 시도하세요:\n  rm "${lockPath}"`,
+    );
+  }
 
   let released = false;
 
@@ -490,12 +634,12 @@ export function acquireLock(options: AcquireLockOptions = {}): LockHandle {
     updateWssUrl(wssUrl: string): void {
       if (released) return;
       data.wssUrl = wssUrl;
-      writeLock(lockPath, data);
+      replaceOwnLock(lockPath, data);
     },
     updateTunnelChildPid(pid: number): void {
       if (released) return;
       data.tunnelChildPid = pid;
-      writeLock(lockPath, data);
+      replaceOwnLock(lockPath, data);
     },
     release(): void {
       if (released) return;

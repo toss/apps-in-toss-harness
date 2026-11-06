@@ -27,9 +27,11 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync } from 'node:fs';
 import net from 'node:net';
-import { platform } from 'node:os';
+import { platform, tmpdir, userInfo } from 'node:os';
+import { join } from 'node:path';
+import { childProcessEnv } from './child-env.js';
 
 /** A handle returned by `launchChromium`. */
 export interface ChromiumHandle {
@@ -136,6 +138,29 @@ export function findChromeBinary(): string | null {
 }
 
 /**
+ * Per-user Chromium profile directory, mode 0700.
+ *
+ * `tmpdir()` is shared on Linux, and a directory another user created there
+ * first would hold this browser's profile. If the name is taken by something
+ * that is not ours, use a fresh private directory instead.
+ */
+export function chromiumProfileDir(baseDir: string = tmpdir()): string {
+  const prefix = join(baseDir, 'ait-devtools-chromium-profile-');
+  const dir = `${prefix}${userInfo().uid}`;
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stat = lstatSync(dir);
+    if (stat.isDirectory() && stat.uid === userInfo().uid) {
+      chmodSync(dir, 0o700);
+      return dir;
+    }
+  } catch {
+    // Fall through to a private one-off directory.
+  }
+  return mkdtempSync(prefix);
+}
+
+/**
  * Launch a local Chromium instance with CDP remote debugging enabled.
  *
  * The caller is responsible for calling `handle.stop()` when done.
@@ -167,7 +192,7 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
     '--no-default-browser-check',
     // Use a separate profile dir so the debugged instance doesn't interfere
     // with the user's regular Chrome profile.
-    '--user-data-dir=/tmp/ait-devtools-chromium-profile',
+    `--user-data-dir=${chromiumProfileDir()}`,
     ...(options.extraArgs ?? []),
     devUrl,
   ];
@@ -176,6 +201,7 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
     // Detach stdio so the MCP server's stdio transport is not contaminated.
     stdio: 'ignore',
     detached: false,
+    env: childProcessEnv(),
   });
 
   // Allow the Node process to exit even if the child is still running.

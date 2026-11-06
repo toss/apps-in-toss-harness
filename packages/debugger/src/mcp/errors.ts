@@ -16,6 +16,7 @@
 
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
+import { UNTRUSTED_DATA_NOTE } from './envelope.js';
 
 /** MCP tool-result 에러 응답 형식. */
 export interface McpErrorResult {
@@ -33,6 +34,36 @@ export function mcpError(message: string): McpErrorResult {
     content: [{ type: 'text', text: message }],
     isError: true,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* 원격(페이지·CDP) 유래 문구 정제                                                */
+/* -------------------------------------------------------------------------- */
+
+/** 원격에서 온 에러 문구를 결과에 싣기 전에 자르는 길이(문자 수). */
+export const REMOTE_TEXT_MAX_LENGTH = 200;
+
+/**
+ * 페이지/CDP가 보낸 에러 문구를 MCP 결과에 싣기 전에 정제한다.
+ *
+ * 개행·탭을 포함한 제어 문자(C0·DEL·C1, 줄/문단 구분자 U+2028/2029)는 공백 하나로 접어
+ * 가짜 줄 머리("해야 할 일:" 같은 daemon 문구 흉내)를 만들 수 없게 하고, 길이는
+ * `max`(기본 200)로 자른다. 잘렸으면 끝에 `…`를 붙인다.
+ *
+ * @param text - 원격이 보낸 문구(문자열이 아니면 빈 문자열로 본다).
+ * @param max  - 최대 길이(문자 수).
+ */
+export function sanitizeRemoteText(text: unknown, max: number = REMOTE_TEXT_MAX_LENGTH): string {
+  if (typeof text !== 'string') return '';
+  const folded = text
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: 제어 문자 제거가 목적이다.
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    // 양방향 제어 문자와 폭 없는 문자는 화면 표시를 속이므로 지운다.
+    .replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c\u200b-\u200d\u2060\ufeff]/g, '')
+    .trim();
+  // 서로게이트 쌍을 쪼개지 않도록 코드 포인트 단위로 자른다.
+  const points = Array.from(folded);
+  return points.length > max ? `${points.slice(0, max).join('')}…` : folded;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -181,8 +212,8 @@ export function pageCrashError(toolName?: string): McpErrorResult {
  *     채널로 재배포 후 QR 재스캔.
  *   - local(`--target=local`, env 1 로컬 브라우저): 재배포가 아니라 dev 서버를
  *     `npm run dev`로 띄웠는지 + unplugin alias가 `@apps-in-toss/web-framework`를
- *     devtools mock으로 resolve하는지 확인. dev 빌드면 `import.meta.env.DEV`
- *     경로로 `window.__sdkCall`이 자동 설치된다.
+ *     devtools mock으로 resolve하는지 확인. debug-console이 켜진 빌드면
+ *     (`startDebugConsole()` 또는 `/auto`) attach 허용 뒤 `window.__sdkCall`이 자동 설치된다.
  *
  * `isLocal`이 생략되면 relay 안내(이전 동작)를 유지한다.
  */
@@ -193,12 +224,14 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
       `${prefix}window.__sdkCall이 주입되지 않았습니다 (로컬 dev 브리지 부재). ` +
         'sdk-example을 `npm run dev`로 띄웠는지, 그리고 unplugin alias가 ' +
         '`@apps-in-toss/web-framework`를 devtools mock으로 resolve하는지 확인하세요. ' +
-        'dev 빌드(`import.meta.env.DEV`)면 `window.__sdkCall`이 자동 설치됩니다.',
+        'debug-console을 `startDebugConsole()`(또는 `/auto`)로 켰다면 attach가 허용된 뒤 ' +
+        '`window.__sdkCall`이 자동 설치됩니다. `@apps-in-toss/web-framework`가 번들에 없으면 설치되지 않습니다.',
     );
   }
   return mcpError(
-    `${prefix}window.__sdkCall이 주입되지 않았습니다 (dog-food 빌드가 아닙니다). ` +
-      'dog-food 채널(intoss-private)로 재배포 후 QR을 다시 스캔하세요: ' +
+    `${prefix}window.__sdkCall이 주입되지 않았습니다 (dog-food 빌드가 아니거나, attach가 허용되지 않았거나, ` +
+      '`@apps-in-toss/web-framework`가 번들에 없습니다). ' +
+      'status 막대가 차단 상태면 먼저 그 안내를 따르세요. dog-food 채널(intoss-private)로 재배포 후 QR을 다시 스캔하세요: ' +
       '`RELEASE_CHANNEL=dogfood npm run build`(2.x 폴백은 `npm run bundle:ait`) 후 ' +
       'console MCP(`bundle_upload`/`bundle_upload_complete`)로 업로드. ' +
       '`ait build`만 단독으로 부르면 3.x에서는 `dist/`가 없어 실패하고 환경 변수도 웹 빌드에 닿지 않습니다.',
@@ -214,13 +247,12 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * 프로토콜 버전(`PROTOCOL_VERSION`)이 어긋났을 때의 에러.
  *
  * 두 패키지는 독립 버전이라 패키지 버전은 호환 여부를 말해 주지 않는다. 비교 대상은
- * 계약 자체의 버전(정수)이다. 어긋나도 attach는 성공하고 크래시도 안 나지만, 값-복제로만
- * 연결된 계약(인디케이터 스냅샷 필드, 이벤트명, close code 등)이 조용히 어긋나 인디케이터가
- * 비거나 필드가 `undefined`가 된다. 이 에러는 그 조용한 오작동을 한 줄 진단으로 바꾼다.
+ * 계약 자체의 버전(정수)이다. 프로토콜이 다른 기기는 relay가 연결을 받지 않으므로(옛 기기는
+ * `target.js` 자리에 업데이트 안내 막대가 뜬다), 이 에러는 "업데이트가 필요하다"를 알리는 것이다.
  *
- * 어느 쪽을 올려야 하는지는 프로토콜 번호의 대소로 정한다: 기기 쪽이 낮으면 debug-console,
- * 높으면 debugger. 존재하지 않는 패키지 버전을 안내하지 않도록 목표 버전은 적지 않고
- * 각 패키지 README의 최신 릴리스 설치 명령을 가리킨다.
+ * 어느 쪽을 올려야 하는지는 프로토콜 번호의 대소로 정한다: 기기 쪽이 낮거나 번호가 없으면
+ * debug-console, 높으면 debugger. 존재하지 않는 패키지 버전을 안내하지 않도록 목표 버전은 적지
+ * 않고 각 패키지 README의 최신 릴리스 설치 명령을 가리킨다.
  *
  * SECRET-HANDLING: 숫자와 기기 패키지 버전 라벨만 싣는다. relay `wss://` URL·터널 호스트·
  * TOTP 코드는 이 메시지에 절대 들어가지 않는다.
@@ -228,18 +260,18 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * @param check - `match: false`인 프로토콜 비교 결과.
  */
 export function protocolVersionMismatchError(check: ProtocolVersionCheck): McpErrorResult {
-  const device = check.deviceProtocol ?? '?';
+  const device = check.deviceProtocol === null ? '없음(옛 버전)' : String(check.deviceProtocol);
   const label = check.deviceVersion !== '' ? ` (패키지 ${check.deviceVersion})` : '';
-  const deviceOlder = check.deviceProtocol !== null && check.deviceProtocol < check.hostProtocol;
+  const deviceOlder = check.deviceProtocol === null || check.deviceProtocol < check.hostProtocol;
   const action = deviceOlder
     ? '미니앱의 @apps-in-toss/debug-console을 최신 릴리스로 올려 재배포하세요(설치 명령은 debug-console README 참고).'
     : '데몬의 @apps-in-toss/debugger를 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).';
   return mcpError(
-    `device↔host 프로토콜 버전 불일치: ` +
+    `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
       `기기의 @apps-in-toss/debug-console${label}은 프로토콜 ${device}, ` +
       `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-      '두 패키지는 같은 프로토콜로만 상호 테스트됩니다. attach는 성공해도 인디케이터·브리지 스냅샷 등이 ' +
-      `조용히 어긋날 수 있습니다. ${action}`,
+      '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
+      action,
   );
 }
 
@@ -283,7 +315,11 @@ export function attachTimeoutMessage(details: AttachTimeoutDetails): string {
     );
   }
   if (protocolNote !== undefined) lines.push(protocolNote);
-  if (waitError !== undefined) lines.push(`대기 중 오류: ${waitError}`);
+  // waitError는 relay/페이지가 보낸 문구에서 왔다 — 정제하고 신뢰 불가 데이터 표지를 붙인다.
+  if (waitError !== undefined) {
+    lines.push(`대기 중 오류: ${sanitizeRemoteText(waitError)}`);
+    lines.push(UNTRUSTED_DATA_NOTE);
+  }
   if (stageHistory !== undefined && stageHistory.length > 0) {
     lines.push('진행 기록:');
     for (const line of stageHistory) lines.push(`- ${line}`);
@@ -322,16 +358,16 @@ export function attachSupersededError(): McpErrorResult {
 
 /**
  * 데몬이 relay에 붙을 때 TOTP 검증이 거부된(close 4401) 경우. 폰 쪽 코드 만료(QR 재스캔)와는
- * 다른 문제다 — 데몬이 가진 secret과 relay가 검증하는 secret이 다르거나 PC 시계가 어긋난
- * 상태다.
+ * 다른 문제다 — 코드 키는 프로세스마다 메모리에서 새로 만들므로, 데몬이 다른 프로세스(이전
+ * 데몬 등)가 띄운 relay에 붙으려 했거나 PC 시계가 어긋난 상태다.
  */
 export function totpRejectedError(toolName?: string): McpErrorResult {
   const prefix = toolName ? `${toolName}: ` : '';
   return mcpError(
     `${prefix}relay 인증(TOTP)이 거부됐습니다 (close 4401). ` +
-      '데몬이 가진 .ait_relay secret이 relay를 띄운 secret과 다르거나 PC 시계가 어긋났을 수 있습니다 — ' +
+      '다른 디버거 프로세스가 띄운 relay에 붙으려 했거나 PC 시계가 어긋났을 수 있습니다 — ' +
       'start_attach({mode:"relay-staging", scheme_url, projectRoot})를 다시 호출해 새 QR을 스캔하세요. ' +
-      '반복되면 프로젝트의 .ait_relay를 확인하고 시스템 시계를 동기화하세요.',
+      '반복되면 디버거(MCP 서버)를 다시 시작하고 시스템 시계를 동기화하세요.',
   );
 }
 
@@ -412,8 +448,12 @@ export function classifyToolError(
     return relayDisconnectError(toolName);
   }
 
-  // 그 외: 원본 메시지를 포함하되 list_pages 다음 행동 안내 추가
+  // 그 외: 원본 메시지를 포함하되 list_pages 다음 행동 안내 추가.
+  // 메시지는 페이지·CDP가 보낸 문구일 수 있다 — 정제(제어 문자 제거·200자 제한)하고
+  // 신뢰 불가 데이터 표지를 붙여 지시로 읽히지 않게 한다.
   return mcpError(
-    `${toolName} 실패: ${message}\nlist_pages로 미니앱이 relay에 attach됐는지 확인하세요.`,
+    `${toolName} 실패: ${sanitizeRemoteText(message)}\n` +
+      `${UNTRUSTED_DATA_NOTE}\n` +
+      'list_pages로 미니앱이 relay에 attach됐는지 확인하세요.',
   );
 }

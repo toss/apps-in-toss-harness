@@ -122,6 +122,35 @@ describe('buildDeepLinkAttachUrl', () => {
 // validateSchemeAuthority — scheme host (authority) validation
 // ---------------------------------------------------------------------------
 
+describe('buildDeepLinkAttachUrl — sig', () => {
+  const scheme = 'intoss-private://m?_deploymentId=x';
+  const SIG_A = 'A'.repeat(86);
+  const SIG_B = 'B'.repeat(86);
+
+  it('splices sig after at and before rid', () => {
+    const out = buildDeepLinkAttachUrl(scheme, RELAY, 'c'.repeat(32), 'rid1', SIG_A);
+    expect(out).toBe(
+      `${scheme}&debug=1&relay=${encodeURIComponent(RELAY)}&at=${'c'.repeat(32)}&sig=${SIG_A}&rid=rid1`,
+    );
+  });
+
+  it('omits sig when none is given and strips a stale one', () => {
+    const stale = `${scheme}&sig=${SIG_A}`;
+    const out = buildDeepLinkAttachUrl(stale, RELAY, 'c'.repeat(32));
+    expect(out).not.toContain('sig=');
+  });
+
+  it('replaces sig on re-run instead of duplicating it', () => {
+    const once = buildDeepLinkAttachUrl(scheme, RELAY, 'c'.repeat(32), undefined, SIG_A);
+    const twice = buildDeepLinkAttachUrl(once, RELAY, 'd'.repeat(32), undefined, SIG_B);
+    expect(twice.match(/(^|&)sig=/g)).toHaveLength(1);
+    expect(twice).toContain(`sig=${SIG_B}`);
+    expect(twice).not.toContain(SIG_A);
+    expect(twice.match(/(^|&)at=/g)).toHaveLength(1);
+    expect(twice).toContain(`at=${'d'.repeat(32)}`);
+  });
+});
+
 describe('validateSchemeAuthority', () => {
   it('returns null for a well-formed URL with a meaningful app-name authority', () => {
     expect(
@@ -172,5 +201,24 @@ describe('validateSchemeAuthority', () => {
   it('returns null for authority "127.0.0.2" (not in the suspicious list)', () => {
     // Only 127.0.0.1 is in the list, not arbitrary IPs.
     expect(validateSchemeAuthority('intoss-private://127.0.0.2?_deploymentId=x')).toBeNull();
+  });
+});
+
+describe('buildDeepLinkAttachUrl error messages', () => {
+  it('do not echo the relay URL', () => {
+    const scheme = 'intoss-private://app?_deploymentId=abc';
+    expect(() => buildDeepLinkAttachUrl(scheme, 'https://leaky-host.trycloudflare.com')).toThrow(
+      /wss:/,
+    );
+    try {
+      buildDeepLinkAttachUrl(scheme, 'https://leaky-host.trycloudflare.com');
+    } catch (e) {
+      expect((e as Error).message).not.toContain('leaky-host');
+    }
+    try {
+      buildDeepLinkAttachUrl(scheme, 'not a url leaky-host');
+    } catch (e) {
+      expect((e as Error).message).not.toContain('leaky-host');
+    }
   });
 });

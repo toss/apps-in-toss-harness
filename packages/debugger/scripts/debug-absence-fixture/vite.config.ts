@@ -13,6 +13,10 @@ import { defineConfig } from 'vite';
 // guard.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// AIT_ABSENCE_ENTRY=auto builds the `/auto` entry fixture (auto.html); anything
+// else builds the `maybeAttach` fixture (index.html).
+const entryHtml = process.env.AIT_ABSENCE_ENTRY === 'auto' ? 'auto.html' : 'index.html';
+
 export default defineConfig({
   root: __dirname,
   define: {
@@ -21,6 +25,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: { input: path.join(__dirname, entryHtml) },
     // Minify ON (Vite default for production) is required: a dead
     // if(false){} husk would otherwise survive as text and its identifier
     // strings (e.g. '__ait_debug_status') would false-positive the grep. See

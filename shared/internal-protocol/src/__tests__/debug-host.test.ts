@@ -12,31 +12,106 @@ import {
   isDebugAllowedHost,
   isLocalhostHost,
   isPrivateAppsHost,
+  isPrivateTossminiHost,
+  isPrivateWebHost,
   isRelayAllowedHost,
   isTossminiHost,
+  isTunnelRelayHost,
 } from '../debug-host.js';
 
+// Host strings that must never be treated as a QR test host. Shared by the
+// per-family predicates and the allow rule below.
+const SPOOFED_HOSTS = [
+  // the family name followed by a foreign suffix
+  'private-apps.tossmini.com.evil.example',
+  'x.private-apps.tossmini.com.evil.example',
+  'private-web.tossmini.com.evil.example',
+  'x.private-web.tossmini.com.evil.example',
+  // no `.` before the family name: not a label boundary
+  'evil-private-apps.tossmini.com',
+  'evil-private-web.tossmini.com',
+  'xprivate-apps.tossmini.com',
+  // bare family host, no app label
+  'private-apps.tossmini.com',
+  'private-web.tossmini.com',
+  // empty labels
+  '.private-apps.tossmini.com',
+  'a..private-web.tossmini.com',
+  // trailing dot, port, userinfo, path, whitespace
+  'app.private-apps.tossmini.com.',
+  'app.private-web.tossmini.com.',
+  'app.private-apps.tossmini.com:443',
+  'app.private-web.tossmini.com:8080',
+  'user@app.private-apps.tossmini.com',
+  'app.private-apps.tossmini.com/path',
+  ' app.private-apps.tossmini.com',
+  'app.private-apps.tossmini.com ',
+  'evil.example/.private-apps.tossmini.com',
+  // more than one label in front of the family
+  'a.b.private-apps.tossmini.com',
+  'a.b.private-web.tossmini.com',
+  // similar suffix
+  'app.private-apps.tossmini.co',
+  'app.private-apps.tossmini.com.cn',
+  'app.private-apps-tossmini.com',
+  '',
+];
+
 describe('isPrivateAppsHost', () => {
-  it('accepts a dogfood subdomain', () => {
+  it('accepts a QR test subdomain', () => {
     expect(isPrivateAppsHost('example-app.private-apps.tossmini.com')).toBe(true);
+    expect(isPrivateAppsHost('my_app-2.private-apps.tossmini.com')).toBe(true);
   });
 
-  it('rejects a production entry host', () => {
+  it('accepts a different letter case (DNS names are case-insensitive)', () => {
+    expect(isPrivateAppsHost('Example-App.Private-Apps.TossMini.com')).toBe(true);
+  });
+
+  it('rejects both production entry hosts', () => {
     expect(isPrivateAppsHost('example-app.apps.tossmini.com')).toBe(false);
+    expect(isPrivateAppsHost('example-app.web.tossmini.com')).toBe(false);
   });
 
-  it('rejects an attacker host that merely CONTAINS the suffix', () => {
-    // The reason this is `endsWith` and not `includes`.
-    expect(isPrivateAppsHost('x.private-apps.tossmini.com.evil.example')).toBe(false);
+  it('rejects the other QR test family', () => {
+    expect(isPrivateAppsHost('example-app.private-web.tossmini.com')).toBe(false);
   });
 
-  it('rejects the bare suffix with no mini-app label', () => {
-    expect(isPrivateAppsHost('private-apps.tossmini.com')).toBe(false);
+  it.each(SPOOFED_HOSTS)('rejects spoofed host %j', (host) => {
+    expect(isPrivateAppsHost(host)).toBe(false);
   });
 });
 
-describe('isTossminiHost', () => {
-  it('accepts both the 2.x dogfood host and the 3.0 unified serving host', () => {
+describe('isPrivateWebHost', () => {
+  it('accepts a QR test subdomain', () => {
+    expect(isPrivateWebHost('example-app.private-web.tossmini.com')).toBe(true);
+  });
+
+  it('accepts a different letter case', () => {
+    expect(isPrivateWebHost('EXAMPLE.PRIVATE-WEB.TOSSMINI.COM')).toBe(true);
+  });
+
+  it('rejects the production hosts and the other QR test family', () => {
+    expect(isPrivateWebHost('example-app.web.tossmini.com')).toBe(false);
+    expect(isPrivateWebHost('example-app.apps.tossmini.com')).toBe(false);
+    expect(isPrivateWebHost('example-app.private-apps.tossmini.com')).toBe(false);
+  });
+
+  it.each(SPOOFED_HOSTS)('rejects spoofed host %j', (host) => {
+    expect(isPrivateWebHost(host)).toBe(false);
+  });
+});
+
+describe('isPrivateTossminiHost', () => {
+  it('accepts both QR test families and nothing else', () => {
+    expect(isPrivateTossminiHost('a.private-apps.tossmini.com')).toBe(true);
+    expect(isPrivateTossminiHost('a.private-web.tossmini.com')).toBe(true);
+    expect(isPrivateTossminiHost('a.apps.tossmini.com')).toBe(false);
+    expect(isPrivateTossminiHost('a.web.tossmini.com')).toBe(false);
+  });
+});
+
+describe('isTossminiHost (family filter, not an allow rule)', () => {
+  it('accepts QR test and production hosts alike', () => {
     expect(isTossminiHost('app.private-apps.tossmini.com')).toBe(true);
     expect(isTossminiHost('app.apps.tossmini.com')).toBe(true);
   });
@@ -95,6 +170,14 @@ describe('isRelayAllowedHost', () => {
     expect(isRelayAllowedHost('trycloudflare.com')).toBe(false);
   });
 
+  it('rejects more than one label in front of the suffix', () => {
+    expect(isRelayAllowedHost('a.b.trycloudflare.com')).toBe(false);
+    expect(isTunnelRelayHost('a.b.trycloudflare.com')).toBe(false);
+    expect(isTunnelRelayHost('a_b.trycloudflare.com')).toBe(false);
+    expect(isTunnelRelayHost('abc-def.trycloudflare.com')).toBe(true);
+    expect(isTunnelRelayHost('localhost')).toBe(false);
+  });
+
   it('rejects an attacker host that merely CONTAINS the suffix', () => {
     expect(isRelayAllowedHost('evil.trycloudflare.com.attacker.example')).toBe(false);
     expect(isRelayAllowedHost('trycloudflare.com.evil.example')).toBe(false);
@@ -110,10 +193,35 @@ describe('isRelayAllowedHost', () => {
 });
 
 describe('isDebugAllowedHost', () => {
-  it('admits exactly the two known host families', () => {
+  it('admits exactly localhost and the two QR test host families', () => {
+    expect(isDebugAllowedHost('localhost')).toBe(true);
     expect(isDebugAllowedHost('127.0.0.1')).toBe(true);
+    expect(isDebugAllowedHost('[::1]')).toBe(true);
     expect(isDebugAllowedHost('app.private-apps.tossmini.com')).toBe(true);
-    expect(isDebugAllowedHost('app.apps.tossmini.com')).toBe(true);
+    expect(isDebugAllowedHost('app.private-web.tossmini.com')).toBe(true);
+  });
+
+  it('refuses both production host families', () => {
+    for (const host of [
+      'app.apps.tossmini.com',
+      'app.web.tossmini.com',
+      'apps.tossmini.com',
+      'web.tossmini.com',
+      'a.b.apps.tossmini.com',
+      'APP.APPS.TOSSMINI.COM',
+    ]) {
+      expect(isDebugAllowedHost(host)).toBe(false);
+    }
+  });
+
+  it('refuses other tossmini hosts', () => {
+    for (const host of ['tossmini.com', 'app.tossmini.com', 'x.y.tossmini.com']) {
+      expect(isDebugAllowedHost(host)).toBe(false);
+    }
+  });
+
+  it.each(SPOOFED_HOSTS)('refuses spoofed host %j', (host) => {
+    expect(isDebugAllowedHost(host)).toBe(false);
   });
 
   it('blocks everything else', () => {

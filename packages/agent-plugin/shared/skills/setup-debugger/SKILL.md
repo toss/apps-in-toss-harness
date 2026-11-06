@@ -90,10 +90,15 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
 2단계에서 정한 파일이 이미 있으면 `Read`로 읽는다:
 
 - `mcpServers."ait-devtools"`가 **4단계와 동일한 항목**으로 이미 있으면 —
-  변경 없이 "이미 배선됨"으로 보고하고 5단계로 간다.
+  변경 없이 "이미 배선됨"으로 보고하고 5단계로 간다. 단 그 버전이
+  `references/min-versions.json`의 최소 버전보다 낮으면 이 skill의 URL이 아직 최소 버전
+  릴리스를 가리키지 않는 것이니, 배선됨으로만 끝내지 말고 그 사실을 함께 알린다.
 - 같은 키가 **이 skill의 옛 Release URL 버전**으로 있으면 — 업그레이드 경로다.
   **Read <이 skill의 base directory>/references/upgrade-check.md** 의 절차대로
-  old→new를 보여주고 동의를 받은 뒤 그 URL 하나만 바꾼다.
+  old→new를 보여주고 동의를 받은 뒤 그 URL 하나만 바꾼다. 같은 문서의 1-B 절차로
+  프로젝트 `package.json`의 `@apps-in-toss/debug-console` URL도 함께 점검한다.
+  최소 버전은 `references/min-versions.json`이 정한다. 이 값보다 낮은 `ait-devtools`
+  항목(Release URL 형태)은 신규 배선이 아니라 업그레이드 권고로 다룬다.
 - 같은 키가 **그 밖의 다른 내용**으로 있으면 — 조용히 덮어쓰지 않는다. 현재 값을 보여주고
   사용자 결정을 받는다(커스텀 런처를 쓰고 있을 수 있다).
 - 파일이 없으면 4단계에서 새로 만든다.
@@ -108,7 +113,7 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
   "mcpServers": {
     "ait-devtools": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
     }
   }
 }
@@ -122,18 +127,28 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
     "ait-devtools": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
     }
   }
 }
 ```
 
+- 이 URL은 무결성 값을 붙일 수 없는 tarball 주소라 npx가 받은 파일이 릴리즈의 것인지
+  스스로 검증하지 않는다. 배선한 뒤 사용자가 원하면 릴리즈 asset의 sha256과 대조할 수
+  있다(릴리즈는 발행 시점에 잠겨 값이 바뀌지 않는다):
+
+  ```bash
+  gh api repos/toss/apps-in-toss-harness/releases/tags/debugger-v<버전> --jq '.assets[] | select(.name|endswith(".tgz")) | .digest'
+  curl -sSL "<위 tarball URL>" | shasum -a 256
+  ```
+
+  두 값이 다르면 배선하지 않고 사용자에게 보고한다. 이 대조는 자동으로 하지 않는다.
 - server key `ait-devtools`는 **개명 금지** — eval e2e `disallowedTools` 게이트와
   `/ait:debug`의 도구 참조가 이 문자열에 결합돼 있다. 이 결합은
   로컬 `eval/e2e/driver.test.ts`(repo 미포함 — maintainer-local)가 검사한다(위
   json 블록의 키를 실제로 읽어 `STATIC_DISALLOWED_TOOLS`와 대조) — 개명하면 그
   로컬 검사가 실패한다.
-- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.7/apps-in-toss-debugger-0.2.7.tgz debugger`
+- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger`
   형태를 유지한다 — `-p` 없이 bare로 쓰면
   패키지가 bin을 2개(`debugger`·`debugger-test`) 게시해 npm이 실행파일을 추론하지
   못한다. 머신 절대경로 launcher는 박지 않는다(다른 머신 clone에서 깨진다).
@@ -188,7 +203,7 @@ QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debug
 - ❌ 디버깅 실행 — attach·QR·관측은 `/ait:debug`(§5). 이 skill은 그 전제(서버 등록)만 채운다.
 - ❌ MCP 서버 구현·기동 — 서버는 `@apps-in-toss/debugger`(Release tarball)가 제공하고,
   기동은 호스트(Claude Code·Cursor)가 그 설정 파일을 읽어 한다.
-- ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debug-console` `dependencies`) — `/ait:inject-debug-console`.
+- ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debug-console` `devDependencies` + `__DEBUG_BUILD__` 게이트) — `/ait:inject-debug-console`.
 - ❌ user/global scope MCP 등록 — 디버깅은 프로젝트 전제라 프로젝트 scope 파일만
   (`.mcp.json`/`.cursor/mcp.json`).
 

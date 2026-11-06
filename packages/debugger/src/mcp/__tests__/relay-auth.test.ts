@@ -17,7 +17,15 @@ import type { IncomingMessage } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { rewriteAtPathPrefix } from '../chii-relay.js';
 import { buildRelayVerifyAuth } from '../debug-server.js';
-import { generateTotp } from '../totp.js';
+import { relayCodeSecret } from '../relay-code-secret.js';
+import {
+  generateTotp,
+  mintRelayCode,
+  RELAY_CODE_STEP_SECONDS,
+  RELAY_VERIFY_SKEW_STEPS,
+} from '../totp.js';
+
+const STEP_MS = RELAY_CODE_STEP_SECONDS * 1000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -25,6 +33,8 @@ import { generateTotp } from '../totp.js';
 
 /** Shared test secret — hex-encoded 32-byte value (arbitrary). */
 const TEST_SECRET = 'deadbeef'.repeat(8); // 64 hex chars = 32 bytes
+/** The process code key the default predicate checks against (not the relay secret). */
+const CODE_KEY = relayCodeSecret();
 
 /** Build a minimal fake IncomingMessage with the given url. */
 function fakeReq(url: string): IncomingMessage {
@@ -62,8 +72,13 @@ describe('buildRelayVerifyAuth — no secret', () => {
 describe('buildRelayVerifyAuth — with secret', () => {
   beforeEach(() => {
     process.env.AIT_DEBUG_TOTP_SECRET = TEST_SECRET;
+    // Pin the clock to the middle of a step so the window edge cases cannot
+    // race a real step boundary between minting and verifying the code.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000 + STEP_MS / 2);
   });
   afterEach(() => {
+    vi.useRealTimers();
     delete process.env.AIT_DEBUG_TOTP_SECRET;
   });
 
@@ -72,22 +87,36 @@ describe('buildRelayVerifyAuth — with secret', () => {
     expect(typeof verifyAuth).toBe('function');
   });
 
+  it('checks codes against the process code key, not the relay secret', () => {
+    const verifyAuth = buildRelayVerifyAuth()!;
+    expect(CODE_KEY).toMatch(/^[0-9a-f]{64}$/);
+    expect(CODE_KEY).not.toBe(TEST_SECRET);
+    // A code derived from `.ait_relay` / AIT_DEBUG_TOTP_SECRET is refused.
+    expect(verifyAuth(fakeReq(`/target?at=${generateTotp(TEST_SECRET)}`))).toBe(false);
+    // The code this process mints is accepted.
+    expect(verifyAuth(fakeReq(`/target?at=${mintRelayCode()}`))).toBe(true);
+  });
+
+  it('keeps the same process code key for the life of the process', () => {
+    expect(relayCodeSecret()).toBe(CODE_KEY);
+  });
+
   it('returns true for a request carrying the current TOTP code in `at`', () => {
     const verifyAuth = buildRelayVerifyAuth()!;
     const now = Date.now();
-    const code = generateTotp(TEST_SECRET, now);
+    const code = generateTotp(CODE_KEY, now);
     const req = fakeReq(`/client/id?target=t&at=${code}`);
     expect(verifyAuth(req)).toBe(true);
   });
 
   it('returns false for a request with a wrong `at` code', () => {
     const verifyAuth = buildRelayVerifyAuth()!;
-    const req = fakeReq('/client/id?target=t&at=000000');
-    // There is a 1-in-1_000_000 chance 000000 is currently valid; acceptable.
+    const req = fakeReq('/client/id?target=t&at=00000000000000000000000000000000');
+    // There is a 1-in-2^128 chance the zero code is currently valid; acceptable.
     // If it happens to be valid by coincidence, the test flakes once per million runs.
     const now = Date.now();
-    const actualCode = generateTotp(TEST_SECRET, now);
-    if (actualCode !== '000000') {
+    const actualCode = generateTotp(CODE_KEY, now);
+    if (actualCode !== '0'.repeat(32)) {
       expect(verifyAuth(req)).toBe(false);
     }
   });
@@ -120,27 +149,30 @@ describe('buildRelayVerifyAuth — with secret', () => {
     const verifyAuth = buildRelayVerifyAuth()!;
     const now = Date.now();
     // Previous step code should still pass within ±1 skew.
-    const prevStepCode = generateTotp(TEST_SECRET, now - 30_000);
+    const prevStepCode = generateTotp(CODE_KEY, now - STEP_MS);
     const req = fakeReq(`/target?at=${prevStepCode}`);
     expect(verifyAuth(req)).toBe(true);
   });
 
-  it('accepts a code two steps old (within RELAY_VERIFY_SKEW_STEPS=6 window, #490)', () => {
-    // The gate now uses skew=6, so a 2-step old code is still within the
-    // acceptance window (~3-minute validity).
+  it('rejects a code one step past the window (outside RELAY_VERIFY_SKEW_STEPS)', () => {
+    // The gate accepts the current step and RELAY_VERIFY_SKEW_STEPS before it.
     const verifyAuth = buildRelayVerifyAuth()!;
     const now = Date.now();
-    const twoStepsAgoCode = generateTotp(TEST_SECRET, now - 60_000);
+    expect(
+      verifyAuth(
+        fakeReq(`/target?at=${generateTotp(CODE_KEY, now - RELAY_VERIFY_SKEW_STEPS * STEP_MS)}`),
+      ),
+    ).toBe(true);
+    const twoStepsAgoCode = generateTotp(CODE_KEY, now - (RELAY_VERIFY_SKEW_STEPS + 1) * STEP_MS);
     const req = fakeReq(`/target?at=${twoStepsAgoCode}`);
-    expect(verifyAuth(req)).toBe(true);
+    expect(verifyAuth(req)).toBe(false);
   });
 
-  it('rejects a code eight steps old (outside RELAY_VERIFY_SKEW_STEPS=6 window, #490)', () => {
-    // 8 steps = 240 s > 6 steps acceptance limit → rejected.
+  it('rejects a code 150 s old (far outside RELAY_VERIFY_SKEW_STEPS)', () => {
     const verifyAuth = buildRelayVerifyAuth()!;
     const now = Date.now();
-    const eightStepsAgoCode = generateTotp(TEST_SECRET, now - 240_000);
-    const req = fakeReq(`/target?at=${eightStepsAgoCode}`);
+    const fiveStepsAgoCode = generateTotp(CODE_KEY, now - 150_000);
+    const req = fakeReq(`/target?at=${fiveStepsAgoCode}`);
     expect(verifyAuth(req)).toBe(false);
   });
 });
@@ -182,10 +214,10 @@ describe('upgrade listener branching', () => {
 
   it('destroys socket + sends 401 when auth fails (invalid code)', () => {
     const verifyAuth = buildRelayVerifyAuth()!;
-    const req = fakeReq('/client/id?target=t&at=000000');
+    const req = fakeReq('/client/id?target=t&at=00000000000000000000000000000000');
     const now = Date.now();
-    const actual = generateTotp(TEST_SECRET, now);
-    if (actual !== '000000') {
+    const actual = generateTotp(CODE_KEY, now);
+    if (actual !== '0'.repeat(32)) {
       const result = simulateUpgrade(verifyAuth, req);
       expect(result.destroyed).toBe(true);
       expect(result.write401).toBe(true);
@@ -203,7 +235,7 @@ describe('upgrade listener branching', () => {
   it('does NOT destroy socket when auth passes (valid code)', () => {
     const verifyAuth = buildRelayVerifyAuth()!;
     const now = Date.now();
-    const code = generateTotp(TEST_SECRET, now);
+    const code = generateTotp(CODE_KEY, now);
     const req = fakeReq(`/client/id?target=t&at=${code}`);
     const result = simulateUpgrade(verifyAuth, req);
     expect(result.destroyed).toBe(false);
@@ -288,7 +320,7 @@ describe('verifyAuth — path-prefix transport matrix', () => {
   }
 
   it('accepts a valid code carried in the path prefix (WS upgrade shape)', () => {
-    const code = generateTotp(TEST_SECRET);
+    const code = generateTotp(CODE_KEY);
     const result = verifyWithRewrite(`/at/${code}/target/abc?url=u`);
     expect(result.pass).toBe(true);
     // chii sees the stripped URL — the /at/<code>/ prefix is gone.
@@ -296,30 +328,40 @@ describe('verifyAuth — path-prefix transport matrix', () => {
   });
 
   it('accepts a valid code carried in the path prefix (target.js fetch shape)', () => {
-    const code = generateTotp(TEST_SECRET);
+    const code = generateTotp(CODE_KEY);
     expect(verifyWithRewrite(`/at/${code}/target.js`).pass).toBe(true);
   });
 
   it('accepts a previous-step code in the path prefix (skew=1)', () => {
-    const prevStepCode = generateTotp(TEST_SECRET, Date.now() - 30_000);
+    const prevStepCode = generateTotp(CODE_KEY, Date.now() - STEP_MS);
     expect(verifyWithRewrite(`/at/${prevStepCode}/target/abc`).pass).toBe(true);
   });
 
   it('rejects a wrong code in the path prefix', () => {
-    const actual = generateTotp(TEST_SECRET);
-    if (actual !== '000000') {
-      expect(verifyWithRewrite('/at/000000/target/abc?url=u').pass).toBe(false);
+    const actual = generateTotp(CODE_KEY);
+    if (actual !== '0'.repeat(32)) {
+      expect(verifyWithRewrite('/at/00000000000000000000000000000000/target/abc?url=u').pass).toBe(
+        false,
+      );
     }
   });
 
-  it('accepts a two-steps-old code in the path prefix (within RELAY_VERIFY_SKEW_STEPS=6, #490)', () => {
-    const twoStepsAgoCode = generateTotp(TEST_SECRET, Date.now() - 60_000);
-    expect(verifyWithRewrite(`/at/${twoStepsAgoCode}/target/abc`).pass).toBe(true);
+  it('accepts a one-step-old code in the path prefix (within RELAY_VERIFY_SKEW_STEPS)', () => {
+    const oneStepAgoCode = generateTotp(CODE_KEY, Date.now() - STEP_MS);
+    expect(verifyWithRewrite(`/at/${oneStepAgoCode}/target/abc`).pass).toBe(true);
   });
 
-  it('rejects an eight-steps-old code in the path prefix (outside RELAY_VERIFY_SKEW_STEPS=6, #490)', () => {
-    const eightStepsAgoCode = generateTotp(TEST_SECRET, Date.now() - 240_000);
-    expect(verifyWithRewrite(`/at/${eightStepsAgoCode}/target/abc`).pass).toBe(false);
+  it('rejects a code one step past the window in the path prefix (outside RELAY_VERIFY_SKEW_STEPS)', () => {
+    const twoStepsAgoCode = generateTotp(
+      CODE_KEY,
+      Date.now() - (RELAY_VERIFY_SKEW_STEPS + 1) * STEP_MS,
+    );
+    expect(verifyWithRewrite(`/at/${twoStepsAgoCode}/target/abc`).pass).toBe(false);
+  });
+
+  it('rejects a five-steps-old code in the path prefix (outside RELAY_VERIFY_SKEW_STEPS)', () => {
+    const fiveStepsAgoCode = generateTotp(CODE_KEY, Date.now() - 150_000);
+    expect(verifyWithRewrite(`/at/${fiveStepsAgoCode}/target/abc`).pass).toBe(false);
   });
 
   it('rejects a prefix-less target upgrade with no query code (stock chii dial)', () => {
@@ -327,7 +369,7 @@ describe('verifyAuth — path-prefix transport matrix', () => {
   });
 
   it('query transport keeps working unchanged (back-compat, daemon client)', () => {
-    const code = generateTotp(TEST_SECRET);
+    const code = generateTotp(CODE_KEY);
     const result = verifyWithRewrite(`/client/id?target=t&at=${code}`);
     expect(result.pass).toBe(true);
     expect(result.seenUrl).toBe(`/client/id?target=t&at=${code}`);

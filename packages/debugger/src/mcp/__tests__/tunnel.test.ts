@@ -7,11 +7,14 @@
  *   - startQuickTunnel timeout + stderr-tail diagnostics (#421, same port)
  */
 import { EventEmitter } from 'node:events';
+import { Tunnel } from 'cloudflared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MAX_REISSUE_ATTEMPTS,
   parseTrycloudflareUrl,
+  probeTunnel,
   type QuickTunnel,
+  renderAttachBanner,
   renderQr,
   sanitizeCloudflaredOutput,
   startQuickTunnel,
@@ -28,6 +31,11 @@ class FakeTunnel extends EventEmitter {
 }
 
 let fakeTunnel: FakeTunnel;
+
+// The real verifier hashes (and may delete/replace) the file at `bin`; tests must never reach it.
+vi.mock('../cloudflared-binary.js', () => ({
+  ensureVerifiedCloudflaredBin: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('cloudflared', () => ({
   bin: '/fake/cloudflared-bin-does-not-exist',
@@ -140,7 +148,7 @@ describe('startTunnelHealthProbe — FIX 1: child-exit immediate reissue', () =>
 
     expect(spawnTunnel).toHaveBeenCalledTimes(1);
     expect(onReissue).toHaveBeenCalledTimes(1);
-    expect(onReissue).toHaveBeenCalledWith(newTunnel);
+    expect(onReissue).toHaveBeenCalledWith(newTunnel, 'drop');
     expect(onPermanentDrop).not.toHaveBeenCalled();
     // Probe interval never fired.
     expect(probe).not.toHaveBeenCalled();
@@ -202,14 +210,14 @@ describe('startTunnelHealthProbe — FIX 1: child-exit immediate reissue', () =>
     await vi.advanceTimersByTimeAsync(100);
 
     expect(onReissue).toHaveBeenCalledTimes(1);
-    expect(onReissue).toHaveBeenLastCalledWith(newTunnel1);
+    expect(onReissue).toHaveBeenLastCalledWith(newTunnel1, 'drop');
 
     // The reissued tunnel (newTunnel1) also dies.
     newTunnel1._triggerUnexpectedExit(0);
     await vi.advanceTimersByTimeAsync(100);
 
     expect(onReissue).toHaveBeenCalledTimes(2);
-    expect(onReissue).toHaveBeenLastCalledWith(newTunnel2);
+    expect(onReissue).toHaveBeenLastCalledWith(newTunnel2, 'drop');
 
     stop();
   });
@@ -281,7 +289,7 @@ describe('startTunnelHealthProbe — FIX 1: child-exit immediate reissue', () =>
 
     // startTunnelHealthProbe must pass the full newTunnel (with childPid) to onReissue.
     expect(onReissue).toHaveBeenCalledTimes(1);
-    expect(onReissue).toHaveBeenCalledWith(newTunnel);
+    expect(onReissue).toHaveBeenCalledWith(newTunnel, 'drop');
     // Verify childPid is present on the argument — bootRelayFamily relies on this.
     const arg = onReissue.mock.calls[0]![0] as typeof newTunnel;
     expect(arg.childPid).toBe(childPid);
@@ -376,6 +384,14 @@ describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
     vi.clearAllMocks();
   });
 
+  it('starts the quick tunnel with --no-autoupdate so the pinned binary is never replaced', async () => {
+    const resultPromise = startQuickTunnel(5173).catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Tunnel.quick).toHaveBeenCalledWith('http://localhost:5173', { '--no-autoupdate': true });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await resultPromise;
+  });
+
   it('rejects after 20s with a friendly manual-command fallback when no URL is reported', async () => {
     const resultPromise = startQuickTunnel(5173).then(
       () => {
@@ -452,5 +468,178 @@ describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
 
     const message = ((await resultPromise) as Error).message;
     expect(message).not.toContain('cloudflared 출력');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tunnel host stays out of stderr output
+// ---------------------------------------------------------------------------
+
+describe('tunnel host never reaches stderr output', () => {
+  const HOST = 'secret-sub-domain.trycloudflare.com';
+
+  it('attach banner has no host, URL or QR, with or without TOTP', () => {
+    for (const totpEnabled of [true, false]) {
+      const out = renderAttachBanner({ totpEnabled });
+      expect(out).not.toContain('trycloudflare');
+      expect(out).not.toContain('wss://');
+      expect(out).not.toMatch(/[█▀▄]/);
+      expect(out).toContain('start_attach');
+    }
+  });
+
+  it('reissue and probe-failure logs omit the host', async () => {
+    vi.useFakeTimers();
+    try {
+      const logs: string[] = [];
+      const mk = (url: string) => ({
+        url,
+        wssUrl: url.replace(/^https/, 'wss'),
+        onUnexpectedExit: vi.fn(),
+        stop: vi.fn(),
+      });
+      const initial = mk(`https://${HOST}`);
+      const next = mk('https://another-secret.trycloudflare.com');
+      const { stop } = startTunnelHealthProbe(initial, 1, {
+        probeIntervalMs: 1000,
+        failuresBeforeReissue: 2,
+        onReissue: vi.fn(),
+        onPermanentDrop: vi.fn(),
+        probe: vi.fn().mockResolvedValue(false),
+        spawnTunnel: vi.fn().mockResolvedValue(next),
+        log: (m: string) => logs.push(m),
+      });
+      await vi.advanceTimersByTimeAsync(2500);
+      stop();
+      const text = logs.join('');
+      expect(text).toContain('failure 1/2');
+      expect(text).toContain('tunnel reissued');
+      expect(text).not.toContain('trycloudflare');
+      expect(text).not.toContain('wss://');
+      expect(text).not.toContain('https://');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('startTunnelHealthProbe — rotate()', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const start = (spawnTunnel: () => Promise<QuickTunnel>) => {
+    const initial = makeFakeTunnel('https://old.trycloudflare.com');
+    const onReissue = vi.fn();
+    const onPermanentDrop = vi.fn();
+    const probe = startTunnelHealthProbe(initial, 1, {
+      probeIntervalMs: 60_000,
+      onReissue,
+      onPermanentDrop,
+      probe: vi.fn().mockResolvedValue(true),
+      spawnTunnel,
+      log: () => {},
+    });
+    return { initial, onReissue, onPermanentDrop, ...probe };
+  };
+
+  it('replaces the live tunnel through the reissue path and stops the old one', async () => {
+    const next = makeFakeTunnel('https://new.trycloudflare.com');
+    const { initial, onReissue, rotate, stop } = start(vi.fn().mockResolvedValue(next));
+    await expect(rotate()).resolves.toBe(true);
+    expect(onReissue).toHaveBeenCalledWith(next, 'rotation');
+    expect(initial.stop).toHaveBeenCalledTimes(1);
+    expect(next.stop).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('arms the exit watch on the rotated tunnel', async () => {
+    const next = makeFakeTunnel('https://new.trycloudflare.com');
+    const after = makeFakeTunnel('https://after.trycloudflare.com');
+    const spawn = vi.fn().mockResolvedValueOnce(next).mockResolvedValueOnce(after);
+    const { onReissue, rotate, stop } = start(spawn);
+    await rotate();
+    next._triggerUnexpectedExit(1);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onReissue).toHaveBeenLastCalledWith(after, 'drop');
+    stop();
+  });
+
+  it('keeps the old tunnel and does not count toward a permanent drop when the spawn fails', async () => {
+    const { initial, onReissue, onPermanentDrop, rotate, stop } = start(
+      vi.fn().mockRejectedValue(new Error('spawn failed')),
+    );
+    for (let i = 0; i < MAX_REISSUE_ATTEMPTS + 1; i++) {
+      await expect(rotate()).resolves.toBe(false);
+    }
+    expect(initial.stop).not.toHaveBeenCalled();
+    expect(onReissue).not.toHaveBeenCalled();
+    expect(onPermanentDrop).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('refuses a second rotation while one is running', async () => {
+    let finish: (t: QuickTunnel) => void = () => {};
+    const spawn = vi.fn(
+      () =>
+        new Promise<QuickTunnel>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { rotate, stop } = start(spawn);
+    const first = rotate();
+    await expect(rotate()).resolves.toBe(false);
+    finish(makeFakeTunnel('https://new.trycloudflare.com'));
+    await expect(first).resolves.toBe(true);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('does nothing after stop()', async () => {
+    const spawn = vi.fn();
+    const { rotate, stop } = start(spawn);
+    stop();
+    await expect(rotate()).resolves.toBe(false);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('probeTunnel — dead-connector statuses', () => {
+  type Send = NonNullable<Parameters<typeof probeTunnel>[2]>;
+
+  /** An https.request stand-in that answers every request with `status`. */
+  function answering(status: number): Send {
+    return ((_options: unknown, callback: (res: unknown) => void) => {
+      const req = Object.assign(new EventEmitter(), {
+        end: () => callback({ statusCode: status, resume: () => {} }),
+        destroy: () => {},
+      });
+      return req;
+    }) as unknown as Send;
+  }
+
+  it.each([530, 502, 504])('counts %i as down', async (status) => {
+    expect(await probeTunnel('https://x.trycloudflare.com', 1000, answering(status))).toBe(false);
+  });
+
+  it.each([200, 204, 301, 401, 403, 404, 429, 500, 503])(
+    'counts application status %i as alive',
+    async (status) => {
+      expect(await probeTunnel('https://x.trycloudflare.com', 1000, answering(status))).toBe(true);
+    },
+  );
+
+  it('counts a network error as down', async () => {
+    const failing = (() => {
+      const req = Object.assign(new EventEmitter(), {
+        end: () => queueMicrotask(() => req.emit('error', new Error('boom'))),
+        destroy: () => {},
+      });
+      return req;
+    }) as unknown as Send;
+    expect(await probeTunnel('https://x.trycloudflare.com', 1000, failing)).toBe(false);
   });
 });

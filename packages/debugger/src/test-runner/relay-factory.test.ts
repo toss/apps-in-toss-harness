@@ -112,6 +112,7 @@ vi.mock('../mcp/devtools-opener.js', () => ({
 const generateTotpMock = vi.fn(() => '123456');
 vi.mock('../mcp/totp.js', () => ({
   generateTotp: generateTotpMock,
+  mintRelayCode: generateTotpMock,
 }));
 
 // qr-http-server.ts — the key surface under test
@@ -119,7 +120,9 @@ const qrServerCloseMock = vi.fn(() => Promise.resolve());
 const qrServerNotifyMock = vi.fn();
 const fakeQrServer = {
   port: 49152, // synthetic loopback port — not a real server
+  buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
   buildAttachPageUrl: (url: string) => `http://127.0.0.1:49152/?u=${encodeURIComponent(url)}`,
+  tokenizeUrl: (url: string) => `${url}&dashtoken=${'a'.repeat(64)}`,
   inspectorStableUrl: 'http://127.0.0.1:49152/inspector',
   notifyStateChange: qrServerNotifyMock,
   hasActiveClients: () => false,
@@ -359,6 +362,45 @@ describe('createRelayConnectionFactory — web-QR server (devtools#708)', () => 
       const deps = capturedAttachDeps();
       expect(deps?.canOpenBrowser?.()).toBe(false);
     });
+
+    it.each([
+      { isTTY: true, printsUrl: true },
+      { isTTY: false, printsUrl: false },
+    ])(
+      'prints the tokened dashboard URL only to a terminal (isTTY=$isTTY)',
+      async ({ isTTY, printsUrl }) => {
+        const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const original = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
+        Object.defineProperty(process.stderr, 'isTTY', { value: isTTY, configurable: true });
+        try {
+          const factory = createRelayConnectionFactory({
+            schemeUrl: SYNTHETIC_SCHEME_URL,
+            onQrContent,
+            headless: true,
+          });
+
+          await factory.open();
+
+          const line = stderrSpy.mock.calls
+            .map((c) => String(c[0]))
+            .find((s) => s.includes('QR dashboard'));
+          expect(line).toBeDefined();
+          if (printsUrl) {
+            expect(line).toContain('dashtoken=');
+          } else {
+            expect(line).not.toContain('dashtoken=');
+            expect(line).not.toContain('127.0.0.1');
+          }
+        } finally {
+          if (original === undefined) {
+            Reflect.deleteProperty(process.stderr, 'isTTY');
+          } else {
+            Object.defineProperty(process.stderr, 'isTTY', original);
+          }
+          stderrSpy.mockRestore();
+        }
+      },
+    );
 
     it('closes QR server in close() even when headless', async () => {
       const factory = createRelayConnectionFactory({
@@ -1466,7 +1508,7 @@ describe('createRelayConnectionFactory — attach timeline (stage lines, session
       expect(lines).toContain('debugger-test: 폰이 이번 QR의 페이지를 열었어요\n');
       expect(lines.some((l) => l.startsWith('debugger-test: 폰의 코드가 거부됐어요'))).toBe(true);
       expect(qrServerNotifyMock).toHaveBeenCalledTimes(2);
-      expect(lines.join('')).not.toMatch(/wss?:\/\/|at=|\d{6}/);
+      expect(lines.join('')).not.toMatch(/wss?:\/\/|at=|[0-9a-f]{32}/);
     } finally {
       stderrSpy.mockRestore();
     }

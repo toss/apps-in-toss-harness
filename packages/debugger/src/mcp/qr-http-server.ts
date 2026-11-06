@@ -6,7 +6,7 @@
  * 넣으면 브라우저에 따라 빈 화면이 된다. 127.0.0.1 HTTP는 modern 브라우저가 fully trust.
  *
  * INSTALL-GRAPH INVARIANT:
- *   이 모듈은 react/react-dom을 절대 import하지 않는다. dashboard/attach HTML은
+ *   이 모듈은 UI 프레임워크를 절대 import하지 않는다. dashboard/attach HTML은
  *   scripts/build-dashboard-html.ts가 빌드 타임에 precompile해 dashboard.generated.ts
  *   (plain string exports)로 커밋한다. 이 모듈은 그 생성된 string만 import한다.
  *   check-mcp-react-free.sh 가드가 dist/mcp/cli.js·server.js의 react 유입을 기계적으로 검증.
@@ -30,19 +30,27 @@
  *
  * SECRET-HANDLING:
  *   - 127.0.0.1 바인딩만 — 외부 노출 0.
- *   - attachUrl은 HTML 본문과 /qr.png query에만 들어간다 (의도된 전달 경로).
- *   - wssUrl은 dashboard HTML에 절대 들어가지 않는다. tunnel.up boolean만 사용.
+ *   - attachUrl은 HTML 본문과 `/qr.png`(쿠키를 가진 브라우저가 연 응답 이미지)에만 들어간다.
+ *     MCP 결과 텍스트의 PNG 링크는 `u`를 싣지 않는다(`/qr.png`는 현재 상태의 링크를 그린다).
+ *   - 대시보드 접근 토큰(`dashtoken`)은 브라우저를 띄우는 함수에만 {@link QrHttpServer.tokenizeUrl}로
+ *     넘긴다. stderr·SSE·대시보드 HTML·MCP 결과에는 토큰 없는 URL만 싣는다.
+ *     모든 경로(`/devtools/` 포함)는 쿠키나 토큰이 없으면 403이다.
+ *   - wssUrl은 dashboard HTML과 `/events` payload에 절대 들어가지 않는다. tunnel.up boolean만 사용.
+ *   - Host·Origin 검사({@link isAllowedDashboardRequest})가 DNS rebinding을 막는다.
+ *     127.0.0.1 바인딩만으로는 브라우저가 공격자 도메인으로 이 포트를 읽는 경로가 남는다.
  *   - stdout/stderr/로그에 별도 출력하지 않는다.
  *   - tmp 파일 만들지 않음 — 모든 응답을 메모리에서 생성.
  *   - TOTP at= 코드는 attachUrl 캡슐 안에서만 노출 — SSE payload나 page 목록 등
  *     다른 필드에 TOTP 코드를 평문으로 싣지 않는다.
  */
 
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import { parseAcceptLanguage, resolveLocaleStrings } from '../i18n/index.js';
 import { attachChromeByLocale, dashboardChromeByLocale } from './dashboard.generated.js';
 import type { McpEnvironment } from './environment.js';
+import { RELAY_QR_REFRESH_INTERVAL_MS } from './totp.js';
 
 /** dashboard에 노출되는 현재 상태 스냅샷. */
 export interface DashboardState {
@@ -165,14 +173,28 @@ function buildModeLabel(
 
 export interface QrHttpServer {
   port: number;
-  /** `http://127.0.0.1:<port>/attach?u=<encoded>` URL 생성 헬퍼. */
+  /**
+   * 대시보드 루트 URL(`http://127.0.0.1:<port>/`). 접근 토큰이 없다 — 이미 쿠키를 받은
+   * 브라우저만 열 수 있다. 결과 텍스트·stderr·SSE에 실어도 되는 형태다.
+   */
   buildAttachPageUrl(attachUrl: string): string;
   /**
    * 안정 인스펙터 진입점 URL — `http://127.0.0.1:<port>/inspector` (issue #530).
-   * 클릭 시점에 TOTP를 mint하고 302 redirect하므로 URL 자체에 시크릿이 없다.
-   * 대시보드/stdout/로그 어디든 출력 가능.
+   * 클릭 시점에 TOTP를 mint하고 302 redirect하므로 URL 자체에 relay 시크릿이 없고,
+   * 대시보드 접근 토큰도 없다(쿠키를 가진 브라우저에서만 열린다).
    */
   readonly inspectorStableUrl: string;
+  /**
+   * `/qr.png` URL. `u`도 접근 토큰도 싣지 않는다 — 서버가 현재 상태의 attach URL을 그린다.
+   * 쿠키를 가진 브라우저에서만 열린다.
+   */
+  buildPngUrl(attachUrl: string): string;
+  /**
+   * 주어진 대시보드 URL(절대 URL 또는 경로)에 접근 토큰을 붙인다. 브라우저를 띄우는
+   * 함수에만 넘긴다. 반환값을 stderr·SSE·대시보드 HTML·MCP 결과 텍스트에 싣지 않는다.
+   * 사람이 직접 붙여 넣어야 하는 브라우저 열기 실패 안내만 예외다.
+   */
+  tokenizeUrl(url: string): string;
   /**
    * 상태 변경 시 호출 — SSE 구독자에게 최신 상태를 push한다.
    * `getDashboardState`가 주입돼 있지 않으면 no-op.
@@ -198,6 +220,15 @@ export interface QrHttpServer {
 export const MAX_SSE_CLIENTS = 2;
 
 /**
+ * 새 구독이 가장 오래된 구독을 밀어낼 수 있는 횟수 상한과 그 창. 상한을 넘으면 새
+ * 구독이 429로 거절되고 기존 구독은 그대로 남는다. 구독 두 개만 계속 열어도 다른
+ * 탭을 끝없이 쫓아낼 수 있던 것을 막는다. 정상 사용(탭 하나 더 열기, 새로고침)은
+ * 분당 한두 번이라 닿지 않는다. 새로고침은 옛 연결이 닫힌 뒤에 오므로 밀어내기도 아니다.
+ */
+export const SSE_EVICTION_BUDGET = 4;
+export const SSE_EVICTION_WINDOW_MS = 60_000;
+
+/**
  * `GET /events` 구독 프로토콜 표식(`?v=2`). `superseded` 이벤트를 이해하는 클라이언트
  * 스크립트만 이 표식을 붙인다. 표식이 없는 요청(이전 데몬이 띄운 채 남은 오래된 탭)은
  * 204로 거절한다 — EventSource는 204를 받으면 재연결을 멈추고, 요청은 구독 슬롯도
@@ -206,7 +237,115 @@ export const MAX_SSE_CLIENTS = 2;
 export const SSE_PROTOCOL_PARAM = 'v';
 export const SSE_PROTOCOL_VERSION = '2';
 
+/**
+ * HTML the dashboard serves (`/`, `/attach`, the inspector error page) must not be
+ * framed by another site: a clickjacking page could drive the "open DevTools"
+ * button on the user's behalf. `frame-ancestors` is the modern header and
+ * `X-Frame-Options` covers older browsers.
+ */
+const NO_FRAME_HEADERS = {
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+} as const;
+
 /** HTML 특수문자를 이스케이프한다. */
+/** 대시보드가 받는 Host 헤더의 호스트명. 포트는 보지 않는다(포트 포워딩된 탭도 정상 사용). */
+const DASHBOARD_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * 이 요청이 사용자의 대시보드 탭에서 온 것인지 판정한다.
+ *
+ * DNS rebinding은 공격자 도메인을 127.0.0.1로 돌려 같은 출처처럼 읽는 수법이라 Host에
+ * 공격자 호스트명이 남는다. 그래서 Host 허용 목록으로 끊기고, 부팅마다 바뀌는 토큰은
+ * 필요 없다. 대시보드 접근 토큰({@link DASHBOARD_TOKEN_PARAM})은 별개 축이다: 포트를 아는
+ * 로컬 프로세스가 대시보드를 읽지 못하게 하며, 브라우저를 띄우는 URL에만 실린다.
+ * Origin은 있을 때만 본다 — 같은 출처 GET과 주소창 진입에는 없다. `null` Origin(샌드박스
+ * iframe 등)은 거부한다.
+ */
+export function isAllowedDashboardRequest(req: IncomingMessage): boolean {
+  const { host, origin } = req.headers;
+  if (host === undefined) return false;
+  try {
+    if (!DASHBOARD_HOSTNAMES.has(new URL(`http://${host}`).hostname)) return false;
+    return origin === undefined || new URL(origin).host === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/** 대시보드 접근 토큰을 싣는 쿼리 파라미터 이름. 사용 직후 쿠키로 바꾸고 URL에서 지운다. */
+export const DASHBOARD_TOKEN_PARAM = 'dashtoken';
+
+/** 상수 시간으로 두 문자열이 같은지 비교한다. 길이가 달라도 같은 비용을 쓴다. */
+function safeEqual(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a).digest();
+  const hb = createHash('sha256').update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
+function readCookie(header: string | undefined, name: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
+}
+
+/** attach 링크에서 매번 바뀌는 `at=` 코드와 그 서명 `sig=`만 뺀다. 나머지는 바이트 그대로 둔다. */
+const ROTATING_PARAMS: ReadonlySet<string> = new Set(['at', 'sig']);
+
+function withoutAtParam(url: string): string {
+  const hashIndex = url.indexOf('#');
+  const hash = hashIndex === -1 ? '' : url.slice(hashIndex);
+  const beforeHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const queryIndex = beforeHash.indexOf('?');
+  if (queryIndex === -1) return url;
+  const kept = beforeHash
+    .slice(queryIndex + 1)
+    .split('&')
+    .filter((pair) => !ROTATING_PARAMS.has(pair.split('=')[0] ?? ''));
+  const base = beforeHash.slice(0, queryIndex);
+  return `${base}${kept.length > 0 ? `?${kept.join('&')}` : ''}${hash}`;
+}
+
+/**
+ * `/attach?u=`와 `/qr.png?u=`가 QR로 그려도 되는 링크인지 판정한다. 이 데몬이 지금 보여 주는
+ * attach 링크(`at=` 코드는 매번 바뀌므로 제외)와 같은 것만 허용한다. 이 페이지는 대시보드와
+ * 같은 주소에서 열리므로, 임의 `u`를 그리면 이 주소의 링크 하나로 남이 고른 URL의 QR을 우리
+ * 화면에 띄울 수 있다. 터널이 교체되면 옛 링크는 어차피 열리지 않아 함께 거절된다.
+ */
+export function isCurrentAttachUrl(candidate: string, current: string | null | undefined): boolean {
+  if (current === null || current === undefined || current === '') return false;
+  if (!hasPlainAtParams(candidate)) return false;
+  return withoutAtParam(candidate) === withoutAtParam(current);
+}
+
+/**
+ * `at=`·`sig=` 값은 코드 문자만 허용한다. 인코딩된 문자나 구분자가 섞인 값은 거절한다.
+ * `sig=`는 base64url 필드를 `.`로 이은 형태라 `.`도 허용한다.
+ */
+const ROTATING_VALUE_RE: Readonly<Record<string, RegExp>> = {
+  at: /^at=[A-Za-z0-9_-]*$/,
+  sig: /^sig=[A-Za-z0-9_.-]*$/,
+};
+
+function hasPlainAtParams(url: string): boolean {
+  const hashIndex = url.indexOf('#');
+  const beforeHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const queryIndex = beforeHash.indexOf('?');
+  if (queryIndex === -1) return true;
+  const pairs = beforeHash.slice(queryIndex + 1).split('&');
+  for (const name of ROTATING_PARAMS) {
+    const named = pairs.filter((pair) => pair.split('=')[0] === name);
+    if (named.length > 1) return false;
+    const valueRe = ROTATING_VALUE_RE[name];
+    if (valueRe === undefined || !named.every((pair) => valueRe.test(pair))) return false;
+  }
+  return true;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
@@ -321,9 +460,9 @@ function buildDashboardHtml(
   devtoolsEntryUrl: string | null = null,
   /**
    * SSE watchdog timeout 계산에 쓰이는 server refresh 주기 (ms, #681).
-   * 미지정 시 기본값 90_000 적용 → watchdog timeout = 90_000 × 2 + 30_000 = 210_000ms.
+   * 미지정 시 기본값 RELAY_QR_REFRESH_INTERVAL_MS(5_000) 적용 → watchdog timeout = 5_000 × 2 + 30_000 = 40_000ms.
    */
-  sseRefreshIntervalMs = 90_000,
+  sseRefreshIntervalMs = RELAY_QR_REFRESH_INTERVAL_MS,
 ): string {
   const s = resolveLocaleStrings(locale);
   const now = new Date().toISOString();
@@ -426,7 +565,7 @@ function buildDashboardHtml(
 
   // locale-aware strings for the inline SSE client script
   // watchdog timeout: server refresh 주기보다 넉넉히 크게 잡아 일시적 끊김을 오탐하지 않는다.
-  //   - 기본(90s): 90s × 2 + 30s = 210s — 주기 1회 놓쳐도 정상 케이스 배제.
+  //   - 기본(10s): 10s × 2 + 30s = 50s — 주기 1회 놓쳐도 정상 케이스 배제.
   //   - 짧은 주기(테스트용, < 5000ms): 주기 × 3 — 절대 30s를 더하지 않아 빠른 검증 가능.
   const watchdogTimeoutMs =
     sseRefreshIntervalMs < 5_000 ? sseRefreshIntervalMs * 3 : sseRefreshIntervalMs * 2 + 30_000;
@@ -506,7 +645,7 @@ interface SseScriptStrings {
   /**
    * SSE watchdog — server 무응답 판정 임계값 (ms). (#681)
    *
-   * server의 SSE refresh 주기(`sseRefreshIntervalMs`, 기본 90s)보다 넉넉히 크게 잡아
+   * server의 SSE refresh 주기(`sseRefreshIntervalMs`, 기본 5s)보다 넉넉히 크게 잡아
    * 한 번 놓쳐도 정상인 경우를 배제한다. token-fill 패턴으로 server refresh 주기를
    * 기반으로 계산한 값을 주입한다 (주기 × 2 + 30s 여유).
    *
@@ -595,7 +734,7 @@ function buildSseScript(strings: SseScriptStrings): string {
       var INSPECTOR_WAITING_LABEL = ${strings.inspectorWaitingLabel};
 
       // ── SSE watchdog 상수 (#681) ──────────────────────────────────────────
-      // server의 SSE refresh 주기(기본 90s)보다 넉넉히 큰 값 — 주기 × 2 + 30s 여유.
+      // server의 SSE refresh 주기(기본 5s)보다 넉넉히 큰 값 — 주기 × 2 + 30s 여유.
       // token-fill 패턴으로 server에서 계산해 주입한다.
       var WATCHDOG_TIMEOUT_MS = ${strings.watchdogTimeoutMs};
       var WATCHDOG_TITLE = ${strings.watchdogTitle};
@@ -826,9 +965,25 @@ function buildSseScript(strings: SseScriptStrings): string {
             } else if (s.attachUrl) {
               var encoded = encodeURIComponent(s.attachUrl);
               var safeUrl = String(s.attachUrl).slice(0, 2000).replace(/[<>&"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; });
+              // QR이 5초마다 바뀌므로 img를 새로 만들면 디코드 전까지 빈 칸이 보여 화면이 번쩍인다.
+              // 새 PNG를 먼저 받아 두고 다 받은 뒤에 src만 바꾼다. 같은 URL이면 아무것도 하지 않는다.
+              var qrSrc = '/qr.png?u=' + encoded;
+              var swapQr = function (el) {
+                if (el.getAttribute('data-u') === encoded) return;
+                el.setAttribute('data-u', encoded);
+                var pre = new Image();
+                pre.onload = function () { if (el.getAttribute('data-u') === encoded) el.src = qrSrc; };
+                pre.src = qrSrc;
+              };
+              var curImg = sec.querySelector('img.qr');
               ${
                 isDashboard
-                  ? `// dashboard: #attach-section innerHTML 전체 교체 (img + url-row).
+                  ? `var curBox = document.getElementById('url-box');
+              if (curImg && curBox && sec.contains(curBox)) {
+                swapQr(curImg);
+                curBox.textContent = s.attachUrl;
+              } else {
+              // dashboard 첫 렌더: #attach-section innerHTML 교체 (img + url-row).
               // url-box id="url-box" 를 포함해 복사 핸들러가 계속 동작함.
               sec.innerHTML =
                 '<img class="qr" src="/qr.png?u=' + encoded + '" alt="attach QR" />' +
@@ -836,12 +991,14 @@ function buildSseScript(strings: SseScriptStrings): string {
                   '<p class=\\"url-box\\" id=\\"url-box\\">' + safeUrl + '</p>' +
                   '<button class=\\"copy-btn\\" id=\\"copy-btn\\" type=\\"button\\" aria-label=\\"' + COPY_LABEL + '\\">' + COPY_LABEL + '</button>' +
                 '</div>' +
-                '<p class=\\"hint reopen-hint\\">' + REOPEN_HINT + '</p>';`
+                '<p class=\\"hint reopen-hint\\">' + REOPEN_HINT + '</p>';
+              var newImg = sec.querySelector('img.qr');
+              if (newImg) newImg.setAttribute('data-u', encoded);
+              }`
                   : `// /attach: img src만 교체 — url-box는 별도 #url-section에서 관리해 이중 표시 방지(#458).
-              // QR img src 교체: img가 있으면 src만 갱신, 없으면 img 요소 생성.
-              var img = sec.querySelector('img.qr');
-              if (img) {
-                img.src = '/qr.png?u=' + encoded;
+              // QR img src 교체: img가 있으면 미리 받은 뒤 src만 갱신, 없으면 img 요소 생성.
+              if (curImg) {
+                swapQr(curImg);
               } else {
                 sec.innerHTML = '<img class=\\"qr\\" src=\\"/qr.png?u=' + encoded + '\\" alt=\\"attach QR\\" />';
               }
@@ -920,7 +1077,7 @@ function buildSseScript(strings: SseScriptStrings): string {
  * pages.length > 0 게이트에 따라 활성/비활성 전환된다 (#544).
  *
  * SECRET-HANDLING: TOTP at= 코드는 attachUrl 캡슐 안에서만 노출 — 의도된 transport.
- * inspectorStableUrl은 /inspector 안정 URL (127.0.0.1, 시크릿 없음) — 노출 가능.
+ * inspectorStableUrl은 /inspector 안정 URL (127.0.0.1, relay 시크릿·접근 토큰 없음) — 노출 가능.
  */
 function buildAttachHtml(
   qrDataUrl: string,
@@ -934,15 +1091,15 @@ function buildAttachHtml(
   inspectorStableUrl: string | null = null,
   /**
    * SSE watchdog timeout 계산에 쓰이는 server refresh 주기 (ms, #681).
-   * 미지정 시 기본값 90_000 적용.
+   * 미지정 시 기본값 30_000 적용.
    */
-  sseRefreshIntervalMs = 90_000,
+  sseRefreshIntervalMs = RELAY_QR_REFRESH_INTERVAL_MS,
 ): string {
   const s = resolveLocaleStrings(locale);
   const langSwitcher = buildLangSwitcher(path, params, locale, s);
 
   // inspector 섹션 — pages.length > 0 게이트 (#544).
-  // inspectorStableUrl은 /inspector 안정 URL (시크릿 없음) — href 노출 가능.
+  // inspectorStableUrl은 /inspector 안정 URL (relay 시크릿·접근 토큰 없음) — href 노출 가능.
   let inspectorSection: string;
   if (pagesAttached && inspectorStableUrl) {
     const safeUrl = escapeHtml(inspectorStableUrl);
@@ -1003,14 +1160,14 @@ function buildAttachHtml(
 
 export interface QrHttpServerOptions {
   /**
-   * SSE 주기 갱신 간격 (ms). 기본값 90_000 (90초).
+   * SSE 주기 갱신 간격 (ms). 기본값 RELAY_QR_REFRESH_INTERVAL_MS (5초).
    *
    * SSE 구독자가 있는 동안 이 간격마다 `notifyStateChange()`와 동일한 push를 수행한다.
    * `getDashboardState()`가 호출 시점에 `at=` TOTP 코드를 재발급하므로, push 자체가
-   * 열린 탭의 인스펙터 링크를 신선하게 유지한다. 90s 주기 < relay gate 허용창 ~3분
-   * (±6 TOTP steps)이므로 탭이 열려 있는 한 링크가 항상 유효하다 (issue #509).
+   * 열린 탭의 인스펙터 링크를 신선하게 유지한다. 5s 주기 < relay gate 허용창 30~35초
+   * (TOTP 1 스텝 전까지)이므로 탭이 열려 있는 한 화면의 QR은 5초 넘게 낡지 않는다 (issue #509).
    *
-   * 테스트에서 짧은 값(예: 50ms)을 주입해 검증한다. `undefined`이면 기본값 90_000.
+   * 테스트에서 짧은 값(예: 50ms)을 주입해 검증한다. `undefined`이면 기본값 RELAY_QR_REFRESH_INTERVAL_MS.
    */
   sseRefreshIntervalMs?: number;
   /**
@@ -1151,12 +1308,13 @@ export async function startQrHttpServer(
 
   // SSE refresh 주기 — 핸들러 클로저 안에서 buildDashboardHtml/buildAttachHtml에 전달하기 위해
   // createServer 앞에서 선언한다 (temporal dead zone 방지, #681).
-  const refreshIntervalMs = options?.sseRefreshIntervalMs ?? 90_000;
+  const refreshIntervalMs = options?.sseRefreshIntervalMs ?? RELAY_QR_REFRESH_INTERVAL_MS;
 
   /** SSE 연결 하나에 상태 이벤트를 flush한다. */
   function pushStateToClient(res: ServerResponse, state: DashboardState): void {
     const payload = JSON.stringify({
-      tunnel: { up: state.tunnel.up, wssUrl: state.tunnel.wssUrl },
+      // wssUrl은 싣지 않는다 — 클라이언트 스크립트는 up만 읽는다.
+      tunnel: { up: state.tunnel.up },
       pages: state.pages,
       // attachUrl은 캡슐 그대로 전달 — TOTP at= 코드 분리 없음 (의도된 설계).
       attachUrl: state.attachUrl,
@@ -1175,16 +1333,27 @@ export async function startQrHttpServer(
     res.write(`data: ${payload}\n\n`);
   }
 
+  /** 최근 밀어내기 시각. {@link SSE_EVICTION_BUDGET} 계산용. */
+  const sseEvictions: number[] = [];
+
   /**
-   * 새 구독이 들어오기 전에 상한({@link MAX_SSE_CLIENTS})을 맞춘다 — 가장 오래된
-   * 구독부터 `superseded` 이벤트를 보내고 응답을 끝낸다. 클라이언트는 이 이벤트를
-   * 받으면 EventSource를 닫고 재연결하지 않는다(안 닫으면 auto-reconnect가 다시
-   * 밀어내는 핑퐁이 된다).
+   * 새 구독을 받을 자리를 만든다. 상한({@link MAX_SSE_CLIENTS})이 찼으면 가장 오래된
+   * 구독부터 `superseded` 이벤트를 보내고 응답을 끝낸다. 클라이언트는 이 이벤트를 받으면
+   * EventSource를 닫고 재연결하지 않는다(안 닫으면 auto-reconnect가 다시 밀어내는 핑퐁이
+   * 된다). 밀어내기 예산({@link SSE_EVICTION_BUDGET})이 바닥났으면 아무것도 밀어내지 않고
+   * `false`를 돌려준다.
    */
-  function makeRoomForSseClient(): void {
+  function makeRoomForSseClient(): boolean {
+    if (sseClients.length < MAX_SSE_CLIENTS) return true;
+    const now = Date.now();
+    while (sseEvictions.length > 0 && now - (sseEvictions[0] ?? now) > SSE_EVICTION_WINDOW_MS) {
+      sseEvictions.shift();
+    }
+    if (sseEvictions.length >= SSE_EVICTION_BUDGET) return false;
     while (sseClients.length >= MAX_SSE_CLIENTS) {
       const oldest = sseClients.shift();
       if (!oldest) break;
+      sseEvictions.push(now);
       try {
         oldest.write('event: superseded\ndata: {}\n\n');
         oldest.end();
@@ -1192,12 +1361,58 @@ export async function startQrHttpServer(
         // 이미 끊긴 연결 — 목록에서만 빠지면 된다.
       }
     }
+    return true;
   }
 
+  // 이 데몬 부팅마다 새로 만드는 대시보드 접근 토큰. 로컬 다른 프로세스나 브라우저 탭이
+  // 포트만 알아서는 대시보드·코드가 실린 경로를 읽지 못하게 한다.
+  const dashboardToken = randomBytes(32).toString('hex');
+  // 쿠키는 포트로 격리되지 않는다. 같은 호스트의 다른 데몬과 겹치지 않도록 포트를 이름에 넣는다.
+  let boundPort = 0;
+  const dashboardCookieName = (): string => `ait_dash_${boundPort}`;
+  const withToken = (url: string): string =>
+    `${url}${url.includes('?') ? '&' : '?'}${DASHBOARD_TOKEN_PARAM}=${dashboardToken}`;
+
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    if (!isAllowedDashboardRequest(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
+
     const rawUrl = req.url ?? '/';
     const [path, query = ''] = rawUrl.split('?', 2) as [string, string | undefined];
     const params = new URLSearchParams(query ?? '');
+
+    // 부팅마다 새로 만든 토큰이 없으면 어떤 경로도 내주지 않는다. 쿼리에 토큰 파라미터가
+    // 있는 GET은 쿠키 유무와 상관없이 파라미터를 지운 URL로 돌려보낸다(주소창·언어 전환
+    // 링크에 토큰이 남지 않게). 쿼리 토큰이 맞을 때만 쿠키를 심는다.
+    const cookieToken = readCookie(req.headers.cookie, dashboardCookieName());
+    const cookieOk = cookieToken !== null && safeEqual(cookieToken, dashboardToken);
+    const queryToken = params.get(DASHBOARD_TOKEN_PARAM);
+    if (req.method === 'GET' && queryToken !== null) {
+      const queryOk = safeEqual(queryToken, dashboardToken);
+      if (cookieOk || queryOk) {
+        params.delete(DASHBOARD_TOKEN_PARAM);
+        const rest = params.toString();
+        res.writeHead(302, {
+          Location: `${path}${rest === '' ? '' : `?${rest}`}`,
+          ...(queryOk
+            ? {
+                'Set-Cookie': `${dashboardCookieName()}=${dashboardToken}; Path=/; HttpOnly; SameSite=Strict`,
+              }
+            : {}),
+          'Cache-Control': 'no-store',
+        });
+        res.end();
+        return;
+      }
+    }
+    if (!cookieOk) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
 
     // per-request locale — ?lang= query param이 있으면 우선 적용, 없으면 Accept-Language header에서 결정.
     const langParam = params.get('lang');
@@ -1227,7 +1442,7 @@ export async function startQrHttpServer(
       }
       // devtoolsEntryUrl — getDirectInspectorUrl 주입 시만 /devtools/ 링크를 활성화.
       // 미주입이면 /devtools/ → 503이므로 dashboard에서 링크를 숨긴다.
-      // /devtools/ 는 안정 경로 (relay host·TOTP 없음) — stdout/로그 출력 가능.
+      // /devtools/ 는 relay host·TOTP 없는 안정 경로지만 대시보드 쿠키가 없으면 403이다.
       const devtoolsEntryUrl: string | null = (() => {
         if (!options?.getDirectInspectorUrl) return null;
         const addr = server.address();
@@ -1246,6 +1461,7 @@ export async function startQrHttpServer(
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
+        ...NO_FRAME_HEADERS,
       });
       res.end(html);
       return;
@@ -1259,6 +1475,15 @@ export async function startQrHttpServer(
         res.end();
         return;
       }
+      // 자리를 먼저 확보한다 — 못 구하면 기존 구독을 건드리지 않고 거절한다.
+      if (!makeRoomForSseClient()) {
+        res.writeHead(429, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Retry-After': String(Math.ceil(SSE_EVICTION_WINDOW_MS / 1000)),
+        });
+        res.end('Too Many Requests');
+        return;
+      }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -1269,7 +1494,6 @@ export async function startQrHttpServer(
       const initialState = getDashboardState();
       pushStateToClient(res, initialState);
 
-      makeRoomForSseClient();
       sseClients.push(res);
 
       // 연결 끊기면 목록에서 제거.
@@ -1281,13 +1505,14 @@ export async function startQrHttpServer(
     }
 
     if (path === '/attach') {
+      // `params.get`이 이미 한 번 디코드한 값이다. 검증한 문자열을 그대로 그리도록 다시 디코드하지 않는다.
       const encodedU = params.get('u') ?? '';
-      let attachUrl: string;
-      try {
-        attachUrl = decodeURIComponent(encodedU);
-      } catch {
-        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('잘못된 u 파라미터입니다.');
+      const attachUrl: string = encodedU;
+
+      // 이 데몬이 지금 보여 주는 attach 링크만 그린다. 임의 u는 거절.
+      if (!isCurrentAttachUrl(encodedU, getDashboardState?.().attachUrl)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('이 서버가 만든 attach 링크가 아닙니다.');
         return;
       }
 
@@ -1308,7 +1533,7 @@ export async function startQrHttpServer(
       const mode = currentState?.mode;
       const pagesAttached =
         Array.isArray(currentState?.pages) && (currentState?.pages.length ?? 0) > 0;
-      // inspectorStableUrl: /inspector 안정 URL (시크릿 없음) — getDirectInspectorUrl 주입 시만 활성.
+      // inspectorStableUrl: /inspector 안정 URL (relay 시크릿·접근 토큰 없음) — getDirectInspectorUrl 주입 시만 활성.
       // 서버 주소는 listen 후에만 확정되므로 server.address()로 런타임에 읽는다.
       // (요청은 listen 완료 후 들어오므로 address()는 항상 non-null이다.)
       const inspectorStableUrlForAttach: string | null = (() => {
@@ -1338,6 +1563,7 @@ export async function startQrHttpServer(
           res.writeHead(200, {
             'Content-Type': 'text/html; charset=utf-8',
             'Cache-Control': 'no-store',
+            ...NO_FRAME_HEADERS,
           });
           res.end(html);
         })
@@ -1397,6 +1623,7 @@ export async function startQrHttpServer(
         res.writeHead(502, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
+          ...NO_FRAME_HEADERS,
         });
         res.end(body);
         return;
@@ -1412,9 +1639,37 @@ export async function startQrHttpServer(
     }
 
     if (path === '/qr.png') {
-      const encodedU = params.get('u') ?? '';
+      // `u`가 아예 없으면 현재 상태의 attach URL을 그린다. MCP 결과 텍스트에 싣는 PNG 링크가
+      // 이 형태라 attach URL(at·sig·relay)이 기계가 읽는 텍스트에 들어가지 않는다.
+      // 보여줄 attach URL이 없으면(터널 부팅 전) 404.
+      const encodedU = params.get('u');
+      if (encodedU === null) {
+        const current = getDashboardState?.().attachUrl;
+        if (!current) {
+          res.writeHead(404, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store',
+          });
+          res.end('현재 attach 링크가 없습니다.');
+          return;
+        }
+        QRCode.toBuffer(current, { type: 'png', errorCorrectionLevel: 'M' })
+          .then((buf: Buffer) => {
+            res.writeHead(200, {
+              'Content-Type': 'image/png',
+              'Cache-Control': 'no-store',
+              'Content-Length': String(buf.length),
+            });
+            res.end(buf);
+          })
+          .catch(() => {
+            res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('QR PNG 생성에 실패했습니다.');
+          });
+        return;
+      }
 
-      // SECONDARY FIX (devtools#714): an empty or missing `u` means the attach
+      // SECONDARY FIX (devtools#714): an empty `u` means the attach
       // URL is not yet available (tunnel still booting, dashboard in WAITING
       // state). Return 204 No Content instead of passing an empty string to
       // QRCode.toBuffer which would reject and produce a confusing 500.
@@ -1425,20 +1680,20 @@ export async function startQrHttpServer(
         return;
       }
 
-      let attachUrl: string;
-      try {
-        attachUrl = decodeURIComponent(encodedU);
-      } catch {
-        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('잘못된 u 파라미터입니다.');
-        return;
-      }
+      // `params.get`이 이미 한 번 디코드했다. 검증한 문자열을 그대로 그리도록 다시 디코드하지 않는다.
+      const attachUrl: string = encodedU;
 
       // Guard against an empty decoded string (e.g. `?u=` encoded as `%00`
       // or other edge cases) — same 204 treatment as the missing-u path above.
       if (attachUrl === '') {
         res.writeHead(204, { 'Cache-Control': 'no-store' });
         res.end();
+        return;
+      }
+
+      if (!isCurrentAttachUrl(encodedU, getDashboardState?.().attachUrl)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('이 서버가 만든 attach 링크가 아닙니다.');
         return;
       }
 
@@ -1478,6 +1733,7 @@ export async function startQrHttpServer(
     throw new Error('qr-http-server: server.address()가 예상하지 못한 형태입니다.');
   }
   const port = address.port;
+  boundPort = port;
 
   /** idle 탭 TOTP 만료 방지용 주기 SSE 갱신 interval. */
   function notifyStateChangeInternal(): void {
@@ -1505,15 +1761,19 @@ export async function startQrHttpServer(
   return {
     port,
     buildAttachPageUrl(_attachUrl: string): string {
-      // 사용자 대면 URL을 루트 `/`로 수렴 (#595).
-      // 같은 데몬이 attachUrl을 이미 server-state(getDashboardState)로 보유하므로
-      // `/attach?u=<encoded>` 쿼리는 redundant하다.
-      // SECRET-HANDLING: 브라우저에 열리는 URL에서 tunnel host·relay wss·TOTP at= 제거.
-      // /attach?u= 라우트 자체는 back-compat으로 유지(기존 인쇄된 링크 보호).
+      // 사용자 대면 URL을 루트 `/`로 수렴 (#595). 같은 데몬이 attachUrl을 server-state로 보유한다.
+      // SECRET-HANDLING: tunnel host·relay wss·TOTP at=·대시보드 접근 토큰 모두 없다.
+      // 브라우저를 띄울 때만 tokenizeUrl로 토큰을 붙인다.
       return `http://127.0.0.1:${port}/`;
     },
+    buildPngUrl(_attachUrl: string): string {
+      return `http://127.0.0.1:${port}/qr.png`;
+    },
+    tokenizeUrl(url: string): string {
+      return withToken(url);
+    },
     // 안정 인스펙터 진입점 URL (issue #530) — 클릭 시 302 redirect (TOTP 클릭 시점 mint).
-    // URL 자체에 시크릿 없음 → 대시보드/stdout/로그 어디든 출력 가능.
+    // URL 자체에 relay 시크릿도 접근 토큰도 없다. 쿠키를 가진 브라우저에서만 열린다.
     get inspectorStableUrl(): string {
       return `http://127.0.0.1:${port}/inspector`;
     },

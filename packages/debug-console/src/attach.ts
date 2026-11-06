@@ -15,27 +15,74 @@ import {
   ATTACH_HANDSHAKE_PROTOCOL_PARAM,
   ATTACH_HANDSHAKE_VERSION_PARAM,
   PROTOCOL_VERSION,
+  RELAY_UPDATE_REQUIRED_CLOSE_CODE,
+  RELAY_UPDATE_REQUIRED_REASON,
+  relayAuthPathPrefix,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
 import { RELAY_WS_STATE_EVENT } from '@apps-in-toss/internal-protocol/bridge-observer-state';
 import {
+  RELAY_AUTH_LOCKED_CLOSE_CODE,
   RELAY_AUTH_REJECT_CLOSE_CODE,
   RELAY_AUTH_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-auth-close';
 import {
+  isRelayDeviceId,
+  RELAY_DEVICE_SEGMENT,
+} from '@apps-in-toss/internal-protocol/relay-auth-code';
+import {
   RELAY_BUSY_CLOSE_CODE,
   RELAY_BUSY_REASON,
 } from '@apps-in-toss/internal-protocol/relay-busy-close';
+import {
+  RELAY_ORIGIN_REJECT_CLOSE_CODE,
+  RELAY_ORIGIN_REJECT_REASON,
+} from '@apps-in-toss/internal-protocol/relay-origin-close';
+import {
+  decodeBase64Url,
+  isRelayPublicKey,
+  parseRelayCertDocument,
+  parseRelaySignature,
+  RELAY_CERT_DOCUMENT_MAX_BYTES,
+  RELAY_CERT_PATH,
+  RELAY_PUBLIC_KEY_BYTES,
+  type RelayCert,
+  relayCertMessage,
+  relayLinkMessage,
+  relayOriginOf,
+} from '@apps-in-toss/internal-protocol/relay-signature';
 import { installBridgeObserver, uninstallBridgeObserver } from './bridge-observer.js';
+import { askAttachConsent, isRelayOriginConsented, rememberRelayOriginConsent } from './consent.js';
+import { isLocalhostHost } from './gate.js';
 import { checkDebugGate, type GateResult } from './index.js';
+import {
+  dropPageAttachParams,
+  hidePageAttachParams,
+  keepVerifiedRelayCert,
+  keptRelayCert,
+  pageAttachParamsFromHistory,
+  readPageAttachParams,
+  relayDeviceId,
+} from './page-at-code.js';
 import { setScreenAwake, setScreenAwakeNow } from './sdk-probe.js';
 import { setDebugStatus } from './status-banner.js';
+
+/**
+ * `/v<protocol>/at/<code>` plus `/d/<deviceId>` when a well-formed device id is
+ * given, or `''` without a code. chii derives every later URL (its socket, the
+ * proxy) from the script URL, so they all carry the same prefix.
+ */
+function relayPathPrefix(atCode?: string | null, deviceId?: string | null): string {
+  if (atCode === undefined || atCode === null || atCode === '') return '';
+  const device = isRelayDeviceId(deviceId) ? `/${RELAY_DEVICE_SEGMENT}/${deviceId}` : '';
+  return `${relayAuthPathPrefix()}/${encodeURIComponent(atCode)}${device}`;
+}
 
 /**
  * Converts a validated `wss:` relay URL into the Chii `target.js` script URL.
  *
  * Scheme is mapped `wss:` → `https:`. Host and port are preserved.
- * Pathname is set to `/target.js` (or `/at/<code>/target.js` when a TOTP code
- * is given) regardless of the relay path. Query params and hash from the
+ * Pathname is set to `/target.js` (or `/v<protocol>/at/<code>/target.js` when a
+ * code is given) regardless of the relay path. Query params and hash from the
  * relay URL are dropped — the target script URL is a static asset path on the
  * same host.
  *
@@ -43,7 +90,7 @@ import { setDebugStatus } from './status-banner.js';
  * its WS endpoint from the script `src` (`scriptEl.src.replace('target.js',
  * '')`), so embedding the current TOTP code in the script URL *path* is the
  * only way the phone-side WS upgrade can carry it — both the script fetch and
- * the derived `wss://<host>/at/<code>/target/<id>` dial inherit the prefix,
+ * the derived `wss://<host>/v2/at/<code>/target/<id>` dial inherit the prefix,
  * and the relay verifies + strips it before chii parses the URL. The
  * `window.ChiiServerUrl` + query alternative does NOT work: chii appends
  * `target/<id>` to the serverUrl string, which would land after a `?`.
@@ -56,20 +103,21 @@ import { setDebugStatus } from './status-banner.js';
  * deriveTargetScriptUrl('wss://abc.trycloudflare.com/relay')
  * // → 'https://abc.trycloudflare.com/target.js'
  *
- * deriveTargetScriptUrl('wss://h.example.com:9100/', '123456')
- * // → 'https://h.example.com:9100/at/123456/target.js'
+ * deriveTargetScriptUrl('wss://h.example.com:9100/', '<code>')
+ * // → 'https://h.example.com:9100/v2/at/<code>/target.js'
  *
  * @param relayUrl - Validated `wss:` relay URL from the gate result.
  * @param atCode - Current TOTP code from the page URL's `at` query param, or
  *   `null`/`undefined`/`''` to keep the legacy un-prefixed URL.
  */
-export function deriveTargetScriptUrl(relayUrl: string, atCode?: string | null): string {
+export function deriveTargetScriptUrl(
+  relayUrl: string,
+  atCode?: string | null,
+  deviceId?: string | null,
+): string {
   const u = new URL(relayUrl);
   u.protocol = 'https:';
-  u.pathname =
-    atCode !== undefined && atCode !== null && atCode !== ''
-      ? `/at/${encodeURIComponent(atCode)}/target.js`
-      : '/target.js';
+  u.pathname = `${relayPathPrefix(atCode, deviceId)}/target.js`;
   u.search = '';
   u.hash = '';
   return u.toString();
@@ -93,13 +141,14 @@ export function deriveTargetScriptUrl(relayUrl: string, atCode?: string | null):
  * @param atCode - Current TOTP code from the page URL's `at` query param, or
  *   `null`/`undefined`/`''` for the un-prefixed form.
  */
-export function deriveHandshakeUrl(relayUrl: string, atCode?: string | null): string {
+export function deriveHandshakeUrl(
+  relayUrl: string,
+  atCode?: string | null,
+  deviceId?: string | null,
+): string {
   const u = new URL(relayUrl);
   u.protocol = 'https:';
-  u.pathname =
-    atCode !== undefined && atCode !== null && atCode !== ''
-      ? `/at/${encodeURIComponent(atCode)}${ATTACH_HANDSHAKE_PATH}`
-      : ATTACH_HANDSHAKE_PATH;
+  u.pathname = `${relayPathPrefix(atCode, deviceId)}${ATTACH_HANDSHAKE_PATH}`;
   u.search = `?${ATTACH_HANDSHAKE_PROTOCOL_PARAM}=${PROTOCOL_VERSION}&${ATTACH_HANDSHAKE_VERSION_PARAM}=${encodeURIComponent(__VERSION__)}`;
   u.hash = '';
   return u.toString();
@@ -117,10 +166,14 @@ export function deriveHandshakeUrl(relayUrl: string, atCode?: string | null): st
  * SECRET-HANDLING: the URL (which carries the TOTP code in its path prefix) is
  * never logged, not even on failure.
  */
-function reportProtocolVersion(relayUrl: string, atCode?: string | null): void {
+function reportProtocolVersion(
+  relayUrl: string,
+  atCode: string | null,
+  deviceId: string | null,
+): void {
   if (typeof fetch !== 'function') return;
   try {
-    void fetch(deriveHandshakeUrl(relayUrl, atCode), {
+    void fetch(deriveHandshakeUrl(relayUrl, atCode, deviceId), {
       method: 'GET',
       mode: 'no-cors',
       cache: 'no-store',
@@ -141,7 +194,7 @@ let attached = false;
 //
 // After a successful attach, chii's target.js owns its own reconnect loop —
 // `maybeAttach()` never re-runs, so a much-later reconnect carrying the stale
-// `/at/<code>/` prefix is rejected by the relay with NO in-page signal. The
+// `/v<protocol>/at/<code>/` prefix is rejected by the relay with NO in-page signal. The
 // relay now names that rejection (accept-then-close, code 4401), and this
 // observer is the in-page half: it watches relay-bound WebSockets for the
 // 4401 close, records it once in the page console, then fail-fasts any further
@@ -156,6 +209,11 @@ let relayAuthExpired = false;
 
 /** One-shot guard for the relay-busy console notice. */
 let relayBusyNotified = false;
+/**
+ * The relay's code check is temporarily locked (4429 / HTTP 429). Not terminal:
+ * unlike an expired code, retrying later works. Cleared when a socket opens.
+ */
+let relayLocked = false;
 
 /**
  * Set once a relay-bound socket closed with 4409 (`relay-busy`): another
@@ -165,12 +223,33 @@ let relayBusyNotified = false;
  */
 let relayBusy = false;
 
+/** One-shot guards for the origin-rejected and version-mismatch notices. */
+let relayOriginNotified = false;
+let relayVersionNotified = false;
+
+/**
+ * Set once a relay-bound socket closed with 4403 (the relay refused this page's
+ * `Origin`) or 4426 (the relay and this package speak different protocol
+ * versions). Both are terminal: retrying the same page cannot change the
+ * outcome, so dials fail fast and the banner names the reason.
+ */
+let relayOriginRejected = false;
+let relayVersionMismatch = false;
+
 /**
  * Set once any relay-bound socket reached `open`. Splits a later close into
  * "session ended" (it did connect) vs "server unreachable" (it never did) for
  * the on-phone status banner.
  */
 let relayWsEverOpened = false;
+
+/** Whether a terminal named rejection (4401, 4403, 4409, 4426) was already seen. */
+function terminalRelayRejection(): boolean {
+  return relayAuthExpired || relayBusy || relayOriginRejected || relayVersionMismatch;
+}
+
+/** How long a relay socket must stay open before the status reads `connected`. */
+const CONNECTED_STABLE_MS = 1000;
 
 /** Guard against stacking multiple observer wrappers on window.WebSocket. */
 let wsObserverInstalled = false;
@@ -224,6 +303,16 @@ function notifyAuthExpired(): void {
   );
 }
 
+/** Records the temporary lock in the page console, once per lock. Fixed label only. */
+function notifyRelayLocked(): void {
+  if (relayLocked) return;
+  relayLocked = true;
+  setDebugStatus('relay-locked');
+  console.warn(
+    '[@apps-in-toss/debug-console] relay is temporarily refusing connections after repeated failed checks — wait a minute and retry',
+  );
+}
+
 /**
  * Records the busy-relay rejection in the page console, once. Fixed label only
  * — never the host, relay URL, or close frame contents.
@@ -234,6 +323,26 @@ function notifyRelayBusy(): void {
   setDebugStatus('relay-busy');
   console.warn(
     '[@apps-in-toss/debug-console] relay is already attached to another mini-app — close this one and rescan the QR',
+  );
+}
+
+/** Records the origin rejection in the page console, once. Fixed label only. */
+function notifyRelayOriginRejected(): void {
+  if (relayOriginNotified) return;
+  relayOriginNotified = true;
+  setDebugStatus('relay-origin-rejected');
+  console.warn(
+    '[@apps-in-toss/debug-console] relay refused this page origin — open the test bundle from the Toss app and rescan the QR',
+  );
+}
+
+/** Records the protocol-version rejection in the page console, once. Fixed label only. */
+function notifyRelayVersionMismatch(): void {
+  if (relayVersionNotified) return;
+  relayVersionNotified = true;
+  setDebugStatus('relay-version-mismatch');
+  console.warn(
+    '[@apps-in-toss/debug-console] relay and debug-console protocol versions differ — update both packages and rebuild',
   );
 }
 
@@ -381,7 +490,9 @@ function scheduleDetach(): void {
     pendingDetachTimer = null;
     // The relay did not come back within the grace window. Tell the operator
     // before teardown — the banner outlives the detached surface on purpose.
-    setDebugStatus(relayWsEverOpened ? 'session-ended' : 'server-unreachable');
+    setDebugStatus(
+      relayLocked ? 'relay-locked' : relayWsEverOpened ? 'session-ended' : 'server-unreachable',
+    );
     detachDebugSurface();
   }, RECONNECT_GRACE_MS);
 }
@@ -504,19 +615,51 @@ export function installRelayWsObserver(relayUrl: string): void {
         // Same cutoff for the busy rejection: another mini-app holds the relay.
         return createFailFastSocket(url, RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON);
       }
+      if (relayOriginRejected) {
+        return createFailFastSocket(
+          url,
+          RELAY_ORIGIN_REJECT_CLOSE_CODE,
+          RELAY_ORIGIN_REJECT_REASON,
+        );
+      }
+      if (relayVersionMismatch) {
+        return createFailFastSocket(
+          url,
+          RELAY_UPDATE_REQUIRED_CLOSE_CODE,
+          RELAY_UPDATE_REQUIRED_REASON,
+        );
+      }
       const ws = Reflect.construct(target, args) as WebSocket;
       // #730: broadcast generic open/close lifecycle (any close code) so the
       // debug indicator can flip its live badge — additive to the existing
       // 4401-specific branch below, which is untouched.
+      // A relay that refuses the page (origin, protocol version) completes the
+      // upgrade first and closes right after, so `open` alone does not mean the
+      // session works. The status becomes `connected` only when the socket has
+      // stayed open for CONNECTED_STABLE_MS.
+      let socketClosed = false;
+      let stableTimer: ReturnType<typeof setTimeout> | null = null;
       ws.addEventListener('open', () => {
         relayWsEverOpened = true;
-        setDebugStatus('connected');
+        relayLocked = false;
+        if (typeof setTimeout === 'function') {
+          stableTimer = setTimeout(() => {
+            stableTimer = null;
+            if (socketClosed || terminalRelayRejection()) return;
+            setDebugStatus('connected');
+          }, CONNECTED_STABLE_MS);
+        }
         broadcastRelayWsState('open');
         // #748: a (re)connect aborts any pending graceful-detach — a transient
         // tunnel blip that target.js recovers from must not tear the surface down.
         cancelScheduledDetach();
       });
       ws.addEventListener('close', (event) => {
+        socketClosed = true;
+        if (stableTimer !== null) {
+          clearTimeout(stableTimer);
+          stableTimer = null;
+        }
         broadcastRelayWsState('close');
         if ((event as CloseEvent).code === RELAY_AUTH_REJECT_CLOSE_CODE) {
           relayAuthExpired = true;
@@ -524,12 +667,27 @@ export function installRelayWsObserver(relayUrl: string): void {
           // #748: 4401 is terminal by design (no reconnect without a QR rescan)
           // — tear down immediately, no grace window.
           detachDebugSurface();
+        } else if ((event as CloseEvent).code === RELAY_AUTH_LOCKED_CLOSE_CODE) {
+          // Retryable: the relay is rate-limiting code checks. chii keeps
+          // redialling; a reconnect 'open' cancels the grace teardown.
+          notifyRelayLocked();
+          scheduleDetach();
         } else if ((event as CloseEvent).code === RELAY_BUSY_CLOSE_CODE) {
           // Another mini-app holds the relay. Terminal for this page: the
           // banner says to close this app and rescan, so no grace window and
           // no 'session-ended' / 'server-unreachable' overwrite.
           relayBusy = true;
           notifyRelayBusy();
+          detachDebugSurface();
+        } else if ((event as CloseEvent).code === RELAY_ORIGIN_REJECT_CLOSE_CODE) {
+          // The relay refused this page's origin. Terminal: same page, same origin.
+          relayOriginRejected = true;
+          notifyRelayOriginRejected();
+          detachDebugSurface();
+        } else if ((event as CloseEvent).code === RELAY_UPDATE_REQUIRED_CLOSE_CODE) {
+          // Protocol versions differ. Terminal until a package is updated.
+          relayVersionMismatch = true;
+          notifyRelayVersionMismatch();
           detachDebugSurface();
         } else {
           // #748: any other close may be transient — schedule teardown after a
@@ -543,7 +701,7 @@ export function installRelayWsObserver(relayUrl: string): void {
         // Never opened → the relay is unreachable from this network; say so now
         // instead of waiting out the grace window. After an open, a close
         // follows and the grace timer decides (a reconnect may still recover).
-        if (relayBusy || relayAuthExpired) return;
+        if (terminalRelayRejection()) return;
         if (!relayWsEverOpened) setDebugStatus('server-unreachable');
         scheduleDetach();
       });
@@ -572,12 +730,45 @@ export function installRelayWsObserver(relayUrl: string): void {
  * reads `window.location.search` directly, consistent with other guards in
  * this file.
  *
+ * **Relay signature**: on a page that is not on a loopback host, the relay
+ * endpoint in the URL is not trusted until its signature (`sig`) verifies: a
+ * short-lived session key, certified by one of the root public keys the bundle
+ * carries (`options.relayPublicKeys`, else `globalThis.__AIT_DEBUG_RELAY_KEYS__`)
+ * for a window that contains the device clock, signs the relay origin and the
+ * `at` code. The certificate comes from the relay itself: before verification
+ * the page sends exactly one request, a GET for the public certificate document
+ * (`/relay-cert`, no `at` code, no credentials, no cache, no redirects, 3 s and
+ * 4 KB caps), and parses the answer as data. Nothing from the relay is executed
+ * and nothing else is sent (no version handshake, no script, no WebSocket), and
+ * the page URL stays as it is, until the signature verifies. A same-page reload
+ * that reads the values back from the history entry reuses the certificate kept
+ * there (no request) and skips only the clock check. It fails closed: no
+ * keys, no WebCrypto, a malformed key or a bad signature stop the attach and set
+ * `blocked-relay-key` or `blocked-relay-signature`. Because the check is
+ * asynchronous, the call returns a promise on such pages; loopback pages attach
+ * synchronously and return nothing.
+ *
  * @param gateResult - Optional pre-evaluated gate result for testability.
  *   Defaults to `checkDebugGate()` which reads the current page URL. Passing a
  *   custom value avoids the need to manipulate `window.location` in tests.
+ * @param options - `relayPublicKeys`: the project's relay public keys (see
+ *   `debugger relay-key`). Public values; safe to commit.
  */
-export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
+export function maybeAttach(
+  gateResult: GateResult = checkDebugGate(),
+  options?: MaybeAttachOptions,
+): Promise<void> | undefined {
+  // First, so a later call cannot read the now code-free URL as an auth failure.
+  // The in-flight flag covers the window while a signature check is pending.
+  if (attached || attachInFlight) {
+    return undefined;
+  }
+
   if (!gateResult.attach) {
+    // Not a QR test host: leave no trace at all (no log, no banner).
+    if (gateResult.reason === 'host') {
+      return undefined;
+    }
     console.debug(
       `[@apps-in-toss/debug-console] debug attach skipped — gate blocked (reason: ${gateResult.reason})`,
     );
@@ -595,18 +786,20 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
     // On-phone reason + next action (opt-in pages only; set last so the gate
     // reason wins over notifyAuthExpired's generic `code-expired`).
     setDebugStatus(`blocked-${gateResult.reason}`);
-    return;
-  }
-
-  // Guard against double-injection across repeated calls.
-  if (attached) {
-    return;
+    // The attach values in the URL are dead weight once the gate refused them,
+    // and `at` / `sig` would keep riding in `location.href`. Pages that never
+    // asked for a debug session ('host' returned above, 'opt-in', 'entry') are
+    // left untouched: the parameter names may be the app's own there.
+    if (gateResult.reason !== 'opt-in' && gateResult.reason !== 'entry') {
+      dropPageAttachParams();
+    }
+    return undefined;
   }
 
   // Defensive: if document is not available (unusual, but possible in some
   // SSR-adjacent edge cases), bail silently rather than throwing.
   if (typeof document === 'undefined') {
-    return;
+    return undefined;
   }
 
   // TOTP path-prefix transport (issue #466): forward the page URL's `at` code
@@ -617,27 +810,337 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
   // this file. SECRET-HANDLING: the code is never logged; it rides only in
   // the script src (the intended transport).
   //
-  // TTL note: the code is verified within the relay's ±1-step window (90 s),
-  // so the initial attach always fits. A much-later automatic reconnect by
-  // target.js reuses the stale prefix and is rejected (401) — by design under
-  // the URL-leak threat model; recover by rescanning the QR (the relay-side
+  // TTL note: the relay accepts a fresh code for 30 to 35 seconds after it was
+  // minted, so the initial attach fits. Once attached, the relay binds the code
+  // to this page's target id: a reload or a reconnect of the same page keeps
+  // working with the aged code for a few minutes after its last socket closed.
+  // A later reconnect past that is rejected (401) — by design under the
+  // URL-leak threat model; recover by rescanning the QR (the relay-side
   // auth-reject counter from issue #467 makes this visible).
-  const atCode =
-    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('at') : null;
+  const params = readPageAttachParams();
 
-  const src = deriveTargetScriptUrl(gateResult.relayUrl, atCode);
+  // A loopback page talks to a loopback relay (the gate pairs them), so there
+  // is nothing to verify and the attach stays synchronous.
+  if (typeof window !== 'undefined' && isLocalhostHost(window.location.hostname)) {
+    injectRelay(gateResult.relayUrl, params.at);
+    return undefined;
+  }
+
+  attachInFlight = true;
+  return consentThenVerify(gateResult.relayUrl, params.at, params.sig, options).finally(() => {
+    attachInFlight = false;
+  });
+}
+
+/**
+ * Asks the person before a first attach from the URL (consent.ts), then
+ * verifies. A same-page reload of a page that already attached does not ask,
+ * nor does a relay origin the person accepted within the last day. Nothing is
+ * requested from the relay before the answer; "취소" drops the attach values
+ * from the URL and history and leaves no banner. A failed verification drops
+ * them too (see {@link verifyThenInject}); only an attach that succeeded keeps
+ * them, on the history entry, for a reload.
+ */
+async function consentThenVerify(
+  relayUrl: string,
+  atCode: string | null,
+  sig: string | null,
+  options: MaybeAttachOptions | undefined,
+): Promise<void> {
+  const fromHistory = pageAttachParamsFromHistory();
+  const origin = relayOriginOf(relayUrl);
+  let asked = false;
+  if (!fromHistory && (origin === null || !isRelayOriginConsented(origin))) {
+    asked = true;
+    if (!(await askAttachConsent(origin))) {
+      dropPageAttachParams();
+      return;
+    }
+  }
+  await verifyThenInject(relayUrl, atCode, sig, options, fromHistory);
+  if (asked && attached && origin !== null) rememberRelayOriginConsent(origin);
+}
+
+/**
+ * Whether the debug surface was attached on this page (the relay script was
+ * injected, or is already in the document). `false` on every blocked path.
+ */
+export function isDebugAttached(): boolean {
+  return attached;
+}
+
+/** Options for {@link maybeAttach}. */
+export interface MaybeAttachOptions {
+  /**
+   * Relay public keys of the projects whose daemon may serve this bundle
+   * (base64url, as printed by `debugger relay-key`). Any one key may match.
+   * Public values; safe to commit. Falls back to `globalThis.__AIT_DEBUG_RELAY_KEYS__`.
+   */
+  readonly relayPublicKeys?: readonly string[];
+}
+
+declare global {
+  var __AIT_DEBUG_RELAY_KEYS__: readonly string[] | undefined;
+}
+
+/** Module-level guard: a signature check is pending, so a second call must not start another. */
+let attachInFlight = false;
+
+type SignatureVerdict =
+  | { readonly kind: 'ok'; readonly certDocument: string }
+  | { readonly kind: 'no-key' }
+  | { readonly kind: 'bad-signature' };
+
+const NO_KEY: SignatureVerdict = { kind: 'no-key' };
+const BAD_SIGNATURE: SignatureVerdict = { kind: 'bad-signature' };
+
+/** How long the certificate request may take before the attach is refused. */
+export const RELAY_CERT_FETCH_TIMEOUT_MS = 3_000;
+
+const ECDSA_P256 = { name: 'ECDSA', namedCurve: 'P-256' } as const;
+const ECDSA_SHA256 = { name: 'ECDSA', hash: 'SHA-256' } as const;
+
+async function verifyWith(
+  subtle: SubtleCrypto,
+  rawKey: Uint8Array,
+  signature: Uint8Array,
+  message: string,
+): Promise<boolean> {
+  try {
+    const key = await subtle.importKey('raw', rawKey as BufferSource, ECDSA_P256, false, [
+      'verify',
+    ]);
+    return await subtle.verify(
+      ECDSA_SHA256,
+      key,
+      signature as BufferSource,
+      new TextEncoder().encode(message),
+    );
+  } catch {
+    // A key or signature the runtime refuses counts as a non-match.
+    return false;
+  }
+}
+
+/** Reads at most `limit` bytes of a response body as text, or `null` when it is longer. */
+async function readCapped(res: Response, limit: number): Promise<string | null> {
+  const declared = Number(res.headers?.get?.('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > limit) return null;
+  const reader = res.body?.getReader?.();
+  if (reader === undefined) {
+    const text = await res.text();
+    return new TextEncoder().encode(text).length > limit ? null : text;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > limit) {
+      void reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
+/**
+ * Fetches the relay's public certificate document. One plain GET to
+ * `https://<relay host>/relay-cert`: no `at` code, no credentials, no cache, no
+ * redirects, at most {@link RELAY_CERT_FETCH_TIMEOUT_MS} and
+ * {@link RELAY_CERT_DOCUMENT_MAX_BYTES}. Nothing in the answer is executed; it
+ * is parsed as data. `null` on any failure.
+ */
+async function fetchRelayCertDocument(relayOrigin: string): Promise<string | null> {
+  if (typeof fetch !== 'function') return null;
+  const url = `https://${relayOrigin.slice('wss://'.length)}${RELAY_CERT_PATH}`;
+  const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      resolve(null);
+    }, RELAY_CERT_FETCH_TIMEOUT_MS);
+  });
+  const attempt = (async (): Promise<string | null> => {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer',
+        ...(controller !== undefined ? { signal: controller.signal } : {}),
+      });
+      if (res.status !== 200 || res.redirected === true) return null;
+      return await readCapped(res, RELAY_CERT_DOCUMENT_MAX_BYTES);
+    } catch {
+      return null;
+    }
+  })();
+  try {
+    return await Promise.race([attempt, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Verifies the relay signature with WebCrypto. Fails closed on every path.
+ *
+ * The only network activity is one GET for the relay's public certificate
+ * document (no code, no credentials), skipped on a same-page reload that kept
+ * the certificate on its history entry. Nothing from the relay is executed
+ * before this returns `ok`.
+ *
+ * A certificate counts when it was issued for the key id in `sig`, its root
+ * signature verifies against a pinned key, the device clock lies inside its
+ * window, and its session key verifies the link signature. The clock check is
+ * skipped only when every attach value came from the history entry
+ * (`fromHistory`): this page verified them when they came from the URL.
+ */
+async function verifyRelaySignature(
+  relayUrl: string,
+  atCode: string | null,
+  sig: string | null,
+  keys: readonly unknown[] | undefined,
+  fromHistory: boolean,
+): Promise<SignatureVerdict> {
+  if (!Array.isArray(keys) || keys.length === 0) return NO_KEY;
+  const rootKeys: Uint8Array[] = [];
+  for (const key of keys) {
+    if (!isRelayPublicKey(key)) continue;
+    const bytes = decodeBase64Url(key);
+    if (bytes !== null && bytes.length === RELAY_PUBLIC_KEY_BYTES && bytes[0] === 0x04) {
+      rootKeys.push(bytes);
+    }
+  }
+  if (rootKeys.length === 0) return NO_KEY;
+
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined || atCode === null || atCode === '') return BAD_SIGNATURE;
+  const origin = relayOriginOf(relayUrl);
+  const link = parseRelaySignature(sig);
+  if (origin === null || link === null) return BAD_SIGNATURE;
+
+  const kept = fromHistory ? keptRelayCert() : null;
+  const certDocument = kept ?? (await fetchRelayCertDocument(origin));
+  const certs = parseRelayCertDocument(certDocument);
+  if (certDocument === null || certs === null) return BAD_SIGNATURE;
+
+  const now = Math.floor(Date.now() / 1000);
+  const linkMessage = relayLinkMessage(origin, atCode);
+  for (const cert of certs) {
+    if (cert.keyId !== link.keyId) continue;
+    if (!(await certifiedByRoot(subtle, rootKeys, cert))) continue;
+    if (!fromHistory && !(now >= cert.notBefore && now <= cert.notAfter)) continue;
+    if (
+      await verifyWith(subtle, cert.sessionPublicKeyBytes, link.linkSignatureBytes, linkMessage)
+    ) {
+      // Keep only the certificate that verified.
+      return { kind: 'ok', certDocument: JSON.stringify({ v: 1, certs: [certJson(cert)] }) };
+    }
+  }
+  return BAD_SIGNATURE;
+}
+
+async function certifiedByRoot(
+  subtle: SubtleCrypto,
+  rootKeys: readonly Uint8Array[],
+  cert: RelayCert,
+): Promise<boolean> {
+  const message = relayCertMessage(cert.sessionPublicKey, cert.notBefore, cert.notAfter);
+  for (const root of rootKeys) {
+    if (await verifyWith(subtle, root, cert.certSignatureBytes, message)) return true;
+  }
+  return false;
+}
+
+function certJson(cert: RelayCert): { pub: string; nb: number; na: number; sig: string } {
+  return {
+    pub: cert.sessionPublicKey,
+    nb: cert.notBefore,
+    na: cert.notAfter,
+    sig: cert.certSignature,
+  };
+}
+
+async function verifyThenInject(
+  relayUrl: string,
+  atCode: string | null,
+  sig: string | null,
+  options: MaybeAttachOptions | undefined,
+  fromHistory: boolean,
+): Promise<void> {
+  const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
+  const verdict = await verifyRelaySignature(relayUrl, atCode, sig, keys, fromHistory);
+  if (verdict.kind === 'ok') {
+    // Re-check after the await: another path may have attached meanwhile.
+    if (!attached) {
+      injectRelay(relayUrl, atCode);
+      keepVerifiedRelayCert(verdict.certDocument);
+    }
+    return;
+  }
+  // SECRET-HANDLING: fixed labels only — no key, signature, code, host or URL.
+  console.warn(
+    verdict.kind === 'no-key'
+      ? '[@apps-in-toss/debug-console] debug attach skipped — this bundle has no relay public key'
+      : '[@apps-in-toss/debug-console] debug attach skipped — relay signature did not verify',
+  );
+  setDebugStatus(verdict.kind === 'no-key' ? 'blocked-relay-key' : 'blocked-relay-signature');
+  // Nothing attached, so `at` / `sig` have no reason to stay in the URL or on
+  // the history entry. Only the success path keeps them (for a reload).
+  dropPageAttachParams();
+}
+
+/**
+ * Injects the Chii target script and wires up the observers. Called once the
+ * relay is trusted: immediately on a loopback page, after a verified signature
+ * elsewhere.
+ */
+function injectRelay(relayUrl: string, atCode: string | null): void {
+  // TOTP path-prefix transport (issue #466): forward the page URL's `at` code
+  // (delivered by the dashboard QR → launcher deep-link) into the target
+  // script URL so the WS upgrade derived from it passes the relay's TOTP
+  // gate. Absent `at` → legacy un-prefixed URL (relay without TOTP, tests).
+  // SECRET-HANDLING: the code is never logged; it rides only in
+  // the script src (the intended transport).
+  //
+  // TTL note: the relay accepts a fresh code for 30 to 35 seconds after it was
+  // minted, so the initial attach fits. Once attached, the relay binds the code
+  // to this page's target id: a reload or a reconnect of the same page keeps
+  // working with the aged code for a few minutes after its last socket closed.
+  // A later reconnect past that is rejected (401) — by design under the
+  // URL-leak threat model; recover by rescanning the QR (the relay-side
+  // auth-reject counter from issue #467 makes this visible).
+  // Before target.js loads: chii reports `location.href` to the relay. Both the
+  // code and the relay address leave the URL; neither is needed there again.
+  hidePageAttachParams();
+
+  // One phone per code: the relay binds the code to this id on the first socket.
+  const deviceId = atCode !== null && atCode !== '' ? relayDeviceId() : null;
+  const src = deriveTargetScriptUrl(relayUrl, atCode, deviceId);
 
   // Version handshake: tell the daemon which build of this package is attaching
   // so a device↔host skew becomes one diagnostic line instead of a silent
   // misbehaviour (see @apps-in-toss/internal-protocol/attach-handshake). Fire-and-
   // forget — never awaited, never able to block or fail an attach.
-  reportProtocolVersion(gateResult.relayUrl, atCode);
+  reportProtocolVersion(relayUrl, atCode, deviceId);
 
   // Issue #478: observe relay-bound WebSockets BEFORE target.js is injected so
   // even its very first dial — and every autonomous reconnect after a session
   // drop — is covered. The relay names a TOTP rejection with close code 4401;
   // the observer records it in the page console and cuts the retry storm.
-  installRelayWsObserver(gateResult.relayUrl);
+  installRelayWsObserver(relayUrl);
 
   // Issue #749: observe the REAL native bridge (env 3) so the indicator can
   // show in-flight SDK calls + a last-call stamp — the mock's sdkCallLog does
@@ -667,6 +1170,7 @@ export function maybeAttach(gateResult: GateResult = checkDebugGate()): void {
     void fetch(src)
       .then((res) => {
         if (res.status === 401) notifyAuthExpired();
+        else if (res.status === 429) notifyRelayLocked();
         else setDebugStatus('server-unreachable');
       })
       .catch(() => {

@@ -12,9 +12,9 @@ on:
     - cron: '0 1 * * 1'
   workflow_dispatch: {}
 
+# 기본은 읽기 전용. 쓰기 권한은 push와 PR을 만드는 이 workflow의 version job에만 준다.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: changeset-version-agent-plugin
@@ -23,12 +23,19 @@ concurrency:
 jobs:
   version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      # persist-credentials: false — `pnpm install`이 서드파티 빌드 스크립트를 돌리므로
+      # 쓰기 토큰이 .git/config에 남아 있지 않게 한다. push 단계에서만 토큰을 한 번 쓴다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # ci.yml 의 셋업 step 을 그대로 모방 — 버전·캐시 관례를 어긋내지 않는다.
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -74,8 +81,10 @@ jobs:
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           VERSION: ${{ steps.version.outputs.version }}
+          RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          branch="bot/changeset-version-${{ github.run_id }}"
+          branch="bot/changeset-version-${RUN_ID}"
           git checkout -b "$branch"
           git add -A -- packages/agent-plugin
           if git diff --cached --quiet; then
@@ -83,7 +92,10 @@ jobs:
             exit 1
           fi
           git commit -m "chore(agent-plugin): changeset version → v${VERSION}"
-          git push origin "$branch"
+          # checkout이 토큰을 남기지 않으므로 push 한 번에만 헤더로 넘긴다.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c "http.extraheader=AUTHORIZATION: basic ${auth}" push origin "$branch"
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
 
       # lockfile 은 이 job 어디서도 건드리지 않는다 — `pnpm install
@@ -108,7 +120,7 @@ jobs:
           자동 머지는 하지 않습니다 — 머지는 사람/세션 판단입니다.
           EOF
           )
-          gh api -X POST "repos/${{ github.repository }}/pulls" \
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls" \
             -f title="chore(agent-plugin): changeset version → v${VERSION}" \
             -f head="${BRANCH}" \
             -f base="main" \

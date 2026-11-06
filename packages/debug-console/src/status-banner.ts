@@ -9,10 +9,17 @@
  * mirrors the state as an enum on `window.__ait_debug_status`, so the same
  * answer is readable over CDP by the daemon and by a diagnostic probe.
  *
- * Explicit opt-in only: nothing is rendered or exposed unless the page URL
- * carries `debug=1` or a `relay=` param. A DEV build that auto-activates
- * (`shouldActivate`'s isDev) without those params stays invisible, and an
- * ordinary page load never gains a node.
+ * The messages are deliberately short and uniform: they say what to do next
+ * (scan a new QR, update the debugger) and do not name which check failed.
+ * A developer finds the cause through the daemon (dashboard / `get_debug_status`)
+ * and the enum on `window.__ait_debug_status`, not by reading the phone.
+ *
+ * Silent outside QR test hosts: on any host that fails `isDebugAllowedHost`
+ * (production included) nothing is rendered or exposed. Elsewhere it is explicit
+ * opt-in only: nothing appears unless the page URL carries `debug=1` or a
+ * `relay=` param. A DEV build that auto-activates (`shouldActivate`'s isDev)
+ * without those params stays invisible, and an ordinary page load never gains a
+ * node.
  *
  * Vanilla DOM + a shadow root, no React and no dependency: the host app's CSS
  * cannot leak in or out, and the bundle stays peer-free. The banner is a small
@@ -29,17 +36,35 @@
  * host, or URL is ever rendered, exposed, or logged here.
  */
 
+import { isDebugAllowedHost } from '@apps-in-toss/internal-protocol/debug-host';
+import { pageSearchWithAttachParams } from './page-at-code.js';
+
 /** Gate block reasons surfaced as `blocked-<reason>` (mirrors `GateResultBlocked.reason`). */
-export type BlockedReason = 'host' | 'entry' | 'opt-in' | 'invalid-relay' | 'auth';
+export type BlockedReason =
+  | 'host'
+  | 'entry'
+  | 'opt-in'
+  | 'invalid-relay'
+  | 'auth'
+  | 'update-required'
+  | 'relay-signature'
+  | 'relay-key';
 
 /**
  * Attach status enum — also the value of `window.__ait_debug_status`.
  *
- * - `blocked-*`          gate refused (never reached the relay)
+ * - `blocked-*`          gate or signature check refused (never reached the relay).
+ *                        `blocked-relay-key`: the bundle carries no usable relay
+ *                        public key; `blocked-relay-signature`: the QR link's
+ *                        signature is missing or does not verify
  * - `connecting`         target.js injected, relay socket not open yet
  * - `connected`          relay socket open
  * - `session-ended`      relay socket closed (non-4401) and did not recover
  * - `code-expired`       relay rejected the TOTP code (4401 / target.js 401)
+ * - `relay-origin-rejected` relay refused this page's origin (4403)
+ * - `relay-version-mismatch` relay and this package speak different protocol versions (4426)
+ * - `relay-locked`      relay is rate-limiting code checks after repeated failures
+ *                        (4429 / HTTP 429); retryable, unlike `code-expired`
  * - `relay-busy`        relay is already attached to another mini-app (4409)
  * - `server-unreachable` relay unreachable (target.js fetch failed non-401, or
  *                        the socket never opened)
@@ -51,6 +76,9 @@ export type DebugStatus =
   | 'session-ended'
   | 'code-expired'
   | 'relay-busy'
+  | 'relay-locked'
+  | 'relay-origin-rejected'
+  | 'relay-version-mismatch'
   | 'server-unreachable';
 
 declare global {
@@ -68,45 +96,26 @@ const CONNECTED_VISIBLE_MS = 3000;
 
 type Tone = 'info' | 'ok' | 'error';
 
-const MESSAGES: Record<DebugStatus, { tone: Tone; text: string }> = {
-  'blocked-host': {
-    tone: 'error',
-    text: '이 주소에서는 디버거를 연결할 수 없어요. 토스 앱에서 테스트 번들로 연 화면인지 확인하세요.',
-  },
-  'blocked-entry': {
-    tone: 'error',
-    text: '디버거 연결 조건이 맞지 않아요. X로 닫고 대시보드의 QR을 다시 스캔하세요.',
-  },
-  'blocked-opt-in': {
-    tone: 'error',
-    text: '디버그 연결 요청(debug=1)이 빠졌어요. X로 닫고 대시보드의 QR을 다시 스캔하세요.',
-  },
-  'blocked-invalid-relay': {
-    tone: 'error',
-    text: '디버거 서버 주소가 올바르지 않아요. X로 닫고 대시보드의 QR을 다시 스캔하세요.',
-  },
-  'blocked-auth': {
-    tone: 'error',
-    text: 'QR 코드가 없거나 만료됐어요. 대시보드를 새로고침하고 새 QR을 스캔하세요.',
-  },
+const RESCAN = '이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요.';
+
+/** `blocked-host` has no entry on purpose: a non-test host shows nothing. */
+const MESSAGES: Record<Exclude<DebugStatus, 'blocked-host'>, { tone: Tone; text: string }> = {
+  'blocked-entry': { tone: 'error', text: RESCAN },
+  'blocked-opt-in': { tone: 'error', text: RESCAN },
+  'blocked-invalid-relay': { tone: 'error', text: RESCAN },
+  'blocked-auth': { tone: 'error', text: RESCAN },
+  'blocked-relay-signature': { tone: 'error', text: RESCAN },
+  'code-expired': { tone: 'error', text: RESCAN },
+  'blocked-update-required': { tone: 'error', text: '디버거를 최신 버전으로 올리세요.' },
+  'blocked-relay-key': { tone: 'error', text: '이 번들에 디버거 키가 없어요.' },
   connecting: { tone: 'info', text: '디버거에 연결하는 중이에요…' },
   connected: { tone: 'ok', text: '디버거에 연결됐어요.' },
-  'session-ended': {
-    tone: 'error',
-    text: '디버거 세션이 끝났어요. X로 닫고 QR을 다시 스캔하세요.',
-  },
-  'code-expired': {
-    tone: 'error',
-    text: 'QR 코드가 만료됐어요. 대시보드를 새로고침하고 새 QR을 스캔하세요.',
-  },
-  'relay-busy': {
-    tone: 'error',
-    text: '이 디버거는 이미 다른 미니앱에 연결돼 있어요. 그 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔하세요.',
-  },
-  'server-unreachable': {
-    tone: 'error',
-    text: '디버거 서버에 접속할 수 없어요. 사내망이나 MDM이 *.trycloudflare.com을 막고 있을 수 있어요.',
-  },
+  'session-ended': { tone: 'error', text: '디버거 연결이 끝났어요. QR을 다시 스캔하세요.' },
+  'relay-locked': { tone: 'error', text: '잠시 뒤 다시 시도하세요.' },
+  'relay-busy': { tone: 'error', text: '디버거가 다른 미니앱에 연결돼 있어요.' },
+  'relay-origin-rejected': { tone: 'error', text: '이 화면에서는 디버거를 쓸 수 없어요.' },
+  'relay-version-mismatch': { tone: 'error', text: '디버거와 debug-console 버전이 맞지 않아요.' },
+  'server-unreachable': { tone: 'error', text: '디버거 서버에 접속할 수 없어요.' },
 };
 
 const TONE_COLORS: Record<Tone, { bg: string; fg: string }> = {
@@ -124,7 +133,9 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null;
 function isExplicitOptIn(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const params = new URLSearchParams(window.location.search);
+    // Total silence outside QR test hosts (production included).
+    if (!isDebugAllowedHost(window.location.hostname)) return false;
+    const params = pageSearchWithAttachParams();
     return params.get('debug') === '1' || params.has('relay');
   } catch {
     return false;
@@ -145,7 +156,7 @@ function removeBanner(): void {
   document.getElementById(BANNER_HOST_ID)?.remove();
 }
 
-function renderBanner(status: DebugStatus): void {
+function renderBanner(status: Exclude<DebugStatus, 'blocked-host'>): void {
   if (typeof document === 'undefined') return;
   const parent = document.body ?? document.documentElement;
   if (parent === null || parent === undefined) return;
@@ -203,12 +214,14 @@ function renderBanner(status: DebugStatus): void {
 /**
  * Records the attach status and shows the matching banner line.
  *
- * No-op unless the page URL explicitly opted in (`debug=1` / `relay=`), so a
- * DEV auto-activation or an ordinary load leaves no node and no global.
+ * No-op on a host that is not a QR test host, and unless the page URL explicitly
+ * opted in (`debug=1` / `relay=`), so a DEV auto-activation or an ordinary load
+ * leaves no node and no global.
  * Never throws into the host app. A later status replaces an earlier one
  * (including after a tap-dismiss); `connected` hides itself after a few seconds.
  */
 export function setDebugStatus(status: DebugStatus): void {
+  if (status === 'blocked-host') return;
   if (!isExplicitOptIn()) return;
   try {
     window.__ait_debug_status = status;

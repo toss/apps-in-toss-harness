@@ -115,6 +115,10 @@ class NoopCollector implements DiagnosticsCollector {
   getAuthRejects(): import('../tools.js').AuthRejectsSnapshot {
     return { count: 0, lastAt: null };
   }
+  recordTunnelRotation(): void {}
+  getTunnelRotations(): import('../tools.js').TunnelRotationsSnapshot {
+    return { count: 0, lastAt: null };
+  }
 }
 
 async function makeClient(opts: {
@@ -329,7 +333,7 @@ describe('getDiagnostics helper', () => {
       readLock: () => lockData,
     });
 
-    expect(result.serverLockHolder).toEqual(lockData);
+    expect(result.serverLockHolder).toEqual({ ...lockData, wssUrl: 'wss://***.trycloudflare.com' });
     expect(result.tunnel.pid).toBe(12345);
     expect(result.tunnel.startedAt).toBe('2026-01-01T00:00:00.000Z');
   });
@@ -447,6 +451,32 @@ describe('getDiagnostics helper', () => {
     expect(authEntries[0]!.message).toMatch(/^WS upgrade auth-rejected \(3 times, last /);
   });
 
+  it('exposes tunnelRotations as a count and a time, with no URL', async () => {
+    const collector = new InMemoryDiagnosticsCollector();
+    const before = await getDiagnostics({
+      tunnel: tunnelUp,
+      env: 'relay-dev',
+      envReason: 'test',
+      collector,
+      readLock: () => null,
+    });
+    expect(before.tunnelRotations).toEqual({ count: 0, lastAt: null });
+
+    collector.recordTunnelRotation();
+    collector.recordTunnelRotation();
+    const after = await getDiagnostics({
+      tunnel: tunnelUp,
+      env: 'relay-dev',
+      envReason: 'test',
+      collector,
+      readLock: () => null,
+    });
+    expect(after.tunnelRotations.count).toBe(2);
+    expect(after.tunnelRotations.lastAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Object.keys(after.tunnelRotations).sort()).toEqual(['count', 'lastAt']);
+    expect(JSON.stringify(after.tunnelRotations)).not.toContain('wss://');
+  });
+
   it('auth-reject summary is secret-free — no at= query, code, or URL in the snapshot', async () => {
     const collector = new InMemoryDiagnosticsCollector();
     collector.recordAuthReject();
@@ -468,7 +498,7 @@ describe('getDiagnostics helper', () => {
     expect(serialized).not.toContain('at=');
     expect(serialized).not.toContain('/at/');
     expect(serialized).not.toContain('trycloudflare');
-    expect(serialized).not.toMatch(/\b\d{6}\b/);
+    expect(serialized).not.toMatch(/\b[0-9a-f]{32}\b/);
   });
 
   it('process.parentAlive reflects the injected checkParentAlive result', async () => {
@@ -677,7 +707,25 @@ describe('get_debug_status MCP tool', () => {
     const data = parseResult(result) as Record<string, unknown>;
     const tunnel = data.tunnel as Record<string, unknown>;
     expect(tunnel.up).toBe(true);
-    expect(tunnel.wssUrl).toBe('wss://abc.trycloudflare.com');
+    // Masked: only start_attach returns the real tunnel address.
+    expect(tunnel.wssUrl).toBe('wss://***.trycloudflare.com');
+  });
+
+  it('shows the tunnel host nowhere in the response, even when an error carries it', async () => {
+    const host = 'secret-words-here.trycloudflare.com';
+    const tunnelUp: TunnelStatus = { up: true, wssUrl: `wss://${host}` };
+    const collector = new InMemoryDiagnosticsCollector();
+    collector.recordError(`dial wss://${host}/v2/at/${'a'.repeat(32)}/target/x failed`);
+    const client = await makeClient({
+      env: 'relay-dev',
+      tunnelStatus: tunnelUp,
+      diagnosticsCollector: collector,
+    });
+    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const text = JSON.stringify(result);
+    expect(text).not.toContain(host);
+    expect(text).not.toContain('secret-words-here');
+    expect(text).not.toContain('a'.repeat(32));
   });
 
   it('recent_errors_limit parameter limits the error list', async () => {
@@ -1008,6 +1056,42 @@ describe('computeNextRecommendedAction', () => {
     });
     expect(action!.tool).toBe('start_attach');
     expect(action!.reason).toContain('no pages');
+  });
+
+  // ---- Rule 2b: tunnel rotated ------------------------------------------------
+
+  const rotated = { count: 2, lastAt: '2026-06-10T00:05:00.000Z' };
+
+  it('Rule 2b: a rotated tunnel with no page tells the agent to have the QR scanned again', () => {
+    const action = computeNextRecommendedAction(
+      tunnelInfoUp,
+      makePages([]),
+      'relay-dev',
+      someRejects,
+      null,
+      rotated,
+    );
+    expect(action!.tool).toBe('start_attach');
+    expect(action!.reason).toContain('2회');
+    expect(action!.reason).toContain('QR');
+    expect(action!.reason).not.toContain('trycloudflare');
+    expect(action!.reason).not.toContain('wss://');
+  });
+
+  it('Rule 2b: does not apply once a page is attached or with no rotation', () => {
+    const attached = makePages([{ id: 'p1', title: 'App', url: 'intoss-private://app' }]);
+    expect(
+      computeNextRecommendedAction(tunnelInfoUp, attached, 'relay-dev', null, null, rotated),
+    ).toBeNull();
+    const none = computeNextRecommendedAction(
+      tunnelInfoUp,
+      makePages([]),
+      'relay-dev',
+      null,
+      null,
+      { count: 0, lastAt: null },
+    );
+    expect(none!.reason).toContain('no pages');
   });
 
   it('Rule 2a: tunnel-down restart (Rule 1) still wins over auth rejects', () => {

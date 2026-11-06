@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# 읽기 전용 — 이 workflow는 repo에 쓰지 않는다(게이트가 서드파티 코드를 실행하므로
+# 토큰 권한을 최소로 둔다).
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -12,11 +17,11 @@ jobs:
       # persist-credentials: false — 이 job은 push를 하지 않는다(repo 상태는 status·diff로
       # 읽기만 한다). 게이트가 서드파티 코드를 실행하므로(check:relay-pool-compat) 토큰이
       # .git/config에 남지 않게 한다.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -49,6 +54,10 @@ jobs:
       - run: pnpm -r check:mcp-react-free
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
+      # 배포 산출물이 attach 게이트를 소스와 같게 판정하는지 본다. 방금 빌드한
+      # debug-console dist(ESM·CJS)로 `evaluateDebugGate`를 표 몇 줄에 돌려, 운영 호스트
+      # 거부·서명 없는 QR 호스트 거부·정상 attach를 확인한다. dist가 없으면 실패한다.
+      - run: pnpm -r check:gate-dist
       # 소비자 Vitest 호환 게이트. relay pool은 Vitest 내부 API(`_testRun`)로
       # 결과를 보고하는데, repo의 devDependency(vitest 5)로 도는 단위 테스트는
       # 소비자 쪽 4.1을 보지 못한다(debugger 0.2.4가 4.1에서 요약이 깨지고 10초 뒤
@@ -64,6 +73,10 @@ jobs:
       # 발행 manifest phantom 의존 게이트(#18, PR #37). npm 버전은 불변이라
       # 첫 배포 전이 유일한 차단 시점 — baseline에 없는 새 위반이 나오면 실패한다.
       - run: pnpm check:pack-manifests
+      # debugger는 tarball에 런타임 의존성을 번들한다(scripts/bundle-deps.mjs). 번들 내용은
+      # npm-shrinkwrap.json 그대로 설치되므로, 그 파일이 pnpm-lock.yaml의 런타임 폐포와
+      # (버전·integrity) 어긋나지 않았는지 오프라인으로 확인한다. 어긋나면 pnpm shrinkwrap:debugger.
+      - run: pnpm check:shrinkwrap
       # npm-less 전환 드리프트 가드. 스킬/소스에 박힌 GitHub Release 다운로드
       # URL의 버전이 package.json과 일치하는지, 호스트가 이 repo로 고정돼
       # 있는지, Release URL 전환이 시작된 뒤 (구) 커뮤니티 org 스코프

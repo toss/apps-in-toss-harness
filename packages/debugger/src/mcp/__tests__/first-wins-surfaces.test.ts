@@ -18,7 +18,8 @@ import {
   pageMissingError,
 } from '../errors.js';
 import { logInfo } from '../log.js';
-import { type DashboardState, startQrHttpServer } from '../qr-http-server.js';
+import type { DashboardState } from '../qr-http-server.js';
+import { startQrHttpServer } from './dashboard-auth-helper.js';
 
 const FOO_URL = 'https://foo.private-apps.tossmini.com/p?at=111111';
 const BAR_URL = 'https://bar.private-apps.tossmini.com/p?at=222222';

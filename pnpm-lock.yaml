@@ -243,22 +243,22 @@ importers:
   packages/debugger:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: ^1.32.1
+        specifier: 1.32.1
         version: 1.32.1(supports-color@8.1.1)(zod@4.6.7)
       chii:
-        specifier: ^1.15.5
+        specifier: 1.15.5
         version: 1.15.5(supports-color@8.1.1)
       cloudflared:
-        specifier: ^0.7.3
+        specifier: 0.7.3
         version: 0.7.3
       esbuild:
-        specifier: ^0.28.2
+        specifier: 0.28.2
         version: 0.28.2
       qrcode:
-        specifier: ^1.5.4
+        specifier: 1.5.4
         version: 1.5.4
       ws:
-        specifier: ^8.22.0
+        specifier: 8.22.0
         version: 8.22.0
     devDependencies:
       '@apps-in-toss/debug-console':
