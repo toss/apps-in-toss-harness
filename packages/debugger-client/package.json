@@ -51,14 +51,14 @@
     "format": "biome format --write ."
   },
   "devDependencies": {
-    "@apps-in-toss/web-framework": "3.8.0",
-    "@biomejs/biome": "2.5.15",
+    "@apps-in-toss/web-framework": "3.9.0",
+    "@biomejs/biome": "2.6.4",
     "@changesets/cli": "^3.0.3",
-    "@types/node": "^26.6.5",
-    "jsdom": "^30.1.2",
-    "tsdown": "^0.23.1",
+    "@types/node": "^26.6.6",
+    "jsdom": "^30.1.3",
+    "tsdown": "^0.23.4",
     "typescript": "~7.0.2",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.5"
   },
   "keywords": [
     "apps-in-toss",
