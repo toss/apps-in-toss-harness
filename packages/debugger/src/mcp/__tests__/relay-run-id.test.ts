@@ -31,19 +31,20 @@ describe('relayRunId', () => {
 });
 
 describe('buildDeepLinkAttachUrl run marker', () => {
+  const CODE = 'c'.repeat(32);
   const scheme = 'intoss-private://app?_deploymentId=d1';
 
   it('adds rid= when given and replaces a stale one', () => {
-    const first = buildDeepLinkAttachUrl(scheme, HOST, undefined, 'aaaaaaaaaa');
+    const first = buildDeepLinkAttachUrl(scheme, HOST, CODE, 'aaaaaaaaaa');
     expect(new URL(first.replace('intoss-private', 'https')).searchParams.get('rid')).toBe(
       'aaaaaaaaaa',
     );
-    const second = buildDeepLinkAttachUrl(first, HOST, undefined, 'bbbbbbbbbb');
+    const second = buildDeepLinkAttachUrl(first, HOST, CODE, 'bbbbbbbbbb');
     expect(second.match(/rid=/g)).toHaveLength(1);
     expect(second).toContain('rid=bbbbbbbbbb');
   });
 
   it('adds nothing without a marker', () => {
-    expect(buildDeepLinkAttachUrl(scheme, HOST)).not.toContain('rid=');
+    expect(buildDeepLinkAttachUrl(scheme, HOST, CODE)).not.toContain('rid=');
   });
 });

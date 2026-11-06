@@ -54,13 +54,13 @@ fidelity 사다리의 원 번호를 그대로 쓰며, 제거된 환경 2는 건�
 
 ### 환경 3 — on-device (intoss-private candidate)
 
-`/ait:setup-debugger`로 `ait-devtools` MCP가 배선돼 있고 실기기가 attach된
+`/ait:setup-debugger`로 `ait-debugger` MCP가 배선돼 있고 실기기가 attach된
 상태라면, 에이전트에게 `list_console_messages` 도구로 WebView 콘솔 출력을
 가져와 달라고 요청할 수 있다. attach가 안 된 상태라면 `/ait:debug`를 먼저
 실행해 안내를 받는다.
 
-환경 3(intoss-private candidate)에서 attach 표면 자체가 없다면(`@apps-in-toss/debug-console`
-`dependencies` 미설치) 그 사실 자체를 재현 절차에 적어 준다 — `/ait:inject-debug-console`
+환경 3(intoss-private candidate)에서 attach 표면 자체가 없다면(`@apps-in-toss/debugger-client`
+`dependencies` 미설치) 그 사실 자체를 재현 절차에 적어 준다 — `/ait:inject-debugger-client`
 안내가 나왔는지 여부도 유용한 정보다.
 
 ### 에이전트 세션 로그
@@ -93,7 +93,7 @@ harness는 AI 코딩 에이전트 안에서 동작하므로, 에이전트가 어
 | 증상 | 소관 |
 |---|---|
 | `/ait:*` 명령/skill이 잘못 안내하거나 에러를 낸다 | harness (agent-plugin) |
-| devtools panel·attach·debug-console 자체가 이상하게 동작한다 | harness (debugger / debug-console) |
+| devtools panel·attach·debugger-client 자체가 이상하게 동작한다 | harness (debugger / debugger-client) |
 | 앱 등록·번들 업로드·컴파일·상태 조회(`ait-console` MCP)가 실패한다 | 콘솔 MCP GW |
 | 실기기/실 SDK에서 API 동작이 문서와 다르다(harness mock이 아닌 실제 동작) | SDK (web-framework) |
 

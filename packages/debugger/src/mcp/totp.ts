@@ -153,7 +153,7 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
  * command emits hex.
  */
 export const RELAY_AUTH_SECRET_MISSING_MESSAGE = [
-  '[ait-debug] AIT_DEBUG_TOTP_SECRET이 필수입니다. 32자 이상 16진수(hex) 문자열을 설정하세요.',
+  '[ait-debugger] AIT_DEBUG_TOTP_SECRET이 필수입니다. 32자 이상 16진수(hex) 문자열을 설정하세요.',
   '발급: openssl rand -hex 32',
   '데몬은 start_debug의 projectRoot 인자로 받은 디렉토리에서 .ait_relay 파일을 읽어 이 시크릿을 채웁니다.',
   '.ait_relay는 @apps-in-toss/devtools unplugin이 dev 서버 첫 기동 때 만들어 둡니다 — 이미 있다면 projectRoot만 전달하면 됩니다.',
@@ -274,15 +274,16 @@ export const RELAY_QR_REFRESH_INTERVAL_MS = 5_000;
  * ahead of the host clock. Accepting only T-1..T gives 2 valid codes instead of
  * 3 (or 5 with two future steps).
  *
- * The phone-side gate in `@apps-in-toss/debug-console` may run its own
+ * The phone-side gate in `@apps-in-toss/debugger-client` may run its own
  * `verifyTotpCode` on the device clock; that is a separate fail-fast check and
  * the relay stays authoritative.
  */
 export const RELAY_VERIFY_FUTURE_SKEW_STEPS = 0;
 
 /**
- * Builds a `verifyAuth` predicate for the Chii relay's WebSocket upgrade gate
- * when `AIT_DEBUG_TOTP_SECRET` (the relay secret) is configured. Codes are
+ * Builds the `verifyAuth` predicate for the Chii relay's HTTP and WebSocket
+ * upgrade gate. `AIT_DEBUG_TOTP_SECRET` (the relay secret) must be configured:
+ * without it the predicate rejects every request. Codes are
  * checked against this process's in-memory code key ({@link mintRelayCode}),
  * not against the relay secret; `codeSecret` overrides that key for tests.
  *
@@ -293,16 +294,14 @@ export const RELAY_VERIFY_FUTURE_SKEW_STEPS = 0;
  * QR is re-minted every {@link RELAY_QR_REFRESH_INTERVAL_MS} while `start_attach`
  * waits.
  *
- * Returns `undefined` when the env var is not set — callers treat that as
- * "auth disabled" (no predicate registered on the relay). Note that since
- * issue #250 the secret is MANDATORY at every relay-boot site (enforced by
- * {@link assertRelayAuthConfigured} BEFORE the relay starts), so in production
- * this never returns `undefined` for a relay that actually boots; the
- * `undefined` branch only matters for the no-relay local path and tests.
+ * Fail-closed: when the env var is not set the predicate rejects everything.
+ * There is no relay without a code check. Since issue #250 the secret is also
+ * MANDATORY at every relay-boot site (enforced by
+ * {@link assertRelayAuthConfigured} BEFORE the relay starts), so this is a
+ * second line of defence.
  *
  * Lives here (not in the MCP server) so the unplugin's relay can wire the same
- * gate without importing the heavy MCP server module graph. Re-exported from
- * `debug-server.ts` for back-compat.
+ * gate without importing the heavy MCP server module graph.
  *
  * SECRET-HANDLING: The code key is captured in a closure and
  * is NEVER written to any log, error message, or process output.
@@ -310,9 +309,9 @@ export const RELAY_VERIFY_FUTURE_SKEW_STEPS = 0;
 export function buildRelayVerifyAuth(
   env: NodeJS.ProcessEnv = process.env,
   codeSecret: string = relayCodeSecret(),
-): ((req: import('node:http').IncomingMessage) => boolean) | undefined {
+): (req: import('node:http').IncomingMessage) => boolean {
   // The relay secret is the switch; the codes themselves use the process key.
-  if (!env.AIT_DEBUG_TOTP_SECRET) return undefined;
+  if (!env.AIT_DEBUG_TOTP_SECRET) return () => false;
   const secret = codeSecret;
 
   return (req) => {

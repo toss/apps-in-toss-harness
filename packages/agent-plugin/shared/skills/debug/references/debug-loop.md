@@ -22,7 +22,7 @@
 | 1 | `window.__ait?.state` (mock 런타임 상태) | Playwright MCP `browser_evaluate`로 읽음 | 위와 동일한 붙여넣기 경로 |
 | 1 | 백그라운드 dev 서버 출력(빌드 에러·핫 리로드 로그) | 예 | — |
 | 1·3 | 프로젝트 소스·테스트 파일 | 예 (`Read`/`Grep`) | — |
-| 3 | attach 후 도구 13종(`references/attach-tools.md`) | 예 — attach가 완료된 세션에서 | `ait-devtools` MCP 미배선이면 환경 3 관측 자체가 불가. `/ait:setup-debugger`를 안내하고, 그 전까지는 환경 1 안에서만 루프를 돈다 |
+| 3 | attach 후 도구 13종(`references/attach-tools.md`) | 예 — attach가 완료된 세션에서 | `ait-debugger` MCP 미배선이면 환경 3 관측 자체가 불가. `/ait:setup-debugger`를 안내하고, 그 전까지는 환경 1 안에서만 루프를 돈다 |
 | 3 | `run_tests` 실기기 실행 결과 | 예 | 테스트 파일이 없으면 재현 절차를 수동으로 반복 |
 | 3 | `list_pages`·`get_debug_status`(attach·relay 상태) | 예 | — |
 

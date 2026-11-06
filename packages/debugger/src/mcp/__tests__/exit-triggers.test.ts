@@ -1,8 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildBlockedMessage, createBlockedServer } from '../blocked-server.js';
 import { installExitTriggers } from '../exit-triggers.js';
 
 function setup(over: Partial<Parameters<typeof installExitTriggers>[0]> = {}) {
@@ -133,47 +130,5 @@ describe('installExitTriggers', () => {
     await flush();
     expect(t.exit).toHaveBeenCalledWith(1);
     t.handle.stop();
-  });
-});
-
-describe('buildBlockedMessage', () => {
-  it('explains in Korean with pid, start time and options, without any relay host', () => {
-    const msg = buildBlockedMessage({
-      existingPid: 4242,
-      existingStartedAt: '2026-10-15T01:00:00.000Z',
-    });
-    expect(msg).toContain('다른 Claude Code 세션');
-    expect(msg).toContain('PID 4242');
-    expect(msg).toContain('2026-10-15T01:00:00.000Z');
-    expect(msg).toContain('kill 4242');
-    expect(msg).toContain('/mcp');
-    expect(msg).not.toMatch(/trycloudflare|wss:\/\/|https?:\/\//);
-  });
-});
-
-describe('blocked mode server', () => {
-  it('lists bootstrap tools and every call returns the Korean error without a relay host', async () => {
-    const server = createBlockedServer({
-      existingPid: 4242,
-      existingStartedAt: '2026-10-15T01:00:00.000Z',
-    });
-    const client = new Client({ name: 't', version: '0' });
-    const [a, b] = InMemoryTransport.createLinkedPair();
-    await Promise.all([server.connect(a), client.connect(b)]);
-    try {
-      const { tools } = await client.listTools();
-      const names = tools.map((t) => t.name);
-      expect(names).toContain('start_attach');
-      expect(names).toContain('get_debug_status');
-      for (const name of ['start_attach', 'get_debug_status', 'anything_else']) {
-        const res = await client.callTool({ name, arguments: {} });
-        expect(res.isError).toBe(true);
-        const text = (res.content as Array<{ text: string }>)[0]?.text ?? '';
-        expect(text).toContain('PID 4242');
-        expect(text).not.toMatch(/trycloudflare|wss:\/\//);
-      }
-    } finally {
-      await client.close();
-    }
   });
 });

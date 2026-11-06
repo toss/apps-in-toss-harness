@@ -101,7 +101,7 @@ process.exit(bad ? 1 : 0);
 
 # --- #696: capture/report/relay-factory graph invariants ----------------------
 # capture.ts and report.ts are deliberately LEAF modules: react-free AND free of
-# the heavy MCP graph (server-lock, parent-watcher, chii/cloudflared). They are
+# the heavy MCP graph (session-registry, parent-watcher, chii/cloudflared). They are
 # re-exported from the `@apps-in-toss/debugger/test-runner` barrel (config.ts), so if
 # they ever statically pulled the daemon graph, that graph would land on the
 # Node-config entry every consumer's vitest.config.ts imports. relay-factory is
@@ -116,9 +116,9 @@ REACT_PATTERN="react-dom|from[[:space:]]*['\"]react['\"]|require\\(['\"]react"
 # Leaf modules: must be free of react AND the heavy-graph anchors.
 LEAF_ENTRIES=("dist/test-runner/capture.js" "dist/test-runner/report.js")
 # Anchors whose presence proves the heavy MCP/daemon graph was pulled in. Matched
-# ONLY as quoted import/require specifiers (`'...server-lock...'`) so a docblock
+# ONLY as quoted import/require specifiers (`'...session-registry...'`) so a docblock
 # that merely names the chii/cloudflared graph in prose is not a false positive.
-HEAVY_ANCHORS="['\"][^'\"]*(server-lock|parent-watcher|chii|cloudflared)[^'\"]*['\"]"
+HEAVY_ANCHORS="['\"][^'\"]*(session-registry|parent-watcher|chii|cloudflared)[^'\"]*['\"]"
 
 for entry in "${LEAF_ENTRIES[@]}"; do
   if [[ ! -f "$entry" ]]; then
@@ -130,7 +130,7 @@ for entry in "${LEAF_ENTRIES[@]}"; do
     echo "✗ #696 LEAF VIOLATION: $entry imports react — capture/report must stay react-free" >&2
     fail=1
   elif grep -qE "$HEAVY_ANCHORS" "$entry"; then
-    echo "✗ #696 LEAF VIOLATION: $entry pulled the heavy MCP graph (server-lock/parent-watcher/chii/cloudflared)" >&2
+    echo "✗ #696 LEAF VIOLATION: $entry pulled the heavy MCP graph (session-registry/parent-watcher/chii/cloudflared)" >&2
     echo "  capture.ts/report.ts must be pure leaves so the test-runner barrel re-export stays light." >&2
     fail=1
   else
@@ -152,7 +152,7 @@ elif grep -qE "$REACT_PATTERN" "$RELAY_FACTORY"; then
   echo "✗ #696 VIOLATION: $RELAY_FACTORY imports react — the factory must stay react-free" >&2
   fail=1
 elif grep -qE "$HEAVY_ANCHORS" "$RELAY_FACTORY"; then
-  echo "✗ #696 VIOLATION: $RELAY_FACTORY statically inlined the heavy graph (server-lock/parent-watcher/chii/cloudflared)" >&2
+  echo "✗ #696 VIOLATION: $RELAY_FACTORY statically inlined the heavy graph (session-registry/parent-watcher/chii/cloudflared)" >&2
   echo "  The MCP boot graph must stay behind dynamic import() inside open()." >&2
   fail=1
 else

@@ -1,15 +1,17 @@
 ---
 name: setup-debugger
 description: |
-  Wire the `ait-devtools` debug MCP server (`@apps-in-toss/debugger`) into the
+  Wire the `ait-debugger` debug MCP server (`@apps-in-toss/debugger`) into the
   current project's MCP config (project scope, opt-in) — `.mcp.json` on Claude
   Code, `.cursor/mcp.json` on Cursor — so `/ait:debug` can
   run on-device CDP relay attach (environment 3). Idempotent JSON merge —
-  preserves other server entries, never renames the `ait-devtools` key.
+  preserves other server entries, never renames the `ait-debugger` key. An old
+  `ait-devtools` entry or an old `@apps-in-toss/debug-console` dependency
+  (0.3.0 and earlier names) is an upgrade to migrate, not "not installed".
   Run THIS skill instead of hand-writing `.mcp.json` or inventing a server
   entry — even when the request sounds like a plain JSON edit ("MCP 서버를
   .mcp.json에 등록해줘", "디버거 서버 추가해줘"): the correct package, args,
-  and key live here. Installing the `debug-console` package into the app
+  and key live here. Installing the `debugger-client` package into the app
   itself is `inject`, not this. Triggered by `/ait:setup-debugger`, no args.
 argument-hint: ''
 adapter-note: 'Host-branched MCP registration — Claude Code writes project `.mcp.json`, Cursor writes `.cursor/mcp.json` (same entry plus `"type": "stdio"`); step 2 carries the host detection and step 4 the payload. Other targets (Codex etc.) must replace this with that agent’s own MCP registration mechanism, together with debug §5.'
@@ -20,7 +22,7 @@ adapter-note: 'Host-branched MCP registration — Claude Code writes project `.m
 ## 목적
 
 `/ait:setup-debugger`는 on-device 디버깅(`/ait:debug` §5, 환경 3)이 쓰는
-`ait-devtools` MCP 서버를 **현재 프로젝트의 MCP 설정 파일에 등록**한다. 이
+`ait-debugger` MCP 서버를 **현재 프로젝트의 MCP 설정 파일에 등록**한다. 이
 파일은 호스트마다 다르다 — Claude Code는 `.mcp.json`, Cursor는
 `.cursor/mcp.json`에 쓴다(판별은 2단계).
 
@@ -31,8 +33,8 @@ adapter-note: 'Host-branched MCP registration — Claude Code writes project `.m
 완료되면:
 
 - Claude Code면 프로젝트 루트 `.mcp.json`에, Cursor면 `.cursor/mcp.json`에
-  `mcpServers."ait-devtools"` 항목이 생긴다.
-- Claude Code는 세션에서 서버를 승인·연결하면 `/mcp` 목록에 `ait-devtools`가
+  `mcpServers."ait-debugger"` 항목이 생긴다.
+- Claude Code는 세션에서 서버를 승인·연결하면 `/mcp` 목록에 `ait-debugger`가
   뜨고, Cursor는 Cursor의 MCP 목록에서 같은 항목을 켜고 승인한다. 연결되면
   `/ait:debug`의 `start_attach` QR attach 경로(환경 3)가 열린다 — 이 attach
   경로는 Claude Code에서 확인된 경로다.
@@ -89,31 +91,37 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
 
 2단계에서 정한 파일이 이미 있으면 `Read`로 읽는다:
 
-- `mcpServers."ait-devtools"`가 **4단계와 동일한 항목**으로 이미 있으면 —
+- 옛 키 `mcpServers."ait-devtools"`가 있거나(0.3.0 이하 이름) 프로젝트 `package.json`에
+  `@apps-in-toss/debug-console`이 있으면 — **미설치가 아니라 업그레이드가 필요한 상태**다.
+  이 점검을 가장 먼저 한다. 새 키 `ait-debugger`가 이미 4단계와 같게 있어도(키만 옮기고
+  패키지는 옛 것인 부분 업데이트) "이미 배선됨"으로 끝내지 않는다.
+  새 항목을 따로 추가하지 말고(같은 서버가 두 번 뜬다) **Read <이 skill의 base directory>/references/upgrade-check.md**
+  의 0절과 2-B절 절차대로 두 이름을 한꺼번에 새 이름으로 옮긴다. 한쪽만 옮기면 서로 연결되지 않는다.
+- 옛 이름이 하나도 남아 있지 않은 상태에서 `mcpServers."ait-debugger"`가 **4단계와 동일한 항목**으로 이미 있으면 —
   변경 없이 "이미 배선됨"으로 보고하고 5단계로 간다. 단 그 버전이
   `references/min-versions.json`의 최소 버전보다 낮으면 이 skill의 URL이 아직 최소 버전
   릴리스를 가리키지 않는 것이니, 배선됨으로만 끝내지 말고 그 사실을 함께 알린다.
 - 같은 키가 **이 skill의 옛 Release URL 버전**으로 있으면 — 업그레이드 경로다.
   **Read <이 skill의 base directory>/references/upgrade-check.md** 의 절차대로
   old→new를 보여주고 동의를 받은 뒤 그 URL 하나만 바꾼다. 같은 문서의 1-B 절차로
-  프로젝트 `package.json`의 `@apps-in-toss/debug-console` URL도 함께 점검한다.
-  최소 버전은 `references/min-versions.json`이 정한다. 이 값보다 낮은 `ait-devtools`
+  프로젝트 `package.json`의 `@apps-in-toss/debugger-client` URL도 함께 점검한다.
+  최소 버전은 `references/min-versions.json`이 정한다. 이 값보다 낮은 `ait-debugger`
   항목(Release URL 형태)은 신규 배선이 아니라 업그레이드 권고로 다룬다.
 - 같은 키가 **그 밖의 다른 내용**으로 있으면 — 조용히 덮어쓰지 않는다. 현재 값을 보여주고
   사용자 결정을 받는다(커스텀 런처를 쓰고 있을 수 있다).
 - 파일이 없으면 4단계에서 새로 만든다.
 
-### 4. `ait-devtools` 항목 merge
+### 4. `ait-debugger` 항목 merge
 
 2단계에서 정한 파일에 아래 항목을 merge한다 — **기존의 다른 서버 항목은 그대로
-보존**하고 `ait-devtools` 키만 추가한다. Claude Code(`.mcp.json`)는 이 형태다:
+보존**하고 `ait-debugger` 키만 추가한다. Claude Code(`.mcp.json`)는 이 형태다:
 
 ```json
 {
   "mcpServers": {
-    "ait-devtools": {
+    "ait-debugger": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz", "debugger"]
     }
   }
 }
@@ -124,10 +132,10 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 ```json
 {
   "mcpServers": {
-    "ait-devtools": {
+    "ait-debugger": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz", "debugger"]
     }
   }
 }
@@ -143,12 +151,13 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
   ```
 
   두 값이 다르면 배선하지 않고 사용자에게 보고한다. 이 대조는 자동으로 하지 않는다.
-- server key `ait-devtools`는 **개명 금지** — eval e2e `disallowedTools` 게이트와
-  `/ait:debug`의 도구 참조가 이 문자열에 결합돼 있다. 이 결합은
+- server key `ait-debugger`는 **개명 금지** — eval e2e `disallowedTools` 게이트와
+  `/ait:debug`의 도구 참조가 이 문자열에 결합돼 있다. 0.3.0 이하는 `ait-devtools` 키를 썼고,
+  그 옛 키 게이트는 eval 쪽에 호환용으로 남아 있다. 이 결합은
   로컬 `eval/e2e/driver.test.ts`(repo 미포함 — maintainer-local)가 검사한다(위
   json 블록의 키를 실제로 읽어 `STATIC_DISALLOWED_TOOLS`와 대조) — 개명하면 그
   로컬 검사가 실패한다.
-- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger`
+- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger`
   형태를 유지한다 — `-p` 없이 bare로 쓰면
   패키지가 bin을 2개(`debugger`·`debugger-test`) 게시해 npm이 실행파일을 추론하지
   못한다. 머신 절대경로 launcher는 박지 않는다(다른 머신 clone에서 깨진다).
@@ -164,18 +173,18 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 **Claude Code용:**
 
 ```
-.mcp.json에 ait-devtools MCP 서버를 등록했습니다.
+.mcp.json에 ait-debugger MCP 서버를 등록했습니다.
 - 새 세션이면: 시작 시 서버 승인 프롬프트에서 허용해주세요.
-- 이 세션에서 바로 쓰려면: /mcp 로 서버 목록을 열어 ait-devtools 연결을 확인해주세요.
+- 이 세션에서 바로 쓰려면: /mcp 로 서버 목록을 열어 ait-debugger 연결을 확인해주세요.
 연결되면 /ait:debug 가 start_attach QR attach 경로(환경 3)를 진행합니다.
 ```
 
 **Cursor용:**
 
 ```
-.cursor/mcp.json에 ait-devtools MCP 서버를 등록했습니다.
-- 에디터면: Cursor 설정의 MCP 서버 목록에서 ait-devtools를 켜고 승인해주세요.
-- CLI면: agent mcp enable ait-devtools 로 승인한 뒤, agent mcp list 로 연결을 확인해주세요.
+.cursor/mcp.json에 ait-debugger MCP 서버를 등록했습니다.
+- 에디터면: Cursor 설정의 MCP 서버 목록에서 ait-debugger를 켜고 승인해주세요.
+- CLI면: agent mcp enable ait-debugger 로 승인한 뒤, agent mcp list 로 연결을 확인해주세요.
 폰에 붙는 환경 3 attach(debug §5)는 Claude Code 전용 메커니즘에 기대므로 Cursor에서는
 동작하지 않습니다(Codex와 같은 제약). 브라우저 환경(환경 1) 디버깅은 그대로 씁니다.
   말로: "브라우저에서 미니앱 동작을 확인하고 싶어"
@@ -195,7 +204,7 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 ```
 
 `/ait:debug`가 bootstrap 도구(`start_attach` 등)를 확인하고 환경 3(relay-staging
-QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debug-console`
+QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debugger-client`
 배선이 선행돼야 한다.
 
 ## Out of scope (이 skill이 하지 않는 것)
@@ -203,13 +212,13 @@ QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debug
 - ❌ 디버깅 실행 — attach·QR·관측은 `/ait:debug`(§5). 이 skill은 그 전제(서버 등록)만 채운다.
 - ❌ MCP 서버 구현·기동 — 서버는 `@apps-in-toss/debugger`(Release tarball)가 제공하고,
   기동은 호스트(Claude Code·Cursor)가 그 설정 파일을 읽어 한다.
-- ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debug-console` `devDependencies` + `__DEBUG_BUILD__` 게이트) — `/ait:inject-debug-console`.
+- ❌ 환경 3 attach 표면 설치(`@apps-in-toss/debugger-client` `devDependencies` + `__DEBUG_BUILD__` 게이트) — `/ait:inject-debugger-client`.
 - ❌ user/global scope MCP 등록 — 디버깅은 프로젝트 전제라 프로젝트 scope 파일만
   (`.mcp.json`/`.cursor/mcp.json`).
 
 ## 하지 말아야 할 것
 
-- ❌ server key `ait-devtools`를 개명하거나 다른 키로 중복 등록.
+- ❌ server key `ait-debugger`를 개명하거나 다른 키로 중복 등록.
 - ❌ 기존 `.mcp.json`의 다른 서버 항목을 삭제·수정.
 - ❌ `args`에서 `-p` 생략(bare `npx <Release tarball URL> debugger`) — bin 추론 실패로
   MCP 등록이 조용히 깨진다.
@@ -221,7 +230,7 @@ QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debug
 ## 참고
 
 - 짝 skill: `debug` (이 배선을 소비하는 on-device 디버깅), `inject`
-  (debug-console facet — 환경 3 attach 표면 설치).
+  (debugger-client facet — 환경 3 attach 표면 설치).
 - MCP 데몬 패키지: `@apps-in-toss/debugger`(`debugger`·`debugger-test` bin):
   https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
 - on-device CDP relay 디버깅 구조·진입 경로는 docs MCP(`searchDocumentation`/

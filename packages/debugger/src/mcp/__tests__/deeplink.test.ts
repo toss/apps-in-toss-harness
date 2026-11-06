@@ -3,35 +3,36 @@ import { buildDeepLinkAttachUrl, validateSchemeAuthority } from '../deeplink.js'
 
 const RELAY = 'wss://abc-def.trycloudflare.com';
 const RELAY_WITH_PATH = 'wss://abc-def.trycloudflare.com/relay';
+const CODE = 'c'.repeat(32);
 
 describe('buildDeepLinkAttachUrl', () => {
   it('appends debug=1 and relay to a scheme URL that already has _deploymentId', () => {
     const scheme = 'intoss-private://miniapp/aitc-sdk-example?_deploymentId=019e3b40-uuid';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY);
+    const out = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
     expect(out).toBe(
       'intoss-private://miniapp/aitc-sdk-example?_deploymentId=019e3b40-uuid' +
-        `&debug=1&relay=${encodeURIComponent(RELAY)}`,
+        `&debug=1&relay=${encodeURIComponent(RELAY)}&at=${CODE}`,
     );
   });
 
   it('preserves the scheme, authority, and path byte-for-byte', () => {
     const scheme = 'intoss-private://open?_deploymentId=x';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY_WITH_PATH);
+    const out = buildDeepLinkAttachUrl(scheme, RELAY_WITH_PATH, CODE);
     expect(out.startsWith('intoss-private://open?_deploymentId=x&')).toBe(true);
     expect(out).toContain(`relay=${encodeURIComponent(RELAY_WITH_PATH)}`);
   });
 
   it('percent-encodes the relay URL so its : and / do not break the query', () => {
     const scheme = 'intoss-private://m?_deploymentId=x';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY);
+    const out = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
     expect(out).toContain('relay=wss%3A%2F%2F');
     expect(out).not.toContain('relay=wss://');
   });
 
   it('is idempotent — re-running replaces debug/relay instead of duplicating', () => {
     const scheme = 'intoss-private://m?_deploymentId=x';
-    const once = buildDeepLinkAttachUrl(scheme, RELAY);
-    const twice = buildDeepLinkAttachUrl(once, RELAY);
+    const once = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
+    const twice = buildDeepLinkAttachUrl(once, RELAY, CODE);
     expect(twice).toBe(once);
     expect(twice.match(/(^|&)debug=/g)).toHaveLength(1);
     expect(twice.match(/(^|&)relay=/g)).toHaveLength(1);
@@ -39,21 +40,23 @@ describe('buildDeepLinkAttachUrl', () => {
 
   it('replaces a stale relay on re-run with a new tunnel URL', () => {
     const scheme = 'intoss-private://m?_deploymentId=x';
-    const first = buildDeepLinkAttachUrl(scheme, RELAY);
-    const second = buildDeepLinkAttachUrl(first, 'wss://new-tunnel.trycloudflare.com');
+    const first = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
+    const second = buildDeepLinkAttachUrl(first, 'wss://new-tunnel.trycloudflare.com', CODE);
     expect(second).toContain('relay=wss%3A%2F%2Fnew-tunnel');
     expect(second).not.toContain('abc-def');
     expect(second.match(/(^|&)relay=/g)).toHaveLength(1);
   });
 
   it('handles a scheme URL with no query string', () => {
-    const out = buildDeepLinkAttachUrl('intoss-private://miniapp', RELAY);
-    expect(out).toBe(`intoss-private://miniapp?debug=1&relay=${encodeURIComponent(RELAY)}`);
+    const out = buildDeepLinkAttachUrl('intoss-private://miniapp', RELAY, CODE);
+    expect(out).toBe(
+      `intoss-private://miniapp?debug=1&relay=${encodeURIComponent(RELAY)}&at=${CODE}`,
+    );
   });
 
   it('preserves a trailing hash fragment', () => {
     const scheme = 'intoss-private://m?_deploymentId=x#/storage';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY);
+    const out = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
     expect(out.endsWith('#/storage')).toBe(true);
     expect(out).toContain('_deploymentId=x');
     expect(out).toContain('debug=1');
@@ -61,24 +64,24 @@ describe('buildDeepLinkAttachUrl', () => {
 
   it('preserves unrelated existing params (e.g. _deploymentId) untouched', () => {
     const scheme = 'intoss-private://m?_deploymentId=x&foo=bar';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY);
+    const out = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
     expect(out).toContain('_deploymentId=x');
     expect(out).toContain('foo=bar');
   });
 
   it('rejects a non-wss relay URL (the gate would reject the resulting link)', () => {
     const scheme = 'intoss-private://m?_deploymentId=x';
-    expect(() => buildDeepLinkAttachUrl(scheme, 'ws://insecure.example.com')).toThrow(/wss:/);
-    expect(() => buildDeepLinkAttachUrl(scheme, 'https://example.com')).toThrow(/wss:/);
+    expect(() => buildDeepLinkAttachUrl(scheme, 'ws://insecure.example.com', CODE)).toThrow(/wss:/);
+    expect(() => buildDeepLinkAttachUrl(scheme, 'https://example.com', CODE)).toThrow(/wss:/);
   });
 
   it('rejects a malformed relay URL', () => {
     const scheme = 'intoss-private://m?_deploymentId=x';
-    expect(() => buildDeepLinkAttachUrl(scheme, 'not a url')).toThrow(/valid URL/);
+    expect(() => buildDeepLinkAttachUrl(scheme, 'not a url', CODE)).toThrow(/valid URL/);
   });
 
   // ---------------------------------------------------------------------------
-  // TOTP `at=` parameter (third argument)
+  // TOTP `at=` parameter (third argument, required)
   // ---------------------------------------------------------------------------
 
   it('appends `at=<totpCode>` when totpCode is provided', () => {
@@ -89,16 +92,9 @@ describe('buildDeepLinkAttachUrl', () => {
     expect(out).toContain(`relay=${encodeURIComponent(RELAY)}`);
   });
 
-  it('does NOT append `at=` when totpCode is undefined', () => {
+  it('refuses an empty totpCode: there is no link without a code', () => {
     const scheme = 'intoss-private://m?_deploymentId=x';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY, undefined);
-    expect(out).not.toContain('at=');
-  });
-
-  it('does NOT append `at=` when totpCode is an empty string', () => {
-    const scheme = 'intoss-private://m?_deploymentId=x';
-    const out = buildDeepLinkAttachUrl(scheme, RELAY, '');
-    expect(out).not.toContain('at=');
+    expect(() => buildDeepLinkAttachUrl(scheme, RELAY, '')).toThrow(/code/);
   });
 
   it('replaces a stale `at=` on re-run (idempotent)', () => {
@@ -110,11 +106,11 @@ describe('buildDeepLinkAttachUrl', () => {
     expect(second.match(/(^|&)at=/g)).toHaveLength(1);
   });
 
-  it('removes a stale `at=` when totpCode is omitted on refresh', () => {
+  it('replaces a stale `at=` already in the scheme URL', () => {
     const scheme = 'intoss-private://m?_deploymentId=x&at=oldcode';
-    // Calling without a code removes the old `at=`.
-    const out = buildDeepLinkAttachUrl(scheme, RELAY);
-    expect(out).not.toContain('at=');
+    const out = buildDeepLinkAttachUrl(scheme, RELAY, CODE);
+    expect(out).not.toContain('oldcode');
+    expect(out.match(/(^|&)at=/g)).toHaveLength(1);
   });
 });
 
@@ -207,16 +203,16 @@ describe('validateSchemeAuthority', () => {
 describe('buildDeepLinkAttachUrl error messages', () => {
   it('do not echo the relay URL', () => {
     const scheme = 'intoss-private://app?_deploymentId=abc';
-    expect(() => buildDeepLinkAttachUrl(scheme, 'https://leaky-host.trycloudflare.com')).toThrow(
-      /wss:/,
-    );
+    expect(() =>
+      buildDeepLinkAttachUrl(scheme, 'https://leaky-host.trycloudflare.com', CODE),
+    ).toThrow(/wss:/);
     try {
-      buildDeepLinkAttachUrl(scheme, 'https://leaky-host.trycloudflare.com');
+      buildDeepLinkAttachUrl(scheme, 'https://leaky-host.trycloudflare.com', CODE);
     } catch (e) {
       expect((e as Error).message).not.toContain('leaky-host');
     }
     try {
-      buildDeepLinkAttachUrl(scheme, 'not a url leaky-host');
+      buildDeepLinkAttachUrl(scheme, 'not a url leaky-host', CODE);
     } catch (e) {
       expect((e as Error).message).not.toContain('leaky-host');
     }

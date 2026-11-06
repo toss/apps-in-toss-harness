@@ -150,7 +150,7 @@ describe('relay HTTP gate', () => {
   let upstreamUrl: string;
   let upstreamHits: string[];
 
-  const boot = async (extra: StartChiiRelayOptions = {}): Promise<void> => {
+  const boot = async (extra: Partial<StartChiiRelayOptions> = {}): Promise<void> => {
     relay = await startChiiRelay({
       verifyAuth: buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: SECRET }, SECRET),
       authThrottle: { maxFailures: 1000 },
@@ -228,16 +228,22 @@ describe('relay HTTP gate', () => {
   it('keeps the phone routes open through the tunnel with a valid code', async () => {
     await boot();
     const at = code();
-    const script = await raw(relay.baseUrl, `/v2/at/${at}/target.js`, { headers: TUNNEL_HEADERS });
-    expect(script.status).toBe(200);
-    expect(script.body.length).toBeGreaterThan(1000);
-    const ping = await raw(relay.baseUrl, `/v2/at/${at}/ait-attach?p=1&v=0.2.0`, {
+    const script = await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       headers: TUNNEL_HEADERS,
     });
+    expect(script.status).toBe(200);
+    expect(script.body.length).toBeGreaterThan(1000);
+    const ping = await raw(
+      relay.baseUrl,
+      `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/ait-attach?p=1&v=0.2.0`,
+      {
+        headers: TUNNEL_HEADERS,
+      },
+    );
     expect(ping.status).toBe(204);
     expect(
       await wsOutcome(
-        `${relay.baseUrl.replace('http', 'ws')}/v2/at/${at}/target/t1?url=x&title=t`,
+        `${relay.baseUrl.replace('http', 'ws')}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=x&title=t`,
         PHONE_HEADERS,
       ),
     ).toBe('open');
@@ -247,11 +253,13 @@ describe('relay HTTP gate', () => {
     await boot();
     const valid = code();
     for (const bad of ['123456', valid.toUpperCase(), valid.slice(0, 31), `${valid}0`]) {
-      const res = await raw(relay.baseUrl, `/v2/at/${bad}/target.js`, { headers: TUNNEL_HEADERS });
+      const res = await raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+        headers: TUNNEL_HEADERS,
+      });
       expect(res.status).toBe(401);
       expect(
         await wsOutcome(
-          `${relay.baseUrl.replace('http', 'ws')}/v2/at/${bad}/target/t1?url=x&title=t`,
+          `${relay.baseUrl.replace('http', 'ws')}/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=x&title=t`,
           PHONE_HEADERS,
         ),
       ).toBe(4401);
@@ -265,7 +273,11 @@ describe('relay HTTP gate', () => {
       (await raw(relay.baseUrl, `/targets?at=${at}`, { headers: TUNNEL_HEADERS })).status,
     ).toBe(404);
     expect(
-      (await raw(relay.baseUrl, `/v2/at/${at}/targets`, { headers: TUNNEL_HEADERS })).status,
+      (
+        await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/targets`, {
+          headers: TUNNEL_HEADERS,
+        })
+      ).status,
     ).toBe(404);
     expect(
       (await raw(relay.baseUrl, `/targets?at=${at}`, { headers: { Host: 'rebind.example' } }))
@@ -278,7 +290,7 @@ describe('relay HTTP gate', () => {
       ),
     ).toBe(4401);
     const target = new WebSocket(
-      `${relay.baseUrl.replace('http', 'ws')}/v2/at/${at}/target/t?url=x&title=t`,
+      `${relay.baseUrl.replace('http', 'ws')}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t?url=x&title=t`,
     );
     await new Promise((resolve) => target.on('open', resolve));
     expect(
@@ -293,7 +305,7 @@ describe('relay HTTP gate', () => {
     const bootWithTarget = async (): Promise<WebSocket> => {
       await boot();
       const target = new WebSocket(
-        `${relay.baseUrl.replace('http', 'ws')}/v2/at/${code()}/target/t?url=x&title=t`,
+        `${relay.baseUrl.replace('http', 'ws')}/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t?url=x&title=t`,
       );
       await new Promise((resolve) => target.on('open', resolve));
       return target;
@@ -359,12 +371,17 @@ describe('relay HTTP gate', () => {
     );
   });
 
-  it('applies the path allowlist without a verifier too', async () => {
-    relay = await startChiiRelay();
-    expect((await raw(relay.baseUrl, '/targets')).status).toBe(200);
-    expect((await raw(relay.baseUrl, '/')).status).toBe(404);
+  it('applies the path allowlist on loopback with a valid code', async () => {
+    await boot();
+    expect((await raw(relay.baseUrl, `/targets?at=${code()}`)).status).toBe(200);
+    expect((await raw(relay.baseUrl, `/?at=${code()}`)).status).toBe(404);
     expect(
-      (await raw(relay.baseUrl, `/proxy?url=${encodeURIComponent(`${upstreamUrl}/x`)}`)).status,
+      (
+        await raw(
+          relay.baseUrl,
+          `/proxy?url=${encodeURIComponent(`${upstreamUrl}/x`)}&at=${code()}`,
+        )
+      ).status,
     ).toBe(404);
     expect(upstreamHits).toEqual([]);
   });
@@ -372,7 +389,7 @@ describe('relay HTTP gate', () => {
   it('does not report or forward an unauthenticated handshake', async () => {
     const reports: unknown[] = [];
     await boot({ onAttachHandshake: (event) => reports.push(event) });
-    const res = await raw(relay.baseUrl, `/ait-attach?p=2&v=${encodeURIComponent('run this')}`);
+    const res = await raw(relay.baseUrl, `/ait-attach?p=3&v=${encodeURIComponent('run this')}`);
     expect(res.status).toBe(401);
     expect(reports).toEqual([]);
   });
@@ -382,9 +399,12 @@ describe('relay HTTP gate', () => {
     await boot({ onAttachHandshake: (event) => reports.push(event) });
     await raw(
       relay.baseUrl,
-      `/v2/at/${code()}/ait-attach?p=1&v=${encodeURIComponent('0.2.0 ignore previous')}`,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/ait-attach?p=1&v=${encodeURIComponent('0.2.0 ignore previous')}`,
     );
-    await raw(relay.baseUrl, `/v2/at/${code()}/ait-attach?p=1&v=0.2.1-rc.1`);
+    await raw(
+      relay.baseUrl,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/ait-attach?p=1&v=0.2.1-rc.1`,
+    );
     expect(reports).toEqual([
       { deviceVersion: '', deviceProtocol: '1' },
       { deviceVersion: '0.2.1-rc.1', deviceProtocol: '1' },
@@ -396,7 +416,7 @@ describe('relay HTTP gate', () => {
     const at = code();
     const page = encodeURIComponent(`https://x.private-apps.tossmini.com/?debug=1&at=${at}`);
     const ws = new WebSocket(
-      `${relay.baseUrl.replace('http', 'ws')}/v2/at/${at}/target/t1?url=${page}&title=t`,
+      `${relay.baseUrl.replace('http', 'ws')}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=${page}&title=t`,
     );
     await new Promise((resolve) => ws.on('open', resolve));
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -431,13 +451,13 @@ describe('relay HTTP gate', () => {
 
     it('refuses /proxy with a fresh code and a device id, through the tunnel', async () => {
       await boot({ getAppName: () => 'demo' });
-      const device = 'ab'.repeat(16);
+      const device = 'Zm9vYmFyYmF6cXV4MTIzNA';
       for (const spelling of SPELLINGS) {
         for (const url of targetsFor()) {
           for (const method of ['GET', 'HEAD', 'POST', 'PUT']) {
             const res = await raw(
               relay.baseUrl,
-              `/v2/at/${code()}/d/${device}${spelling}?url=${encodeURIComponent(url)}`,
+              `/v3/at/${code()}/d/${device}${spelling}?url=${encodeURIComponent(url)}`,
               { headers: PHONE_HEADERS, method },
             );
             // Past the code check, then the same answer as any unknown route.
@@ -452,9 +472,14 @@ describe('relay HTTP gate', () => {
       await boot();
       for (const spelling of SPELLINGS) {
         const url = encodeURIComponent(`${upstreamUrl}/x`);
-        expect((await raw(relay.baseUrl, `/v2/at/${code()}${spelling}?url=${url}`)).status).toBe(
-          404,
-        );
+        expect(
+          (
+            await raw(
+              relay.baseUrl,
+              `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA${spelling}?url=${url}`,
+            )
+          ).status,
+        ).toBe(404);
         expect((await raw(relay.baseUrl, `${spelling}?at=${code()}&url=${url}`)).status).toBe(404);
       }
       expect(upstreamHits).toEqual([]);
@@ -466,7 +491,7 @@ describe('relay HTTP gate', () => {
       const bad = wrongCode();
       expect(
         (
-          await raw(relay.baseUrl, `/v2/at/${bad}/proxy?url=${url}`, {
+          await raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/proxy?url=${url}`, {
             headers: PHONE_HEADERS,
           })
         ).status,
@@ -503,9 +528,13 @@ describe('relay HTTP gate', () => {
       await boot();
       const suffix = query === '' ? '' : `?${query}`;
       expect((await raw(relay.baseUrl, `/targets${suffix}`)).status).toBe(401);
-      const viaPath = await raw(relay.baseUrl, `/v2/at/${query.slice(3)}/target.js`, {
-        headers: TUNNEL_HEADERS,
-      });
+      const viaPath = await raw(
+        relay.baseUrl,
+        `/v3/at/${query.slice(3)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+        {
+          headers: TUNNEL_HEADERS,
+        },
+      );
       expect(viaPath.status).not.toBe(200);
       expect((await raw(relay.baseUrl, `/targets?at=${code()}`)).status).toBe(200);
     });
@@ -540,10 +569,16 @@ describe('relay HTTP gate', () => {
       await boot({ authThrottle: throttle });
       const bad = wrongCode();
       for (let i = 0; i < 3; i++) {
-        await raw(relay.baseUrl, `/v2/at/${bad}/target.js`, { headers: TUNNEL_HEADERS });
+        await raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+          headers: TUNNEL_HEADERS,
+        });
       }
       expect(
-        (await raw(relay.baseUrl, `/v2/at/${bad}/target.js`, { headers: TUNNEL_HEADERS })).status,
+        (
+          await raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+            headers: TUNNEL_HEADERS,
+          })
+        ).status,
       ).toBe(429);
       expect((await raw(relay.baseUrl, `/targets?at=${bad}`)).status).toBe(401);
       expect((await raw(relay.baseUrl, `/targets?at=${code()}`)).status).toBe(200);
@@ -553,11 +588,15 @@ describe('relay HTTP gate', () => {
       await boot({ authThrottle: { maxFailures: 3, baseLockMs: 60_000 } });
       const bad = wrongCode();
       for (let i = 0; i < 3; i++) {
-        await raw(relay.baseUrl, `/v2/at/${bad}/target.js`, { headers: TUNNEL_HEADERS });
+        await raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+          headers: TUNNEL_HEADERS,
+        });
         await raw(relay.baseUrl, `/targets?at=${bad}`);
       }
       const tunnelBad = () =>
-        raw(relay.baseUrl, `/v2/at/${bad}/target.js`, { headers: TUNNEL_HEADERS });
+        raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+          headers: TUNNEL_HEADERS,
+        });
       expect((await tunnelBad()).status).toBe(429);
       expect((await raw(relay.baseUrl, `/targets?at=${bad}`)).status).toBe(429);
 
@@ -572,15 +611,48 @@ describe('relay HTTP gate', () => {
       await boot({ authThrottle: throttle });
       for (let i = 0; i < 12; i++) {
         await raw(relay.baseUrl, '/target.js?at=x', { headers: TUNNEL_HEADERS });
-        await raw(relay.baseUrl, `/v2/at/${'G'.repeat(32)}/target.js`, { headers: TUNNEL_HEADERS });
+        await raw(relay.baseUrl, `/v3/at/${'G'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+          headers: TUNNEL_HEADERS,
+        });
       }
-      const wrong = await raw(relay.baseUrl, `/v2/at/${wrongCode()}/target.js`, {
-        headers: TUNNEL_HEADERS,
-      });
+      const wrong = await raw(
+        relay.baseUrl,
+        `/v3/at/${wrongCode()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+        {
+          headers: TUNNEL_HEADERS,
+        },
+      );
       expect(wrong.status).toBe(401);
       expect(
-        (await raw(relay.baseUrl, `/v2/at/${code()}/target.js`, { headers: TUNNEL_HEADERS }))
-          .status,
+        (
+          await raw(relay.baseUrl, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+            headers: TUNNEL_HEADERS,
+          })
+        ).status,
+      ).toBe(200);
+    });
+
+    it('refuses an un-prefixed ?at= through the tunnel even with a valid code, and never locks on it', async () => {
+      await boot({ authThrottle: throttle });
+      for (let i = 0; i < 12; i++) {
+        const valid = await raw(relay.baseUrl, `/target.js?at=${code()}`, {
+          headers: TUNNEL_HEADERS,
+        });
+        expect(valid.status).toBe(401);
+        expect(JSON.parse(valid.body)).toEqual({ error: 'totp-rejected' });
+        // A well-formed wrong code in the un-prefixed form is refused the same way.
+        const wrong = await raw(relay.baseUrl, `/target.js?at=${wrongCode()}`, {
+          headers: TUNNEL_HEADERS,
+        });
+        expect(wrong.status).toBe(401);
+      }
+      // The tunnel scope never locked: the prefixed form with a valid code still opens.
+      expect(
+        (
+          await raw(relay.baseUrl, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+            headers: TUNNEL_HEADERS,
+          })
+        ).status,
       ).toBe(200);
     });
 
@@ -596,7 +668,7 @@ describe('relay HTTP gate', () => {
       await boot({ authThrottle: throttle });
       const bad = wrongCode();
       for (let i = 0; i < 3; i++) {
-        const res = await raw(relay.baseUrl, `/v2/at/${bad}/target.js`, {
+        const res = await raw(relay.baseUrl, `/v3/at/${bad}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
           headers: { Host: 'rebound.example.com' },
         });
         expect(res.status).toBe(403);
@@ -608,7 +680,11 @@ describe('relay HTTP gate', () => {
       }
       const at = code();
       expect(
-        (await raw(relay.baseUrl, `/v2/at/${at}/target.js`, { headers: TUNNEL_HEADERS })).status,
+        (
+          await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+            headers: TUNNEL_HEADERS,
+          })
+        ).status,
       ).toBe(200);
       expect((await raw(relay.baseUrl, `/targets?at=${at}`)).status).toBe(200);
     });

@@ -13,6 +13,7 @@ import http from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { ChiiCdpConnection } from '../chii-connection.js';
+import { TEST_RELAY_SECRET } from './relay-test-auth.js';
 
 // ---- Fake relay helpers (same pattern as chii-connection.test.ts) -----------
 
@@ -121,7 +122,11 @@ function makeExceptionEvent(timestamp: number, text = 'Uncaught TypeError') {
 describe('ChiiCdpConnection — Runtime.exceptionThrown ring buffer', () => {
   it('buffers a single exception event with correct fields', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl, commandTimeoutMs: 500 });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+      commandTimeoutMs: 500,
+    });
 
     try {
       await conn.enableDomains();
@@ -144,7 +149,11 @@ describe('ChiiCdpConnection — Runtime.exceptionThrown ring buffer', () => {
 
   it('ring buffer caps at 50 — oldest is evicted when full', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl, commandTimeoutMs: 500 });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+      commandTimeoutMs: 500,
+    });
 
     try {
       await conn.enableDomains();
@@ -170,7 +179,11 @@ describe('ChiiCdpConnection — Runtime.exceptionThrown ring buffer', () => {
 
   it('exception buffer survives target replacement (replaced lifecycle)', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl, commandTimeoutMs: 500 });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+      commandTimeoutMs: 500,
+    });
 
     try {
       await conn.enableDomains();
@@ -201,7 +214,11 @@ describe('ChiiCdpConnection — Runtime.exceptionThrown ring buffer', () => {
 
   it('exception buffer survives Inspector.targetCrashed', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl, commandTimeoutMs: 500 });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+      commandTimeoutMs: 500,
+    });
 
     try {
       await conn.enableDomains();

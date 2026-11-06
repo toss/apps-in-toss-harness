@@ -1,7 +1,7 @@
 /**
  * debug-build-separation.test.ts
  *
- * 디버그 도구(debugger MCP, debug-console)가 검수·출시 번들에 남지 않도록 skill 문서들이
+ * 디버그 도구(debugger MCP, debugger-client)가 검수·출시 번들에 남지 않도록 skill 문서들이
  * 같은 계약을 가리키는지 지키는 불변식:
  *   - `__DEBUG_BUILD__`는 AIT_DEBUG_BUILD=1 명시에서만 온다 (옛 RELEASE_CHANNEL 신호 없음)
  *   - 디버그 배포 기록 파일 이름·마커 목록이 inject / test-on-device / launch / launch-scan.sh에서 일치
@@ -53,8 +53,8 @@ describe('AIT_DEBUG_BUILD 게이트', () => {
     }
   });
 
-  it('inject debug-console 문서는 define 값을 AIT_DEBUG_BUILD === 1 에서만 만들고 true 고정을 금한다', () => {
-    const ref = read('inject/references/debug-console.md');
+  it('inject debugger-client 문서는 define 값을 AIT_DEBUG_BUILD === 1 에서만 만들고 true 고정을 금한다', () => {
+    const ref = read('inject/references/debugger-client.md');
     expect(ref).toContain("process.env.AIT_DEBUG_BUILD === '1'");
     expect(ref).toContain('AIT_DEBUG_BUILD=1 npm run build');
     expect(ref).toContain('devDependencies');
@@ -69,7 +69,7 @@ describe('AIT_DEBUG_BUILD 게이트', () => {
   });
 
   it('inject 는 게이트 import 와 검증 grep 에 같은 마커 목록을 쓴다', () => {
-    const ref = read('inject/references/debug-console.md');
+    const ref = read('inject/references/debugger-client.md');
     for (const m of MARKERS) expect(ref).toContain(m);
     expect(ref).toContain('if (__DEBUG_BUILD__)');
   });
@@ -88,7 +88,7 @@ describe('디버그 배포 기록', () => {
 
     expect(read('debug/SKILL.md')).toContain(RECORD);
     expect(read('launch/SKILL.md')).toContain(RECORD);
-    expect(read('inject/references/debug-console.md')).toContain(RECORD);
+    expect(read('inject/references/debugger-client.md')).toContain(RECORD);
   });
 
   it('test-on-device 는 기본이 릴리즈 빌드이고 디버깅할 때만 디버그 빌드를 올린다', () => {
@@ -128,9 +128,9 @@ describe('최소 버전 단일 정본', () => {
   it('min-versions.json 은 두 패키지의 semver 를 갖고 현재 알려진 발행본보다 낮지 않다', () => {
     expect(existsSync(file)).toBe(true);
     expect(mins['@apps-in-toss/debugger']).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(mins['@apps-in-toss/debug-console']).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(mins['@apps-in-toss/debugger-client']).toMatch(/^\d+\.\d+\.\d+$/);
     expect(gte(mins['@apps-in-toss/debugger'], '0.2.8')).toBe(true);
-    expect(gte(mins['@apps-in-toss/debug-console'], '0.2.1')).toBe(true);
+    expect(gte(mins['@apps-in-toss/debugger-client'], '0.2.1')).toBe(true);
   });
 
   it('setup-debugger · debug · test-on-device · launch 가 min-versions.json 을 가리킨다', () => {
@@ -144,12 +144,12 @@ describe('최소 버전 단일 정본', () => {
     for (const [rel, needle] of Object.entries(refs)) expect(read(rel), rel).toContain(needle);
   });
 
-  it('upgrade-check 는 최소 버전 미달을 URL 과 버전 표기 양쪽에서 다루고 ait-devtools 키를 바꾸지 않는다', () => {
+  it('upgrade-check 는 최소 버전 미달을 URL 과 버전 표기 양쪽에서 다루고 ait-debugger 키를 바꾸지 않는다', () => {
     const up = read('setup-debugger/references/upgrade-check.md');
     expect(up).toContain('최소 버전 미달');
     expect(up).toContain('버전 표기');
-    expect(up).toContain('node_modules/@apps-in-toss/debug-console/package.json');
+    expect(up).toContain('node_modules/@apps-in-toss/debugger-client/package.json');
     expect(up).not.toContain('보안');
-    expect(read('setup-debugger/SKILL.md')).toContain('"ait-devtools"');
+    expect(read('setup-debugger/SKILL.md')).toContain('"ait-debugger"');
   });
 });

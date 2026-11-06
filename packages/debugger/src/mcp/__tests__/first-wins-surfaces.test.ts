@@ -20,6 +20,7 @@ import {
 import { logInfo } from '../log.js';
 import type { DashboardState } from '../qr-http-server.js';
 import { startQrHttpServer } from './dashboard-auth-helper.js';
+import { TEST_RELAY_SECRET } from './relay-test-auth.js';
 
 const FOO_URL = 'https://foo.private-apps.tossmini.com/p?at=111111';
 const BAR_URL = 'https://bar.private-apps.tossmini.com/p?at=222222';
@@ -52,6 +53,7 @@ describe('ChiiCdpConnection.refreshTargets — first-wins guard', () => {
   it('keeps the attached target and reports a busy rejection for a different host (once)', async () => {
     const busy: Array<{ rejectedHost: string | null; attachedHost: string | null }> = [];
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: 'http://127.0.0.1:1',
       onTargetRejectedBusy: (e) => busy.push(e),
     });
@@ -78,6 +80,7 @@ describe('ChiiCdpConnection.refreshTargets — first-wins guard', () => {
   it('still lets the same host replace the active target (newest wins)', async () => {
     const busy: unknown[] = [];
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: 'http://127.0.0.1:1',
       onTargetRejectedBusy: (e) => busy.push(e),
     });
@@ -93,7 +96,10 @@ describe('ChiiCdpConnection.refreshTargets — first-wins guard', () => {
   });
 
   it('switches to a different host once the attached target is gone', async () => {
-    const conn = new ChiiCdpConnection({ relayBaseUrl: 'http://127.0.0.1:1' });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: 'http://127.0.0.1:1',
+    });
     stubTargets([{ id: 't-foo', url: FOO_URL }]);
     await conn.refreshTargets();
     stubTargets([{ id: 't-bar', url: BAR_URL }]);

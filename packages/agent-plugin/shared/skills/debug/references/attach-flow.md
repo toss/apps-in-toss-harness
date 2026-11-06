@@ -2,10 +2,10 @@
 
 `/ait:debug` §5-C(attach — `start_attach` QR)의 실행 단계 상세다. SKILL.md의 요약만으로 부족할 때, 또는 각 단계에서 에러가 나서 원인을 짚어야 할 때 참조한다.
 
-0. **사전 조건 확인**: `@apps-in-toss/debug-console`이 `devDependencies`로 설치되고 진입점의
+0. **사전 조건 확인**: `@apps-in-toss/debugger-client`이 `devDependencies`로 설치되고 진입점의
    `__DEBUG_BUILD__` 게이트 import가 배선돼 있어야 하며, 디버그 번들은
    `AIT_DEBUG_BUILD=1`로 만들어 그 값이 `true`여야 attach 표면이 남는다. 없으면 **환경 3 attach 표면이 아직 설치되지
-   않았습니다. 먼저 `/ait:inject-debug-console`을 실행하세요.** 여기서 중단.
+   않았습니다. 먼저 `/ait:inject-debugger-client`을 실행하세요.** 여기서 중단.
 
 1. **`start_attach({mode: 'relay-staging', scheme_url, projectRoot})`** 도구를 호출한다
    (5-B에서 `ait build` → console MCP `bundle_upload_complete`가 돌려준 scheme URL을
@@ -55,25 +55,26 @@ relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데�
 
 ## 폰 화면 상태 표시 읽는 법
 
-`debug-console`은 QR 테스트 호스트에서 URL에 `debug=1` 또는 `relay=`가 있을 때(QR로 연 경우) 화면 하단에 상태 막대를 띄운다. 막대 문구는 일부러 짧고 어느 검사가 실패했는지 말하지 않는다. 그래서 문구만으로는 원인을 가릴 수 없다. 원인은 `window.__ait_debug_status`(CDP로 읽는 enum)와 데몬의 `get_debug_status`·`attachDiagnosis`·대시보드 타임라인으로 가린다. 프로덕션 호스트 등 QR 테스트 호스트가 아닌 곳에서는 막대도 상태 값도 없다. 탭하면 막대가 닫히며 코드·relay 주소는 표시하지 않는다.
+`debugger-client`은 QR 테스트 호스트에서 URL에 `debug=1` 또는 `relay=`가 있을 때(QR로 연 경우) 화면 하단에 상태 막대를 띄운다. 막대 문구는 일부러 짧고 어느 검사가 실패했는지 말하지 않는다. 그래서 문구만으로는 원인을 가릴 수 없다. 원인은 `window.__ait_debug_status`(CDP로 읽는 enum)와 데몬의 `get_debug_status`·`attachDiagnosis`·대시보드 타임라인으로 가린다. 프로덕션 호스트 등 QR 테스트 호스트가 아닌 곳에서는 막대도 상태 값도 없다. 탭하면 막대가 닫히며 코드·relay 주소는 표시하지 않는다.
 
 | 막대 문구 | 가능한 상태 값 | 원인을 가르는 법과 조치 |
 |---|---|---|
-| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-entry` / `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 그 사람의 `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })` 배열에 추가하고 다시 빌드한다 |
-| 디버거를 최신 버전으로 올리세요. | `blocked-update-required` | 디버거를 최신으로 올리고 새 QR을 스캔 |
+| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 그 사람의 `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })` 배열에 추가하고 다시 빌드한다 |
 | 이 번들에 디버거 키가 없어요. | `blocked-relay-key` | `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })`에 넣고 다시 빌드 |
-| 이 화면에서는 디버거를 쓸 수 없어요. / 디버거와 debug-console 버전이 맞지 않아요. | `relay-origin-rejected` / `relay-version-mismatch` | relay가 연결을 거부했다(close 4403 / 4426). 4426은 디버거와 debug-console 중 오래된 쪽을 올리고 새 QR을 스캔 |
+| 이 화면에서는 디버거를 쓸 수 없어요. / 디버거와 debugger-client 버전이 맞지 않아요. | `relay-origin-rejected` / `relay-version-mismatch` | relay가 연결을 거부했다(close 4403 / 4426). 4426은 디버거와 debugger-client 중 오래된 쪽을 올리고 새 QR을 스캔 |
 | 디버거에 연결하는 중이에요… / 디버거에 연결됐어요. | `connecting` / `connected` | 잠시 기다린다(`connected`는 3초 뒤 자동 숨김) |
 | 디버거 연결이 끝났어요. QR을 다시 스캔하세요. | `session-ended` | X로 닫고 QR을 다시 스캔 |
 | 디버거 서버에 접속할 수 없어요. | `server-unreachable` | 사내망·MDM이 `*.trycloudflare.com`을 막고 있을 수 있다 — Wi-Fi 변경 |
 | 디버거가 다른 미니앱에 연결돼 있어요. | `relay-busy` | 먼저 연결된 미니앱을 X로 닫은 뒤 이 앱에서 QR을 다시 스캔 |
 | 잠시 뒤 다시 시도하세요. | `relay-locked` | relay가 코드 확인을 잠시 잠갔다. 1분쯤 뒤 다시 시도하고, 계속되면 새 QR을 스캔 |
 
-막대가 아예 없으면 폰이 이번 QR의 페이지를 열지 않았거나(`page-not-opened`), 구버전 `debug-console`이 설치된 것이다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 안내한다.
+막대가 아예 없으면 폰이 이번 QR의 페이지를 열지 않았거나(`page-not-opened`), 구버전 `debugger-client`이 설치된 것이다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 안내한다.
 
 ## 대시보드와 재스캔 규칙
 
 - 대시보드 주소는 `start_attach`가 알려 주는 것을 그대로 쓴다. 데몬이 뜰 때마다 바뀌는 접근 토큰(`dashtoken=`)이 붙어 있고, 토큰 없이 `http://127.0.0.1:<포트>/`만 열면 403이다. 이 주소를 로그나 이슈에 붙이지 않는다(데몬을 다시 띄우면 무효가 된다). 데몬을 재시작했다면 이전 탭이 아니라 새 주소를 쓴다.
 - 대시보드 탭은 **하나만** 쓴다. `start_attach`는 이미 연결된 탭이 있으면 새 탭을 열지 않고 그 탭의 QR을 갱신한다. 탭이 쌓이면 브라우저 호스트당 연결 한도(Firefox 6개)에 걸려 QR 이미지가 안 뜨고 "연결 끊김"으로 보일 수 있다. SSE 구독은 2개까지만 유지되고 초과분은 "다른 탭에서 대시보드가 열려 있어요" 안내만 남는다.
 - 토스 앱에 같은 미니앱이 이미 열려 있으면 QR을 스캔해도 새 relay로 붙지 않는다. **미니앱을 X 버튼으로 먼저 닫은 뒤** 스캔하게 한다.
-- `debugger-test`(터미널 test runner)와 MCP 데몬은 relay를 따로 쓴다. 데몬이 이미 relay를 운영 중이면 `debugger-test`는 PID와 안내를 남기고 멈춘다. 같은 테스트는 attach된 세션에서 `run_tests` 도구로 돌린다(5-E). 굳이 별도 relay가 필요하면 `debugger-test --separate-relay`.
+- Claude Code 세션마다 데몬이 따로 뜬다. relay, 터널, 대시보드, 포트가 세션별로 독립이라 창을 여러 개 열어도 서로 막지 않고 끊지 않는다. 대시보드 탭 제목 끝에 프로젝트 이름이 붙으므로 탭이 여러 개면 그 이름으로 구분하고, 폰은 이 세션의 `start_attach`가 보여 준 QR만 스캔한다. `get_debug_status`의 `otherSessions`에 다른 세션의 프로젝트 이름과 시작 시각이 나온다. 정보일 뿐이고 이 세션의 도구는 그대로 쓴다.
+- relay 하나는 미니앱 하나만 받는다(거부 4409). 세션이 둘이면 relay도 둘이므로 세션마다 미니앱 하나씩 붙일 수 있다.
+- `debugger-test`(터미널 test runner)와 MCP 데몬도 relay를 따로 쓰고, 서로 막지 않는다. 같은 테스트는 attach된 세션에서 `run_tests` 도구로 돌려도 된다(5-E). 폰이 어느 QR에 붙는지는 대시보드 탭 제목의 프로젝트 이름으로 확인한다.

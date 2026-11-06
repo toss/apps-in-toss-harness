@@ -28,19 +28,19 @@ const mcpSdkVersion = ((): string | null => {
 // property access would silently read `undefined`). `__VERSION__` is the host
 // half of the attach version handshake: the daemon compares it with the version
 // the device reports on `/ait-attach`. Keep it in lockstep with
-// `@apps-in-toss/debug-console`'s define — they are a Changesets `fixed` pair.
+// `@apps-in-toss/debugger-client`'s define — they are a Changesets `fixed` pair.
 const define = {
   __VERSION__: JSON.stringify(pkg.version),
   __MCP_SDK_VERSION__: JSON.stringify(mcpSdkVersion),
 };
 
 // This package is devDependency / npx tooling only — every consumer runs on
-// Node 24, so it ships ESM-only. (Contrast @apps-in-toss/debug-console, which can
+// Node 24, so it ships ESM-only. (Contrast @apps-in-toss/debugger-client, which can
 // land inside a consumer's app bundle and therefore ships dual ESM + CJS.)
 //
 // `package.json` exports/bin expect a `.js` extension, but tsdown's default
 // ESM output extension is `.mjs` regardless of the package's own
-// `"type": "module"` — override it explicitly (same fix as debug-console's
+// `"type": "module"` — override it explicitly (same fix as debugger-client's
 // tsdown.config.ts).
 const outExtensions: Options['outExtensions'] = () => ({ js: '.js', dts: '.d.ts' });
 

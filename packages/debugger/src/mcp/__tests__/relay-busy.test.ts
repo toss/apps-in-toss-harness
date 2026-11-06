@@ -25,7 +25,7 @@ const BAR = 'https://bar.private-apps.tossmini.com/p?at=654321';
 
 function targetUrl(port: number, id: string, pageUrl: string | null): string {
   const q = new URLSearchParams(pageUrl === null ? { title: 't' } : { url: pageUrl, title: 't' });
-  return `ws://127.0.0.1:${port}/v2/at/${generateTotp(TEST_SECRET)}/target/${id}?${q}`;
+  return `ws://127.0.0.1:${port}/v3/at/${generateTotp(TEST_SECRET)}/target/${id}?${q}`;
 }
 
 interface Outcome {

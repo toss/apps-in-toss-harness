@@ -1,7 +1,7 @@
 # 디버그 빌드 기록 — `.ait-debug-deployments.json`
 
 콘솔에서는 폰에서 테스트한 그 배포를 그대로 검수에 제출하고 출시한다. 그래서
-`@apps-in-toss/debug-console`이 들어간 디버그 빌드(`AIT_DEBUG_BUILD=1`)로 올린 배포는
+`@apps-in-toss/debugger-client`이 들어간 디버그 빌드(`AIT_DEBUG_BUILD=1`)로 올린 배포는
 검수·출시에 쓰면 안 된다. 이 파일이 "어느 배포가 디버그 빌드인가"의 로컬 기록이고,
 `launch`가 검수 제출 전에 읽는다. 기록하는 쪽은 `test-on-device`(디버그 빌드를 올린 경우)와
 `debug` 5-B이고, 이 파일 형식의 주인은 `test-on-device` skill이다.
@@ -60,6 +60,6 @@
 ## 디버그 도구 버전
 
 디버그 빌드를 만들기 전에 `../../setup-debugger/references/min-versions.json`의 최소 버전과
-프로젝트의 debug-console 버전, `.mcp.json`의 `ait-devtools` 항목 버전을
+프로젝트의 debugger-client 버전(옛 이름 `@apps-in-toss/debug-console`이면 미달로 본다), `.mcp.json`의 `ait-debugger` 항목 버전(옛 키 `ait-devtools`도 미달로 본다)을
 `../../setup-debugger/references/upgrade-check.md` 절차로 비교한다. 낮으면 올리기를 권하고
 (핀 교체는 확인을 받은 뒤에만), 거절해도 빌드는 막지 않는다.

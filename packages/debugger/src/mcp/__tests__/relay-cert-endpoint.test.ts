@@ -56,7 +56,7 @@ function raw(
 describe('GET /relay-cert', () => {
   let relay: ChiiRelay | undefined;
   const rejects: Array<{ kind: string; reason: string }> = [];
-  const boot = async (extra: StartChiiRelayOptions = {}): Promise<void> => {
+  const boot = async (extra: Partial<StartChiiRelayOptions> = {}): Promise<void> => {
     rejects.length = 0;
     relay = await startChiiRelay({
       verifyAuth: buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: SECRET }, SECRET),
@@ -208,7 +208,7 @@ describe('GET /relay-cert', () => {
     signRelay(SECRET, RELAY, code());
     // maxFailures is 3. Two real failures first, then many certificate requests.
     for (let i = 0; i < 2; i++) {
-      const bad = await raw(base(), `/v2/at/${'0'.repeat(32)}/target.js`, {
+      const bad = await raw(base(), `/v3/at/${'0'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
         ...TUNNEL,
         Origin: PRIVATE_APPS,
       });
@@ -226,7 +226,7 @@ describe('GET /relay-cert', () => {
       }
     }
     // Not locked: a valid code still loads the script.
-    const ok = await raw(base(), `/v2/at/${code()}/target.js`, {
+    const ok = await raw(base(), `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       ...TUNNEL,
       Origin: PRIVATE_APPS,
     });
@@ -236,12 +236,16 @@ describe('GET /relay-cert', () => {
   it('is not served under the code prefix', async () => {
     await boot();
     signRelay(SECRET, RELAY, code());
-    const wrong = await raw(base(), `/v2/at/${'0'.repeat(32)}${RELAY_CERT_PATH}`, {
-      ...TUNNEL,
-      Origin: PRIVATE_APPS,
-    });
+    const wrong = await raw(
+      base(),
+      `/v3/at/${'0'.repeat(32)}${RELAY_CERT_PATH}/d/Zm9vYmFyYmF6cXV4MTIzNA`,
+      {
+        ...TUNNEL,
+        Origin: PRIVATE_APPS,
+      },
+    );
     expect(wrong.status).toBe(401);
-    const right = await raw(base(), `/v2/at/${code()}${RELAY_CERT_PATH}`, {
+    const right = await raw(base(), `/v3/at/${code()}${RELAY_CERT_PATH}/d/Zm9vYmFyYmF6cXV4MTIzNA`, {
       ...TUNNEL,
       Origin: PRIVATE_APPS,
     });

@@ -95,7 +95,6 @@ const startAttachWatcherMock = vi.fn(
 );
 vi.mock('../mcp/debug-server.js', () => ({
   bootRelayFamily: bootRelayFamilyMock,
-  buildRelayVerifyAuth: buildRelayVerifyAuthMock,
   startAttachWatcher: startAttachWatcherMock,
 }));
 
@@ -113,6 +112,7 @@ const generateTotpMock = vi.fn(() => '123456');
 vi.mock('../mcp/totp.js', () => ({
   generateTotp: generateTotpMock,
   mintRelayCode: generateTotpMock,
+  buildRelayVerifyAuth: buildRelayVerifyAuthMock,
 }));
 
 // qr-http-server.ts — the key surface under test

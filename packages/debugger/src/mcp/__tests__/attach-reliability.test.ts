@@ -10,6 +10,7 @@ import http from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { ChiiCdpConnection } from '../chii-connection.js';
+import { TEST_RELAY_SECRET } from './relay-test-auth.js';
 
 // ---- Fake relay helpers ----------------------------------------------------
 
@@ -93,7 +94,10 @@ async function createFakeRelay(
 describe('ChiiCdpConnection.waitForFirstTarget()', () => {
   it('resolves immediately when a matching target is already present', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+    });
 
     try {
       await conn.refreshTargets();
@@ -107,7 +111,10 @@ describe('ChiiCdpConnection.waitForFirstTarget()', () => {
 
   it('rejects after timeout when no matching target attaches', async () => {
     const relay = await createFakeRelay([]);
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+    });
 
     try {
       await expect(conn.waitForFirstTarget((t) => t.length > 0, 100, 50)).rejects.toThrow(
@@ -120,7 +127,10 @@ describe('ChiiCdpConnection.waitForFirstTarget()', () => {
 
   it('resolves via polling fallback when target appears after a delay', async () => {
     const relay = await createFakeRelay([]);
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+    });
 
     try {
       const waitPromise = conn.waitForFirstTarget((t) => t.length > 0, 2000, 50);
@@ -139,7 +149,10 @@ describe('ChiiCdpConnection.waitForFirstTarget()', () => {
 
   it('resolves via target:attached event from refreshTargets()', async () => {
     const relay = await createFakeRelay([]);
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+    });
 
     try {
       // Use a very long poll interval — only the event path can resolve quickly.
@@ -164,7 +177,10 @@ describe('ChiiCdpConnection.waitForFirstTarget()', () => {
     const relay = await createFakeRelay([
       { id: 'stale', url: 'intoss-private://app?_deploymentId=old-id' },
     ]);
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+    });
 
     try {
       await conn.refreshTargets();
@@ -189,7 +205,10 @@ describe('ChiiCdpConnection.waitForFirstTarget()', () => {
 describe('list_pages stale cache — refreshTargets after evict/reattach', () => {
   it('returns the fresh target after evict→reattach cycle', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+    });
 
     try {
       // Initial refresh — target-1 present.
@@ -220,6 +239,7 @@ describe('relay disconnect error recognition', () => {
   it('sendCommand fails fast with a disconnect message after WebSocket close', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 500,
     });

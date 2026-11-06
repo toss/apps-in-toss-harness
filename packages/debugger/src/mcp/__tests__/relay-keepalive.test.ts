@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { type ChiiRelay, startChiiRelay } from '../chii-relay.js';
 import { generateTotp } from '../totp.js';
+import { testCode, testVerifyAuth } from './relay-test-auth.js';
 
 /** Shared test secret — hex-encoded 32-byte value (public test vector). */
 const TEST_SECRET = 'deadbeef'.repeat(8);
@@ -60,6 +61,7 @@ describe('relay WS keepalive — target leg receives periodic ping', () => {
 
   beforeAll(async () => {
     relay = await startChiiRelay({
+      verifyAuth: testVerifyAuth(),
       port: 0,
       // 50 ms interval — fast enough for a test without real-time waits.
       keepaliveIntervalMs: 50,
@@ -73,7 +75,7 @@ describe('relay WS keepalive — target leg receives periodic ping', () => {
   it('connected ws client (target leg) receives a ping frame within 2× the interval', async () => {
     // Dial as a chii "target" so the socket enters chii's _wss.clients set.
     const wsUrl =
-      `ws://127.0.0.1:${relay.port}/target/keepalive-target-id` +
+      `ws://127.0.0.1:${relay.port}/v3/at/${testCode()}/target/keepalive-target-id` +
       `?${new URLSearchParams({ url: 'https://example.invalid/page', title: 'keepalive-test' })}`;
 
     const ws = await dialWs(wsUrl);
@@ -90,12 +92,12 @@ describe('relay WS keepalive — target leg receives periodic ping', () => {
     // immediately if the target id is not found. Dial a target first, then
     // connect a client that references it.
     const targetWs = await dialWs(
-      `ws://127.0.0.1:${relay.port}/target/cl-leg-target` +
+      `ws://127.0.0.1:${relay.port}/v3/at/${testCode()}/target/cl-leg-target` +
         `?${new URLSearchParams({ url: 'https://example.invalid/', title: 'cl-target' })}`,
     );
 
     const clientWs = await dialWs(
-      `ws://127.0.0.1:${relay.port}/client/cl-leg-client?target=cl-leg-target`,
+      `ws://127.0.0.1:${relay.port}/client/cl-leg-client?target=cl-leg-target&at=${testCode()}`,
     );
     try {
       await waitForPing(clientWs, 100);
@@ -114,10 +116,7 @@ describe('relay WS keepalive — disabled when keepaliveIntervalMs is 0', () => 
   let relay: ChiiRelay;
 
   beforeAll(async () => {
-    relay = await startChiiRelay({
-      port: 0,
-      keepaliveIntervalMs: 0,
-    });
+    relay = await startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0, keepaliveIntervalMs: 0 });
   });
 
   afterAll(async () => {
@@ -126,7 +125,7 @@ describe('relay WS keepalive — disabled when keepaliveIntervalMs is 0', () => 
 
   it('connected client does NOT receive a ping within 200 ms when keepalive is disabled', async () => {
     const wsUrl =
-      `ws://127.0.0.1:${relay.port}/target/nokeepalive-id` +
+      `ws://127.0.0.1:${relay.port}/v3/at/${testCode()}/target/nokeepalive-id` +
       `?${new URLSearchParams({ url: 'https://example.invalid/', title: 'no-keepalive' })}`;
 
     const ws = await dialWs(wsUrl);
@@ -147,7 +146,7 @@ describe('relay WS keepalive — ping is delivered when TOTP gate is active', ()
   let relay: ChiiRelay;
 
   beforeAll(async () => {
-    const { buildRelayVerifyAuth } = await import('../debug-server.js');
+    const { buildRelayVerifyAuth } = await import('../totp.js');
     const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET }, TEST_SECRET);
     if (verifyAuth === undefined) throw new Error('verifyAuth not built');
 
@@ -165,7 +164,7 @@ describe('relay WS keepalive — ping is delivered when TOTP gate is active', ()
   it('connected target leg (valid TOTP) receives a ping within 2× interval', async () => {
     const code = generateTotp(TEST_SECRET);
     const wsUrl =
-      `ws://127.0.0.1:${relay.port}/v2/at/${code}/target/totp-keepalive-id` +
+      `ws://127.0.0.1:${relay.port}/v3/at/${code}/target/totp-keepalive-id` +
       `?${new URLSearchParams({ url: 'https://example.invalid/', title: 'totp-keepalive' })}`;
 
     const ws = await dialWs(wsUrl);
@@ -184,12 +183,13 @@ describe('relay WS keepalive — ping is delivered when TOTP gate is active', ()
 describe('relay WS keepalive — interval cleared on close()', () => {
   it('no pings are sent after relay.close() is called', async () => {
     const relay = await startChiiRelay({
+      verifyAuth: testVerifyAuth(),
       port: 0,
       keepaliveIntervalMs: 50,
     });
 
     const wsUrl =
-      `ws://127.0.0.1:${relay.port}/target/close-test-id` +
+      `ws://127.0.0.1:${relay.port}/v3/at/${testCode()}/target/close-test-id` +
       `?${new URLSearchParams({ url: 'https://example.invalid/', title: 'close-test' })}`;
 
     const ws = await dialWs(wsUrl);

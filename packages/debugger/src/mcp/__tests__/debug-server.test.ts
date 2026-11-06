@@ -14,7 +14,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { AitMethodMap, AitMethodName, AitSource } from '../ait-source.js';
-import { START_ATTACH_SEGMENT_MS } from '../attach-orchestrator.js';
+import { type AttachUrlParts, START_ATTACH_SEGMENT_MS } from '../attach-orchestrator.js';
 import type {
   CdpCommandMap,
   CdpCommandName,
@@ -23,13 +23,9 @@ import type {
   CdpEventName,
   CdpTarget,
 } from '../cdp-connection.js';
-import {
-  type AttachUrlParts,
-  createDebugServer,
-  startAttachWatcher,
-  startParentWatcher,
-} from '../debug-server.js';
+import { createDebugServer, startAttachWatcher } from '../debug-server.js';
 import type { McpEnvironment } from '../environment.js';
+import { startParentWatcher } from '../parent-watcher.js';
 import { relayRunId } from '../relay-run-id.js';
 import type { TunnelStatus } from '../tools.js';
 import { BOOTSTRAP_TOOL_NAMES, DEBUG_TOOL_DEFINITIONS } from '../tools.js';
@@ -371,7 +367,7 @@ describe('start_attach — protocol version skew', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
-    expect(text).toContain('@apps-in-toss/debug-console');
+    expect(text).toContain('@apps-in-toss/debugger-client');
     expect(text).toContain('프로토콜 1');
     expect(text).toContain('@apps-in-toss/debugger');
     expect(text).toContain('프로토콜 2');
@@ -504,7 +500,7 @@ describe('start_attach — wait_for_attach', () => {
   });
 
   it('matches a page whose URL no longer carries relay= by the run marker (rid=)', async () => {
-    // debug-console removes relay= and at= from the page URL after reading them;
+    // debugger-client removes relay= and at= from the page URL after reading them;
     // the run marker the deep link also carries is what stays.
     const secret = DUMMY_SECRET_FOR_TESTS;
     const rid = relayRunId(secret, tunnelUp.wssUrl as string);

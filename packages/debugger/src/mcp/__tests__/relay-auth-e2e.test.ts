@@ -16,7 +16,7 @@
  *   - script fetch: `GET /at/<code>/target.js` serves the real chii asset on a
  *     valid code and 401s (kind 'http-request') on a wrong one, with a CORS
  *     header + JSON error body so a cross-origin fetch() probe can read it;
- *   - daemon back-compat: the query transport (`/client/<id>?…&at=<code>`)
+ *   - daemon client: the query transport (`/client/<id>?…&at=<code>`)
  *     keeps working unchanged;
  *   - SECRET-HANDLING: nothing observable (console output, reject events)
  *     carries the code, the secret, `at=`, `/at/`, or any request URL.
@@ -111,7 +111,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
   it('accepts a valid path-prefix target upgrade and registers the target', async () => {
     const code = generateTotp(TEST_SECRET);
     const wsUrl =
-      `ws://127.0.0.1:${relay.port}/v2/at/${code}/target/e2e-test-id` +
+      `ws://127.0.0.1:${relay.port}/v3/at/${code}/target/e2e-test-id` +
       `?${new URLSearchParams({ url: 'https://example.invalid/page', title: 'e2e' })}`;
 
     // Keep the socket OPEN while polling /targets — chii's route serialises
@@ -139,7 +139,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
   });
 
   it('rejects a wrong path-prefix code with close 4401/totp-rejected and counts a ws-upgrade reject', async () => {
-    const wsUrl = `ws://127.0.0.1:${relay.port}/v2/at/${wrongCode()}/target/e2e-bad-id?url=u`;
+    const wsUrl = `ws://127.0.0.1:${relay.port}/v3/at/${wrongCode()}/target/e2e-bad-id?url=u`;
 
     await expect(dialWsAwaitClose(wsUrl)).resolves.toEqual({
       code: RELAY_AUTH_REJECT_CLOSE_CODE,
@@ -169,7 +169,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
 
   it('serves target.js for a valid path-prefix script fetch', async () => {
     const code = generateTotp(TEST_SECRET);
-    const res = await fetch(`${relay.baseUrl}/v2/at/${code}/target.js`);
+    const res = await fetch(`${relay.baseUrl}/v3/at/${code}/target.js`);
 
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/javascript/);
@@ -179,7 +179,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
   });
 
   it('rejects a wrong path-prefix script fetch with a CORS-readable 401 JSON body', async () => {
-    const res = await fetch(`${relay.baseUrl}/v2/at/${wrongCode()}/target.js`, {
+    const res = await fetch(`${relay.baseUrl}/v3/at/${wrongCode()}/target.js`, {
       headers: { Origin: PHONE_ORIGIN },
     });
 
@@ -193,7 +193,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
     expect(rejects).toEqual([{ kind: 'http-request' }]);
   });
 
-  it('keeps the daemon query transport working unchanged (back-compat)', async () => {
+  it('keeps the daemon query transport working unchanged', async () => {
     const code = generateTotp(TEST_SECRET);
     const wsUrl = `ws://127.0.0.1:${relay.port}/client/e2e-client-id?target=t&at=${code}`;
 
@@ -265,26 +265,13 @@ describe('relay TOTP gate e2e — /targets route gate (#474)', () => {
     // The path-prefix transport rewrite normalises `/at/<code>/targets` into
     // `/targets?at=<code>` before verification — confirm the composed path works.
     const code = generateTotp(TEST_SECRET);
-    const res = await fetch(`${relay.baseUrl}/v2/at/${encodeURIComponent(code)}/targets`);
+    const res = await fetch(`${relay.baseUrl}/v3/at/${encodeURIComponent(code)}/targets`);
 
     // chii may or may not handle /targets via the prefix-rewrite path (it depends
     // on whether Koa routes it identically). Accept either 200 or 404 from chii
     // here — the important thing is that auth passed (no 401) and no rejection fired.
     expect(res.status).not.toBe(401);
     expect(rejects).toHaveLength(0);
-  });
-
-  it('AC-4 (no-TOTP relay): /targets works ungated when verifyAuth is not set', async () => {
-    // When TOTP is disabled the gate listener is never registered — /targets must
-    // remain accessible so the daemon can poll without a secret.
-    const noAuthRelay = await startChiiRelay({ port: 0 });
-    try {
-      const res = await fetch(`${noAuthRelay.baseUrl}/targets`);
-      // chii returns the targets JSON (may be empty list).
-      expect(res.status).toBe(200);
-    } finally {
-      await noAuthRelay.close();
-    }
   });
 
   it('AC-5: /target.js without a code is gated', async () => {
@@ -301,11 +288,10 @@ describe('relay TOTP gate e2e — /targets route gate (#474)', () => {
 // ---------------------------------------------------------------------------
 // refreshTargets() TOTP regression (issue #474)
 //
-// With the /targets gate in place, the daemon's own poll must append `?at=<code>`
-// when totpSecret is set — otherwise the daemon 401s itself on every poll.
+// With the /targets gate in place, the daemon's own poll must append `?at=<code>` — otherwise the daemon 401s itself on every poll.
 // ---------------------------------------------------------------------------
 
-describe('refreshTargets() appends at= when totpSecret is set (#474)', () => {
+describe('refreshTargets() appends at= (#474)', () => {
   it('fetches /targets?at=… when totpSecret is provided', async () => {
     // We use a real relay with auth enabled, then call refreshTargets() with a
     // ChiiCdpConnection wired to the same secret — it must succeed (not 401).
@@ -329,34 +315,7 @@ describe('refreshTargets() appends at= when totpSecret is set (#474)', () => {
     }
   });
 
-  it('fetches plain /targets (no query) when totpSecret is undefined', async () => {
-    // When no secret is configured the URL must stay plain — no at= appended.
-    // We verify this by capturing the fetch URL via a spy on globalThis.fetch.
-    const { ChiiCdpConnection } = await import('../../mcp/chii-connection.js');
-
-    const conn = new ChiiCdpConnection({ relayBaseUrl: 'http://127.0.0.1:19999' });
-
-    // Intercept fetch to record the URL without actually hitting a server.
-    const captured: string[] = [];
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = async (url: string | URL | Request, ..._rest) => {
-      captured.push(typeof url === 'string' ? url : String(url));
-      // Return a minimal OK response so refreshTargets() completes.
-      return { ok: true, json: async () => ({ targets: [] }) } as unknown as Response;
-    };
-
-    try {
-      await conn.refreshTargets();
-      // The URL must be exactly /targets — no at= query param.
-      expect(captured).toHaveLength(1);
-      expect(captured[0]).toBe('http://127.0.0.1:19999/targets');
-      expect(captured[0]).not.toContain('at=');
-    } finally {
-      globalThis.fetch = origFetch;
-    }
-  });
-
-  it('fetches /targets?at=… (has at= param) when totpSecret is set', async () => {
+  it('fetches /targets?at=… (has at= param)', async () => {
     // Mirror of the above but with totpSecret — confirm at= is appended.
     const { ChiiCdpConnection } = await import('../../mcp/chii-connection.js');
 
@@ -416,9 +375,9 @@ describe('relay TOTP gate e2e — SECRET-HANDLING', () => {
     // (#478) the WS rejection is a close frame, not an error — the close
     // code/reason and the HTTP body are the client-observable surfaces.
     const wsClose = await dialWsAwaitClose(
-      `ws://127.0.0.1:${relay.port}/v2/at/${bad}/target/leak-probe?url=u`,
+      `ws://127.0.0.1:${relay.port}/v3/at/${bad}/target/leak-probe?url=u`,
     );
-    const httpRes = await fetch(`${relay.baseUrl}/v2/at/${bad}/target.js`);
+    const httpRes = await fetch(`${relay.baseUrl}/v3/at/${bad}/target.js`);
     const httpBody = await httpRes.text();
     await relay.close();
 

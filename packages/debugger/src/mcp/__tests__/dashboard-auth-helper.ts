@@ -8,6 +8,7 @@
  */
 import {
   DASHBOARD_TOKEN_PARAM,
+  type DashboardState,
   type QrHttpServer,
   startQrHttpServer as realStart,
 } from '../qr-http-server.js';
@@ -53,3 +54,11 @@ export const startQrHttpServer: typeof realStart = async (...args) => {
 export function dashboardCookieForPort(port: number): string {
   return cookies.get(port) ?? '';
 }
+
+/** A dashboard state with no tunnel, page or attach link, for tests that only exercise other routes. */
+export const IDLE_DASHBOARD_STATE: DashboardState = {
+  tunnel: { up: false, wssUrl: null },
+  pages: [],
+  attachUrl: null,
+  phase: 'active',
+};

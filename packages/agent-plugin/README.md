@@ -12,7 +12,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 - `/ait:new` — 새 미니앱 스캐폴딩
 - `/ait:plan` — 아이데이션 · 경량 PRD · SDK 도메인/권한/약관 기획 (스캐폴드 전)
 - `/ait:design` — 화면 만들기·고치기 — 하드 규칙 위반 직접 수정, 품질 채점, 등록용 이미지 자산(Figma는 선택)
-- `/ait:inject-devtools` / `/ait:inject-debug-console` — 기존 프로젝트에 설정 주입 (debug-console은 `AIT_DEBUG_BUILD=1`로 명시한 디버그 빌드에만 들어가고, 기본 릴리즈 빌드에는 들어가지 않음)
+- `/ait:inject-devtools` / `/ait:inject-debugger-client` — 기존 프로젝트에 설정 주입 (debugger-client은 `AIT_DEBUG_BUILD=1`로 명시한 디버그 빌드에만 들어가고, 기본 릴리즈 빌드에는 들어가지 않음)
 - `/ait:setup-debugger` — on-device 디버그 MCP 서버를 프로젝트 `.mcp.json`에 배선
 - `/ait:debug` — 라이브 상태 디버깅 안내 (브라우저 devtools 패널 · `window.__ait` · 실기기 on-device CDP relay)
 - `/ait:test-on-device` — 번들을 콘솔에 올려 실제 토스 앱에서 확인 (빌드 → 업로드 → 컴파일 확인 → 링크 전달). 기본은 릴리즈 빌드이고, 디버깅할 때만 디버그 빌드를 올리며 그 배포는 `.ait-debug-deployments.json`에 기록해 검수 제출 대상에서 뺌

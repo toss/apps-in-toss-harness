@@ -2,7 +2,7 @@
  * Host allowlist predicates — the one part of the activation gate that BOTH
  * sides of the device↔host protocol evaluate.
  *
- * The device evaluates them inside the runtime gate (`@apps-in-toss/debug-console`'s
+ * The device evaluates them inside the runtime gate (`@apps-in-toss/debugger-client`'s
  * `gate.ts`, Layer B1). The daemon evaluates the same predicate when it decides
  * whether a CDP target's URL is allowed to be driven (`@apps-in-toss/debugger`'s
  * `debug-server.ts`). Before the split those two call sites shared one module

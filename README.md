@@ -4,6 +4,18 @@
 
 AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주할 수 있게 하는 harness monorepo입니다. 에이전트 플러그인 `ait`가 오케스트레이터가 되어 scaffold·개발·디버그·번들·등록·운영을 하나의 흐름으로 엮습니다. scaffolding은 `create-ait-app` 기반입니다. 문서 조회와 콘솔 연동은 기본으로 켜지는 MCP 서버 두 개가 담당하며 devtools·debugger 같은 개발/디버깅 도구는 필요할 때만 opt-in으로 배선됩니다.
 
+> [!IMPORTANT]
+> **디버그 도구는 0.3.1 이상을 쓰세요.** `@apps-in-toss/debugger`와 `@apps-in-toss/debugger-client`(옛 이름 `@apps-in-toss/debug-console`)는 0.3.1에서 이름과 연결 규칙이 함께 바뀌었고, 두 패키지가 모두 0.3.1 이상이어야 연결됩니다. 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 플러그인 `ait`도 0.3.1 이상이어야 새 이름으로 배선합니다.
+>
+> | 0.3.0 이하 | 0.3.1 이상 |
+> | --- | --- |
+> | 패키지 `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
+> | MCP 서버 키 `ait-devtools` | `ait-debugger` |
+> | 권한 규칙 `mcp__ait-devtools__*` | `mcp__ait-debugger__*` |
+> | 명령 `/ait:inject-debug-console` | `/ait:inject-debugger-client` |
+>
+> 옛 이름으로 배선한 프로젝트는 플러그인을 0.3.1 이상으로 올린 뒤 `/ait:setup-debugger`를 실행하세요. 확인을 받고 MCP 키, 의존성, import를 한꺼번에 새 이름으로 옮깁니다. 직접 옮기려면 `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 바꾸고 디버그 빌드를 다시 올려야 합니다. 한쪽만 바꾸면 연결되지 않습니다.
+
 ## 무엇을 하는가
 
 - **스캐폴드하기** — `/ait:new <app-name>`으로 미니앱을 만듭니다. devtools 배선과 함께 디자인 가이드(토큰·하드 규칙·아이콘)와 이모지 서체 Tossface가 프로젝트에 들어갑니다.
@@ -224,7 +236,7 @@ agent mcp login ait-console
 | `/ait:plan [requirements]` | 막연한 아이디어를 아이데이션·경량 PRD(`PRD.md`)를 거쳐 필요한 SDK 도메인·런타임 권한·콘솔 약관 목록으로 정리 (기획만, `/ait:new`로 hand-off) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | `create-ait-app`을 비대화형으로 구동해 미니앱을 scaffold하고, devtools(mock SDK + panel)와 디자인 가이드(토큰·CSS·아이콘·`AGENTS.md`)를 후처리 배선 (greenfield 전용) | 1. scaffold |
 | `/ait:inject-devtools` | 기존 프로젝트 빌드 설정에 devtools unplugin을 추가 (brownfield) | 2. dev |
-| `/ait:inject-debug-console` | `debug-console`(on-device attach)을 dependencies로 설치하고 self-gating import 배선 — 프로덕션 번들에 들어갈 수 있는 유일한 디버그 패키지 | 2. dev / 3. debug |
+| `/ait:inject-debugger-client` | `debugger-client`(on-device attach)을 dependencies로 설치하고 self-gating import 배선 — 프로덕션 번들에 들어갈 수 있는 유일한 디버그 패키지 | 2. dev / 3. debug |
 | `/ait:inject-tossface` | 이모지 서체 Tossface를 CDN 링크(번들 증가 0) 또는 필요한 subset만 골라 번들(결정적 렌더, subset당 약 520KB~1.9MB)로 배선 | 2. dev |
 | `/ait:setup-debugger` | 디버그 MCP 서버(`debugger`)를 프로젝트 `.mcp.json`(Cursor면 `.cursor/mcp.json`)에 opt-in으로 배선 | 3. debug |
 | `/ait:debug` | 로컬 브라우저·on-device candidate 두 환경을 관측 결과에 따라 분기해 디버깅 | 3. debug |
@@ -322,12 +334,12 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 | 패키지 | 디렉터리 | 역할 | 배포 |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex·Cursor) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.3.0`) |
-| `@apps-in-toss/debug-console` | `packages/debug-console` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debug-console-v0.3.0`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.3.1`) |
+| `@apps-in-toss/debugger-client` | `packages/debugger-client` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debugger-client-v0.3.1`) |
 
-`shared/internal-protocol`은 `debugger`·`debug-console`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계). `packages/`가 아닌 `shared/`에 살며 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.
+`shared/internal-protocol`은 `debugger`·`debugger-client`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계). `packages/`가 아닌 `shared/`에 살며 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.
 
-`debugger`·`debug-console`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.3.0`·`debug-console-v0.3.0`). 다운로드에 별도 인증이 필요하지 않습니다.
+`debugger`·`debugger-client`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.3.1`·`debugger-client-v0.3.1`). 다운로드에 별도 인증이 필요하지 않습니다.
 
 </details>
 

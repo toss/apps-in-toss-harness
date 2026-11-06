@@ -10,7 +10,7 @@
  *
  * Parties sharing this contract:
  *   - the relay (`@apps-in-toss/debugger`, Node) sends the close frame;
- *   - the on-device console (`@apps-in-toss/debug-console`, browser) observes
+ *   - the on-device console (`@apps-in-toss/debugger-client`, browser) observes
  *     relay-bound WebSockets and shows "already attached to another mini-app".
  *
  * Dependency-free (no Node, no DOM) so it inlines into both bundles.

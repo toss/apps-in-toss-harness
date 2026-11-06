@@ -41,7 +41,7 @@ describe('collectSurfaceFiles — README 표면 확장', () => {
 
   test('각 workspace 패키지의 README.md·README.en.md가 표면에 포함된다', async () => {
     const files = await collectSurfaceFiles(REPO_ROOT);
-    for (const pkgDir of ['agent-plugin', 'debugger', 'debug-console']) {
+    for (const pkgDir of ['agent-plugin', 'debugger', 'debugger-client']) {
       for (const name of README_FILENAMES) {
         const expected = path.join(REPO_ROOT, 'packages', pkgDir, name);
         assert.ok(files.includes(expected), `${expected}가 표면에 없다`);
@@ -76,6 +76,21 @@ describe('checkUrlRules — 규칙① 버전 일치 · 규칙③ 호스트 고�
     assert.equal(versionViolations[0].taggedVersion, '9.9.9');
   });
 
+  test('규칙① 위반 — 이름이 바뀌기 전 debug-console 릴리스 URL은 대응 패키지가 없어 RED (0.3.1 개명 이후 잔존 방지)', () => {
+    const text =
+      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.3.0/apps-in-toss-debug-console-0.3.0.tgz"';
+    const findings = findReleaseUrls(text).map((f) => ({ file: 'fixture.md', ...f }));
+    const versionByPkgDir = new Map([
+      ['debugger', '0.3.1'],
+      ['debugger-client', '0.3.1'],
+    ]);
+    const { hostViolations, versionViolations } = checkUrlRules(findings, versionByPkgDir);
+    assert.deepEqual(hostViolations, []);
+    assert.equal(versionViolations.length, 1);
+    assert.equal(versionViolations[0].reason, 'unknown-package');
+    assert.equal(versionViolations[0].taggedPkg, 'debug-console');
+  });
+
   test('규칙③ 위반 — 다른 호스트/owner/repo를 가리키면 RED', () => {
     const text =
       'npx -p https://github.com/apps-in-toss-community/harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-0.2.0.tgz debugger';
@@ -99,7 +114,7 @@ describe('checkUrlRules — 규칙① 버전 일치 · 규칙③ 호스트 고�
   });
 
   test('parseTag — 패키지명에 하이픈이 있어도 마지막 -v<버전> 경계로 분해된다', () => {
-    assert.deepEqual(parseTag('debug-console-v0.1.4'), { pkg: 'debug-console', ver: '0.1.4' });
+    assert.deepEqual(parseTag('debugger-client-v0.1.4'), { pkg: 'debugger-client', ver: '0.1.4' });
     assert.equal(parseTag('not-a-valid-tag'), null);
   });
 
@@ -121,33 +136,33 @@ describe('checkUrlRules — 규칙① 버전 일치 · 규칙③ 호스트 고�
 
   test('규칙①b 위반 — filename의 패키지가 태그의 패키지와 다르면 RED', () => {
     const text =
-      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debug-console-0.2.0.tgz"';
+      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.2.0/apps-in-toss-debugger-client-0.2.0.tgz"';
     const findings = findReleaseUrls(text).map((f) => ({ file: 'fixture.md', ...f }));
     const versionByPkgDir = new Map([
       ['debugger', '0.2.0'],
-      ['debug-console', '0.2.0'],
+      ['debugger-client', '0.2.0'],
     ]);
     const { hostViolations, versionViolations } = checkUrlRules(findings, versionByPkgDir);
     assert.deepEqual(hostViolations, []);
     assert.equal(versionViolations.length, 1);
     assert.equal(versionViolations[0].reason, 'filename-pkg-mismatch');
     assert.equal(versionViolations[0].taggedPkg, 'debugger');
-    assert.equal(versionViolations[0].filenamePkg, 'debug-console');
+    assert.equal(versionViolations[0].filenamePkg, 'debugger-client');
   });
 
   test('규칙①b — 태그·filename의 pkg·버전이 모두 package.json과 일치하면 위반 없음', () => {
     const text =
-      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debug-console-v0.1.4/apps-in-toss-debug-console-0.1.4.tgz"';
+      'pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.1.4/apps-in-toss-debugger-client-0.1.4.tgz"';
     const findings = findReleaseUrls(text).map((f) => ({ file: 'fixture.md', ...f }));
-    const versionByPkgDir = new Map([['debug-console', '0.1.4']]);
+    const versionByPkgDir = new Map([['debugger-client', '0.1.4']]);
     const { hostViolations, versionViolations } = checkUrlRules(findings, versionByPkgDir);
     assert.deepEqual(hostViolations, []);
     assert.deepEqual(versionViolations, []);
   });
 
   test('parseFilename — 패키지명에 하이픈이 있어도 마지막 -<버전>.tgz 경계로 분해된다', () => {
-    assert.deepEqual(parseFilename('apps-in-toss-debug-console-0.1.4.tgz'), {
-      pkg: 'debug-console',
+    assert.deepEqual(parseFilename('apps-in-toss-debugger-client-0.1.4.tgz'), {
+      pkg: 'debugger-client',
       ver: '0.1.4',
     });
     assert.deepEqual(parseFilename('apps-in-toss-debugger-0.2.0.tgz'), { pkg: 'debugger', ver: '0.2.0' });
@@ -160,6 +175,13 @@ describe('checkArmedScopeReferences — 규칙② self-arming (문맥 무관 전
     const lines = toLines('fixture.md', 'npx -p @ait-co/debugger debugger');
     const violations = checkArmedScopeReferences(lines, false);
     assert.deepEqual(violations, []);
+  });
+
+  test('무장(armed=true) — 구 스코프 debugger-client 참조도 RED', () => {
+    const lines = toLines('fixture.md', 'npm i -D @ait-co/debugger-client');
+    const violations = checkArmedScopeReferences(lines, true);
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].scopePackage, 'debugger-client');
   });
 
   test('무장(armed=true) — 한 줄 명령에 박힌 참조는 RED', () => {

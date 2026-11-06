@@ -102,9 +102,12 @@ describe('bootRelayFamily — tunnel rotation', () => {
 
   async function lockTunnel(f: RelayFamily, times: number): Promise<void> {
     for (let i = 0; i < times; i++) {
-      const res = await fetch(`${f.relayHttpUrl}/v2/at/${wrongCode()}/target.js`, {
-        headers: TUNNEL_HEADERS,
-      });
+      const res = await fetch(
+        `${f.relayHttpUrl}/v3/at/${wrongCode()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+        {
+          headers: TUNNEL_HEADERS,
+        },
+      );
       expect(res.status).toBe(401);
       await new Promise((r) => setTimeout(r, 5));
     }
@@ -139,13 +142,15 @@ describe('bootRelayFamily — tunnel rotation', () => {
     // only the rotation's reset can open the scope again.
     const f = await boot({ maxFailures: 1, baseLockMs: 400, maxLockMs: 400 });
     const bad = (): Promise<Response> =>
-      fetch(`${f.relayHttpUrl}/v2/at/${wrongCode()}/target.js`, { headers: TUNNEL_HEADERS });
+      fetch(`${f.relayHttpUrl}/v3/at/${wrongCode()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+        headers: TUNNEL_HEADERS,
+      });
     for (let i = 0; i < 3; i++) {
       expect((await bad()).status).toBe(401);
       if (i < 2) await new Promise((r) => setTimeout(r, 420));
     }
     const valid = (): Promise<Response> =>
-      fetch(`${f.relayHttpUrl}/v2/at/${generateTotp(SECRET)}/target.js`, {
+      fetch(`${f.relayHttpUrl}/v3/at/${generateTotp(SECRET)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
         headers: { Host: 'fake2.trycloudflare.com', 'cf-connecting-ip': '203.0.113.10' },
       });
     expect(rotated).toBe(0);
@@ -159,7 +164,9 @@ describe('bootRelayFamily — tunnel rotation', () => {
     // Long lock, below the rotation threshold: only the drop reissue can clear it.
     const f = await boot({ maxFailures: 1, baseLockMs: 60_000, maxLockMs: 60_000 });
     const bad = (): Promise<Response> =>
-      fetch(`${f.relayHttpUrl}/v2/at/${wrongCode()}/target.js`, { headers: TUNNEL_HEADERS });
+      fetch(`${f.relayHttpUrl}/v3/at/${wrongCode()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+        headers: TUNNEL_HEADERS,
+      });
     expect((await bad()).status).toBe(401);
     expect((await bad()).status).toBe(429);
 
@@ -184,7 +191,7 @@ describe('bootRelayFamily — tunnel rotation', () => {
 
   it('holds the rotation while a phone is attached and runs it when the phone detaches', async () => {
     const f = await boot();
-    const wsUrl = `${f.relayHttpUrl.replace('http', 'ws')}/v2/at/${generateTotp(SECRET)}/target/phone-1?url=https%3A%2F%2Fapp.test%2F&title=t`;
+    const wsUrl = `${f.relayHttpUrl.replace('http', 'ws')}/v3/at/${generateTotp(SECRET)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/phone-1?url=https%3A%2F%2Fapp.test%2F&title=t`;
     const ws = await new Promise<WebSocket>((resolve, reject) => {
       const s = new WebSocket(wsUrl);
       s.on('open', () => resolve(s));

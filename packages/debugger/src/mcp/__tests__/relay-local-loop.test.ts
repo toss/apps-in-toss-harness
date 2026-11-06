@@ -27,6 +27,7 @@ import { describe, expect, it } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { ChiiCdpConnection } from '../chii-connection.js';
 import { measureSafeArea } from '../tools.js';
+import { TEST_RELAY_SECRET } from './relay-test-auth.js';
 
 // ---------------------------------------------------------------------------
 // Fake relay with Runtime.evaluate auto-responder
@@ -174,6 +175,7 @@ describe('relay local-PC full loop — attach → list_pages → measure_safe_ar
   it('full chain: ChiiCdpConnection attaches, lists target, and measureSafeArea returns SafeAreaMeasurement', async () => {
     const relay = await createAutoRespondingRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 5_000,
     });
@@ -241,6 +243,7 @@ describe('relay local-PC full loop — attach → list_pages → measure_safe_ar
   it('waitForFirstTarget resolves immediately when target is already registered', async () => {
     const relay = await createAutoRespondingRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 5_000,
     });

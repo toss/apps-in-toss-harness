@@ -4,6 +4,18 @@
 
 A harness monorepo that lets you go from an empty directory to a published Apps in Toss mini-app without ever leaving your AI coding agent (Claude Code, Codex, Cursor). The agent plugin `ait` acts as the orchestrator, weaving scaffolding, development, debugging, bundling, registration, and operations into a single flow. Scaffolding is built on `create-ait-app`; docs lookup and console integration are handled by two MCP servers enabled by default; and dev/debug tooling like devtools and debugger are wired in only when you opt in.
 
+> [!IMPORTANT]
+> **Use debug tools 0.3.1 or later.** In 0.3.1, `@apps-in-toss/debugger` and `@apps-in-toss/debugger-client` (formerly `@apps-in-toss/debug-console`) changed their names and connection rules together, and both packages must be 0.3.1 or later to connect. Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. The `ait` plugin must also be 0.3.1 or later to wire the new names.
+>
+> | 0.3.0 and earlier | 0.3.1 and later |
+> | --- | --- |
+> | Package `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
+> | MCP server key `ait-devtools` | `ait-debugger` |
+> | Permission rule `mcp__ait-devtools__*` | `mcp__ait-debugger__*` |
+> | Command `/ait:inject-debug-console` | `/ait:inject-debugger-client` |
+>
+> If a project was wired with the old names, update the plugin to 0.3.1 or later and run `/ait:setup-debugger`. It asks for confirmation, then moves the MCP key, the dependency and the imports to the new names in one pass. To migrate by hand, change the key and URL in `.mcp.json`, the dependency in `package.json` and the imports in your source, then upload a new debug build. Changing only one side leaves them unable to connect.
+
 ## What it does
 
 - **Scaffold** — Run `/ait:new <app-name>` to create the mini-app. Devtools wiring, a design guide (tokens, hard rules, icons), and the Tossface emoji font all land in the project with it.
@@ -224,7 +236,7 @@ The names in parentheses in row 5 are domains from the SDK domain catalog the `p
 | `/ait:plan [requirements]` | Takes a vague idea through ideation and a lightweight PRD (`PRD.md`) to a list of needed SDK domains, runtime permissions, and console terms (planning only — hands off to `/ait:new`) | 7. plan |
 | `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | Drives `create-ait-app` non-interactively to scaffold a mini-app, then wires up devtools (mock SDK + panel) and seeds the design guide (tokens, CSS, icons, `AGENTS.md`) as post-steps (greenfield only) | 1. scaffold |
 | `/ait:inject-devtools` | Adds the devtools unplugin to an existing project's build config (brownfield) | 2. dev |
-| `/ait:inject-debug-console` | Installs `debug-console` (on-device attach) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
+| `/ait:inject-debugger-client` | Installs `debugger-client` (on-device attach) as a dependency and wires up a self-gating import — the only debug package allowed in a production bundle | 2. dev / 3. debug |
 | `/ait:inject-tossface` | Wires the Tossface emoji web font in via a CDN link (zero bundle cost) or by bundling only the subsets the project needs (deterministic, roughly 520KB–1.9MB per subset) | 2. dev |
 | `/ait:setup-debugger` | Wires the debug MCP server (`debugger`) into the project's `.mcp.json`, or `.cursor/mcp.json` on Cursor, as an opt-in | 3. debug |
 | `/ait:debug` | Debugs by branching across two environments — local browser and on-device candidate — based on what it observes | 3. debug |
@@ -322,12 +334,12 @@ Three packages managed as a pnpm workspace.
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code, Codex, and Cursor) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.3.0`) |
-| `@apps-in-toss/debug-console` | `packages/debug-console` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debug-console-v0.3.0`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.3.1`) |
+| `@apps-in-toss/debugger-client` | `packages/debugger-client` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debugger-client-v0.3.1`) |
 
-`shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debug-console`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
+`shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debugger-client`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
-`debugger` and `debug-console` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.3.0`, `debug-console-v0.3.0`), and downloads don't require authentication.
+`debugger` and `debugger-client` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.3.1`, `debugger-client-v0.3.1`), and downloads don't require authentication.
 
 </details>
 

@@ -4,9 +4,8 @@
  *
  * This package's single declaration — one constant plus a comment, one source
  * of truth. Before this module existed, the same command string was duplicated
- * byte-for-byte across six call sites (`tools.ts` ×3, `debug-server.ts`,
- * `server-lock.ts`, `tunnel.ts`); a future version bump now touches one line
- * instead of six.
+ * byte-for-byte across several call sites (`tools.ts`, `debug-server.ts`,
+ * `tunnel.ts`); a future version bump now touches one line instead of several.
  *
  * Points at the harness Release tarball (`docs/release.md`) rather than the
  * npm registry — the community org (`@ait-co/*`) this package used to name
@@ -14,4 +13,4 @@
  * publishing is out of scope for this package (npm-less distribution).
  */
 export const RESTART_CMD =
-  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger';
+  'npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger';

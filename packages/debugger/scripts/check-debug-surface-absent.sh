@@ -4,7 +4,7 @@
 # The in-app debug surface — Chii target.js injection AND the on-phone status
 # banner it drives — must be PHYSICALLY ABSENT (zero bytes) from a release
 # consumer bundle, not merely gated at runtime. A consumer guards its
-# `import('@apps-in-toss/debug-console')` with `if (__DEBUG_BUILD__) { … }`; a
+# `import('@apps-in-toss/debugger-client')` with `if (__DEBUG_BUILD__) { … }`; a
 # release build defines `__DEBUG_BUILD__: false`, and the bundler
 # dead-code-eliminates the whole in-app graph. This script is the mechanical
 # proof of that, plus a check that the status banner never leaks into the MCP
@@ -24,16 +24,16 @@
 #      pass even if the build guard silently stopped including anything).
 #   4. DRIFT GUARD (G9/G12): the source fixture (scripts/debug-absence-fixture/main.ts)
 #      and the inject skill's recommended-pattern doc
-#      (../agent-plugin/shared/skills/inject/references/debug-console.md, "방식 B")
+#      (../agent-plugin/shared/skills/inject/references/debugger-client.md, "방식 B")
 #      must both still carry the `__DEBUG_BUILD__` build-gate markers this whole
 #      script is built around. This is a shallow textual check, not a build —
 #      it exists so an edit to either file that silently drops the pattern (and
 #      would make checks 2/3 above meaningless or the skill's guidance stale)
 #      fails loudly instead of quietly drifting.
 #   5. `/auto` DRIFT GUARD: scripts/debug-absence-fixture/auto-main.ts must still
-#      guard `import('@apps-in-toss/debug-console/auto')` with `__DEBUG_BUILD__`.
+#      guard `import('@apps-in-toss/debugger-client/auto')` with `__DEBUG_BUILD__`.
 #
-# The `/auto` entry (`@apps-in-toss/debug-console/auto`) is a runtime self-gate:
+# The `/auto` entry (`@apps-in-toss/debugger-client/auto`) is a runtime self-gate:
 # imported unguarded it stays in a release bundle as a dormant chunk. Checks 2/3
 # therefore also build scripts/debug-absence-fixture/auto-main.ts, which imports
 # it behind the same `if (__DEBUG_BUILD__)` guard, and require that the guarded
@@ -86,7 +86,7 @@ for bundle in "${DAEMON_BUNDLES[@]}"; do
   fi
   if grep -qE "$DAEMON_PATTERN" "$bundle"; then
     echo "✗ INSTALL-GRAPH VIOLATION: $bundle references the status banner" >&2
-    echo "  The MCP daemon must never import the on-phone debug-console surface." >&2
+    echo "  The MCP daemon must never import the on-phone debugger-client surface." >&2
     fail=1
   else
     echo "✓ $bundle is status-banner-free"
@@ -143,8 +143,8 @@ rm -rf "$OUT_DIR"
 
 # ── Check 4: drift guard — fixture and skill doc still carry the markers ──────
 FIXTURE_SRC="scripts/debug-absence-fixture/main.ts"
-SKILL_DOC="../agent-plugin/shared/skills/inject/references/debug-console.md"
-DRIFT_MARKERS=('__DEBUG_BUILD__' 'm.startDebugConsole(' "import('@apps-in-toss/debug-console')")
+SKILL_DOC="../agent-plugin/shared/skills/inject/references/debugger-client.md"
+DRIFT_MARKERS=('__DEBUG_BUILD__' 'm.startDebugConsole(' "import('@apps-in-toss/debugger-client')")
 
 for f in "$FIXTURE_SRC" "$SKILL_DOC"; do
   if [[ ! -f "$f" ]]; then
@@ -161,7 +161,7 @@ for f in "$FIXTURE_SRC" "$SKILL_DOC"; do
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo "✗ DRIFT GUARD: $f is missing marker(s): ${missing[*]}" >&2
     echo "  This file is expected to document/exercise the __DEBUG_BUILD__" >&2
-    echo "  build-gate pattern (\`if (__DEBUG_BUILD__) { import('@apps-in-toss/debug-console').then((m) => m.startDebugConsole({ relayPublicKeys })) }\`)." >&2
+    echo "  build-gate pattern (\`if (__DEBUG_BUILD__) { import('@apps-in-toss/debugger-client').then((m) => m.startDebugConsole({ relayPublicKeys })) }\`)." >&2
     fail=1
   else
     echo "✓ $f carries the __DEBUG_BUILD__ build-gate markers"
@@ -170,7 +170,7 @@ done
 
 # ── Check 5: drift guard — the /auto fixture still guards the /auto import ────
 AUTO_FIXTURE_SRC="scripts/debug-absence-fixture/auto-main.ts"
-AUTO_MARKERS=('__DEBUG_BUILD__' "import('@apps-in-toss/debug-console/auto')")
+AUTO_MARKERS=('__DEBUG_BUILD__' "import('@apps-in-toss/debugger-client/auto')")
 if [[ ! -f "$AUTO_FIXTURE_SRC" ]]; then
   echo "✗ DRIFT GUARD: $AUTO_FIXTURE_SRC is missing" >&2
   fail=1

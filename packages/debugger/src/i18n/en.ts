@@ -81,5 +81,5 @@ export const en: Record<StringKey, string> = {
   'attach.intoss.faq.chii':
     '<strong>Chii injection failure / console is empty</strong> — verify the mini-app bundle has an <code>in-app</code> debug import',
   'attach.intoss.faq.totp':
-    '<strong>TOTP gate Layer C is inactive</strong> — check that <code>AIT_DEBUG_TOTP_SECRET</code> is set on the relay server',
+    '<strong>The code is reported as expired</strong> — scan the latest QR on this dashboard again (the relay rejects the code of an old QR)',
 };

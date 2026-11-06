@@ -1,42 +1,24 @@
 /**
  * `debugger` bin entry.
  *
- * Single bin, two modes selected by `--mode` (`debug` also takes a `--target`):
+ * Boots the MCP stdio debugging daemon (CDP/Chii relay + cloudflared quick
+ * tunnel for a real Toss WebView, or a local Chromium). Nothing boots at
+ * startup: the in-session `start_debug(mode)` tool picks the local browser or
+ * the relay, and can flip between them with no restart.
  *
- *   --mode=debug (default)
- *     --target=relay (default) — CDP/Chii relay + cloudflared quick tunnel.
- *       Attach a running mini-app (real Toss WebView, env 3) and read its
- *       console + network over CDP without a human watching a phone.
- *     --target=local — CDP direct-attach to a local Chromium launched by the
- *       MCP server (env 1). No relay or tunnel; the browser is launched
- *       pointing at AIT_DEVTOOLS_URL (default http://localhost:5173).
+ * The 0.3.1 line removed the `--mode`/`--target` startup flags: every start
+ * is the same daemon, so the flags selected nothing the session cannot switch
+ * to itself. Passing them is an error with a pointer to `start_debug`.
  *
- *   --mode=dev — dev mode — reads the live browser mock state from a running
- *     Vite dev server (the devtools#130 `devtools_get_mock_state` surface).
- *
- * `--mode=phone` and `--target=mobile` (the env-2 launcher-PWA quick-tunnel
- * preview and the MCP reader that attached to its external relay) were removed
- * with the PWA Sandbox environment (harness#103, 2026-08-10 maintainer decision).
- *
- * Back-compat (issue #348): the legacy `--mode`/`--target` flags still work.
- * `--target=relay`/`local` select the initial active connection;
- * the in-session `start_debug(mode)` MCP tool can then flip between them with no
- * restart. `MCP_ENV` values are accepted and ignored (the active connection's
- * `kind` is authoritative; `relay-live` and `liveIntent` are removed, #665).
- *
- * Node-only — both modes are stdio MCP processes.
+ * Node-only — a stdio MCP process.
  */
 
 import { realpathSync } from 'node:fs';
 import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { runDebugServer, runLocalDebugServer } from './debug-server.js';
+import { runDebugServer } from './debug-server.js';
 import { runRelayKey } from './relay-key.js';
-import { runDevServer } from './server.js';
 import { readDevtoolsVersion } from './tools.js';
-
-type Mode = 'debug' | 'dev';
-type Target = 'relay' | 'local';
 
 /* -------------------------------------------------------------------------- */
 /* CLI help                                                                    */
@@ -46,40 +28,28 @@ type Target = 'relay' | 'local';
 // section layout (USAGE / OPTIONS / DESCRIPTION) — issue #54 asks the two
 // `bin`s in this package to read as "one tool's commands".
 const USAGE = `
-debugger — MCP debugging daemon (CDP/Chii relay + dev-mode bridge) for Apps in Toss mini-apps
+debugger — MCP debugging daemon (CDP/Chii relay) for Apps in Toss mini-apps
 
 USAGE
   debugger [options]
   debugger relay-key [--project <dir>]
 
 OPTIONS
-  --mode <mode>          debug (default) | dev. debug boots the MCP stdio
-                          server that attaches over CDP (see --target); dev
-                          reads live browser mock state from a running Vite
-                          dev server.
-  --target <target>      relay (default) | local. Only meaningful with
-                          --mode=debug:
-                            relay  — CDP/Chii relay + cloudflared quick
-                                     tunnel, attaching a real Toss WebView
-                                     (env 3).
-                            local  — CDP direct-attach to a local Chromium
-                                     the server launches itself (env 1, no
-                                     relay/tunnel).
-  --force, --takeover     Take over an existing MCP daemon lock instead of
-                          refusing to start when one is already held.
+  --force, --takeover     Also end leftover daemons of the same MCP client in
+                          other projects. Every session already has its own
+                          daemon, relay and dashboard, and a daemon of another
+                          client is never touched.
   --help, -h              Show this help message
   --version, -v           Print the installed @apps-in-toss/debugger version
 
 DESCRIPTION
-  Node-only. Both modes are stdio MCP processes an MCP client (Claude Code,
-  etc.) spawns as a subprocess and talks MCP over stdin/stdout — not meant to
-  be run interactively at a terminal. With no flags it boots in debug mode
-  against the relay target (today's default, unchanged).
-
-  Back-compat (issue #348): the legacy --mode/--target flags are still
-  honored. MCP_ENV is NOT — it is accepted and ignored (#665). Switch
-  environments in-session with the start_debug / start_attach tools; no
-  restart is needed.
+  Node-only. A stdio MCP process an MCP client (Claude Code, etc.) spawns as a
+  subprocess and talks MCP over stdin/stdout — not meant to be run
+  interactively at a terminal. Each MCP client session runs its own daemon
+  with its own relay, tunnel, dashboard and ports, so several sessions can run
+  at once. Nothing boots at startup: switch between the local browser and a
+  real device in-session with the start_debug / start_attach tools, no restart
+  needed. The --mode/--target flags were removed in 0.3.1.
 
 SUBCOMMANDS
   relay-key               Print the relay public key for this project (creates
@@ -89,7 +59,7 @@ SUBCOMMANDS
                           one. Run \`debugger relay-key --help\`.
 
 EXAMPLE
-  debugger --mode=debug --target=local
+  debugger --force
 `.trimStart();
 
 /**
@@ -98,14 +68,10 @@ EXAMPLE
  */
 export const BOOLEAN_FLAGS = new Set(['--force', '--takeover', '--help', '-h', '--version', '-v']);
 
-/** Long flags that require a value, either `--flag=value` or `--flag value`. */
-const VALUE_FLAGS = new Set(['--mode', '--target']);
-
 /**
- * Returns the argv slice before the first bare `--` token. No mode consumes a
- * passthrough command any more (`--mode=phone` was removed with env 2 —
- * harness#103), but the boundary is still honored so a stray `--` and anything
- * after it is never mistaken for this CLI's own flags. Returns `argv` unchanged
+ * Returns the argv slice before the first bare `--` token. Nothing consumes a
+ * passthrough command, but the boundary is honored so a stray `--` and
+ * anything after it is never mistaken for this CLI's own flags. Returns `argv` unchanged
  * when no `--` is present.
  */
 function beforePassthrough(argv: readonly string[]): readonly string[] {
@@ -115,16 +81,8 @@ function beforePassthrough(argv: readonly string[]): readonly string[] {
 
 /**
  * Returns every argv token that looks like a flag (starts with `-`) but is
- * neither a known boolean flag nor a known value flag — e.g. a typo'd
- * `--forc` or an unsupported `--env`.
- *
- * Value-flag tokens correctly consume their paired value (`--mode dev`'s
- * `dev` is not itself flagged) so this never misclassifies a flag's own
- * argument as an unknown flag. A dangling value flag with no following token
- * (`debugger --mode`) is intentionally left for {@link parseMode}/
- * {@link parseTarget} to reject with their existing, more specific error
- * message — this function only flags tokens that do not match any known
- * flag name at all.
+ * not a known boolean flag — e.g. a typo'd `--forc`, an unsupported `--env`, or
+ * the removed `--mode`/`--target`.
  *
  * Positional (non-`-`-prefixed) tokens are out of scope — this CLI has never
  * accepted positionals, and issue #54 is scoped to flags specifically.
@@ -136,23 +94,35 @@ function beforePassthrough(argv: readonly string[]): readonly string[] {
  */
 export function findUnknownFlags(argv: readonly string[]): string[] {
   const unknown: string[] = [];
-  const scoped = beforePassthrough(argv);
-  for (let i = 0; i < scoped.length; i++) {
-    const arg = scoped[i];
-    if (arg === undefined || !arg.startsWith('-')) continue;
+  for (const arg of beforePassthrough(argv)) {
+    if (!arg.startsWith('-')) continue;
     if (BOOLEAN_FLAGS.has(arg)) continue;
-    const eqIndex = arg.indexOf('=');
-    const bareFlag = eqIndex === -1 ? arg : arg.slice(0, eqIndex);
-    if (VALUE_FLAGS.has(bareFlag)) {
-      // Space-separated form (`--mode dev`) consumes the next token as this
-      // flag's value, not a separate arg — `--mode=dev` already carries its
-      // value in the same token, so there is nothing to skip.
-      if (eqIndex === -1) i++;
-      continue;
-    }
     unknown.push(arg);
   }
   return unknown;
+}
+
+/** Flags removed in 0.3.1 (bare name, without any `=value`). */
+const REMOVED_FLAGS = new Set(['--mode', '--target']);
+
+/**
+ * One-line hint appended to the unknown-flag error. Names the current flags,
+ * and for the removed `--mode`/`--target` says where that choice moved.
+ */
+export function unknownFlagHint(unknown: readonly string[]): string {
+  const removed = unknown.filter((flag) => REMOVED_FLAGS.has(flag.split('=')[0] ?? flag));
+  const lines: string[] = [];
+  if (removed.length > 0) {
+    lines.push(
+      `${removed.join(', ')} was removed in 0.3.1. The daemon has a single start mode; ` +
+        'switch between the local browser and a real device in-session with the ' +
+        '`start_debug` tool (mode: local-browser | relay-staging).',
+    );
+  }
+  lines.push(
+    'Current flags: --force (--takeover), --help (-h), --version (-v). Run `debugger --help`.',
+  );
+  return lines.join('\n');
 }
 
 /** True when `--help`/`-h` is present in argv (before any `-- <passthrough>`). */
@@ -179,67 +149,6 @@ export function parseForce(argv: readonly string[]): boolean {
   return scoped.includes('--force') || scoped.includes('--takeover');
 }
 
-/** Parses `--mode=<value>` / `--mode <value>` from argv; default `debug`. */
-export function parseMode(argv: readonly string[]): Mode {
-  const scoped = beforePassthrough(argv);
-  for (let i = 0; i < scoped.length; i++) {
-    const arg = scoped[i];
-    if (arg === undefined) continue;
-    if (arg.startsWith('--mode=')) {
-      return normalizeMode(arg.slice('--mode='.length));
-    }
-    if (arg === '--mode') {
-      const next = scoped[i + 1];
-      if (next === undefined) {
-        throw new Error("--mode requires a value: 'debug' (default) or 'dev'.");
-      }
-      return normalizeMode(next);
-    }
-  }
-  return 'debug';
-}
-
-/**
- * Parses `--target=<value>` / `--target <value>` from argv; default `relay`.
- *
- * Only meaningful when `--mode=debug`:
- *   - `relay` — phone/WebView attach over Chii relay + cloudflared tunnel (env 3).
- *   - `local` — local Chromium CDP attach (env 1, no relay needed).
- *
- * `mobile` (env-2 external relay) was removed with the PWA Sandbox environment
- * (harness#103).
- */
-export function parseTarget(argv: readonly string[]): Target {
-  const scoped = beforePassthrough(argv);
-  for (let i = 0; i < scoped.length; i++) {
-    const arg = scoped[i];
-    if (arg === undefined) continue;
-    if (arg.startsWith('--target=')) {
-      return normalizeTarget(arg.slice('--target='.length));
-    }
-    if (arg === '--target') {
-      const next = scoped[i + 1];
-      if (next === undefined) {
-        throw new Error("--target requires a value: 'relay' (default) or 'local'.");
-      }
-      return normalizeTarget(next);
-    }
-  }
-  return 'relay';
-}
-
-function normalizeMode(value: string): Mode {
-  if (value === 'dev') return 'dev';
-  if (value === 'debug') return 'debug';
-  throw new Error(`Unknown --mode '${value}'. Expected 'debug' (default) or 'dev'.`);
-}
-
-function normalizeTarget(value: string): Target {
-  if (value === 'relay') return 'relay';
-  if (value === 'local') return 'local';
-  throw new Error(`Unknown --target '${value}'. Expected 'relay' (default) or 'local'.`);
-}
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -259,31 +168,18 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Unknown flags are no longer silently ignored (issue #54) — previously an
-  // unrecognized flag like `--env` fell through to the default mode/target
-  // and quietly booted a real MCP stdio session.
+  // Unknown flags are never silently ignored (issue #54) — an unrecognized
+  // flag like `--env` would otherwise quietly boot a real MCP stdio session.
   const unknown = findUnknownFlags(args);
   if (unknown.length > 0) {
     process.stderr.write(
-      `[debugger] unknown flag(s): ${unknown.join(', ')}\n` +
-        `Run \`debugger --help\` for usage.\n`,
+      `[debugger] unknown flag(s): ${unknown.join(', ')}\n${unknownFlagHint(unknown)}\n`,
     );
     process.exitCode = 1;
     return;
   }
 
-  const mode = parseMode(args);
-  if (mode === 'dev') {
-    await runDevServer();
-  } else {
-    const target = parseTarget(args);
-    const force = parseForce(args);
-    if (target === 'local') {
-      await runLocalDebugServer({ force });
-    } else {
-      await runDebugServer({ force });
-    }
-  }
+  await runDebugServer({ force: parseForce(args) });
 }
 
 /**

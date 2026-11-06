@@ -12,7 +12,11 @@
  *   for macOS it is the `cloudflared` file extracted from the `.tgz` asset. Both were
  *   checked against the digest GitHub reports for the release assets.
  * - An executable already at `bin` (for example from the npm postinstall, which installs
- *   `latest`) is hashed before use; a mismatch deletes it and installs the pinned version.
+ *   `latest`) is hashed before use; a mismatch installs the pinned version over it.
+ * - Several debugger sessions can start at once and share this one `bin`. The pinned build is
+ *   therefore downloaded into a private staging directory next to `bin`, verified there, and
+ *   renamed over `bin` in one step: a session never sees a half-written executable, never
+ *   finds `bin` deleted, and a tunnel another session already runs is unaffected.
  * - A user-provided binary (`CLOUDFLARED_BIN`) is the user's own choice and is not touched.
  *
  * Updating the pin: download each asset of the new release, `shasum -a 256` it (extract the
@@ -21,7 +25,8 @@
  */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { stat, unlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { install as libInstall } from 'cloudflared';
 
 export const CLOUDFLARED_VERSION = '2026.10.7';
@@ -37,6 +42,33 @@ export const CLOUDFLARED_SHA256: Readonly<Record<string, string>> = {
   'win32-x64': '2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343',
   'win32-ia32': '88c6b972b410db0e26745f593510d772c825a13c5a2374819e3f13a05b333082',
 };
+
+const STAGE_PREFIX = '.cloudflared-stage-';
+/** A download that takes longer than this is dead; its staging directory is swept. */
+const STAGE_MAX_AGE_MS = 60 * 60_000;
+
+/**
+ * Removes staging directories a killed download left behind. Only old ones: a
+ * session that is downloading right now keeps its directory.
+ */
+async function sweepStaleStageDirs(parent: string, now: number = Date.now()): Promise<void> {
+  try {
+    for (const name of await readdir(parent)) {
+      if (!name.startsWith(STAGE_PREFIX)) continue;
+      const full = join(parent, name);
+      try {
+        const st = await stat(full);
+        if (st.isDirectory() && now - st.mtimeMs > STAGE_MAX_AGE_MS) {
+          await rm(full, { recursive: true, force: true });
+        }
+      } catch {
+        // Gone already, or not ours to remove.
+      }
+    }
+  } catch {
+    // Unreadable directory — nothing to sweep.
+  }
+}
 
 export async function sha256File(file: string): Promise<string> {
   const hash = createHash('sha256');
@@ -83,15 +115,29 @@ export async function ensureVerifiedCloudflaredBin(
     process.stderr.write(
       `[@apps-in-toss/debugger] cloudflared at ${bin} is not the pinned ${CLOUDFLARED_VERSION} build — replacing it\n`,
     );
-    await unlink(bin);
   }
 
-  await download(bin, CLOUDFLARED_VERSION);
-  const actual = (await exists(bin)) ? await sha256File(bin) : 'missing';
-  if (actual !== expected) {
-    await unlink(bin).catch(() => {});
-    throw new Error(
-      `downloaded cloudflared ${CLOUDFLARED_VERSION} failed sha256 verification (expected ${expected}, got ${actual}); refusing to run it`,
-    );
+  await mkdir(dirname(bin), { recursive: true });
+  await sweepStaleStageDirs(dirname(bin));
+  const stageDir = await mkdtemp(join(dirname(bin), STAGE_PREFIX));
+  const staged = join(stageDir, basename(bin));
+  try {
+    await download(staged, CLOUDFLARED_VERSION);
+    const actual = (await exists(staged)) ? await sha256File(staged) : 'missing';
+    if (actual !== expected) {
+      throw new Error(
+        `downloaded cloudflared ${CLOUDFLARED_VERSION} failed sha256 verification (expected ${expected}, got ${actual}); refusing to run it`,
+      );
+    }
+    if (process.platform !== 'win32') await chmod(staged, 0o755);
+    try {
+      await rename(staged, bin);
+    } catch (err) {
+      // Windows cannot replace an executable another session is running. If a
+      // verified build is already in place, that is as good as ours.
+      if (!((await exists(bin)) && (await sha256File(bin)) === expected)) throw err;
+    }
+  } finally {
+    await rm(stageDir, { recursive: true, force: true });
   }
 }

@@ -420,7 +420,7 @@ describe('call_sdk shim', () => {
       const raw = parseContent(result) as Record<string, unknown>;
       const data = raw.data as Record<string, unknown>;
       expect(data.ok).toBe(true);
-      // value is a scalar string, not an object — aligns with relay/--target=local schema
+      // value is a scalar string, not an object — aligns with the relay/local-browser schema
       expect(data.value).toBe('sandbox');
     } finally {
       await cleanup();
@@ -505,7 +505,8 @@ describe('start_attach — Tier B recovery guidance (issue #323)', () => {
       const text = (result.content as Array<{ type: string; text: string }>)[0]?.text ?? '';
       // Should mention relay requirement and mode-switch hint.
       expect(text).toMatch(/relay/);
-      expect(text).toMatch(/--mode=debug/i);
+      expect(text).toMatch(/debugger/i);
+      expect(text).not.toMatch(/--mode/);
       expect(text).not.toMatch(/알 수 없는 tool/);
     } finally {
       await cleanup();
@@ -545,12 +546,14 @@ describe('AIT.* tools — HTTP mock-state backed', () => {
     }
   });
 
-  it('devtools_get_mock_state alias works', async () => {
+  it('no longer serves the removed devtools_get_mock_state alias', async () => {
     const source = new FakeAitSource({ environment: 'dev' });
     const { client, cleanup } = await setupDevClient(source);
     try {
+      const tools = await client.listTools();
+      expect(tools.tools.map((t) => t.name)).not.toContain('devtools_get_mock_state');
       const result = await client.callTool({ name: 'devtools_get_mock_state', arguments: {} });
-      expect(result.isError).toBeFalsy();
+      expect(result.isError).toBe(true);
     } finally {
       await cleanup();
     }

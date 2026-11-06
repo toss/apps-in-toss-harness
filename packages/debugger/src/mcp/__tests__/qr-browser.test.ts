@@ -10,7 +10,7 @@
  *   - buildAttachUrl: authorityWarning surface (기존 테스트 유지)
  *   - canOpenBrowser: platform/env 휴리스틱 (기존 테스트 유지)
  *
- * 포트 격리 (devtools#752): startQrHttpServer()의 기본 base 포트가 고정값으로
+ * 포트 격리 (devtools#752): startQrHttpServer(() => IDLE_DASHBOARD_STATE)의 기본 base 포트가 고정값으로
  * 바뀌었으므로(qr-http-server.test.ts와 동일 이유), 이 파일에서도
  * `AIT_DEBUG_HTTP_PORT=0`으로 순수 ephemeral 동작을 명시해 다른 테스트
  * 파일/워커와의 고정 포트 충돌을 피한다.
@@ -126,7 +126,7 @@ describe('startQrHttpServer', () => {
     expect(html).toContain('진단 체크리스트');
     expect(html).toContain('PREPARE');
     expect(html).toContain('Chii');
-    expect(html).toContain('TOTP');
+    expect(html).toContain('인증 코드가 만료됐다고 나오는 경우');
 
     // attachUrl fallback 텍스트
     expect(html).toContain('intoss-private://aitc-sdk-example');
@@ -165,8 +165,8 @@ describe('startQrHttpServer', () => {
   });
 
   it('buildAttachPageUrl returns root / without query string (#595 — 시크릿 노출 표면 축소)', async () => {
-    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
-    const srv = await startQrHttpServer();
+    const { startQrHttpServer, IDLE_DASHBOARD_STATE } = await import('./dashboard-auth-helper.js');
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
 
     const attachUrl = 'intoss-private://app?_deploymentId=abc&debug=1&relay=wss://r.tc.com';
     const url = srv.buildAttachPageUrl(attachUrl);
@@ -180,8 +180,8 @@ describe('startQrHttpServer', () => {
   });
 
   it('GET /attach without u param → 400', async () => {
-    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
-    const srv = await startQrHttpServer();
+    const { startQrHttpServer, IDLE_DASHBOARD_STATE } = await import('./dashboard-auth-helper.js');
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
 
     const res = await fetch(`http://127.0.0.1:${srv.port}/attach`);
     // 빈 u='' 는 decode 성공이지만 QR 생성이 가능 — 단, 유효 URL이면 200이어야 한다.
@@ -192,8 +192,8 @@ describe('startQrHttpServer', () => {
   });
 
   it('GET /unknown-path → 404', async () => {
-    const { startQrHttpServer } = await import('./dashboard-auth-helper.js');
-    const srv = await startQrHttpServer();
+    const { startQrHttpServer, IDLE_DASHBOARD_STATE } = await import('./dashboard-auth-helper.js');
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
 
     const res = await fetch(`http://127.0.0.1:${srv.port}/not-found`);
     expect(res.status).toBe(404);
@@ -434,33 +434,39 @@ describe('openQrInBrowser', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildAttachUrl — authorityWarning', () => {
+  const secret = 'ab'.repeat(32);
   const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
 
   it('returns no authorityWarning for a well-formed scheme URL', () => {
-    const result = buildAttachUrl('intoss-private://aitc-sdk-example?_deploymentId=uuid', tunnelUp);
+    const result = buildAttachUrl(
+      'intoss-private://aitc-sdk-example?_deploymentId=uuid',
+      tunnelUp,
+      secret,
+    );
     expect(result.authorityWarning).toBeUndefined();
     expect(result.attachUrl).toContain('debug=1');
   });
 
   it('returns authorityWarning when authority is "web" (generic placeholder)', () => {
-    const result = buildAttachUrl('intoss-private://web?_deploymentId=uuid', tunnelUp);
+    const result = buildAttachUrl('intoss-private://web?_deploymentId=uuid', tunnelUp, secret);
     expect(result.authorityWarning).toBeDefined();
     expect(result.authorityWarning).toMatch(/placeholder/i);
     expect(result.attachUrl).toContain('debug=1');
   });
 
   it('returns authorityWarning when authority is empty', () => {
-    const result = buildAttachUrl('intoss-private://?_deploymentId=uuid', tunnelUp);
+    const result = buildAttachUrl('intoss-private://?_deploymentId=uuid', tunnelUp, secret);
     expect(result.authorityWarning).toBeDefined();
     expect(result.authorityWarning).toMatch(/authority/i);
   });
 
   it('still throws when tunnel is down (unrelated to authority check)', () => {
     expect(() =>
-      buildAttachUrl('intoss-private://aitc-sdk-example?_deploymentId=x', {
-        up: false,
-        wssUrl: null,
-      }),
+      buildAttachUrl(
+        'intoss-private://aitc-sdk-example?_deploymentId=x',
+        { up: false, wssUrl: null },
+        secret,
+      ),
     ).toThrow(/tunnel/i);
   });
 });

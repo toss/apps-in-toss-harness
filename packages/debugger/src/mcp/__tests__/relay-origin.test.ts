@@ -184,7 +184,7 @@ function wsOutcome(url: string, headers: Record<string, string> = {}): Promise<n
 describe('relay origin rule, live', () => {
   let relay: ChiiRelay;
   const rejects: Array<{ kind: string; reason: string }> = [];
-  const boot = async (extra: StartChiiRelayOptions = {}): Promise<void> => {
+  const boot = async (extra: Partial<StartChiiRelayOptions> = {}): Promise<void> => {
     rejects.length = 0;
     relay = await startChiiRelay({
       verifyAuth: buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: SECRET }, SECRET),
@@ -200,17 +200,25 @@ describe('relay origin rule, live', () => {
 
   it('answers an allowed origin with that origin and Vary, never *', async () => {
     await boot();
-    const ok = await raw(relay.baseUrl, `/v2/at/${code()}/ait-attach?p=2`, {
-      ...TUNNEL,
-      Origin: PRIVATE_APPS,
-    });
+    const ok = await raw(
+      relay.baseUrl,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/ait-attach?p=3`,
+      {
+        ...TUNNEL,
+        Origin: PRIVATE_APPS,
+      },
+    );
     expect(ok.status).toBe(204);
     expect(ok.headers['access-control-allow-origin']).toBe(PRIVATE_APPS);
     expect(ok.headers.vary).toBe('Origin');
-    const bad = await raw(relay.baseUrl, `/v2/at/${'0'.repeat(32)}/target.js`, {
-      ...TUNNEL,
-      Origin: PRIVATE_WEB,
-    });
+    const bad = await raw(
+      relay.baseUrl,
+      `/v3/at/${'0'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+      {
+        ...TUNNEL,
+        Origin: PRIVATE_WEB,
+      },
+    );
     expect(bad.status).toBe(401);
     expect(bad.headers['access-control-allow-origin']).toBe(PRIVATE_WEB);
   });
@@ -225,14 +233,20 @@ describe('relay origin rule, live', () => {
   ])('refuses origin %s through the tunnel on every route, with no CORS header', async (origin) => {
     await boot();
     const at = code();
-    for (const path of [`/v2/at/${at}/target.js`, `/v2/at/${at}/ait-attach?p=2`]) {
+    for (const path of [
+      `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+      `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/ait-attach?p=3`,
+    ]) {
       const res = await raw(relay.baseUrl, path, { ...TUNNEL, Origin: origin });
       expect(res.status).toBe(403);
       expect(JSON.parse(res.body)).toEqual({ error: 'origin-not-allowed' });
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
     }
     expect(
-      await wsOutcome(`${ws()}/v2/at/${at}/target/t1?url=x&title=t`, { ...TUNNEL, Origin: origin }),
+      await wsOutcome(`${ws()}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=x&title=t`, {
+        ...TUNNEL,
+        Origin: origin,
+      }),
     ).toBe(RELAY_ORIGIN_REJECT_CLOSE_CODE);
   });
 
@@ -243,7 +257,7 @@ describe('relay origin rule, live', () => {
     const local = await raw(relay.baseUrl, `/targets?at=${at}`, { Origin: origin });
     expect(local.status).toBe(200);
     expect(local.headers['access-control-allow-origin']).toBe(origin);
-    const viaTunnel = await raw(relay.baseUrl, `/v2/at/${at}/target.js`, {
+    const viaTunnel = await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       ...TUNNEL,
       Origin: origin,
     });
@@ -268,9 +282,12 @@ describe('relay origin rule, live', () => {
     expect(res.status).toBe(200);
     expect(res.headers['access-control-allow-origin']).toBe(own);
     const at = code();
-    const target = new WebSocket(`${ws()}/v2/at/${at}/target/t?url=x&title=t`, {
-      headers: { ...TUNNEL, Origin: PRIVATE_APPS },
-    });
+    const target = new WebSocket(
+      `${ws()}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t?url=x&title=t`,
+      {
+        headers: { ...TUNNEL, Origin: PRIVATE_APPS },
+      },
+    );
     await new Promise((resolve) => target.on('open', resolve));
     expect(await wsOutcome(`${ws()}/client/c2?target=t&at=${at}`, { Origin: own })).toBe('open');
     target.close();
@@ -280,9 +297,25 @@ describe('relay origin rule, live', () => {
     it('keeps exactly the script tag fetch and the no-cors ping', async () => {
       await boot();
       const at = code();
-      expect((await raw(relay.baseUrl, `/v2/at/${at}/target.js`, TUNNEL)).status).toBe(200);
-      expect((await raw(relay.baseUrl, `/v2/at/${at}/target.js`, TUNNEL, 'HEAD')).status).toBe(200);
-      const ping = await raw(relay.baseUrl, `/v2/at/${at}/ait-attach?p=2&v=1`, TUNNEL);
+      expect(
+        (await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, TUNNEL))
+          .status,
+      ).toBe(200);
+      expect(
+        (
+          await raw(
+            relay.baseUrl,
+            `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+            TUNNEL,
+            'HEAD',
+          )
+        ).status,
+      ).toBe(200);
+      const ping = await raw(
+        relay.baseUrl,
+        `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/ait-attach?p=3&v=1`,
+        TUNNEL,
+      );
       expect(ping.status).toBe(204);
       expect(ping.headers['access-control-allow-origin']).toBeUndefined();
     });
@@ -292,15 +325,27 @@ describe('relay origin rule, live', () => {
       const at = code();
       const proxy = await raw(
         relay.baseUrl,
-        `/v2/at/${at}/proxy?url=${encodeURIComponent('http://example.com/')}`,
+        `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/proxy?url=${encodeURIComponent('http://example.com/')}`,
         TUNNEL,
       );
       // Not a route: the same answer as any unknown path, with or without an Origin.
       expect(proxy.status).toBe(404);
-      expect(await wsOutcome(`${ws()}/v2/at/${at}/target/t1?url=x&title=t`, TUNNEL)).toBe(
-        RELAY_ORIGIN_REJECT_CLOSE_CODE,
-      );
-      expect((await raw(relay.baseUrl, `/v2/at/${at}/target.js`, TUNNEL, 'POST')).status).toBe(403);
+      expect(
+        await wsOutcome(
+          `${ws()}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=x&title=t`,
+          TUNNEL,
+        ),
+      ).toBe(RELAY_ORIGIN_REJECT_CLOSE_CODE);
+      expect(
+        (
+          await raw(
+            relay.baseUrl,
+            `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+            TUNNEL,
+            'POST',
+          )
+        ).status,
+      ).toBe(403);
     });
 
     it('still lets the loopback daemon through (no Origin from node clients)', async () => {
@@ -316,13 +361,13 @@ describe('relay origin rule, live', () => {
   it('checks the origin before the code, so refused origins never count toward a lock', async () => {
     await boot();
     for (let i = 0; i < 6; i++) {
-      await raw(relay.baseUrl, `/v2/at/${'0'.repeat(32)}/target.js`, {
+      await raw(relay.baseUrl, `/v3/at/${'0'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
         ...TUNNEL,
         Origin: 'https://example.com',
       });
     }
     // maxFailures is 3: a lock would turn this valid request into a 401.
-    const ok = await raw(relay.baseUrl, `/v2/at/${code()}/target.js`, {
+    const ok = await raw(relay.baseUrl, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       ...TUNNEL,
       Origin: PRIVATE_APPS,
     });
@@ -333,19 +378,19 @@ describe('relay origin rule, live', () => {
 
   it('names no-origin refusals separately from origin refusals', async () => {
     await boot();
-    await raw(relay.baseUrl, `/v2/at/${code()}/target.js`, TUNNEL, 'POST');
+    await raw(relay.baseUrl, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, TUNNEL, 'POST');
     expect(rejects).toEqual([{ kind: 'http-request', reason: 'no-origin' }]);
   });
 
   it('narrows to the exact app name when the daemon knows it', async () => {
     await boot({ getAppName: () => 'demo' });
     const at = code();
-    const good = await raw(relay.baseUrl, `/v2/at/${at}/target.js`, {
+    const good = await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       ...TUNNEL,
       Origin: PRIVATE_APPS,
     });
     expect(good.status).toBe(200);
-    const other = await raw(relay.baseUrl, `/v2/at/${at}/target.js`, {
+    const other = await raw(relay.baseUrl, `/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       ...TUNNEL,
       Origin: 'https://other.private-apps.tossmini.com',
     });

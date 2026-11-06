@@ -1,7 +1,7 @@
 /**
  * The relay gate matches the raw request path with a regex, while chii's
  * WebSocketServer reads it with legacy `url.parse` (backslash becomes `/`) and
- * takes the last two segments. `/v2/at/<code>/d/<id>/target/x\client\evil` is a
+ * takes the last two segments. `/v3/at/<code>/d/<id>/target/x\client\evil` is a
  * `/target/<id>` upgrade to the gate and a `/client/evil` upgrade to chii.
  *
  * Every request here is written to a raw socket, because `ws` and `fetch` run the
@@ -95,7 +95,7 @@ describe('hasAmbiguousPathChar', () => {
     ['/target/x\t', true],
     ['/target/x\u007f', true],
     ['/target/x', false],
-    ['/v2/at/abc/d/id/target/x?url=a\\b#c;d', false],
+    ['/v3/at/abc/d/id/target/x?url=a\\b#c;d', false],
   ])('%j -> %s', (url, expected) => {
     expect(hasAmbiguousPathChar(url)).toBe(expected);
   });
@@ -103,9 +103,9 @@ describe('hasAmbiguousPathChar', () => {
 
 describe('relay: WS upgrade path differential', () => {
   it('control: the canonical target and client shapes upgrade', async () => {
-    expect((await rawUpgrade(`/v2/at/${code()}/target/t1?${PAGE}`)).status).toBe(101);
+    expect((await rawUpgrade(`/v3/at/${code()}/target/t1?${PAGE}`)).status).toBe(101);
     // the daemon's client socket on loopback (what the exploit below tries to reach)
-    expect((await rawUpgrade(`/v2/at/${code()}/client/evil?target=t1`)).status).toBe(101);
+    expect((await rawUpgrade(`/v3/at/${code()}/client/evil?target=t1`)).status).toBe(101);
   });
 
   it.each([
@@ -121,7 +121,7 @@ describe('relay: WS upgrade path differential', () => {
   ])('refuses %s and never hands chii a socket', async (_label, tail) => {
     const before = authRejects;
     // a VALID code, so only the path check can be what stops it
-    const withPrefix = await rawUpgrade(`/v2/at/${code()}${tail}`);
+    const withPrefix = await rawUpgrade(`/v3/at/${code()}${tail}`);
     expect(withPrefix.status).not.toBe(101);
     // the unprefixed (daemon query transport) spelling is refused the same way
     const query = tail.includes('?') ? '&' : '?';
@@ -133,19 +133,19 @@ describe('relay: WS upgrade path differential', () => {
   it('does not count a malformed path toward the code lock', async () => {
     const before = authRejects;
     for (let i = 0; i < 40; i++) {
-      const out = await rawUpgrade(`/v2/at/${wrongCode()}/target/x\\client\\evil?${PAGE}`);
+      const out = await rawUpgrade(`/v3/at/${wrongCode()}/target/x\\client\\evil?${PAGE}`);
       expect(out.status).not.toBe(101);
     }
     // refused before the code check: no auth rejection was ever recorded
     expect(authRejects).toBe(before);
-    expect((await rawUpgrade(`/v2/at/${code()}/target/t2?${PAGE}`)).status).toBe(101);
+    expect((await rawUpgrade(`/v3/at/${code()}/target/t2?${PAGE}`)).status).toBe(101);
   });
 
   it('refuses a malformed HTTP path before the code check', async () => {
     const before = authRejects;
-    expect(await rawGet(`/v2/at/${wrongCode()}/target.js\\x`)).toBe(404);
-    expect(await rawGet(`/v2/at/${wrongCode()}/target.js;x`)).toBe(404);
+    expect(await rawGet(`/v3/at/${wrongCode()}/target.js\\x`)).toBe(404);
+    expect(await rawGet(`/v3/at/${wrongCode()}/target.js;x`)).toBe(404);
     expect(authRejects).toBe(before);
-    expect(await rawGet(`/v2/at/${code()}/target.js`)).toBe(200);
+    expect(await rawGet(`/v3/at/${code()}/target.js`)).toBe(200);
   });
 });

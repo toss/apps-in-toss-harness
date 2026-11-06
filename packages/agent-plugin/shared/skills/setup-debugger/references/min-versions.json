@@ -1,5 +1,5 @@
 {
-  "note": "Single source of truth for the minimum debug tool versions the plugin accepts in a user project. Raise these at release time together with the Release URL pins in setup-debugger/SKILL.md (step 4) and inject/references/debug-console.md (section 4). Values are the next planned releases of each package (pending changesets are minor).",
-  "@apps-in-toss/debugger": "0.3.0",
-  "@apps-in-toss/debug-console": "0.3.0"
+  "note": "Single source of truth for the minimum debug tool versions the plugin accepts in a user project. Raise these at release time together with the Release URL pins in setup-debugger/SKILL.md (step 4) and inject/references/debugger-client.md (section 4). 0.3.1 is the rename release (debug-console -> debugger-client, MCP key ait-devtools -> ait-debugger, protocol 3), so both packages share the same floor.",
+  "@apps-in-toss/debugger": "0.3.1",
+  "@apps-in-toss/debugger-client": "0.3.1"
 }

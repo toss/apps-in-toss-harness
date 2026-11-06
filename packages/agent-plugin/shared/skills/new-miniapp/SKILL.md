@@ -1124,7 +1124,7 @@ dev 서버가 http://localhost:<port> 에서 실행 중입니다.
 ## 참고
 
 - 짝 skill: `inject`(devtools facet — 기존 프로젝트에 devtools 추가,
-  debug-console facet — on-device attach 패키지 설치, tossface facet — 이모지
+  debugger-client facet — on-device attach 패키지 설치, tossface facet — 이모지
   서체를 번들 포함 모드로 전환), `design`(화면 생성·개선 + 등록 이미지 자산 생성
   — 5-B가 넣는 자산과 주입 절차의 정본 `assets/project/`·
   `references/project-guide.md`를 이 skill이 소유한다).

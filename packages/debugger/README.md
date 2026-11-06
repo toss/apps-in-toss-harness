@@ -6,47 +6,54 @@
 
 앱인토스(Apps in Toss) 미니앱을 위한 원격 디버깅 인프라 — MCP 디버깅 데몬, on-device CDP relay, test runner를 한 패키지에 담는다. **devDependency / `npx` 전용이며, 이 패키지의 코드는 프로덕션 번들에 절대 들어가지 않는다.** 루트(`.`) export가 없다는 사실이 그 경계를 그대로 드러낸다 — 임의로 앱 코드에 import할 수 있는 표면 자체가 존재하지 않는다.
 
+> [!IMPORTANT]
+> **`debugger`와 `debugger-client`는 0.3.1 이상을 함께 쓰세요.** 0.3.1에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다. 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 플러그인 `ait` 0.3.1 이상의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요.
+
 ## 설치
 
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz"
 ```
 
 설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@apps-in-toss/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx <URL>`은 동작하지 않는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger-test --help
 ```
 
 ## 사용
 
 ### MCP 디버깅 데몬 (`debugger`)
 
-에이전트의 MCP 클라이언트 설정에 등록한다. 서버 id는 `ait-devtools`로 고정되어 있다(패키지 분리 이전 이름을 그대로 유지 — 아래 참조):
+에이전트의 MCP 클라이언트 설정에 등록한다. 서버 id는 `ait-debugger`로 고정되어 있다(0.3.0 이하의 `ait-devtools`에서 바뀌었다. 권한 규칙은 `mcp__ait-debugger__*`를 쓴다):
 
 ```json
 {
   "mcpServers": {
-    "ait-devtools": {
+    "ait-debugger": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz", "debugger"]
     }
   }
 }
 ```
 
-기본 동작은 `--mode=debug --target=relay`(실기기 attach)다. 로컬 브라우저만 붙일 때는 `--target=local`을 쓰고, 대상 dev 서버 주소는 로컬 루프백만 사용한다:
+MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고, 데몬마다 relay·cloudflared 터널·대시보드·포트가 독립이다. 세션을 여러 개 동시에 써도 서로 막거나 끊지 않고, 도구도 모두 쓸 수 있다. relay 하나는 계속 미니앱 하나만 받으므로(close 4409) 세션마다 미니앱 하나씩 붙는다. 대시보드는 기본 포트 8317부터 비어 있는 포트를 찾고, 탭 제목 끝에 프로젝트 이름이 붙는다. 같은 프로젝트의 세션들은 `.ait_relay` 키를 읽기 전용으로 함께 쓴다. `get_debug_status`의 `otherSessions`는 다른 세션의 프로젝트 이름과 시작 시각만 알려 준다(PID·주소 없음).
+
+세션 기록은 `~/.ait-debugger/sessions/<데몬 PID>.json`(폴더 0700, 파일 0600)에 있고 프로젝트 이름, 시작 시각, 클라이언트 PID, 데몬과 cloudflared의 PID·프로세스 시작 시각만 담는다. 새 데몬은 PID가 없어졌거나 프로세스 시작 시각이 기록과 다른 데몬의 기록과 남은 cloudflared를 치우고, 같은 클라이언트가 같은 프로젝트에 남겼고 이미 부모를 잃은 이전 데몬(재연결 뒤 남은 것)을 종료한다. 부모가 살아 있는 데몬이나 다른 클라이언트의 데몬은 건드리지 않는다. `--force`(`--takeover`)는 같은 클라이언트가 다른 프로젝트에 남긴 데몬까지 종료한다. 0.3.0 데몬이 쓰던 `~/.ait-devtools/server.lock`은 읽지 않으며, 떠 있는 0.3.0 데몬은 종료하지 않고 그대로 둔다.
+
+데몬은 시작할 때 아무것도 띄우지 않는다. 세션 안에서 `start_debug`로 로컬 브라우저(`local-browser`)나 실기기 relay(`relay-staging`)를 고르고, 재시작 없이 서로 전환한다. 0.3.0 이하의 `--mode`·`--target` 시작 플래그는 0.3.1에서 없어졌고, 넘기면 오류로 끝난다. 로컬 브라우저가 열 dev 서버 주소는 데몬의 환경 변수 `AIT_DEVTOOLS_URL`(기본 `http://localhost:5173`)로 정하며, 로컬 루프백 주소만 쓴다:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger --target=local
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger
 ```
 
 ### 공개키 출력 (`debugger relay-key`)
 
-QR 테스트 호스트의 `debug-console`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 프로젝트 폴더에서 `npx -p <tgz URL> debugger relay-key`(`--project <경로>` 선택)를 실행하면 `.ait_relay`가 없을 때 만들고, 공개키만 stdout에 한 줄로 출력한다. 이 값을 `startDebugConsole({ relayPublicKeys: ['…'] })`에 넣는다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 이 공개키는 루트 키이고, 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실려 QR이 작고, 인증서는 relay가 `GET /relay-cert`로 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음). 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다. 세션 키는 파일이나 로그에 남지 않는다.
+QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 프로젝트 폴더에서 `npx -p <tgz URL> debugger relay-key`(`--project <경로>` 선택)를 실행하면 `.ait_relay`가 없을 때 만들고, 공개키만 stdout에 한 줄로 출력한다. 이 값을 `startDebugConsole({ relayPublicKeys: ['…'] })`에 넣는다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 이 공개키는 루트 키이고, 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실려 QR이 작고, 인증서는 relay가 `GET /relay-cert`로 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음). 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다. 세션 키는 파일이나 로그에 남지 않는다.
 
 #### 키 교체 (`debugger relay-key --rotate`)
 
@@ -67,7 +74,7 @@ npx -p <tgz URL> debugger relay-key --rotate
 실기기 토스 앱 WebView에서 테스트 파일을 실행한다. `--scheme-url`은 `ait deploy --scheme-only`(별개 CLI, 아래 참조)가 출력하는 `intoss-private://` URL을 그대로 받는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 `test-runner` 설정 헬퍼는 서브패스로 import한다:
@@ -93,16 +100,16 @@ export default definePhoneTestConfig({
 
 | bin | 역할 |
 |---|---|
-| `debugger` | MCP 디버깅 데몬 (기본 `--mode=debug --target=relay`) |
+| `debugger` | MCP 디버깅 데몬 (`start_debug`로 로컬 브라우저·실기기 선택) |
 | `debugger-test` | on-device WebView test runner CLI |
 
 ## `@apps-in-toss/devtools`와의 관계
 
-`@apps-in-toss/devtools`는 mock SDK · DevTools 패널 · unplugin(브라우저 dev 환경, station 2)을 담당하고, `@apps-in-toss/debugger`는 실기기 디버깅(MCP 데몬 · CDP relay · test runner, station 3)을 담당한다. 두 패키지 모두 devDependency 전용이라는 점은 같지만, 8개 기능 표면을 하나의 `devtools` 패키지에 담던 이전 구조를 이번 분리에서 "브라우저 dev 환경"과 "실기기 디버깅"으로 나눈 결과다. `devtools`의 unplugin이 노출하는 `mcp: true` 옵션(dev-mode MCP endpoint 등록)은 devtools 쪽에 그대로 남아 있는 표면이며, 이 패키지가 그 endpoint를 dev-mode에서 읽어온다. 실기기 attach 시에는 `@apps-in-toss/debug-console`이 in-app 쪽 카운터파트가 된다 — 이 패키지의 relay가 phone 쪽에서 attach되는 대상이 `@apps-in-toss/debug-console`이 주입하는 Chii 타겟이다.
+`@apps-in-toss/devtools`는 mock SDK · DevTools 패널 · unplugin(브라우저 dev 환경, station 2)을 담당하고, `@apps-in-toss/debugger`는 실기기 디버깅(MCP 데몬 · CDP relay · test runner, station 3)을 담당한다. 두 패키지 모두 devDependency 전용이라는 점은 같지만, 8개 기능 표면을 하나의 `devtools` 패키지에 담던 이전 구조를 이번 분리에서 "브라우저 dev 환경"과 "실기기 디버깅"으로 나눈 결과다. `devtools`의 unplugin이 노출하는 `mcp: true` 옵션(dev-mode MCP endpoint 등록)은 devtools 쪽에 그대로 남아 있는 표면이며, 이 패키지가 그 endpoint를 dev-mode에서 읽어온다. 실기기 attach 시에는 `@apps-in-toss/debugger-client`이 in-app 쪽 카운터파트가 된다 — 이 패키지의 relay가 phone 쪽에서 attach되는 대상이 `@apps-in-toss/debugger-client`이 주입하는 Chii 타겟이다.
 
 ## 보안 스코프
 
-이 패키지는 **devDependency / `npx` 전용**이다. `@apps-in-toss/debug-console`을 dependency나 자동 설치 peer로 선언하지 않는다 — 그렇게 하면 debug-console의 폰 쪽 코드가 데몬의 설치 그래프에 들어와 "데몬에는 debug 표면이 없다"는 불변식이 조용히 깨진다. 데몬 번들에는 `react`/`react-dom`도 포함되지 않는다.
+이 패키지는 **devDependency / `npx` 전용**이다. `@apps-in-toss/debugger-client`을 dependency나 자동 설치 peer로 선언하지 않는다 — 그렇게 하면 debugger-client의 폰 쪽 코드가 데몬의 설치 그래프에 들어와 "데몬에는 debug 표면이 없다"는 불변식이 조용히 깨진다. 데몬 번들에는 `react`/`react-dom`도 포함되지 않는다.
 
 이 패키지는 원격 디버깅 인프라이므로 시크릿을 다룬다. 다음은 어떤 출력(stdout/stderr/로그/에러 메시지)에도 절대 나타나서는 안 된다: TOTP 시크릿·생성된 코드, relay `wss://` URL과 trycloudflare 터널 호스트, `at=` 파라미터가 붙은 딥링크, Deploy Key. 로그에 안전하게 남길 수 있는 것은 `http://127.0.0.1:<port>` 형태의 로컬 주소뿐이다.
 
@@ -114,7 +121,7 @@ relay는 `Origin` 헤더도 확인한다. 터널로 들어온 요청은 앱 이�
 
 relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가져오지도 않는다. 폰의 소스 보기는 페이지 안에서 직접 소스를 불러오고, chii의 옛 `/proxy` 우회 요청은 알 수 없는 경로와 같이 404로 답한다. 만료된 코드로는 `target.js`와 핸드셰이크 확인, 같은 target id의 재연결만 되고, 그 코드에 묶인 소켓이 열려 있거나 마지막 소켓이 닫힌 뒤 5분 유예 안일 때만 통한다.
 
-기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 2)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debug-console`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다.
+기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 3)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debugger-client`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다. 프로토콜 3은 이름 변경 릴리스다. 프로토콜 2 이하(`@apps-in-toss/debug-console` 0.3.0 이하)를 만나면 미니앱에서 그 패키지를 지우고 `@apps-in-toss/debugger-client` 0.3.1 이상을 설치해 다시 배포하라고 안내한다.
 
 ## 관련 CLI 구분
 
@@ -127,7 +134,7 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 
 ### attach가 안 될 때 (`start_attach`)
 
-`start_attach`는 시간 안에 붙지 못하면 마지막으로 도달한 단계로 원인을 가려 "해야 할 일"과 진행 기록을 돌려준다. 같은 진단이 `get_debug_status`(`attachStages`, `attachDiagnosis`)와 대시보드의 "진행 단계" 타임라인에도 나온다. 폰 화면 하단의 상태 막대(`debug-console` 0.2 이상)도 함께 본다.
+`start_attach`는 시간 안에 붙지 못하면 마지막으로 도달한 단계로 원인을 가려 "해야 할 일"과 진행 기록을 돌려준다. 같은 진단이 `get_debug_status`(`attachStages`, `attachDiagnosis`)와 대시보드의 "진행 단계" 타임라인에도 나온다. 폰 화면 하단의 상태 막대(`debugger-client` 0.2 이상)도 함께 본다.
 
 터널 주소는 `start_attach`가 돌려주는 attach URL과 `relayUrl`에만 실제 값이 나온다. `get_debug_status`와 `list_pages`는 `wss://***.trycloudflare.com`처럼 첫 라벨을 가려서 보여 주고, 에러 메시지·로그·페이지 URL에서도 `at=` 코드, `/at/<코드>/` 경로, `relay=` 값, 터널 주소를 가린다. 폰 페이지 URL에는 터널 주소 대신 키 있는 해시인 `rid=`(실행 구분용)만 남는다.
 
@@ -137,12 +144,12 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 | QR 코드 만료 | 오래 열어 둔 대시보드나 지난 QR을 스캔함 | 대시보드를 새로고침하고 새 QR 스캔 |
 | 스크립트·WebSocket 연결 미완료 | 페이지는 열렸지만 relay로 가는 연결이 막힘 | 상태 막대 확인, Wi-Fi 변경, 새 QR 스캔 |
 | 다른 페이지가 붙음 | 이전 배포의 페이지가 붙었거나 `_deploymentId`가 다름 | 미니앱을 X로 닫고 새 QR 스캔, `scheme_url` 확인 |
-| 다른 미니앱의 연결 거부(close 4409) | 한 relay는 미니앱 하나만 받는다 — 먼저 붙은 미니앱을 유지하고 다른 호스트의 페이지는 거부. 거부된 미니앱 화면 위쪽에 경고 막대가 뜬다(debug-console 버전과 무관, 탭하면 닫힘) | 먼저 붙은 미니앱을 X로 닫고 `start_attach`를 다시 호출해 새 QR 스캔 |
+| 다른 미니앱의 연결 거부(close 4409) | 한 relay는 미니앱 하나만 받는다 — 먼저 붙은 미니앱을 유지하고 다른 호스트의 페이지는 거부. 거부된 미니앱 화면 위쪽에 경고 막대가 뜬다(debugger-client 버전과 무관, 탭하면 닫힘) | 먼저 붙은 미니앱을 X로 닫고 `start_attach`를 다시 호출해 새 QR 스캔 |
 | 붙었다가 끊김 | 앱이 백그라운드로 갔거나 네트워크 단절 | 앱을 앞에 두고 X로 닫은 뒤 새 QR 스캔 |
 | 터널 끊김 | cloudflared 종료 | `start_attach`를 다시 호출 |
 | QR 이미지가 안 뜨고 터널이 "연결 끊김"으로 보임 | 대시보드 탭이 쌓여 브라우저 호스트당 연결 한도(Firefox 6개)에 걸림 | 대시보드 탭을 하나만 남기고 새로고침 |
 | relay 인증(TOTP) 거부, close 4401 | 다른 디버거 프로세스가 띄운 relay에 붙으려 함 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 디버거를 다시 시작하고 시스템 시계 동기화 |
-| `debugger-test`가 "이미 debugger 프로세스가 relay를 운영 중"이라며 멈춤 | MCP 데몬이 relay를 쓰는 중 | 그 세션에서 `run_tests` 도구로 실행하거나 세션을 끈 뒤 재실행. 별도 relay가 필요하면 `--separate-relay` |
+| 대시보드 탭이 여러 개라 어느 세션인지 모름 | 세션마다 대시보드가 따로 뜬다 | 탭 제목 끝의 프로젝트 이름(프로젝트 폴더 이름)으로 구분하고, `get_debug_status`의 `otherSessions`로 다른 세션을 확인 |
 
 `start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_debug_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
 

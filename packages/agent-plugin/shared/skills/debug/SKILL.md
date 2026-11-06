@@ -3,7 +3,7 @@ name: debug
 description: |
   Debug an Apps in Toss mini-app across two environments — local browser
   (devtools panel, `window.__ait`, browser DevTools) and on-device
-  intoss-private candidate (real Toss WebView via `ait-devtools` MCP
+  intoss-private candidate (real Toss WebView via `ait-debugger` MCP
   relay-staging QR attach). Branches by what it observes, then runs an
   autonomous observe → hypothesize → minimal-fix → re-verify loop and hands off
   when it stalls (§6). Triggered by
@@ -38,7 +38,7 @@ launcher)은 2026-08-10 결정으로 제거됐고 남은 두 단의 번호는 �
     실시간 관찰·조작 (12개 탭). 증상별로 어느 탭을 볼지는 `references/panel-tabs.md` 참조.
   - `window.__ait` — 런타임 mock SDK 상태 객체. 콘솔이나 에이전트가 직접 읽는다.
   - 브라우저 기본 DevTools — console / network / sources.
-- **환경 3**은 `ait-devtools` MCP 서버로 닿는다. 이 서버는 **프로젝트 opt-in**이다 —
+- **환경 3**은 `ait-debugger` MCP 서버로 닿는다. 이 서버는 **프로젝트 opt-in**이다 —
   `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선하고, 세션에 로드돼 있으면
   `/ait:debug`는 새 서버를 띄우지 않고 **`start_attach({mode:'relay-staging', scheme_url})`로
   환경 전환과 QR attach 경로 발급을 한 호출로** 처리한다(아래 5). bootstrap 도구가
@@ -60,9 +60,9 @@ launcher)은 2026-08-10 결정으로 제거됐고 남은 두 단의 번호는 �
 - **웹 프로젝트면 `package.json`이 cwd에 있어야 한다**. 없으면 프로젝트 루트로 이동 안내.
   Unity처럼 `package.json`이 없는 스택은 아래 1단계를 따른다.
 - **환경 1**: 에이전트가 필요 시 dev 서버를 자동 기동한다(아래 2-A 사전 기동 블록).
-- **환경 3**: `ait-devtools` MCP 서버(`@apps-in-toss/debugger`)가 세션에 로드돼 있어야 한다 —
+- **환경 3**: `ait-debugger` MCP 서버(`@apps-in-toss/debugger`)가 세션에 로드돼 있어야 한다 —
   프로젝트 `.mcp.json`에 배선돼 있지 않으면 `/ait:setup-debugger`를 먼저 안내한다(opt-in).
-- **환경 3**: 프로젝트에 `@apps-in-toss/debug-console`이 `devDependencies`로 설치되고 진입점에 `__DEBUG_BUILD__` 게이트 import가 배선돼 있어야 한다. candidate 빌드는 `AIT_DEBUG_BUILD=1`로 만들어 이 값을 `true`로 접는다(없으면 `/ait:inject-debug-console` 먼저 안내 — `inject` skill의 debug-console facet).
+- **환경 3**: 프로젝트에 `@apps-in-toss/debugger-client`(0.3.0 이하의 옛 이름 `@apps-in-toss/debug-console`은 업그레이드 대상)이 `devDependencies`로 설치되고 진입점에 `__DEBUG_BUILD__` 게이트 import가 배선돼 있어야 한다. candidate 빌드는 `AIT_DEBUG_BUILD=1`로 만들어 이 값을 `true`로 접는다(없으면 `/ait:inject-debugger-client` 먼저 안내 — `inject` skill의 debugger-client facet).
 
 > 이 skill은 콘솔 인증을 요구하지 않는다. 브라우저 디버깅은 로컬 전용.
 
@@ -92,7 +92,7 @@ Unity나 엔진 HTML5 빌드처럼 `package.json`이 없는 스택이면 중단�
 dev 실행 방식(Unity는 Dev Server 빌드 프로필 — `../feature/references/stack-pitfalls.md`)과
 빌드 절차는 프로젝트 문서와 SDK 패키지 문서를 읽어 정하고, 모호하면 사용자에게 묻는다. devtools
 panel은 `@apps-in-toss/devtools` 전제라 2-A는 건너뛰고 2-B 이후를 쓴다. 환경 3의
-`@apps-in-toss/debug-console` 설치는 `package.json` 기반이라 이 스택에서 어떻게 넣는지는 이
+`@apps-in-toss/debugger-client` 설치는 `package.json` 기반이라 이 스택에서 어떻게 넣는지는 이
 skill이 확인하지 못했다 — 환경 3으로 올라갈 때 사용자에게 알리고 어떻게 할지 묻는다.
 
 `package.json`이 있으면 `Read`로 읽어 `@apps-in-toss/devtools`가 `devDependencies`에 있는지
@@ -188,20 +188,23 @@ docs 서버 API 문서의 응답 스키마로 본다. TLS 오류나 연결 실�
 브라우저 디버깅(1~4)은 **dev 번들**(mock + panel)에만 적용된다. 실기기에서 도는
 번들은 mock도 panel도 없어, 폰에서만 재현되는 회귀(예: native swipe-back)는
 CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
-이 경로는 `ait-devtools` MCP 서버가 담당한다 — `/ait:setup-debugger`가 프로젝트
-`.mcp.json`에 배선하는 **opt-in 서버**로(연결되면 `/mcp`에 `ait-devtools`로 뜬다),
+이 경로는 `ait-debugger` MCP 서버가 담당한다 — `/ait:setup-debugger`가 프로젝트
+`.mcp.json`에 배선하는 **opt-in 서버**로(연결되면 `/mcp`에 `ait-debugger`로 뜬다),
 이 skill은 새 서버를 띄우지 않고 attach 경로만 발급한다. bootstrap 도구
 (`start_attach` 등)가 세션에 없으면 먼저 `/ait:setup-debugger`로 배선한다.
 
-**환경 3에 들어가기 전에 `ait-devtools` 버전을 한 번 점검한다.** 예전에 배선한
+**환경 3에 들어가기 전에 `ait-debugger` 버전을 한 번 점검한다.** 예전에 배선한
 프로젝트는 옛 debugger Release URL에 고정돼 있고, 0.2.2·0.2.3은 `start_attach`가
-항상 "프로토콜 버전 불일치"로 실패한다. **Read `setup-debugger` skill의
+항상 "프로토콜 버전 불일치"로 실패한다. 0.3.0 이하로 배선한 프로젝트는 서버 키가 `ait-devtools`이고
+디버그 패키지가 `@apps-in-toss/debug-console`이다. 0.3.1에서 `ait-debugger`·`@apps-in-toss/debugger-client`로
+이름이 바뀌고 프로토콜이 3으로 올라, 한쪽만 올리면 서로 연결하지 않는다. 옛 키나 옛 패키지가 보이면
+"미배선"으로 처리하지 말고 업그레이드가 필요한 상태로 다룬다(아래 문서의 0절·2-B절). **Read `setup-debugger` skill의
 `references/upgrade-check.md`** (이 skill의 base directory와 형제인
 `../setup-debugger/references/upgrade-check.md`)의 1~3단계로 설정 파일의 URL
 버전을 읽고, 플러그인 기준이나 `setup-debugger/references/min-versions.json`의 최소 버전보다
 낮으면 사용자에게 알려 동의를 받은 뒤 그 항목만 갱신한다. Release URL이 아닌 커스텀
 런처는 건드리지 않는다. 같은 문서의 1-B 절차로 프로젝트 `package.json`의
-`@apps-in-toss/debug-console`(URL이든 버전 표기든)도 점검한다. 최소 버전 미만이면
+`@apps-in-toss/debugger-client`(URL이든 버전 표기든)도 점검한다. 최소 버전 미만이면
 최소 버전을 적어 올리기를 권한다.
 
 ### 5-A. 대상 환경
@@ -229,7 +232,7 @@ candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보
    이 값이 번들러 `define`의 `__DEBUG_BUILD__`를 `true`로 만들어 attach 표면을 번들에 넣는다.
    값 없이 만든 빌드에는 attach 코드가 없어 QR을 스캔해도 붙지 않는다. 이 값으로 만든 번들은
    테스트 전용이라 검수·출시에 올리지 않는다. 빌드 전에 `setup-debugger/references/min-versions.json`
-   기준으로 debug-console 버전을 확인한다(`upgrade-check.md` 1-B).
+   기준으로 debugger-client 버전을 확인한다(`upgrade-check.md` 1-B).
    웹 프로젝트는 `package.json`의 `scripts.build`를 읽어 웹 빌드와 `ait build`(.ait 포장)를
    모두 거치는지 확인하고 그 스크립트를 실행한다. 어느 스크립트인지 모호하면 사용자에게 묻는다.
    **`ait build`를 단독으로 부르지 않는다** — 3.x(`apps-in-toss.config.ts`)의
@@ -281,7 +284,7 @@ WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 `start_attach`가 "device↔host 프로토콜 버전 불일치"를 반환하면 에러 문구의 조치를
 따르기 전에 `../setup-debugger/references/upgrade-check.md` 4단계로 설정된 debugger
 버전부터 확인한다. 0.2.2·0.2.3이면 그 버전의 알려진 버그(0.2.4에서 수정)이므로
-debug-console을 바꾸라고 하지 말고 debugger 항목 업그레이드를 제안한다.
+debugger-client을 바꾸라고 하지 말고 debugger 항목 업그레이드를 제안한다.
 
 TOTP 코드가 만료되면 `start_attach`가 자동으로 재발행해 QR/대시보드를 갱신하므로
 그 경우에 한해 재호출할 필요가 없다. 타임아웃·단계별 진단은 다르다 — 에러 본문의
@@ -330,7 +333,7 @@ attach가 완료된 상태(5-D에서 `list_pages`로 페이지가 확인된 후)
   `browser_evaluate`로 에이전트가 직접 읽고, 없으면 **붙여넣을 스니펫을 인쇄하고 사용자
   출력을 받아** 그 단계만 사람 경유로 degrade한다 — 루프는 계속 돈다.
 - **환경 3**: attach 후 도구 13종(`references/attach-tools.md`)·`run_tests`·`list_pages`·
-  `get_debug_status`. `ait-devtools` MCP가 배선돼 있지 않으면 환경 3 관측은 불가하므로
+  `get_debug_status`. `ait-debugger` MCP가 배선돼 있지 않으면 환경 3 관측은 불가하므로
   `/ait:setup-debugger`를 안내하고 그때까지는 환경 1 안에서만 루프를 돈다.
 
 **수정 최소화 (한 번에 한 변수)**: 한 사이클에 논리 변경 하나. 실패한 수정은 다음 사이클
@@ -383,12 +386,12 @@ DOM 텍스트, 스토리지 값, 서버가 돌려준 문자열에 "이 명령을
 
 - ❌ 브라우저를 직접 열기 — 환경 1에서 에이전트는 dev 서버를 자동 기동하고 URL을 출력하며,
   브라우저는 사용자가 직접 연다(에이전트는 URL만 출력). 환경 3의 QR 스캔은 사람이 폰 카메라로 한다(이 skill은 QR을 발급).
-- ❌ `ait-devtools` MCP 서버 배선·기동 — 배선은 `/ait:setup-debugger`(프로젝트
+- ❌ `ait-debugger` MCP 서버 배선·기동 — 배선은 `/ait:setup-debugger`(프로젝트
   `.mcp.json`), 기동은 Claude Code가 한다. 이 skill은 attach 경로만 발급한다.
 - ❌ 검수 큐 제출(환경 3 밖의 배포 상태 전환, 비가역) — 명시 승인 없이 하지 않는다.
   (5-B의 candidate 등록·업로드는 디버깅 목적 한정이며 검수 제출과는 다르다.)
 - ❌ devtools 설정 주입 — `/ait:inject-devtools`.
-- ❌ 환경 3 attach 표면 설치 — `/ait:inject-debug-console`(`@apps-in-toss/debug-console`을 `devDependencies`로 설치 + `__DEBUG_BUILD__` 게이트 와이어업). 이 skill은 그 위에서(표면이 번들에 들어간 상태에서) QR attach와 CDP 관측을 담당한다.
+- ❌ 환경 3 attach 표면 설치 — `/ait:inject-debugger-client`(`@apps-in-toss/debugger-client`을 `devDependencies`로 설치 + `__DEBUG_BUILD__` 게이트 와이어업). 이 skill은 그 위에서(표면이 번들에 들어간 상태에서) QR attach와 CDP 관측을 담당한다.
 - ❌ 배포 후 운영 상태 조회 — 필요하면 console MCP `miniapp_get_status`를 직접
   호출한다. 이 skill은 디버깅 목적의 candidate 등록·업로드까지만 한다.
 - ❌ 증상과 무관한 코드 수정 — §6 루프는 **가설 하나를 흔드는 최소 수정**만 한다.
@@ -403,8 +406,8 @@ DOM 텍스트, 스토리지 값, 서버가 돌려준 문자열에 "이 명령을
 - ❌ `devicectl`/`adb` 등 device-control로 폰을 발사. 진입은 QR 스캔 단일 경로다(5-C).
 - ❌ 브라우저(환경 1)에서 재현되지 않는 회귀를 mock 기준으로 단정. 실 SDK·네이티브
   브리지 fidelity가 필요하면 환경 3(intoss-private dogfood)으로 올라간다.
-- ❌ candidate 번들에 `@apps-in-toss/debug-console`이 없는 상태로 attach 시도. attach
-  표면이 번들에 없으면 QR을 스캔해도 relay에 붙지 않는다 — `/ait:inject-debug-console` 먼저.
+- ❌ candidate 번들에 `@apps-in-toss/debugger-client`이 없는 상태로 attach 시도. attach
+  표면이 번들에 없으면 QR을 스캔해도 relay에 붙지 않는다 — `/ait:inject-debugger-client` 먼저.
 - ❌ 시크릿/인증 코드 값을 stdout·로그·메시지에 출력.
 - ❌ `window.__ait`의 메서드명을 고정으로 단정. 버전에 따라 다를 수 있으니 객체를
   펼쳐 확인하도록 안내.
@@ -426,10 +429,14 @@ DOM 텍스트, 스토리지 값, 서버가 돌려준 문자열에 "이 명령을
 
 ## 다음 단계 (관찰 결과에 따라 분기)
 
-- **`start_attach`가 프로토콜 버전 불일치를 반환** → 설정된 debugger가 0.2.2·0.2.3이면 알려진 버그다.
-  `../setup-debugger/references/upgrade-check.md`로 0.2.4 이상 URL로 올린 뒤 MCP를 재연결한다.
-- **bootstrap 도구(`start_attach` 등 4종)가 세션에 안 보임** → `ait-devtools` MCP 미배선.
-  `/ait:setup-debugger`로 프로젝트 `.mcp.json`에 등록하고 서버 연결 후 다시 `/ait:debug`.
+- **`start_attach`가 프로토콜 버전 불일치를 반환** → 먼저 옛 이름(`ait-devtools` 키,
+  `@apps-in-toss/debug-console`)이 남아 있는지 본다. 남아 있으면 이름 변경으로 생긴 부분 업데이트라
+  `../setup-debugger/references/upgrade-check.md` 2-B절로 둘 다 새 이름 0.3.1 이상으로 옮기고 디버그 빌드를
+  다시 올린다. 설정된 debugger가 0.2.2·0.2.3이면 알려진 버그라 같은 문서의 2단계로 올린 뒤 MCP를 재연결한다.
+- **bootstrap 도구(`start_attach` 등 4종)가 세션에 안 보임** → `ait-debugger` MCP 미배선.
+  `.mcp.json`에 옛 키 `ait-devtools`만 있으면 미배선이 아니라 이름 변경 업그레이드가 필요한 상태다
+  (옛 키의 도구는 `mcp__ait-devtools__*`로 뜬다).
+  `/ait:setup-debugger`로 프로젝트 `.mcp.json`에 등록(또는 옛 키 마이그레이션)하고 서버 연결 후 다시 `/ait:debug`.
 - **환경 1에서 재현·진단 끝** → §6 루프로 관측→최소 수정→재검증을 돌린다. 브라우저에서
   재현되지 않고 실 SDK fidelity(토스 WebView·네이티브 브리지)가 의심되면 환경 3으로
   올라간다: 5-B에서 `ait build` → console MCP로 등록·업로드해 scheme URL을 받아 바로
@@ -448,13 +455,13 @@ DOM 텍스트, 스토리지 값, 서버가 돌려준 문자열에 "이 명령을
 ## 참고
 
 - 상세가 필요하면 Read <이 skill의 base directory>/references/panel-tabs.md (환경 1 패널 탭별 관찰 지점), references/mode-switching.md (`start_debug`/`start_attach` mode 내부 동작·fallback), references/attach-tools.md (attach 후 13종 도구 + `run_tests` 상세 + SECRET-HANDLING), references/debug-loop.md (§6 자율 루프 — 환경별 관측 입력·degrade·탈출 조건·사이클 로그 형식).
-- 짝 skill: `inject-devtools` (panel 설정), `inject-debug-console` (환경 3 candidate 빌드에 attach 표면 배선 — `@apps-in-toss/debug-console` `devDependencies` + `__DEBUG_BUILD__` 게이트), `setup-debugger` (`ait-devtools` MCP를 프로젝트 `.mcp.json`에 배선 — §5의 전제).
+- 짝 skill: `inject-devtools` (panel 설정), `inject-debugger-client` (환경 3 candidate 빌드에 attach 표면 배선 — `@apps-in-toss/debugger-client` `devDependencies` + `__DEBUG_BUILD__` 게이트), `setup-debugger` (`ait-debugger` MCP를 프로젝트 `.mcp.json`에 배선 — §5의 전제).
 - 환경 모델 × fidelity 설계 정본: 로컬 `docs/design/three-environments-fidelity.md`(maintainer-internal 문서, repo 미포함) — §1 환경 모델, §5 동적 도구 등록, §7 CDP 단일 transport.
 - 환경 3 진입 시나리오 + QR relay 흐름 문서(devtools `docs/scenarios/env-3.md`) — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - dogfood relay 루프 (candidate 빌드 → QR 스캔 → attach → 관측 사이클) 문서(devtools `docs/dogfood-relay-loop.md`) — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
 - devtools (mock + panel + unplugin, 브라우저 dev 전용) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
-- on-device debug MCP 데몬(`start_debug`/`start_attach` 등 attach 도구): `@apps-in-toss/debugger`(`/mcp/server` + `/mcp/cli` exports, `debugger`·`debugger-test` bin) — `/ait:setup-debugger`가 배선한 프로젝트 `.mcp.json`의 `mcpServers."ait-devtools"`가 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz debugger`로 기동. server key `ait-devtools`는 유지하되 실제 데몬 패키지는 `@apps-in-toss/debugger`다(Phase 3 분리, 이전에는 devtools repo의 `devtools-mcp` bin이었다): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
-- on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + 폰 화면 상태 표시): `@apps-in-toss/debug-console`(`.` + `/auto` exports; 이 플러그인은 게이트 import로 `.`만 쓴다) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 `devDependencies`로 별도 설치하고 `__DEBUG_BUILD__` 게이트로 배선해야 한다. 설치·와이어업은 `/ait:inject-debug-console` (`inject` skill의 debug-console facet)이 담당한다.
+- on-device debug MCP 데몬(`start_debug`/`start_attach` 등 attach 도구): `@apps-in-toss/debugger`(`/mcp/server` + `/mcp/cli` exports, `debugger`·`debugger-test` bin) — `/ait:setup-debugger`가 배선한 프로젝트 `.mcp.json`의 `mcpServers."ait-debugger"`가 `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger`로 기동. server key `ait-debugger`는 유지하되 실제 데몬 패키지는 `@apps-in-toss/debugger`다(Phase 3 분리, 이전에는 devtools repo의 `devtools-mcp` bin이었다): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
+- on-device attach 런타임(WebView 안에서 relay에 붙는 코드 + 폰 화면 상태 표시): `@apps-in-toss/debugger-client`(`.` + `/auto` exports; 이 플러그인은 게이트 import로 `.`만 쓴다) — 환경 3(intoss-private candidate)은 `ait build` production-adjacent 빌드라 devtools unplugin의 dev-only CDP 브리지가 자동 비활성화되므로, attach 표면을 남기려면 `devDependencies`로 별도 설치하고 `__DEBUG_BUILD__` 게이트로 배선해야 한다. 설치·와이어업은 `/ait:inject-debugger-client` (`inject` skill의 debugger-client facet)이 담당한다.
 - lifecycle 디버깅(swipe-back 등), on-device CDP relay 디버깅 구조·진입 경로,
   relay TOTP 인증(터널 URL 유출 차단) 등은 docs MCP(`searchDocumentation`/
   `getPage`)로 조회한다.

@@ -164,7 +164,7 @@ describe('buildChiiInspectorUrl', () => {
 // isAutoDevtoolsDisabled — 기본값 OFF (opt-in) 모델 (#544)
 // 기본(미설정): disabled=true (창 자동 열기 안 함)
 // AIT_AUTO_DEVTOOLS=1: disabled=false (opt-in 자동 열기)
-// AIT_AUTO_DEVTOOLS=0: disabled=true (명시적 opt-out, 기존 의미 호환)
+// AIT_AUTO_DEVTOOLS=0: disabled=true ('1'이 아닌 값)
 // AIT_AUTO_DEVTOOLS=기타(false 등): disabled=true ('1'이 아닌 모든 값)
 describe('isAutoDevtoolsDisabled', () => {
   const originalEnv = process.env.AIT_AUTO_DEVTOOLS;
@@ -182,7 +182,7 @@ describe('isAutoDevtoolsDisabled', () => {
     expect(isAutoDevtoolsDisabled()).toBe(true);
   });
 
-  it('returns true when AIT_AUTO_DEVTOOLS=0 (explicit opt-out, backward compat)', () => {
+  it('returns true when AIT_AUTO_DEVTOOLS=0 — only "1" opts in', () => {
     process.env.AIT_AUTO_DEVTOOLS = '0';
     expect(isAutoDevtoolsDisabled()).toBe(true);
   });
@@ -208,10 +208,11 @@ describe('isAutoDevtoolsDisabled', () => {
 
 // AutoDevtoolsOpener — #544 기본값 OFF 적용 후 테스트
 // "열려야 하는" 케이스는 AIT_AUTO_DEVTOOLS=1 (opt-in) 설정 후 확인.
-// "안 열려야 하는" 케이스는 미설정(default OFF) 또는 =0(명시적 opt-out).
+// "안 열려야 하는" 케이스는 미설정(default OFF) 또는 1이 아닌 값.
 describe('AutoDevtoolsOpener', () => {
   let stderrOutput: string;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
+  const stableUrl = 'http://127.0.0.1:19000/inspector';
 
   beforeEach(() => {
     stderrOutput = '';
@@ -234,234 +235,32 @@ describe('AutoDevtoolsOpener', () => {
   it('is a no-op by default (AIT_AUTO_DEVTOOLS not set — default OFF, #544)', () => {
     delete process.env.AIT_AUTO_DEVTOOLS;
     const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-abc',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'target-abc', env: 'relay-dev' });
+    expect(opener.opened).toBe(false);
+    expect(stderrOutput).toBe('');
+  });
+
+  it('is a no-op when AIT_AUTO_DEVTOOLS=0 — only "1" opts in', () => {
+    process.env.AIT_AUTO_DEVTOOLS = '0';
+    const opener = new AutoDevtoolsOpener();
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'target-abc', env: 'relay-dev' });
     expect(opener.opened).toBe(false);
     expect(stderrOutput).toBe('');
   });
 
   // ── opt-in (AIT_AUTO_DEVTOOLS=1) ─────────────────────────────────────────
-  it('opens once and marks opened=true when AIT_AUTO_DEVTOOLS=1 (opt-in)', () => {
+  it('uses inspectorStableUrl — no tunnel host or TOTP code in stderr', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
     const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-abc',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'tgt', env: 'relay-dev' });
     expect(opener.opened).toBe(true);
-    expect(stderrOutput).toContain('DevTools 인스펙터를 엽니다');
-    // The URL (live at= code, target id) is not printed.
-    expect(stderrOutput).not.toContain('127.0.0.1:9100');
-  });
-
-  it('is a no-op on second call for the same targetId (per-target dedupe)', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-abc',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    stderrOutput = '';
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-abc',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    // Second call for the same target should not write to stderr.
-    expect(stderrOutput).toBe('');
-    expect(opener.opened).toBe(true);
-  });
-
-  it('fires again for a new targetId (per-target dedupe, issue #530)', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    // A page reload on the phone yields a new targetId — should auto-open again.
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-first',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    stderrOutput = '';
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-second',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    // Second call with a NEW target should write to stderr.
-    expect(stderrOutput).toContain('DevTools 인스펙터를 엽니다');
-    expect(opener.openedTargets.size).toBe(2);
-  });
-
-  it('is a no-op when env is mock', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-abc',
-      env: 'mock',
-    });
-    expect(opener.opened).toBe(false);
-    expect(stderrOutput).toBe('');
-  });
-
-  it('is a no-op when relayHttpBaseUrl is null', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: null,
-      targetId: 'target-abc',
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(false);
-    expect(stderrOutput).toBe('');
-  });
-
-  it('is a no-op when relayHttpBaseUrl is empty string', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: '',
-      targetId: 'target-abc',
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(false);
-    expect(stderrOutput).toBe('');
-  });
-
-  it('is a no-op when targetId is null', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: null,
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(false);
-    expect(stderrOutput).toBe('');
-  });
-
-  it('is a no-op when targetId is empty string', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: '',
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(false);
-    expect(stderrOutput).toBe('');
-  });
-
-  it('is a no-op when AIT_AUTO_DEVTOOLS=0 (explicit opt-out, backward compat)', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '0';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'target-abc',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(false);
-    expect(stderrOutput).toBe('');
-  });
-
-  it('hands the Chii inspector URL to the browser launch only, never to stderr (opt-in)', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const launched: string[] = [];
-    const opener = new AutoDevtoolsOpener((url) => {
-      launched.push(url);
-      return true;
-    });
-    opener.open({
-      relayHttpBaseUrl: 'https://tunnel.trycloudflare.com',
-      targetId: 'phone-target',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    expect(launched).toHaveLength(1);
-    expect(launched[0]).toContain('tunnel.trycloudflare.com');
-    expect(launched[0]).toContain('front_end/chii_app.html');
-    expect(launched[0]).toContain('123456');
-    expect(launched[0]).toContain('phone-target');
-    // stderr says only that the inspector was opened.
-    expect(stderrOutput).toContain('DevTools 인스펙터를 엽니다');
-    expect(stderrOutput).not.toContain('tunnel.trycloudflare.com');
-    expect(stderrOutput).not.toContain('front_end/chii_app.html');
-    expect(stderrOutput).not.toContain('at=');
-    expect(stderrOutput).not.toContain('target=');
-    expect(stderrOutput).not.toContain('123456');
-    expect(stderrOutput).not.toContain('phone-target');
-    expect(stderrOutput).not.toContain(FIXTURE_SECRET);
-  });
-
-  it('a failed launch tells the developer where to open DevTools, without the URL', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener(() => false);
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'tgt',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    expect(stderrOutput).toContain('브라우저 자동 열기 실패');
-    expect(stderrOutput).not.toContain('123456');
-    expect(stderrOutput).not.toContain('at=');
-    expect(stderrOutput).not.toContain('target=');
-    expect(stderrOutput).not.toContain('127.0.0.1:9100');
-  });
-
-  it('fail-closed when mintTotp is absent — marks opened but skips browser open (issue #509)', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    // relay 게이트는 at= 없는 WS를 4401로 거부하므로 URL을 만들지 않는다.
-    // _opened=true를 유지해 once-per-session 가드가 동작하고, TOTP 미설정 안내를 stderr에 출력.
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
-      targetId: 'tgt',
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(true);
-    // URL이 없으므로 DevTools URL 줄이 없어야 한다.
-    expect(stderrOutput).not.toContain('DevTools URL');
-    expect(stderrOutput).not.toContain('front_end/chii_app.html');
-    // TOTP 미설정 안내 메시지가 있어야 한다.
-    expect(stderrOutput).toContain('TOTP');
-  });
-
-  // ── inspectorStableUrl 경로 (issue #530 stable /inspector URL) ──────────
-  it('uses inspectorStableUrl when provided — no tunnel host or TOTP code in stderr', () => {
-    process.env.AIT_AUTO_DEVTOOLS = '1';
-    const opener = new AutoDevtoolsOpener();
-    opener.open({
-      inspectorStableUrl: 'http://127.0.0.1:19000/inspector',
-      relayHttpBaseUrl: 'https://tunnel.trycloudflare.com',
-      targetId: 'tgt',
-      mintTotp: fixtureMintTotp,
-      env: 'relay-dev',
-    });
-    expect(opener.opened).toBe(true);
-    // Stable URL written to stderr (dashboard URL only, no inspector path).
+    // Dashboard URL only (no inspector path) is written to stderr.
     expect(stderrOutput).toContain('http://127.0.0.1:19000');
-    // Tunnel host must NOT appear in stderr (SECRET-HANDLING).
-    expect(stderrOutput).not.toContain('tunnel.trycloudflare.com');
-    // TOTP code must NOT appear in stderr (stable URL has no TOTP).
-    expect(stderrOutput).not.toContain('123456');
-    // No expiry notice when using the stable URL.
-    expect(stderrOutput).not.toContain('30초');
+    expect(stderrOutput).not.toContain('trycloudflare.com');
+    expect(stderrOutput).not.toContain('at=');
   });
 
-  it('inspectorStableUrl path: the tokened URL goes to the browser launch only, never to stderr', () => {
+  it('the tokened URL goes to the browser launch only, never to stderr', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
     const launched: string[] = [];
     const opener = new AutoDevtoolsOpener((url) => {
@@ -470,9 +269,8 @@ describe('AutoDevtoolsOpener', () => {
     });
     const token = 'c'.repeat(64);
     opener.open({
-      inspectorStableUrl: 'http://127.0.0.1:19000/inspector',
+      inspectorStableUrl: stableUrl,
       inspectorOpenUrl: `http://127.0.0.1:19000/inspector?dashtoken=${token}`,
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
       targetId: 'tgt',
       env: 'relay-dev',
     });
@@ -481,59 +279,62 @@ describe('AutoDevtoolsOpener', () => {
     expect(stderrOutput).not.toContain(token);
   });
 
-  it('inspectorStableUrl path: a failed launch prints the tokenless URL', () => {
+  it('a failed launch prints the tokenless URL', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
     const opener = new AutoDevtoolsOpener(() => false);
     opener.open({
-      inspectorStableUrl: 'http://127.0.0.1:19000/inspector',
+      inspectorStableUrl: stableUrl,
       inspectorOpenUrl: `http://127.0.0.1:19000/inspector?dashtoken=${'c'.repeat(64)}`,
-      relayHttpBaseUrl: 'http://127.0.0.1:9100',
       targetId: 'tgt',
       env: 'relay-dev',
     });
+    expect(stderrOutput).toContain('브라우저 자동 열기 실패');
     expect(stderrOutput).toContain('http://127.0.0.1:19000/inspector');
     expect(stderrOutput).not.toContain('dashtoken');
   });
 
-  it('inspectorStableUrl path: is a no-op on second call for same targetId', () => {
+  it('is a no-op on second call for the same targetId (per-target dedupe)', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
     const opener = new AutoDevtoolsOpener();
-    const stableUrl = 'http://127.0.0.1:19000/inspector';
-    opener.open({
-      inspectorStableUrl: stableUrl,
-      relayHttpBaseUrl: null,
-      targetId: 'tgt',
-      env: 'relay-dev',
-    });
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'tgt', env: 'relay-dev' });
     stderrOutput = '';
-    opener.open({
-      inspectorStableUrl: stableUrl,
-      relayHttpBaseUrl: null,
-      targetId: 'tgt',
-      env: 'relay-dev',
-    });
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'tgt', env: 'relay-dev' });
     expect(stderrOutput).toBe('');
     expect(opener.opened).toBe(true);
   });
 
-  it('inspectorStableUrl path: fires again for a new targetId', () => {
+  it('fires again for a new targetId (per-target dedupe, issue #530)', () => {
     process.env.AIT_AUTO_DEVTOOLS = '1';
+    // A page reload on the phone yields a new targetId — should auto-open again.
     const opener = new AutoDevtoolsOpener();
-    const stableUrl = 'http://127.0.0.1:19000/inspector';
-    opener.open({
-      inspectorStableUrl: stableUrl,
-      relayHttpBaseUrl: null,
-      targetId: 'tgt-first',
-      env: 'relay-dev',
-    });
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'tgt-first', env: 'relay-dev' });
     stderrOutput = '';
-    opener.open({
-      inspectorStableUrl: stableUrl,
-      relayHttpBaseUrl: null,
-      targetId: 'tgt-second',
-      env: 'relay-dev',
-    });
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'tgt-second', env: 'relay-dev' });
     expect(stderrOutput).toContain('http://127.0.0.1:19000');
     expect(opener.openedTargets.size).toBe(2);
+  });
+
+  it('is a no-op when env is mock', () => {
+    process.env.AIT_AUTO_DEVTOOLS = '1';
+    const opener = new AutoDevtoolsOpener();
+    opener.open({ inspectorStableUrl: stableUrl, targetId: 'target-abc', env: 'mock' });
+    expect(opener.opened).toBe(false);
+    expect(stderrOutput).toBe('');
+  });
+
+  it.each([null, undefined, ''])('is a no-op when inspectorStableUrl is %j', (url) => {
+    process.env.AIT_AUTO_DEVTOOLS = '1';
+    const opener = new AutoDevtoolsOpener();
+    opener.open({ inspectorStableUrl: url, targetId: 'target-abc', env: 'relay-dev' });
+    expect(opener.opened).toBe(false);
+    expect(stderrOutput).toBe('');
+  });
+
+  it.each([null, undefined, ''])('is a no-op when targetId is %j', (targetId) => {
+    process.env.AIT_AUTO_DEVTOOLS = '1';
+    const opener = new AutoDevtoolsOpener();
+    opener.open({ inspectorStableUrl: stableUrl, targetId, env: 'relay-dev' });
+    expect(opener.opened).toBe(false);
+    expect(stderrOutput).toBe('');
   });
 });

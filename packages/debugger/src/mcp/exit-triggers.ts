@@ -2,8 +2,8 @@
  * Exit triggers for the stdio MCP daemon.
  *
  * The daemon must not outlive the MCP client that spawned it. A leftover daemon
- * keeps `~/.ait-devtools/server.lock`, so the client's next reconnect fails
- * with `CONNECTION_CLOSED`. This module wires every way the client can go away
+ * keeps a cloudflared tunnel and a session registry entry alive for a client
+ * that is gone. This module wires every way the client can go away
  * to one idempotent shutdown:
  *
  *   - SIGINT / SIGTERM / SIGHUP,
@@ -56,7 +56,7 @@ export function installExitTriggers(opts: ExitTriggerOptions): { stop(): void } 
   const trigger = (reason: string): void => {
     if (fired) return;
     fired = true;
-    log(`[ait-debug] ${reason} — 종료합니다\n`);
+    log(`[ait-debugger] ${reason} — 종료합니다\n`);
     void shutdown().then(
       () => exit(0),
       () => exit(1),

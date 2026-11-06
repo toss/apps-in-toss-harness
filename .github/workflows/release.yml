@@ -14,7 +14,7 @@ on:
         options:
           - all
           - debugger
-          - debug-console
+          - debugger-client
       prerelease:
         description: 'Mark the GitHub Release as prerelease (staging concept — promote later by editing the release, no separate command)'
         required: true
@@ -58,8 +58,8 @@ jobs:
           PACKAGE_INPUT: ${{ inputs.package }}
         run: |
           case "$PACKAGE_INPUT" in
-            all) echo "packages=debug-console debugger" >> "$GITHUB_OUTPUT" ;;
-            debug-console) echo "packages=debug-console" >> "$GITHUB_OUTPUT" ;;
+            all) echo "packages=debugger-client debugger" >> "$GITHUB_OUTPUT" ;;
+            debugger-client) echo "packages=debugger-client" >> "$GITHUB_OUTPUT" ;;
             debugger) echo "packages=debugger" >> "$GITHUB_OUTPUT" ;;
             *)
               echo "::error::unknown package input: ${PACKAGE_INPUT}"
@@ -167,7 +167,7 @@ jobs:
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
       # 배포 산출물이 attach 게이트를 소스와 같게 판정하는지 본다. 방금 빌드한
-      # debug-console dist(ESM·CJS)로 `evaluateDebugGate`를 표 몇 줄에 돌려, 운영 호스트
+      # debugger-client dist(ESM·CJS)로 `evaluateDebugGate`를 표 몇 줄에 돌려, 운영 호스트
       # 거부·서명 없는 QR 호스트 거부·정상 attach를 확인한다. dist가 없으면 실패한다.
       - run: pnpm -r check:gate-dist
       # 소비자 Vitest 호환 게이트(사유는 ci.yml 주석 참고) — 발행되는 pool이
@@ -245,7 +245,14 @@ jobs:
               cd "packages/${pkg}"
               pnpm pack --pack-destination "$GITHUB_WORKSPACE/release-tarballs"
             )
-            tarball="$(ls "$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-*.tgz)"
+            # `debugger-*`가 `debugger-client-*`와도 겹치므로 버전(숫자)으로 시작하는
+            # 이름만 고르고, 정확히 1건인지 확인한다.
+            matches=("$GITHUB_WORKSPACE"/release-tarballs/apps-in-toss-"${pkg}"-[0-9]*.tgz)
+            if [ "${#matches[@]}" -ne 1 ] || [ ! -f "${matches[0]}" ]; then
+              echo "::error::${pkg} tarball이 정확히 1건이 아니다: ${matches[*]}"
+              exit 1
+            fi
+            tarball="${matches[0]}"
             asset_name="$(basename "$tarball")"
 
             # debugger는 런타임 의존성을 tarball에 번들한다. URL 설치(npx -p <URL>,

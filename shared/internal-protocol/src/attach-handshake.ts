@@ -20,14 +20,17 @@
  * compares it with its own. The device's package version rides along purely as
  * a human-readable label for the diagnostic and is never compared.
  *
- * Older devices: every `@apps-in-toss/debug-console` before the protocol-2 line
- * (<= 0.2.0) reports `p=1`, or no `p` at all (<= 0.1.5), and dials the relay
- * under the unversioned `/at/<code>/` prefix. Protocol 2 moved the prefix to
- * {@link relayAuthPathPrefix}, so such a device is recognised from its very first
- * request, before it reports anything: the relay refuses it (see
- * {@link RELAY_UPDATE_REQUIRED_CLOSE_CODE}) and says that an update is required.
- * There is no compatibility mode, and a device that reports nothing usable is
- * never assumed to be on any protocol.
+ * Older devices: every `@apps-in-toss/debug-console` (the package's name through
+ * 0.3.0; it continues as `@apps-in-toss/debugger-client` from 0.3.1) before the
+ * protocol-3 line reports `p=2` or lower, or no `p` at all (<= 0.1.5), and dials
+ * the relay under an older prefix: the unversioned `/at/<code>/` for protocol 1,
+ * `/v2/at/<code>/` for protocol 2. Protocol 3 is the rename release: the package
+ * name, the daemon's MCP server key and the prefix changed together, so a
+ * `debugger` 0.3.1 and a `debug-console` 0.3.0 (or the reverse pair) must never
+ * half-work. Such a device is recognised from its very first request, before it
+ * reports anything: the relay refuses it (see {@link RELAY_UPDATE_REQUIRED_CLOSE_CODE})
+ * and says that an update is required. There is no compatibility mode, and a
+ * device that reports nothing usable is never assumed to be on any protocol.
  *
  * Why a dedicated request rather than a query param on `target.js`: chii's
  * stock `target.js` derives its WebSocket endpoint from its own script `src`
@@ -59,14 +62,28 @@ export const ATTACH_HANDSHAKE_PROTOCOL_PARAM = 'p';
  * on an incompatible change to the contract clauses listed at the top of this
  * file. Never derive it from a package version.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
+
+/**
+ * Highest protocol spoken by the package before its rename to
+ * `@apps-in-toss/debugger-client` (it was `@apps-in-toss/debug-console` up to
+ * 0.3.0). A device at or below this (or one that sends no protocol at all) is
+ * the pre-rename package; a higher but mismatched protocol is a plain
+ * `debugger-client` / daemon version skew.
+ */
+export const LAST_PRE_RENAME_PROTOCOL = 2;
+
+/** Whether a device's protocol (`null` = none sent) is the pre-rename package's. */
+export function isPreRenameDeviceProtocol(protocol: number | null): boolean {
+  return protocol === null || protocol <= LAST_PRE_RENAME_PROTOCOL;
+}
 
 /**
  * Path prefix under which a device of `protocol` carries its relay auth code:
  * `<prefix>/<code>/target.js`, `<prefix>/<code>/ait-attach`,
  * `<prefix>/<code>/target/<id>`. Versioned on purpose: the unversioned
- * `/at/<code>/` form belongs to protocol 1 and is refused, so an older device
- * cannot attach by accident and is told to update.
+ * `/at/<code>/` form belongs to protocol 1 and `/v2/at/` to protocol 2; both are
+ * refused, so an older device cannot attach by accident and is told to update.
  */
 export function relayAuthPathPrefix(protocol: number = PROTOCOL_VERSION): string {
   return `/v${protocol}/at`;

@@ -1,5 +1,15 @@
 # @apps-in-toss/agent-plugin
 
+## 0.3.1
+
+### Patch Changes
+
+- 디버그 도구의 이름이 바뀌었다. 패키지 `@apps-in-toss/debug-console`은 `@apps-in-toss/debugger-client`, MCP 서버 키 `ait-devtools`는 `ait-debugger`(도구 이름 `mcp__ait-debugger__*`), 명령 `/ait:inject-debug-console`은 `/ait:inject-debugger-client`가 됐다. 디버거와 debugger-client는 0.3.1 이상을 함께 써야 하고, 0.3.0 이하와 섞으면 연결되지 않는다.
+- `setup-debugger`는 옛 `ait-devtools` 항목이나 옛 `@apps-in-toss/debug-console` 의존성을 "미설치"가 아니라 업그레이드 대상으로 본다. `references/upgrade-check.md`가 키, 의존성, 소스 import를 한꺼번에 새 이름과 0.3.1 주소로 옮기는 절차를 안내하고(동의를 받은 뒤 적용), 권한 규칙 `mcp__ait-devtools__*`도 옮기라고 알려 준다. `debug`·`test-on-device`·`launch`·`welcome`·`inject`도 옛 이름을 같은 방식으로 다룬다. 최소 버전은 두 패키지 모두 0.3.1이다.
+- `launch-scan.sh`의 `debug-console-bundle` 규칙이 `debugger-client-bundle`로 바뀌었고, 옛 이름 `@apps-in-toss/debug-console`의 `dependencies` 항목과 게이트 없는 import도 잡는다.
+- `debug` skill의 대시보드 안내가 세션별 데몬에 맞게 바뀌었다. 세션마다 relay, 터널, 대시보드가 따로 뜨므로 창을 여러 개 열어도 서로 막지 않고, 탭 제목 끝의 프로젝트 이름과 `get_debug_status`의 `otherSessions`로 세션을 구분한다. `debugger-test`는 데몬이 떠 있어도 멈추지 않는다.
+- `debug` skill의 `references/attach-flow.md`에서 없어진 상태(`blocked-entry`, `blocked-update-required`)를 뺐다.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -16,9 +16,9 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { rewriteAtPathPrefix } from '../chii-relay.js';
-import { buildRelayVerifyAuth } from '../debug-server.js';
 import { relayCodeSecret } from '../relay-code-secret.js';
 import {
+  buildRelayVerifyAuth,
   generateTotp,
   mintRelayCode,
   RELAY_CODE_STEP_SECONDS,
@@ -52,7 +52,7 @@ function fakeSocket() {
 }
 
 // ---------------------------------------------------------------------------
-// buildRelayVerifyAuth — returns undefined when secret is absent
+// buildRelayVerifyAuth — refuses everything when the secret is absent
 // ---------------------------------------------------------------------------
 
 describe('buildRelayVerifyAuth — no secret', () => {
@@ -60,8 +60,10 @@ describe('buildRelayVerifyAuth — no secret', () => {
     delete process.env.AIT_DEBUG_TOTP_SECRET;
   });
 
-  it('returns undefined when AIT_DEBUG_TOTP_SECRET is not set', () => {
-    expect(buildRelayVerifyAuth()).toBeUndefined();
+  it('refuses every request when AIT_DEBUG_TOTP_SECRET is not set (fail-closed)', () => {
+    const verify = buildRelayVerifyAuth();
+    expect(typeof verify).toBe('function');
+    expect(verify(fakeReq(`/client/id?target=t&at=${mintRelayCode()}`))).toBe(false);
   });
 });
 
@@ -368,7 +370,7 @@ describe('verifyAuth — path-prefix transport matrix', () => {
     expect(verifyWithRewrite('/target/abc?url=u&title=t').pass).toBe(false);
   });
 
-  it('query transport keeps working unchanged (back-compat, daemon client)', () => {
+  it('query transport (daemon client) keeps working unchanged', () => {
     const code = generateTotp(CODE_KEY);
     const result = verifyWithRewrite(`/client/id?target=t&at=${code}`);
     expect(result.pass).toBe(true);

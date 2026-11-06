@@ -14,7 +14,10 @@
  * relay-live / LIVE guard 전체가 positive-allowlist kill-switch로 대체됐다.
  */
 
-import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import {
+  isPreRenameDeviceProtocol,
+  type ProtocolVersionCheck,
+} from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
 import { UNTRUSTED_DATA_NOTE } from './envelope.js';
 
@@ -86,8 +89,8 @@ export function sanitizeRemoteText(text: unknown, max: number = REMOTE_TEXT_MAX_
  * @param reason      - 환경이 결정된 근거를 나타내는 파생 문자열
  *                      (예: `derived:kind=relay,liveIntent=true`).
  * @param hint        - 복구 안내 override. 런타임 swap이 불가능한 호출자(예:
- *                      dev-mode 서버 — 별도 프로세스라 `--mode=debug` 재시작이
- *                      실제로 필요하다)만 넘긴다. 생략하면 위 기본 hint.
+ *                      dev-mode 서버 — 별도 프로세스라 debug 데몬으로 갈아타야
+ *                      한다)만 넘긴다. 생략하면 위 기본 hint.
  */
 export function tierRejectionError(
   toolName: string,
@@ -107,9 +110,7 @@ export function tierRejectionError(
   const text =
     `${toolName}은 ${envLabel} 환경에서만 사용할 수 있습니다. ` +
     `현재 환경: ${currentLabel} (${reason}). ${effectiveHint}`;
-  // 하위 호환 — 기존 테스트가 기대하는 영문 패턴도 유지
-  const compat = `tool ${toolName} is available only in ${requiredEnv}. Current environment is ${currentEnv} (${reason}).`;
-  return mcpError(`${text}\n\n${compat}`);
+  return mcpError(text);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -208,11 +209,11 @@ export function pageCrashError(toolName?: string): McpErrorResult {
  *
  * call_sdk 호출 시 브리지가 없을 때. 같은 "브리지 부재"라도 다음 행동은
  * connection 종류에 따라 정반대다 (issue #360):
- *   - relay(`--target` 없는 intoss, env 3): dog-food 빌드가 아니다 → dog-food
+ *   - relay(intoss, env 3): dog-food 빌드가 아니다 → dog-food
  *     채널로 재배포 후 QR 재스캔.
- *   - local(`--target=local`, env 1 로컬 브라우저): 재배포가 아니라 dev 서버를
+ *   - local(`start_debug local-browser`, env 1 로컬 브라우저): 재배포가 아니라 dev 서버를
  *     `npm run dev`로 띄웠는지 + unplugin alias가 `@apps-in-toss/web-framework`를
- *     devtools mock으로 resolve하는지 확인. debug-console이 켜진 빌드면
+ *     devtools mock으로 resolve하는지 확인. debugger-client이 켜진 빌드면
  *     (`startDebugConsole()` 또는 `/auto`) attach 허용 뒤 `window.__sdkCall`이 자동 설치된다.
  *
  * `isLocal`이 생략되면 relay 안내(이전 동작)를 유지한다.
@@ -224,7 +225,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
       `${prefix}window.__sdkCall이 주입되지 않았습니다 (로컬 dev 브리지 부재). ` +
         'sdk-example을 `npm run dev`로 띄웠는지, 그리고 unplugin alias가 ' +
         '`@apps-in-toss/web-framework`를 devtools mock으로 resolve하는지 확인하세요. ' +
-        'debug-console을 `startDebugConsole()`(또는 `/auto`)로 켰다면 attach가 허용된 뒤 ' +
+        'debugger-client을 `startDebugConsole()`(또는 `/auto`)로 켰다면 attach가 허용된 뒤 ' +
         '`window.__sdkCall`이 자동 설치됩니다. `@apps-in-toss/web-framework`가 번들에 없으면 설치되지 않습니다.',
     );
   }
@@ -243,16 +244,16 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
 /* -------------------------------------------------------------------------- */
 
 /**
- * device(`@apps-in-toss/debug-console`)와 host(`@apps-in-toss/debugger`)의
+ * device(`@apps-in-toss/debugger-client`)와 host(`@apps-in-toss/debugger`)의
  * 프로토콜 버전(`PROTOCOL_VERSION`)이 어긋났을 때의 에러.
  *
  * 두 패키지는 독립 버전이라 패키지 버전은 호환 여부를 말해 주지 않는다. 비교 대상은
  * 계약 자체의 버전(정수)이다. 프로토콜이 다른 기기는 relay가 연결을 받지 않으므로(옛 기기는
  * `target.js` 자리에 업데이트 안내 막대가 뜬다), 이 에러는 "업데이트가 필요하다"를 알리는 것이다.
  *
- * 어느 쪽을 올려야 하는지는 프로토콜 번호의 대소로 정한다: 기기 쪽이 낮거나 번호가 없으면
- * debug-console, 높으면 debugger. 존재하지 않는 패키지 버전을 안내하지 않도록 목표 버전은 적지
- * 않고 각 패키지 README의 최신 릴리스 설치 명령을 가리킨다.
+ * 프로토콜 3은 이름 변경 릴리스다. 기기 쪽이 낮거나 번호가 없으면 이름이 바뀌기 전의
+ * `@apps-in-toss/debug-console`(0.3.0 이하)이므로, 새 이름과 0.3.1 이상을 직접 안내한다.
+ * 기기 쪽이 높으면 데몬을 올린다.
  *
  * SECRET-HANDLING: 숫자와 기기 패키지 버전 라벨만 싣는다. relay `wss://` URL·터널 호스트·
  * TOTP 코드는 이 메시지에 절대 들어가지 않는다.
@@ -263,15 +264,33 @@ export function protocolVersionMismatchError(check: ProtocolVersionCheck): McpEr
   const device = check.deviceProtocol === null ? '없음(옛 버전)' : String(check.deviceProtocol);
   const label = check.deviceVersion !== '' ? ` (패키지 ${check.deviceVersion})` : '';
   const deviceOlder = check.deviceProtocol === null || check.deviceProtocol < check.hostProtocol;
-  const action = deviceOlder
-    ? '미니앱의 @apps-in-toss/debug-console을 최신 릴리스로 올려 재배포하세요(설치 명령은 debug-console README 참고).'
-    : '데몬의 @apps-in-toss/debugger를 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).';
+  if (deviceOlder && isPreRenameDeviceProtocol(check.deviceProtocol)) {
+    return mcpError(
+      `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
+        `기기에 들어 있는 패키지${label}는 프로토콜 ${device}인 옛 @apps-in-toss/debug-console이고, ` +
+        `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
+        '0.3.1부터 두 패키지는 같은 프로토콜로만 연결되고, debug-console은 ' +
+        '@apps-in-toss/debugger-client로 이름이 바뀌었습니다. 이 기기는 연결하지 않았습니다. ' +
+        '미니앱에서 @apps-in-toss/debug-console을 지우고 @apps-in-toss/debugger-client 0.3.1 이상을 ' +
+        '설치해 재배포하세요(설치 명령은 debugger-client README 참고). ' +
+        '데몬은 @apps-in-toss/debugger 0.3.1 이상이어야 합니다.',
+    );
+  }
+  if (deviceOlder) {
+    return mcpError(
+      `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
+        `기기의 @apps-in-toss/debugger-client${label}은 프로토콜 ${device}, ` +
+        `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
+        '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
+        '미니앱의 @apps-in-toss/debugger-client를 최신 릴리스로 올려 재배포하세요(설치 명령은 debugger-client README 참고).',
+    );
+  }
   return mcpError(
     `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-      `기기의 @apps-in-toss/debug-console${label}은 프로토콜 ${device}, ` +
+      `기기의 @apps-in-toss/debugger-client${label}은 프로토콜 ${device}, ` +
       `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
       '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
-      action,
+      '데몬의 @apps-in-toss/debugger를 0.3.1 이상 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).',
   );
 }
 

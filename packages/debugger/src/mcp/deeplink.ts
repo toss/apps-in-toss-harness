@@ -100,7 +100,7 @@ function stripExisting(query: string, key: string): string {
 }
 
 /**
- * Splices `debug=1`, `relay=<wssUrl>`, and (optionally) `at=<totpCode>` into a
+ * Splices `debug=1`, `relay=<wssUrl>` and `at=<totpCode>` into a
  * scheme URL's query string, preserving everything else (scheme, authority,
  * path, hash, and the existing `_deploymentId` param). If any of the spliced
  * params is already present it is replaced so the helper is idempotent.
@@ -110,24 +110,24 @@ function stripExisting(query: string, key: string): string {
  *   of the gate); this helper does not invent one.
  * @param wssUrl - The live relay URL (`wss://…trycloudflare.com`) from the
  *   running debug MCP server's quick tunnel.
- * @param totpCode - Optional current relay auth code (32 hex characters). When provided, it
- *   is spliced as `at=<totpCode>`. Must be computed at call time — it rotates
- *   every 5 s. Pass `undefined` or omit when TOTP is disabled.
+ * @param totpCode - Current relay auth code (32 hex characters), spliced as
+ *   `at=<totpCode>`. Required: the relay refuses a link without a code. Must be
+ *   computed at call time — it rotates every 5 s.
  * @param runId - Optional run marker (`rid=<runId>`, see `relay-run-id.ts`). The page
- *   URL keeps it after debug-console has removed `relay=` and `at=`, so the daemon
+ *   URL keeps it after debugger-client has removed `relay=` and `at=`, so the daemon
  *   can still recognise a page that belongs to this tunnel.
  * @param sig - Optional signature of the relay origin and `at` code (see
  *   `relay-signing.ts`), spliced as `sig=<sig>`. It belongs to one `at` code, so a
  *   caller that mints a new code passes the signature made for that code.
- * @returns The same URL with `debug=1&relay=<encoded wssUrl>[&at=<totpCode>][&sig=<sig>][&rid=<runId>]`
+ * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&rid=<runId>]`
  *   appended.
  * @throws If `wssUrl` is not a `wss:` URL (the gate rejects anything else, so
- *   producing such a link would be a silent dead end).
+ *   producing such a link would be a silent dead end), or if `totpCode` is empty.
  */
 export function buildDeepLinkAttachUrl(
   schemeUrl: string,
   wssUrl: string,
-  totpCode?: string,
+  totpCode: string,
   runId?: string,
   sig?: string,
 ): string {
@@ -141,6 +141,10 @@ export function buildDeepLinkAttachUrl(
     throw new Error(`relay URL must use the wss: scheme, got ${relay.protocol}`);
   }
 
+  if (totpCode === '') {
+    throw new Error('attach code is required: the relay refuses a link without one');
+  }
+
   const hashIndex = schemeUrl.indexOf('#');
   const hash = hashIndex === -1 ? '' : schemeUrl.slice(hashIndex);
   const beforeHash = hashIndex === -1 ? schemeUrl : schemeUrl.slice(0, hashIndex);
@@ -152,13 +156,8 @@ export function buildDeepLinkAttachUrl(
   const appended: AppendParam[] = [
     ['debug', '1'],
     ['relay', wssUrl],
+    ['at', totpCode],
   ];
-  // Only splice `at=` when a code is provided (TOTP enabled). Omitting it when
-  // TOTP is disabled preserves backward compatibility with gate deployments
-  // that do not yet evaluate the `at` param.
-  if (totpCode !== undefined && totpCode !== '') {
-    appended.push(['at', totpCode]);
-  }
   if (sig !== undefined && sig !== '') {
     appended.push(['sig', sig]);
   }
@@ -166,9 +165,9 @@ export function buildDeepLinkAttachUrl(
     appended.push(['rid', runId]);
   }
 
-  // Always strip the `at` key from the existing query so a stale code from a
-  // previous run is removed even when the caller does not provide a fresh code.
-  query = stripExisting(query, 'at');
+  // Strip `sig` and `rid` from the existing query so a stale value from a
+  // previous run is removed even when the caller does not provide a fresh one.
+  // (`at` is always replaced below.)
   query = stripExisting(query, 'sig');
   query = stripExisting(query, 'rid');
 

@@ -12,7 +12,7 @@ Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a
 - `/ait:new` — scaffold a new mini-app
 - `/ait:plan` — ideate, draft a lightweight PRD, and plan SDK domains/permissions/terms before scaffolding
 - `/ait:design` — Build and fix screens — fixes hard-rule violations in code, grades quality, produces registration image assets (Figma optional)
-- `/ait:inject-devtools` / `/ait:inject-debug-console` — inject config into an existing project (debug-console is included only in debug builds you opt into with `AIT_DEBUG_BUILD=1`, never in the default release build)
+- `/ait:inject-devtools` / `/ait:inject-debugger-client` — inject config into an existing project (debugger-client is included only in debug builds you opt into with `AIT_DEBUG_BUILD=1`, never in the default release build)
 - `/ait:setup-debugger` — wire the on-device debug MCP server into the project's `.mcp.json`
 - `/ait:debug` — live-state debugging guidance (browser devtools panel · `window.__ait` · on-device CDP relay)
 - `/ait:test-on-device` — upload the bundle to the console and check it in the real Toss app (build → upload → confirm compile → hand over the link). Builds the release variant by default; a debug build is uploaded only when you are debugging, and that deployment is recorded in `.ait-debug-deployments.json` so it is excluded from review submission

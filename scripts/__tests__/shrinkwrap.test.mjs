@@ -73,12 +73,12 @@ describe('debugger npm-shrinkwrap.json', () => {
 });
 
 describe('zero runtime dependency packages', () => {
-  const dc = { name: '@apps-in-toss/debug-console', manifest: {} };
-  test('debug-console in this repo has none', () => {
-    const real = JSON.parse(fs.readFileSync(path.join(root, 'packages/debug-console/package.json'), 'utf8'));
+  const dc = { name: '@apps-in-toss/debugger-client', manifest: {} };
+  test('debugger-client in this repo has none', () => {
+    const real = JSON.parse(fs.readFileSync(path.join(root, 'packages/debugger-client/package.json'), 'utf8'));
     assert.deepEqual(findRuntimeDependencyViolations([{ name: real.name, manifest: real }]), []);
   });
-  test('flags a dependency added to debug-console', () => {
+  test('flags a dependency added to debugger-client', () => {
     const v = findRuntimeDependencyViolations([{ ...dc, manifest: { dependencies: { left: '1.0.0' } } }]);
     assert.equal(v.length, 1);
   });

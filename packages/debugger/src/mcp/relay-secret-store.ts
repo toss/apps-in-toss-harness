@@ -79,6 +79,13 @@ export interface RelaySecretFs extends SecretFileStatFs {
   chmodSync(path: string, mode: number): void;
   existsSync(path: string): boolean;
   appendFileSync(path: string, data: string): void;
+  /**
+   * Optional. With `linkSync` and `unlinkSync`, a first mint publishes the key
+   * file complete or not at all (see {@link createSecretExclusive}). Without them
+   * it falls back to an exclusive create.
+   */
+  linkSync?(existingPath: string, newPath: string): void;
+  unlinkSync?(path: string): void;
 }
 
 /**
@@ -102,10 +109,8 @@ export interface RelaySecretDeps {
   /**
    * Project root (typically Vite `server.config.root`). The `.ait_relay` file is
    * resolved against the nearest `package.json` directory at or above this path.
-   * When omitted, the current working directory is used as the start point —
-   * retained for back-compat/tests; callers normally pass it.
    */
-  projectRoot?: string;
+  projectRoot: string;
   /** Process environment to read from and inject into. Defaults to process.env. */
   env?: NodeJS.ProcessEnv;
   /** Cryptographically secure random bytes. Defaults to node:crypto randomBytes. */
@@ -114,8 +119,6 @@ export interface RelaySecretDeps {
   fs?: RelaySecretFs;
   /** existsSync used to resolve the nearest package.json directory. Defaults to node:fs. */
   existsSync?: (path: string) => boolean;
-  /** Current working directory resolver (used only when `projectRoot` is omitted). */
-  cwd?: () => string;
   /** Log function for first-mint announcement. Defaults to process.stderr.write. */
   log?: (msg: string) => void;
   /** Clock for the creation time written next to a new key. Defaults to Date.now. */
@@ -270,17 +273,16 @@ export function relaySecretFilePath(
  *
  * @param deps - Optional dependency overrides for testing.
  */
-export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
+export async function ensureRelaySecret(deps: RelaySecretDeps): Promise<void> {
   const {
     projectRoot,
     env = process.env,
     randomBytes: randomBytesFn,
     fs: fsDep,
     existsSync: existsSyncDep,
-    cwd: cwdFn,
     log,
     now,
-  } = deps ?? {};
+  } = deps;
 
   const logFn: (msg: string) => void = log ?? ((msg: string) => process.stderr.write(msg));
   const nowFn = now ?? Date.now;
@@ -299,7 +301,7 @@ export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
     // still early-return after the (possibly-emitted) warning.
     const fsEarly: RelaySecretFs = fsDep ?? (await import('node:fs'));
     const existsSyncEarly: (path: string) => boolean = existsSyncDep ?? fsEarly.existsSync;
-    const startEarly = projectRoot ?? (cwdFn ?? (() => process.cwd()))();
+    const startEarly = projectRoot;
     const secretPathEarly = relaySecretFilePath(startEarly, existsSyncEarly);
     warnIfEnvDiffersFromFile(
       env.AIT_DEBUG_TOTP_SECRET,
@@ -316,7 +318,7 @@ export async function ensureRelaySecret(deps?: RelaySecretDeps): Promise<void> {
   const fs: RelaySecretFs = fsDep ?? (await import('node:fs'));
   const existsSyncFn: (path: string) => boolean = existsSyncDep ?? fs.existsSync;
 
-  const start = projectRoot ?? (cwdFn ?? (() => process.cwd()))();
+  const start = projectRoot;
   const secretPath = relaySecretFilePath(start, existsSyncFn);
 
   // 2. Persist file exists — read and inject (silent reload).
@@ -363,19 +365,16 @@ export interface RelaySecretRotation {
  * SECRET-HANDLING: the secrets are returned to the caller in memory and never
  * logged, put in an error, or written anywhere but the key file.
  */
-export async function rotateRelaySecret(
-  deps?: RelaySecretRotateDeps,
-): Promise<RelaySecretRotation> {
+export async function rotateRelaySecret(deps: RelaySecretRotateDeps): Promise<RelaySecretRotation> {
   const {
     projectRoot,
     env = process.env,
     randomBytes: randomBytesFn,
     fs: fsDep,
     existsSync: existsSyncDep,
-    cwd: cwdFn,
     log,
     now,
-  } = deps ?? {};
+  } = deps;
   const logFn: (msg: string) => void = log ?? ((msg: string) => process.stderr.write(msg));
   const nowFn = now ?? Date.now;
   const { isValidRelayAuthSecret } = await import('./totp.js');
@@ -383,7 +382,7 @@ export async function rotateRelaySecret(
   const fs: RelaySecretRotateFs = fsDep ?? (await import('node:fs'));
   const existsSyncFn: (path: string) => boolean = existsSyncDep ?? fs.existsSync;
 
-  const start = projectRoot ?? (cwdFn ?? (() => process.cwd()))();
+  const start = projectRoot;
   const secretPath = relaySecretFilePath(start, existsSyncFn);
 
   let previousSecret: string | null = null;
@@ -763,8 +762,13 @@ function ensureGitignoreEntries(
   }
 }
 
-/** What a project ignores for the relay key: the secret and its dated sidecar. */
-const SECRET_IGNORE_NAMES = [RELAY_SECRET_FILE_NAME, RELAY_KEY_META_FILE_NAME] as const;
+/** What a project ignores for the relay key: the secret, its dated sidecar and write temp files. */
+const SECRET_IGNORE_NAMES = [
+  RELAY_SECRET_FILE_NAME,
+  RELAY_KEY_META_FILE_NAME,
+  // Temp files of an interrupted write (`.ait_relay.<pid>.<tag>.tmp`) hold the full secret.
+  `${RELAY_SECRET_FILE_NAME}.*.tmp`,
+] as const;
 
 type AtomicFs = RelaySecretFs & Partial<Pick<RelaySecretRotateFs, 'renameSync' | 'unlinkSync'>>;
 
@@ -852,6 +856,44 @@ async function readAndInject(
   ensureGitignoreEntries(dirname(secretPath), fs, logFn);
 }
 
+/**
+ * Creates the key file only if none exists, and never lets a reader see it
+ * empty or half written. Two sessions of one project can mint at the same time:
+ * with a plain exclusive create the loser's reader could open the winner's file
+ * between its create and its write, find it empty, call it corrupt and replace
+ * it with a different key. Here the complete file is written to a private temp
+ * file and hard-linked into place; the link fails with EEXIST instead of
+ * replacing, and the caller then reads the winner's key. A filesystem without
+ * hard links (or an injected fs without `linkSync`) falls back to an exclusive
+ * create. Throws EEXIST when the key file already exists.
+ */
+function createSecretExclusive(fs: RelaySecretFs, path: string, secret: string, tag: string): void {
+  if (fs.linkSync === undefined || fs.unlinkSync === undefined) {
+    fs.writeFileSync(path, secret, { mode: 0o600, flag: 'wx' });
+    fs.chmodSync(path, 0o600);
+    return;
+  }
+  const tmp = `${path}.${process.pid}.${tag}.tmp`;
+  try {
+    fs.writeFileSync(tmp, secret, { mode: 0o600, flag: 'wx' });
+    fs.chmodSync(tmp, 0o600);
+    try {
+      fs.linkSync(tmp, path);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') throw err;
+      // No hard links on this filesystem: exclusive create instead.
+      fs.writeFileSync(path, secret, { mode: 0o600, flag: 'wx' });
+      fs.chmodSync(path, 0o600);
+    }
+  } finally {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      // Nothing to clean up, or nothing we can do about it.
+    }
+  }
+}
+
 async function mintAndPersist(
   secretPath: string,
   fs: RelaySecretFs,
@@ -878,11 +920,14 @@ async function mintAndPersist(
   // directory is created. `O_EXCL` (flag 'wx') makes the create exclusive so a
   // concurrent process cannot be clobbered; on EEXIST we read the winner's value.
   // (When re-minting over a corrupt file we must overwrite, so use 'w'.)
-  const flag = overwrite ? 'w' : 'wx';
   try {
-    fs.writeFileSync(secretPath, secret, { mode: 0o600, flag });
-    // Belt-and-suspenders: apply chmod after write in case umask relaxed the mode.
-    fs.chmodSync(secretPath, 0o600);
+    if (overwrite) {
+      fs.writeFileSync(secretPath, secret, { mode: 0o600, flag: 'w' });
+      // Belt-and-suspenders: apply chmod after write in case umask relaxed the mode.
+      fs.chmodSync(secretPath, 0o600);
+    } else {
+      createSecretExclusive(fs, secretPath, secret, rb(4).toString('hex'));
+    }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
       // Race: another process already wrote the file — read their value.

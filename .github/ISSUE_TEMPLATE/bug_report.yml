@@ -1,5 +1,5 @@
 name: "🐛 버그 리포트"
-description: harness(ait 플러그인·debugger·debug-console) 사용 중 발견한 버그를 신고합니다.
+description: harness(ait 플러그인·debugger·debugger-client) 사용 중 발견한 버그를 신고합니다.
 title: "[Bug] "
 labels: ["bug"]
 body:
@@ -103,7 +103,7 @@ body:
         - /ait:design
         - /ait:setup-debugger
         - /ait:debug
-        - /ait:inject-debug-console
+        - /ait:inject-debugger-client
         - /ait:inject-devtools
         - 특정 명령과 무관 / 설치(marketplace add·install) 단계
         - 잘 모르겠음
@@ -136,11 +136,11 @@ body:
       label: 소관 추정
       description: |
         문제가 어느 쪽에 가까워 보이는지 짐작을 알려 주세요(정확하지 않아도 괜찮습니다) — triage에 도움이 됩니다.
-        - **harness**: `ait` 플러그인/skill/명령 자체(agent-plugin·debugger·debug-console)의 동작이 이상함
+        - **harness**: `ait` 플러그인/skill/명령 자체(agent-plugin·debugger·debugger-client)의 동작이 이상함
         - **콘솔 MCP GW**: 앱 등록·번들 업로드·컴파일·상태 조회(`ait-console` MCP 서버) 관련 오류
         - **SDK(web-framework)**: 실기기/실 SDK에서의 API 동작 — harness 밖 `@apps-in-toss/web-framework` 자체 이슈일 가능성
       options:
-        - harness (ait 플러그인 / skill / debugger / debug-console)
+        - harness (ait 플러그인 / skill / debugger / debugger-client)
         - 콘솔 MCP GW (앱 등록 / 업로드 / 컴파일 / 상태 조회)
         - SDK (web-framework 런타임 동작)
         - 잘 모르겠음

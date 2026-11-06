@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { ChiiCdpConnection, isRelayDisconnectMessage } from '../chii-connection.js';
 import { generateTotp, RELAY_CODE_STEP_SECONDS } from '../totp.js';
+import { TEST_RELAY_SECRET } from './relay-test-auth.js';
 
 // ---- Fake relay helpers ----------------------------------------------------
 
@@ -110,6 +111,7 @@ describe('ChiiCdpConnection — per-command timeout', () => {
   it('rejects with a timeout error when the relay never replies', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 100, // short timeout for test speed
     });
@@ -132,6 +134,7 @@ describe('ChiiCdpConnection — per-command timeout', () => {
   it('does NOT timeout when the relay replies in time', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 500,
     });
@@ -169,6 +172,7 @@ describe('ChiiCdpConnection — per-command timeout', () => {
   it('cleans up the pending entry after timeout (no memory leak)', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 80,
     });
@@ -199,6 +203,7 @@ describe('ChiiCdpConnection — per-call timeout override (devtools#747)', () =>
     // Default watchdog is short (100ms); a per-call override should let a
     // command that would otherwise time out at 100ms survive well past it.
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 100,
     });
@@ -241,6 +246,7 @@ describe('ChiiCdpConnection — per-call timeout override (devtools#747)', () =>
   it('a call WITHOUT opts.timeoutMs still uses the connection default (30s/configured)', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 100, // short "default" for test speed — stands in for 30s
     });
@@ -261,6 +267,7 @@ describe('ChiiCdpConnection — per-call timeout override (devtools#747)', () =>
   it('a non-finite opts.timeoutMs (e.g. Infinity) falls back to the connection default rather than misbehaving', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 100,
     });
@@ -289,6 +296,7 @@ describe('ChiiCdpConnection — WebSocket close rejects pending', () => {
   it('rejects all pending commands when the relay closes the socket', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 10_000,
     });
@@ -313,6 +321,7 @@ describe('ChiiCdpConnection — WebSocket close rejects pending', () => {
   it('names a close 4401 as a TOTP auth failure instead of a generic drop (issue #478)', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 10_000,
     });
@@ -336,6 +345,7 @@ describe('ChiiCdpConnection — WebSocket close rejects pending', () => {
   it('subsequent sendCommand fails fast after disconnect (no hang)', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 10_000,
     });
@@ -361,6 +371,7 @@ describe('ChiiCdpConnection — close() rejects pending', () => {
   it('rejects in-flight commands when close() is called', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
       relayBaseUrl: relay.baseUrl,
       commandTimeoutMs: 10_000,
     });
@@ -463,7 +474,7 @@ async function createFakeRelayWithUpgradeCapture(): Promise<FakeRelayWithUpgrade
 const TOTP_TEST_SECRET = 'deadbeef'.repeat(8); // 64 hex chars = 32 bytes
 
 describe('ChiiCdpConnection — TOTP at= in client WS URL', () => {
-  it('appends &at=<code> to the client WS URL when totpSecret is set', async () => {
+  it('appends &at=<code> to the client WS URL', async () => {
     const relay = await createFakeRelayWithUpgradeCapture();
     const conn = new ChiiCdpConnection({
       relayBaseUrl: relay.baseUrl,
@@ -501,28 +512,8 @@ describe('ChiiCdpConnection — TOTP at= in client WS URL', () => {
       await relay.close();
     }
   });
-
-  it('does NOT append &at= to the client WS URL when totpSecret is absent', async () => {
-    const relay = await createFakeRelayWithUpgradeCapture();
-    const conn = new ChiiCdpConnection({
-      relayBaseUrl: relay.baseUrl,
-      // totpSecret intentionally omitted
-    });
-
-    try {
-      await conn.enableDomains();
-
-      const clientUpgradeUrl = relay.upgradeUrls.find((u) => u.includes('/client/'));
-      expect(clientUpgradeUrl).toBeDefined();
-
-      const params = new URLSearchParams(clientUpgradeUrl!.split('?')[1] ?? '');
-      expect(params.has('at')).toBe(false);
-    } finally {
-      conn.close();
-      await relay.close();
-    }
-  });
 });
+
 describe('isRelayDisconnectMessage (devtools#731)', () => {
   it('matches the ws close handler message ("relay WebSocket 연결이 끊겼습니다")', () => {
     expect(isRelayDisconnectMessage('relay WebSocket 연결이 끊겼습니다')).toBe(true);
@@ -551,7 +542,11 @@ describe('isRelayDisconnectMessage (devtools#731)', () => {
 describe('ChiiCdpConnection — remote CDP error text is sanitized', () => {
   it('folds newlines/control chars and caps the length of error.message', async () => {
     const relay = await createFakeRelay();
-    const conn = new ChiiCdpConnection({ relayBaseUrl: relay.baseUrl, commandTimeoutMs: 10_000 });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: relay.baseUrl,
+      commandTimeoutMs: 10_000,
+    });
     try {
       await conn.enableDomains();
       await new Promise<void>((r) => setTimeout(r, 20));

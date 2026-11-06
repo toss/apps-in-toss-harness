@@ -17,7 +17,7 @@
 **attach까지 한 번에 하려면 `start_attach`**, 환경만 전환하고 싶으면 `start_debug`를 쓴다.
 `start_attach`는 `start_debug`의 mode 전환 동작을 흡수해 편의로 제공한다 — 이미 그 모드면 전환을 생략하고 바로 attach 경로를 발급한다. `start_debug`는 attach 없이 환경만 전환하는 단독 용도로 MCP 데몬(`@apps-in-toss/debugger`)에 계속 존재한다.
 
-`ait-devtools` 데몬은 세션에 로드되면 계속 떠 있고, 환경 진입은 **서버 재구동 없이** MCP 도구로
+`ait-debugger` 데몬은 세션에 로드되면 계속 떠 있고, 환경 진입은 **서버 재구동 없이** MCP 도구로
 런타임에 결정한다. 프로젝트 `.mcp.json`이 등록하는 기본
 데몬(`npx -y -p <Release tarball URL> debugger`, `/ait:setup-debugger`가 배선)은 내부적으로 dual-connection 라우터로
 동작하므로, **환경 1·3 두 mode를 한 데몬에서 warm swap으로 오갈 수 있다**
@@ -30,8 +30,8 @@
 한 호출이 relay 패밀리를 lazy-boot하고, deep-link에 `?debug=1&relay=<wss://…>`을
 splice해 QR을 발급한다.
 
-전제는 두 가지뿐이다: (1) candidate 번들에 `@apps-in-toss/debug-console`이
-들어가 있을 것(`/ait:inject-debug-console`이 `__DEBUG_BUILD__` 게이트를 배선하고,
+전제는 두 가지뿐이다: (1) candidate 번들에 `@apps-in-toss/debugger-client`이
+들어가 있을 것(`/ait:inject-debugger-client`이 `__DEBUG_BUILD__` 게이트를 배선하고,
 `AIT_DEBUG_BUILD=1` 빌드가 그 값을 `true`로 만든다), (2) 그 candidate의
 scheme URL(SKILL.md 5-B에서 빌드 → console MCP로 얻는다).
 

@@ -44,8 +44,8 @@ describe('protocol constants', () => {
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
   });
 
-  it('is protocol 2 and has no legacy default', async () => {
-    expect(PROTOCOL_VERSION).toBe(2);
+  it('is protocol 3 and has no legacy default', async () => {
+    expect(PROTOCOL_VERSION).toBe(3);
     const mod = await import('../attach-handshake.js');
     expect('LEGACY_DEVICE_PROTOCOL_VERSION' in mod).toBe(false);
   });

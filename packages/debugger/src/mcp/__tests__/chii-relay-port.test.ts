@@ -33,6 +33,7 @@ vi.mock('chii', () => ({
 // resolve with the actual bound port.
 
 import { startChiiRelay } from '../chii-relay.js';
+import { testVerifyAuth } from './relay-test-auth.js';
 
 // ---------------------------------------------------------------------------
 // port 0 → OS-assigned port
@@ -40,7 +41,7 @@ import { startChiiRelay } from '../chii-relay.js';
 
 describe('startChiiRelay — port 0 (OS-assigned)', () => {
   it('returns a port greater than 0 when port 0 is requested', async () => {
-    const relay = await startChiiRelay({ port: 0 });
+    const relay = await startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 });
     try {
       expect(relay.port).toBeGreaterThan(0);
     } finally {
@@ -49,7 +50,7 @@ describe('startChiiRelay — port 0 (OS-assigned)', () => {
   });
 
   it('baseUrl contains the actual bound port (not 0)', async () => {
-    const relay = await startChiiRelay({ port: 0 });
+    const relay = await startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 });
     try {
       expect(relay.baseUrl).toBe(`http://127.0.0.1:${relay.port}`);
       expect(relay.baseUrl).not.toContain(':0');
@@ -59,7 +60,7 @@ describe('startChiiRelay — port 0 (OS-assigned)', () => {
   });
 
   it('uses default port 0 when no options are passed', async () => {
-    const relay = await startChiiRelay();
+    const relay = await startChiiRelay({ verifyAuth: testVerifyAuth() });
     try {
       expect(relay.port).toBeGreaterThan(0);
       expect(relay.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d{2,5}$/);
@@ -76,8 +77,8 @@ describe('startChiiRelay — port 0 (OS-assigned)', () => {
 describe('startChiiRelay — two concurrent port-0 relays', () => {
   it('assigns different ports to two simultaneous relays', async () => {
     const [relayA, relayB] = await Promise.all([
-      startChiiRelay({ port: 0 }),
-      startChiiRelay({ port: 0 }),
+      startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 }),
+      startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 }),
     ]);
     try {
       expect(relayA.port).toBeGreaterThan(0);
@@ -90,8 +91,8 @@ describe('startChiiRelay — two concurrent port-0 relays', () => {
 
   it('both relays are listening (close() resolves without error)', async () => {
     const [relayA, relayB] = await Promise.all([
-      startChiiRelay({ port: 0 }),
-      startChiiRelay({ port: 0 }),
+      startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 }),
+      startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 }),
     ]);
     // If either relay is not actually listening, close() would error or hang.
     await expect(Promise.all([relayA.close(), relayB.close()])).resolves.not.toThrow();
@@ -102,18 +103,18 @@ describe('startChiiRelay — two concurrent port-0 relays', () => {
 // Backwards compatibility: explicit port is honoured
 // ---------------------------------------------------------------------------
 
-describe('startChiiRelay — explicit port (backwards-compatible)', () => {
+describe('startChiiRelay — explicit port', () => {
   it('binds to the requested port when an explicit non-zero port is given', async () => {
     // Use a high ephemeral port unlikely to be in use. If it happens to be
     // occupied the test fails with EADDRINUSE — acceptable; this is deterministic
     // behaviour verification, not flakiness testing.
-    const relay = await startChiiRelay({ port: 0 }); // grab a free port first
+    const relay = await startChiiRelay({ verifyAuth: testVerifyAuth(), port: 0 }); // grab a free port first
     const freePort = relay.port;
     await relay.close();
 
     // Now use that freed port explicitly (best-effort; another process could
     // grab it between close and listen, but this is rare in CI).
-    const relay2 = await startChiiRelay({ port: freePort });
+    const relay2 = await startChiiRelay({ verifyAuth: testVerifyAuth(), port: freePort });
     try {
       expect(relay2.port).toBe(freePort);
       expect(relay2.baseUrl).toBe(`http://127.0.0.1:${freePort}`);

@@ -2,8 +2,7 @@
  * Unit tests for `buildAttachUrl` in tools.ts.
  *
  * Covers:
- *   - TOTP disabled (no secret): `attachUrl` has no `at=`, no `totp` field.
- *   - TOTP enabled (secret provided): `attachUrl` contains `at=<code>`,
+ *   - TOTP (secret provided): `attachUrl` contains `at=<code>`,
  *     `totp.enabled`, `totp.ttlSeconds`, and `totp.expiresAt` are set.
  *   - Tunnel-down path: throws with a clear message.
  *
@@ -35,46 +34,30 @@ const SCHEME_URL = 'intoss-private://aitc-sdk-example?_deploymentId=019e3b40-uui
 
 describe('buildAttachUrl — tunnel down', () => {
   it('throws when tunnel is not up', () => {
-    expect(() => buildAttachUrl(SCHEME_URL, DOWN_TUNNEL)).toThrow(/tunnel-down/);
+    expect(() => buildAttachUrl(SCHEME_URL, DOWN_TUNNEL, DUMMY_SECRET)).toThrow(/tunnel-down/);
   });
 
   it('throws when tunnel.wssUrl is null even if up=true', () => {
     const weirdTunnel: TunnelStatus = { up: true, wssUrl: null };
-    expect(() => buildAttachUrl(SCHEME_URL, weirdTunnel)).toThrow(/tunnel-down/);
+    expect(() => buildAttachUrl(SCHEME_URL, weirdTunnel, DUMMY_SECRET)).toThrow(/tunnel-down/);
   });
 });
 
-// ---------------------------------------------------------------------------
-// TOTP disabled (no secret)
-// ---------------------------------------------------------------------------
-
-describe('buildAttachUrl — TOTP disabled', () => {
-  it('returns attachUrl with debug=1 and relay spliced, no at= param', () => {
-    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL);
-    expect(result.attachUrl).toContain('debug=1');
-    expect(result.attachUrl).toContain('relay=');
-    expect(result.attachUrl).not.toContain('at=');
-  });
-
-  it('does not include a totp field', () => {
-    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL);
-    expect(result.totp).toBeUndefined();
-  });
-
+describe('buildAttachUrl — relay URL', () => {
   it('returns relayUrl equal to the tunnel wssUrl', () => {
-    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL);
+    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, DUMMY_SECRET);
     expect(result.relayUrl).toBe(LIVE_TUNNEL.wssUrl);
   });
 });
 
 // ---------------------------------------------------------------------------
-// TOTP enabled (secret provided)
+// Secret and code
 // ---------------------------------------------------------------------------
 
-describe('buildAttachUrl — TOTP enabled', () => {
+describe('buildAttachUrl — attach code', () => {
   it('splices at=<code> into attachUrl when totpSecret is provided', () => {
     const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, DUMMY_SECRET);
-    // The `at=` param must be present and be a 6-digit string.
+    // The `at=` param must be present and be a 32-hex string.
     const match = result.attachUrl.match(/[?&]at=([0-9a-f]{32})(&|$)/);
     expect(match).not.toBeNull();
   });
@@ -122,14 +105,12 @@ describe('buildAttachUrl — TOTP enabled', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Empty / blank secret — treated as TOTP disabled
+// Empty secret — there is no code-less link
 // ---------------------------------------------------------------------------
 
 describe('buildAttachUrl — empty totpSecret', () => {
-  it('treats empty string as no secret (no at= splice, no totp field)', () => {
-    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, '');
-    expect(result.attachUrl).not.toContain('at=');
-    expect(result.totp).toBeUndefined();
+  it('throws instead of building a link without a code', () => {
+    expect(() => buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, '')).toThrow(/secret/);
   });
 });
 
@@ -140,12 +121,12 @@ describe('buildAttachUrl — empty totpSecret', () => {
 describe('buildAttachUrl — authority warning', () => {
   it('returns authorityWarning for a suspicious scheme host', () => {
     const suspiciousUrl = 'intoss-private://web?_deploymentId=x';
-    const result = buildAttachUrl(suspiciousUrl, LIVE_TUNNEL);
+    const result = buildAttachUrl(suspiciousUrl, LIVE_TUNNEL, DUMMY_SECRET);
     expect(result.authorityWarning).toBeTruthy();
   });
 
   it('does not set authorityWarning for a well-formed URL', () => {
-    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL);
+    const result = buildAttachUrl(SCHEME_URL, LIVE_TUNNEL, DUMMY_SECRET);
     expect(result.authorityWarning).toBeUndefined();
   });
 });

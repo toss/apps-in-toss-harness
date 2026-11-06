@@ -83,9 +83,13 @@ describe('dashboard attach link after a tunnel reissue', () => {
   it('is rebuilt from the tunnel address now in use', () => {
     process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
     try {
-      const before = decodeURIComponent(rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS }));
+      const before = decodeURIComponent(
+        rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS }) ?? '',
+      );
       expect(before).toContain(`relay=${OLD_WSS}`);
-      const after = decodeURIComponent(rebuildAttachUrl(parts, { up: true, wssUrl: NEW_WSS }));
+      const after = decodeURIComponent(
+        rebuildAttachUrl(parts, { up: true, wssUrl: NEW_WSS }) ?? '',
+      );
       expect(after).toContain(`relay=${NEW_WSS}`);
       expect(after).not.toContain(OLD_WSS);
     } finally {
@@ -170,7 +174,7 @@ describe('sig follows the at code on every mint path', () => {
     process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
     try {
       const url = rebuildAttachUrl(parts, { up: true, wssUrl: NEW_WSS });
-      expect(await pairIsValid(url, NEW_WSS)).toBe(true);
+      expect(await pairIsValid(url ?? '', NEW_WSS)).toBe(true);
     } finally {
       delete process.env.AIT_DEBUG_TOTP_SECRET;
     }
@@ -182,13 +186,13 @@ describe('sig follows the at code on every mint path', () => {
     expect(await pairIsValid(result.attachUrl, OLD_WSS)).toBe(true);
   });
 
-  it('no secret means no code and no sig', () => {
+  it('no secret means no link at all, not a link without a code', () => {
     const deps = {
       getTunnelStatus: () => ({ up: true, wssUrl: OLD_WSS }),
       getTotpSecret: () => undefined,
     };
-    const url = mintAttachUrl(deps as unknown as AttachDeps, parts);
-    expect(url).not.toContain('sig=');
-    expect(url).not.toContain('at=');
+    expect(() => mintAttachUrl(deps as unknown as AttachDeps, parts)).toThrow(/secret/);
+    delete process.env.AIT_DEBUG_TOTP_SECRET;
+    expect(rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS })).toBeNull();
   });
 });

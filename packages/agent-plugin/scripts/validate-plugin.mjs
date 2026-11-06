@@ -391,7 +391,7 @@ function checkA1(root) {
 
   // 병합 skill: 여러 command stub이 한 skill로 위임하는 것은 의도된 many-to-one 이다
   // (skill 통합 17→14, issue #273 — 병합 자체는 command 표면 무변경. agent-plugin#280 은
-  // 병합이 아니라 순수 추가라 command 표면이 17→18 로 늘었다 — inject 에 debug-console
+  // 병합이 아니라 순수 추가라 command 표면이 17→18 로 늘었다 — inject 에 debugger-client
   // facet 신설, EXPECTED_CMD_TO_SKILL 참조).
   // 어떤 command 가 어떤 skill 로 위임하는지는 아래 EXPECTED_CMD_TO_SKILL 스냅샷이
   // 권위 있게 못박으므로, "skill 이 2개 이상 command 에서 참조됨"은 그 자체로는
@@ -1203,8 +1203,8 @@ function extractIconComponentBlock(tsxSrc, componentName) {
 // 이후 inject skill 에 3번째 facet(tossface — Tossface 이모지 서체 CDN/번들 배선)이
 // 추가되며 대응 stub 이 신설돼 3→4 command 가 됐다(skill 수는 무변). 병합 1건에
 // facet 이 하나 더 붙는다(command 표면은 무변경):
-//   ait-inject-devtools      → inject  (inject-devtools+inject-debug-console+
-//   ait-inject-debug-console → inject   inject-tossface 3-facet 병합: 전부 기존
+//   ait-inject-devtools      → inject  (inject-devtools+inject-debugger-client+
+//   ait-inject-debugger-client → inject   inject-tossface 3-facet 병합: 전부 기존
 //   ait-inject-tossface      → inject   프로젝트 빌드/자산 셋업 패치 — 병합 skill
 //                                        이름은 중립적 `inject`)
 // 병합 skill 의 secondary-facet command stub (primary 는 skill 과 같은 verb — inject
@@ -1213,13 +1213,13 @@ function extractIconComponentBlock(tsxSrc, componentName) {
 // 하나만 가지므로 secondary facet 의 hint 와는 본질적으로 어긋나기 때문.
 const MERGED_SECONDARY_FACET_CMDS = new Set([
   'inject-devtools.md', // → inject
-  'inject-debug-console.md', // → inject
+  'inject-debugger-client.md', // → inject
   'inject-tossface.md', // → inject
 ]);
 
 /** @type {Record<string, string>} */
 const EXPECTED_CMD_TO_SKILL = {
-  'inject-debug-console.md': 'inject',
+  'inject-debugger-client.md': 'inject',
   'inject-devtools.md': 'inject',
   'inject-tossface.md': 'inject',
   'new.md': 'new-miniapp',
@@ -2986,7 +2986,7 @@ function checkA10(root) {
 // 때, 패키지를 -p/--package 로 명시하지 않은 "bare" 형태(`npx [-y] <pkg> <bin>`)는
 // npm 이 어느 실행파일을 돌릴지 추론하지 못해 "could not determine executable to
 // run" 으로 실패할 수 있다 — 패키지가 bin 을 여러 개 게시하거나 기본 bin 이름이
-// 패키지명과 다를 때. 올바른 형태는 `npx [-y] -p <pkg> <bin>`. (#248: ait-devtools
+// 패키지명과 다를 때. 올바른 형태는 `npx [-y] -p <pkg> <bin>`. (#248: ait-debugger
 // 가 bin 2개를 게시해 bare 형태가 install 시 MCP 등록을 silently 깨뜨린 갭을 닫는다.
 // A1–A5 는 mcpServers 를 전혀 검사하지 않았다.)
 //

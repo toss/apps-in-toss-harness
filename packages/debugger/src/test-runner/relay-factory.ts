@@ -43,7 +43,7 @@ import type { RelayConnectionFactory } from './pool.js';
 // NOTE: every value import below is a DYNAMIC import inside `open()`. This module
 // keeps ONLY type-level static imports so that re-exporting it from the
 // `@apps-in-toss/debugger/test-runner` barrel (config.ts) does NOT statically drag the
-// heavy MCP graph (cell.ts → attach-orchestrator.ts → tools.ts → server-lock,
+// heavy MCP graph (cell.ts → attach-orchestrator.ts → tools.ts → session-registry,
 // plus chii/cloudflared via debug-server) onto that Node-config entry.
 
 /** Options for {@link createRelayConnectionFactory}. */
@@ -192,9 +192,8 @@ export function createRelayConnectionFactory(
       );
       const { injectDebugIndicator, injectGlobals } = await import('./cell.js');
       const { loadRelaySecretReadOnly } = await import('../mcp/relay-secret-store.js');
-      const { bootRelayFamily, buildRelayVerifyAuth, startAttachWatcher } = await import(
-        '../mcp/debug-server.js'
-      );
+      const { bootRelayFamily, startAttachWatcher } = await import('../mcp/debug-server.js');
+      const { buildRelayVerifyAuth } = await import('../mcp/totp.js');
       const { AttachTimeline, buildDashboardTimelineState, formatStageLabel } = await import(
         '../mcp/attach-timeline.js'
       );
@@ -346,9 +345,11 @@ export function createRelayConnectionFactory(
           return { ok: true, url };
         };
 
+        const { projectLabel } = await import('../mcp/project-label.js');
         qrServer = await startQrHttpServer(getDashboardState, {
           dashboardPort: opts.dashboardPort,
           getDirectInspectorUrl,
+          projectLabel: projectLabel(projectRoot),
         });
 
         // Wire the QR server into attachDeps BEFORE prepareAttach is called so
