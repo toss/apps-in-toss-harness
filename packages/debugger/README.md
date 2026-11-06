@@ -88,6 +88,10 @@ export default definePhoneTestConfig({
 });
 ```
 
+## 최소 버전 확인
+
+데몬은 시작할 때 GitHub main의 최소 버전 파일(`min-versions.json`)을 한 번 읽습니다. 지금 버전이 최소 버전보다 낮으면 `get_debug_status`를 뺀 도구가 모두 막히고 `/ait:setup-debugger`를 다시 실행해 업데이트하라는 안내만 나옵니다. 네트워크가 안 되거나 응답을 읽을 수 없으면 확인을 건너뛰고 그대로 실행합니다. 이 확인은 끌 수 없습니다.
+
 ## Exports / bin
 
 | subpath | 내용 |

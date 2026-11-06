@@ -133,6 +133,12 @@ describe('최소 버전 단일 정본', () => {
     expect(gte(mins['@apps-in-toss/debugger-client'], '0.2.1')).toBe(true);
   });
 
+  it('runtime-floor(원격 차단 키)는 플러그인 최소 버전보다 높지 않다 — 발행 전 버전으로 현재 버전을 막지 않게', () => {
+    const floor = mins['@apps-in-toss/debugger:runtime-floor'];
+    expect(floor).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(gte(mins['@apps-in-toss/debugger'], floor)).toBe(true);
+  });
+
   it('setup-debugger · debug · test-on-device · launch 가 min-versions.json 을 가리킨다', () => {
     const refs: Record<string, string> = {
       'setup-debugger/SKILL.md': 'min-versions.json',
