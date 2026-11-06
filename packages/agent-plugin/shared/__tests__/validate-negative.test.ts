@@ -668,7 +668,7 @@ describe('A7 negative tests', () => {
   it('A7/mcp-npx-bare-bin — npx args 가 -p 없이 패키지+bin 토큰을 두면 위반이 난다', async () => {
     buildValidFixture(tmpDir);
     // bare form: ["-y", "<pkg>", "<bin>"] — npm 이 bin 을 추론해야 해서 모호.
-    // (참고: claude 쪽에만 mcpServers.ait-devtools 를 추가하므로 A11/cursor-mcp-servers-drift 도
+    // (참고: claude 쪽에만 mcpServers.ait-debugger 를 추가하므로 A11/cursor-mcp-servers-drift 도
     // 같이 발화한다 — 의도된 노이즈. 이 테스트는 toContain 이라 초록 유지.)
     writeFile(
       path.join(tmpDir, '.claude-plugin', 'plugin.json'),
@@ -676,7 +676,7 @@ describe('A7 negative tests', () => {
         name: 'ait',
         version: '0.1.0', // package.json 과 일치 (A5 격리)
         mcpServers: {
-          'ait-devtools': { command: 'npx', args: ['-y', '@ait-co/devtools', 'devtools-mcp'] },
+          'ait-debugger': { command: 'npx', args: ['-y', '@ait-co/devtools', 'devtools-mcp'] },
         },
       }),
     );
@@ -687,7 +687,7 @@ describe('A7 negative tests', () => {
   it('A7/mcp-npx-bare-bin — -p/--package 형태는 발화하지 않는다 (positive control)', async () => {
     buildValidFixture(tmpDir);
     // 올바른 form: ["-y", "-p", "<pkg>", "<bin>"] — bin 추론 모호성 없음.
-    // (참고: 여기도 claude 쪽에만 mcpServers.ait-devtools 를 추가해 A11/cursor-mcp-servers-drift 가
+    // (참고: 여기도 claude 쪽에만 mcpServers.ait-debugger 를 추가해 A11/cursor-mcp-servers-drift 가
     // 같이 발화한다 — 이 테스트는 A7 rule 하나만 not.toContain 으로 보므로 초록 유지.)
     writeFile(
       path.join(tmpDir, '.claude-plugin', 'plugin.json'),
@@ -695,7 +695,7 @@ describe('A7 negative tests', () => {
         name: 'ait',
         version: '0.1.0',
         mcpServers: {
-          'ait-devtools': {
+          'ait-debugger': {
             command: 'npx',
             args: ['-y', '-p', '@ait-co/devtools', 'devtools-mcp'],
           },

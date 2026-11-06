@@ -22,32 +22,6 @@ import { writeCaptureArtifacts, writeReportArtifact } from './report.js';
 import { armExitBackstop, runTeardownSteps } from './teardown.js';
 
 /* -------------------------------------------------------------------------- */
-/* Live-relay owner detection (read-only)                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * 이미 relay를 운영 중인 debugger 프로세스(MCP 데몬)의 PID, 없으면 `null`.
- *
- * 읽기 전용이다: 락 파일을 읽고 PID/터널 자식 PID가 살아 있는지만 본다. 락을 잡거나 지우거나
- * 프로세스를 건드리지 않는다. `server-lock`은 동적 import다 — test-runner 그래프에 락/프로세스
- * 코드를 정적으로 끌어오지 않는다(check:test-runner-dist). 데몬이 죽었는데 락만 남은 경우
- * (PID 사망, 또는 PID는 살았지만 터널 자식이 죽은 좀비)는 라이브로 보지 않는다.
- */
-export async function findLiveRelayOwner(): Promise<{ pid: number } | null> {
-  try {
-    const { readServerLock, isPidAlive } = await import('../mcp/server-lock.js');
-    const lock = readServerLock();
-    if (lock === null || lock.pid === process.pid || !isPidAlive(lock.pid)) return null;
-    const child = lock.tunnelChildPid;
-    if (typeof child === 'number' && !isPidAlive(child)) return null;
-    return { pid: lock.pid };
-  } catch {
-    // 락을 못 읽으면 막지 않는다 — 감지는 안내용이지 보안 경계가 아니다.
-    return null;
-  }
-}
-
-/* -------------------------------------------------------------------------- */
 /* CLI help                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -85,13 +59,9 @@ OPTIONS
   --no-qr-stdout          Suppress the QR/attach block on stdout (auto-on for
                           non-interactive stdout / CI / AIT_NO_QR_STDOUT)
   --headless              Disable browser auto-open (text QR only)
-  --separate-relay        Run even when another debugger process (the MCP
-                          daemon) already operates a relay. By default the
-                          runner stops in that case: two relays at once make
-                          the phone's QR/dashboard ambiguous, and the daemon's
-                          \`run_tests\` tool runs the same tests over its own
-                          relay. The forced run shows up as a "테스트 러너
-                          세션" on the dashboard and in the terminal.
+  --separate-relay        Accepted for compatibility; it changes nothing. The
+                          runner always boots its own relay, independent of any
+                          debugger MCP session running on the machine.
   --project-root <dir>    Project root for .ait_relay secret lookup
                           (default: current working directory)
   --pace <ms>             Minimum delay in ms between test-to-test AND
@@ -736,24 +706,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   // We pass `onQrContent` so the CLI owns the stdout decision: suppress the whole
   // QR block on non-interactive stdout (it encodes the relay wss + TOTP code).
   // SECRET-HANDLING: scheme_url / wss / TOTP are never logged by the factory.
-  // 이미 다른 debugger 프로세스(PID n)가 relay를 운영 중이면 두 번째 relay를 띄우지 않는다.
-  // 폰이 어느 QR에 붙는지 모호해지고, 그 세션의 `run_tests` 도구가 같은 테스트를 돌릴 수 있다.
-  const separateRelay = parsed.values['separate-relay'] === true;
-  const liveOwner = await findLiveRelayOwner();
-  if (liveOwner !== null) {
-    if (!separateRelay) {
-      process.stderr.write(
-        `debugger-test: 이미 debugger 프로세스(PID ${liveOwner.pid})가 relay를 운영 중이에요. ` +
-          '그 Claude Code 세션에서 `run_tests` 도구로 같은 테스트를 돌리거나, 그 세션을 끈 뒤 다시 실행하세요. ' +
-          '별도 relay로 강행하려면 `--separate-relay`.\n',
-      );
-      process.exitCode = 1;
-      return;
-    }
-    process.stderr.write(
-      `debugger-test: 테스트 러너 세션 — debugger 프로세스(PID ${liveOwner.pid})와 별개의 relay로 실행해요(--separate-relay)\n`,
-    );
-  }
+  // 러너는 항상 자기 relay를 띄운다. 다른 debugger MCP 세션(자기 relay·터널·대시보드를 따로 가진다)과
+  // 서로 간섭하지 않으므로 `--separate-relay`는 받기만 하고 아무 일도 하지 않는다. 폰이 어느
+  // 대시보드의 QR에 붙는지는 대시보드 탭 제목의 프로젝트 라벨로 구분한다.
   if (hasCell) {
     process.stderr.write(`debugger-test: injecting __AIT_CELL__ = ${JSON.stringify(cell)}\n`);
   }

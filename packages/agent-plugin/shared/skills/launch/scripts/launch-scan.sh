@@ -17,7 +17,7 @@
 #                    (a) AI 키 환경변수 참조 (b) 루트 .env* 정의 (c) AI API 직접 호출
 #                    (d) 키 형태 문자열(sk-…, sk-or-v1-…, AIza…) — 이것만 빌드 산출물도 본다
 #                    (e) 클라이언트에 노출되는 접두사(VITE_ 등) 변수 이름에 SECRET·PRIVATE가 든다
-#   debug-console-bundle  배포 번들에 on-device 디버그 패키지(@apps-in-toss/debug-console)가 들어갈 수 있다
+#   debugger-client-bundle  배포 번들에 on-device 디버그 패키지(@apps-in-toss/debugger-client, 0.3.0 이하의 옛 이름 @apps-in-toss/debug-console 포함)가 들어갈 수 있다
 #                    (a) 루트 package.json의 dependencies에 있다 (devDependencies는 보지 않는다)
 #                    (b) 소스에 __DEBUG_BUILD__ 게이트 없이 import한다 (같은 줄이나 앞 3줄에 없으면 후보)
 #                    (산출물 검사는 규칙 6 debug-artifact로 옮겼다)
@@ -39,7 +39,7 @@
 # .ait-debug-deployments.json(디버그 빌드로 올린 배포 기록)이 있으면 `launch-scan:debug-deployments
 # count=<n> ids=<id,…>` 줄이 붙는다(정보용 — 제출하려는 deploymentId와 호출자가 대조한다).
 # 마지막 줄은 항상 요약 한 줄이다:
-#   launch-scan:viewport-zoom=<n|skip(no-html)> dark-theme=<n> cors-any-origin=<n> client-ai-key=<n> debug-console-bundle=<n> debug-artifact=<n> total=<n>
+#   launch-scan:viewport-zoom=<n|skip(no-html)> dark-theme=<n> cors-any-origin=<n> client-ai-key=<n> debugger-client-bundle=<n> debug-artifact=<n> total=<n>
 # viewport-zoom은 대상 HTML이 하나도 없으면 skip(no-html)이고, total에는 skip이 들어가지 않는다.
 #
 # 규칙 4는 키 값을 출력하지 않는다. 찍는 것은 고정 설명과 변수 이름·API 호스트·키 접두사
@@ -89,8 +89,8 @@ D4C='클라이언트 코드가 AI API({})를 직접 호출한다. 키는 서버�
 D4D='키 형태 문자열({})이 있다. 값은 출력하지 않는다'
 D4E='클라이언트 코드가 시크릿 이름 변수({})를 읽는다. 빌드하면 번들에 들어간다'
 D4F='클라이언트에 노출되는 시크릿 이름 변수({}). 값은 출력하지 않는다'
-D5A='@apps-in-toss/debug-console이 dependencies에 있다. 배포 번들에 들어갈 수 있다'
-D5B='@apps-in-toss/debug-console을 __DEBUG_BUILD__ 게이트 없이 import한다. 배포 번들에 attach 코드가 남는다'
+D5A='@apps-in-toss/debugger-client(0.3.0 이하의 옛 이름 @apps-in-toss/debug-console 포함)가 dependencies에 있다. 배포 번들에 들어갈 수 있다'
+D5B='@apps-in-toss/debugger-client(옛 이름 @apps-in-toss/debug-console 포함)를 __DEBUG_BUILD__ 게이트 없이 import한다. 배포 번들에 attach 코드가 남는다'
 D6A='[차단] 빌드 산출물에 디버그 도구 마커({})가 있다. 이 산출물로 올린 배포는 검수·출시에 제출하지 않는다. AIT_DEBUG_BUILD 없이 다시 빌드해 올린다'
 D6B='[차단] .ait 번들에 디버그 도구 마커({})가 있다. 이 번들로 올린 배포는 검수·출시에 제출하지 않는다. AIT_DEBUG_BUILD 없이 다시 빌드해 올린다'
 
@@ -434,11 +434,13 @@ EOF_OUT_DIRS
 }
 
 # ---------------------------------------------------------------------------
-# 규칙 5 — debug-console-bundle
+# 규칙 5 — debugger-client-bundle
 # (a) package.json의 "dependencies" 블록 안 키. 한 줄짜리 블록도 읽는다.
 # (b) 소스 import — 게이트(__DEBUG_BUILD__)가 같은 줄이나 앞 3줄에 없으면 후보.
 # ---------------------------------------------------------------------------
-P_DC='@apps-in-toss/debug-console'
+# 0.3.0 이하는 옛 이름(@apps-in-toss/debug-console)으로 배포됐다. 옛 이름도 같은 규칙으로 잡는다.
+P_DC='@apps-in-toss/debugger-client'
+P_DC_OLD='@apps-in-toss/debug-console'
 r5a() {
   [ -f package.json ] || return 0
   awk '
@@ -449,12 +451,12 @@ r5a() {
         ind = 1
         rest = line
         sub(/.*"dependencies"[[:space:]]*:[[:space:]]*[{]/, "", rest)
-        if (rest ~ /"@apps-in-toss\/debug-console"/) printf "./package.json\t%d\t1\t\n", NR
+        if (rest ~ /"@apps-in-toss\/debug(ger-client|-console)"/) printf "./package.json\t%d\t1\t\n", NR
         if (rest ~ /[}]/) ind = 0
         next
       }
       if (ind) {
-        if (line ~ /"@apps-in-toss\/debug-console"/) printf "./package.json\t%d\t1\t\n", NR
+        if (line ~ /"@apps-in-toss\/debug(ger-client|-console)"/) printf "./package.json\t%d\t1\t\n", NR
         if (line ~ /[}]/) ind = 0
       }
     }
@@ -465,10 +467,10 @@ r5b() {
   local f
   {
     if [ "${#SCAN_DIRS[@]}" -gt 0 ]; then
-      grep -rlIF -e "$P_DC" "${INC_CLIENT[@]}" "${EXCL[@]}" "${SCAN_DIRS[@]}" 2>/dev/null
+      grep -rlIF -e "$P_DC" -e "$P_DC_OLD" "${INC_CLIENT[@]}" "${EXCL[@]}" "${SCAN_DIRS[@]}" 2>/dev/null
     fi
     if [ "${#ROOT_STYLE[@]}" -gt 0 ]; then
-      grep -lIF -e "$P_DC" "${ROOT_STYLE[@]}" 2>/dev/null
+      grep -lIF -e "$P_DC" -e "$P_DC_OLD" "${ROOT_STYLE[@]}" 2>/dev/null
     fi
   } | sort -u | while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -476,7 +478,7 @@ r5b() {
       { L[NR] = $0 }
       END {
         for (i = 1; i <= NR; i++) {
-          if (index(L[i], "@apps-in-toss/debug-console") == 0) continue
+          if (index(L[i], "@apps-in-toss/debugger-client") == 0 && index(L[i], "@apps-in-toss/debug-console") == 0) continue
           if (L[i] !~ /(import|require|from)/) continue
           g = 0
           for (j = i; j >= 1 && j > i - 4; j--) if (index(L[j], "__DEBUG_BUILD__") > 0) g = 1
@@ -559,7 +561,7 @@ OUT_DIRS="$(find . -maxdepth 5 '(' -name node_modules -o -name .git ')' -prune -
 OUT4="$({ r4a; r4b; r4c; r4d; } | fmt client-ai-key "$D4A" "$D4B" "$D4C" "$D4D" "$D4E" "$D4F")"
 N4="$(count "$OUT4")"
 
-OUT5="$({ r5a; r5b; } | fmt debug-console-bundle "$D5A" "$D5B")"
+OUT5="$({ r5a; r5b; } | fmt debugger-client-bundle "$D5A" "$D5B")"
 N5="$(count "$OUT5")"
 
 # find의 -maxdepth는 -prune 식 뒤에 오면 GNU find가 경고를 내므로 r6b는 stderr를 note 수집에 쓴다.
@@ -594,5 +596,5 @@ fi
 if [ "$TOTAL" -eq 0 ]; then
   echo "launch-scan:clean 후보 0건이다. 위 범위에서 패턴이 보이지 않았다는 뜻이지 점검을 통과했다는 뜻이 아니다. 서버·도구 디렉터리와 숨김 디렉터리(클라이언트 키 규칙), 제외 목록, 패턴에 없는 형태는 보지 않았다. 보고에는 \"확인됨\"이 아니라 \"후보 없음(스캔 범위: 위 scope 줄)\"으로 쓴다"
 fi
-echo "launch-scan:viewport-zoom=$C1 dark-theme=$N2 cors-any-origin=$N3 client-ai-key=$N4 debug-console-bundle=$N5 debug-artifact=$N6 total=$TOTAL"
+echo "launch-scan:viewport-zoom=$C1 dark-theme=$N2 cors-any-origin=$N3 client-ai-key=$N4 debugger-client-bundle=$N5 debug-artifact=$N6 total=$TOTAL"
 exit 0

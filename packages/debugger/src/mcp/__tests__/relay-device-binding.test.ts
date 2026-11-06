@@ -45,7 +45,7 @@ afterEach(async () => {
 });
 
 const prefix = (code: string, device: string | null): string =>
-  device === null ? `/v2/at/${code}` : `/v2/at/${code}/d/${device}`;
+  device === null ? `/v3/at/${code}` : `/v3/at/${code}/d/${device}`;
 
 function dial(code: string, device: string | null, id: string, settleMs = 250) {
   return new Promise<{ closeCode: number | null; ws: WebSocket }>((resolve, reject) => {
@@ -81,21 +81,21 @@ const closeSocket = (ws: WebSocket) =>
 
 describe('device id in the path prefix', () => {
   it('is read from the path and dropped before chii sees the URL', () => {
-    const url = `/v2/at/${CODE}/d/${PHONE}/target/t1?url=x`;
+    const url = `/v3/at/${CODE}/d/${PHONE}/target/t1?url=x`;
     expect(atPrefixDevice(url)).toBe(PHONE);
     expect(rewriteAtPathPrefix(url)).toBe(`/target/t1?url=x&at=${CODE}`);
-    expect(rewriteAtPathPrefix(`/v2/at/${CODE}/d/${PHONE}/target.js`)).toBe(
+    expect(rewriteAtPathPrefix(`/v3/at/${CODE}/d/${PHONE}/target.js`)).toBe(
       `/target.js?at=${CODE}`,
     );
   });
 
   it('is never read from the query, and a malformed segment is not a device id', () => {
-    expect(atPrefixDevice(`/v2/at/${CODE}/target.js?d=${PHONE}`)).toBeNull();
-    expect(atPrefixDevice(`/v2/at/${CODE}/d/short/target.js`)).toBeNull();
-    expect(atPrefixDevice(`/v2/at/${CODE}/d/${PHONE}x/target.js`)).toBeNull();
+    expect(atPrefixDevice(`/v3/at/${CODE}/target.js?d=${PHONE}`)).toBeNull();
+    expect(atPrefixDevice(`/v3/at/${CODE}/d/short/target.js`)).toBeNull();
+    expect(atPrefixDevice(`/v3/at/${CODE}/d/${PHONE}x/target.js`)).toBeNull();
     expect(atPrefixDevice('/target.js?at=x')).toBeNull();
     // A malformed segment stays in the path, so it reaches no route.
-    expect(rewriteAtPathPrefix(`/v2/at/${CODE}/d/short/target.js`)).toBe(
+    expect(rewriteAtPathPrefix(`/v3/at/${CODE}/d/short/target.js`)).toBe(
       `/d/short/target.js?at=${CODE}`,
     );
   });
@@ -109,7 +109,7 @@ describe('one phone per code', () => {
     const theirs = await dial(CODE, OTHER_PHONE, 'page-x');
     expect(theirs.closeCode).toBe(4401);
     expect(await get(`${prefix(CODE, OTHER_PHONE)}/target.js`)).toBe(401);
-    expect(await get(`${prefix(CODE, OTHER_PHONE)}/ait-attach?p=2`)).toBe(401);
+    expect(await get(`${prefix(CODE, OTHER_PHONE)}/ait-attach?p=3`)).toBe(401);
     // No /proxy route: the unknown-route answer, whichever device asks.
     expect(await get(`${prefix(CODE, OTHER_PHONE)}/proxy`)).toBe(404);
     mine.ws.terminate();

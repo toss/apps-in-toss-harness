@@ -35,7 +35,7 @@ afterEach(async () => {
 function dial(code: string, id: string, settleMs = 250) {
   return new Promise<{ closeCode: number | null; ws: WebSocket }>((resolve, reject) => {
     const q = new URLSearchParams({ url: PAGE, title: 't' });
-    const ws = new WebSocket(`ws://127.0.0.1:${relay.port}/v2/at/${code}/target/${id}?${q}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${relay.port}/v3/at/${code}/target/${id}?${q}`);
     const out: { closeCode: number | null; ws: WebSocket } = { closeCode: null, ws };
     ws.on('close', (c) => {
       out.closeCode = c;
@@ -90,10 +90,10 @@ describe('phone session binding', () => {
   it('serves the target script under the aged code while a bound socket is open, and never /proxy', async () => {
     const first = await dial(OLD, 'tid');
     accepted = FRESH;
-    expect(await get(`/v2/at/${OLD}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${OLD}/target.js`)).toBe(200);
     // /proxy is not a route: an open session does not make it one.
-    expect(await get(`/v2/at/${OLD}/proxy`)).toBe(401);
-    expect(await get(`/v2/at/${OTHER_OLD}/proxy`)).toBe(401);
+    expect(await get(`/v3/at/${OLD}/proxy`)).toBe(401);
+    expect(await get(`/v3/at/${OTHER_OLD}/proxy`)).toBe(401);
     first.ws.terminate();
   });
 
@@ -102,31 +102,31 @@ describe('phone session binding', () => {
     await closeSocket(first.ws);
     accepted = FRESH;
     // Inside the grace period: a reload may still fetch the script.
-    expect(await get(`/v2/at/${OLD}/proxy`)).toBe(401);
-    expect(await get(`/v2/at/${OLD}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${OLD}/proxy`)).toBe(401);
+    expect(await get(`/v3/at/${OLD}/target.js`)).toBe(200);
     // The same code is still good for the bound id's reconnect.
     const again = await dial(OLD, 'tid');
     expect(again.closeCode).toBeNull();
-    expect(await get(`/v2/at/${OLD}/proxy`)).toBe(401);
+    expect(await get(`/v3/at/${OLD}/proxy`)).toBe(401);
     again.ws.terminate();
   });
 
   it('answers /proxy with a fresh code like any unknown route', async () => {
     accepted = FRESH;
-    expect(await get(`/v2/at/${FRESH}/proxy`)).toBe(404);
+    expect(await get(`/v3/at/${FRESH}/proxy`)).toBe(404);
   });
 
   it('lets an aged code with a live bound session through the attach handshake', async () => {
     const first = await dial(OLD, 'tid');
     accepted = FRESH;
     // A reload with an aged code probes /ait-attach first; past the code check it is not a 401.
-    expect(await get(`/v2/at/${OLD}/ait-attach?v=0.0.0`)).not.toBe(401);
+    expect(await get(`/v3/at/${OLD}/ait-attach?v=0.0.0`)).not.toBe(401);
     first.ws.terminate();
   });
 
   it('refuses the attach handshake for an aged code with no session', async () => {
     accepted = FRESH;
-    expect(await get(`/v2/at/${OTHER_OLD}/ait-attach?v=0.0.0`)).toBe(401);
+    expect(await get(`/v3/at/${OTHER_OLD}/ait-attach?v=0.0.0`)).toBe(401);
   });
 
   it('does not open other routes to an aged code', async () => {
@@ -141,9 +141,9 @@ describe('phone session binding', () => {
     await closeSocket(first.ws);
     accepted = FRESH;
     clock += 5 * 60_000 - 1000;
-    expect(await get(`/v2/at/${OLD}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${OLD}/target.js`)).toBe(200);
     clock += 2000;
-    expect(await get(`/v2/at/${OLD}/target.js`)).toBe(401);
+    expect(await get(`/v3/at/${OLD}/target.js`)).toBe(401);
     expect((await dial(OLD, 'tid')).closeCode).toBe(4401);
   });
 
@@ -151,7 +151,7 @@ describe('phone session binding', () => {
     const first = await dial(OLD, 'tid');
     accepted = FRESH;
     clock += 60 * 60_000;
-    expect(await get(`/v2/at/${OLD}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${OLD}/target.js`)).toBe(200);
     first.ws.terminate();
   });
 
@@ -160,7 +160,7 @@ describe('phone session binding', () => {
     await closeSocket(first.ws);
     accepted = FRESH;
     relay.resetAuthLock('tunnel');
-    expect(await get(`/v2/at/${OLD}/target.js`)).toBe(401);
+    expect(await get(`/v3/at/${OLD}/target.js`)).toBe(401);
   });
 
   it('keeps the first phone bound when a second target id dials the same code', async () => {
@@ -230,8 +230,8 @@ describe('phone session binding', () => {
     }
     accepted = FRESH;
     // Closed sessions are inside their grace, so only the cap can have dropped the oldest.
-    expect(await get(`/v2/at/${codes[0]}/target.js`)).toBe(401);
-    expect(await get(`/v2/at/${codes[33]}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${codes[0]}/target.js`)).toBe(401);
+    expect(await get(`/v3/at/${codes[33]}/target.js`)).toBe(200);
   });
 
   it('clears every target of a code when the tunnel is reissued', async () => {

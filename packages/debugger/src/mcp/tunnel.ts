@@ -252,14 +252,6 @@ export async function startQuickTunnel(localPort: number): Promise<QuickTunnel> 
   };
 }
 
-export interface AttachBannerInput {
-  /**
-   * Whether TOTP auth is enabled on the relay (`AIT_DEBUG_TOTP_SECRET` is set).
-   * Only changes the auth line of the notice.
-   */
-  totpEnabled: boolean;
-}
-
 /**
  * Renders a pure unicode half-block QR string for the given text.
  *
@@ -313,16 +305,12 @@ export async function renderQr(text: string): Promise<string> {
  *
  * SECRET-HANDLING: no secret, TOTP code, relay URL or tunnel host is included.
  */
-export function renderAttachBanner(input: AttachBannerInput): string {
-  const authNote = input.totpEnabled
-    ? '  auth:          TOTP enabled — attach URLs include a rotating code (at=).'
-    : '  auth:          none (set AIT_DEBUG_TOTP_SECRET to enable TOTP).';
-
+export function renderAttachBanner(): string {
   return [
     '',
-    'AIT debug — relay tunnel is up (host not shown)',
+    'AIT debugger — relay tunnel is up (host not shown)',
     '',
-    authNote,
+    '  auth:          attach URLs include a rotating code (at=).',
     '',
     '  Call start_attach, or open the dashboard, to get the attach QR and deep link.',
     '',
@@ -330,8 +318,8 @@ export function renderAttachBanner(input: AttachBannerInput): string {
 }
 
 /** Prints the attach banner to stderr (stdout is the MCP stdio channel). */
-export async function printAttachBanner(input: AttachBannerInput): Promise<void> {
-  const banner = renderAttachBanner(input);
+export async function printAttachBanner(): Promise<void> {
+  const banner = renderAttachBanner();
   process.stderr.write(`${banner}\n`);
 }
 
@@ -511,20 +499,20 @@ export function startTunnelHealthProbe(
     }
 
     log(
-      `[ait-debug] tunnel drop detected — reissuing (attempt ${reissueAttempts}/${MAX_REISSUE_ATTEMPTS})\n`,
+      `[ait-debugger] tunnel drop detected — reissuing (attempt ${reissueAttempts}/${MAX_REISSUE_ATTEMPTS})\n`,
     );
 
     swapping = true;
     try {
       const newTunnel = await swapTunnel();
       log(
-        '[ait-debug] tunnel reissued — new relay URL available via start_attach (host not shown)\n',
+        '[ait-debugger] tunnel reissued — new relay URL available via start_attach (host not shown)\n',
       );
       onReissue(newTunnel, 'drop');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log(
-        `[ait-debug] tunnel reissue attempt ${reissueAttempts} failed: ${redactRelayText(message)}\n`,
+        `[ait-debugger] tunnel reissue attempt ${reissueAttempts} failed: ${redactRelayText(message)}\n`,
       );
 
       if (reissueAttempts >= MAX_REISSUE_ATTEMPTS) {
@@ -532,7 +520,7 @@ export function startTunnelHealthProbe(
         stopped = true;
         const droppedAt = new Date().toISOString();
         log(
-          `[ait-debug] tunnel permanently dropped after ${MAX_REISSUE_ATTEMPTS} reissue attempts — ` +
+          `[ait-debugger] tunnel permanently dropped after ${MAX_REISSUE_ATTEMPTS} reissue attempts — ` +
             `restart the debug server to continue (${RESTART_CMD}).\n`,
         );
         onPermanentDrop(droppedAt);
@@ -548,17 +536,17 @@ export function startTunnelHealthProbe(
   const rotate = async (): Promise<boolean> => {
     if (stopped || swapping) return false;
     swapping = true;
-    log('[ait-debug] tunnel rotation requested — reissuing\n');
+    log('[ait-debugger] tunnel rotation requested — reissuing\n');
     try {
       const newTunnel = await swapTunnel();
       log(
-        '[ait-debug] tunnel rotated — new relay URL available via start_attach (host not shown)\n',
+        '[ait-debugger] tunnel rotated — new relay URL available via start_attach (host not shown)\n',
       );
       onReissue(newTunnel, 'rotation');
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log(`[ait-debug] tunnel rotation failed: ${redactRelayText(message)}\n`);
+      log(`[ait-debugger] tunnel rotation failed: ${redactRelayText(message)}\n`);
       return false;
     } finally {
       swapping = false;
@@ -571,7 +559,7 @@ export function startTunnelHealthProbe(
     t.onUnexpectedExit((code) => {
       if (stopped) return;
       log(
-        `[ait-debug] cloudflared child exited unexpectedly (code=${code}) — triggering immediate reissue\n`,
+        `[ait-debugger] cloudflared child exited unexpectedly (code=${code}) — triggering immediate reissue\n`,
       );
       // Set failures to threshold so the next interval probe also sees a clean
       // state; the actual reissue happens immediately below.
@@ -593,7 +581,7 @@ export function startTunnelHealthProbe(
       if (alive) {
         // Tunnel responded — reset failure counter.
         if (consecutiveFailures > 0) {
-          log('[ait-debug] tunnel health probe: tunnel recovered\n');
+          log('[ait-debugger] tunnel health probe: tunnel recovered\n');
         }
         consecutiveFailures = 0;
         reissueAttempts = 0;
@@ -602,7 +590,7 @@ export function startTunnelHealthProbe(
 
       consecutiveFailures += 1;
       log(
-        `[ait-debug] tunnel health probe: failure ${consecutiveFailures}/${failuresBeforeReissue}\n`,
+        `[ait-debugger] tunnel health probe: failure ${consecutiveFailures}/${failuresBeforeReissue}\n`,
       );
 
       if (consecutiveFailures < failuresBeforeReissue) {

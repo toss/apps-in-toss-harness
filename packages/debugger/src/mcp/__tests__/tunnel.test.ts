@@ -478,14 +478,12 @@ describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
 describe('tunnel host never reaches stderr output', () => {
   const HOST = 'secret-sub-domain.trycloudflare.com';
 
-  it('attach banner has no host, URL or QR, with or without TOTP', () => {
-    for (const totpEnabled of [true, false]) {
-      const out = renderAttachBanner({ totpEnabled });
-      expect(out).not.toContain('trycloudflare');
-      expect(out).not.toContain('wss://');
-      expect(out).not.toMatch(/[█▀▄]/);
-      expect(out).toContain('start_attach');
-    }
+  it('attach banner has no host, URL or QR', () => {
+    const out = renderAttachBanner();
+    expect(out).not.toContain('trycloudflare');
+    expect(out).not.toContain('wss://');
+    expect(out).not.toMatch(/[█▀▄]/);
+    expect(out).toContain('start_attach');
   });
 
   it('reissue and probe-failure logs omit the host', async () => {

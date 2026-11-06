@@ -420,16 +420,21 @@ export function waitForAttachWithEvents(
   });
 }
 
+const NO_RELAY_SECRET_MESSAGE =
+  'relay auth secret is not loaded — no attach code can be minted (the relay never runs without one)';
+
 /**
  * Synthesizes an attach URL from stored components with a FRESHLY-minted TOTP
  * code (issue #626 §3/§4 — the single mint point). Reads the late-bound secret
  * via `deps.getTotpSecret()` so the project-local `.ait_relay` secret loaded by
  * `switchMode` is visible. SECRET-HANDLING: the minted code rides inside the
- * URL's `at=` param only — never logged or returned separately.
+ * URL's `at=` param only — never logged or returned separately. Throws when no
+ * relay secret is loaded (there is no code-less link).
  */
 export function mintAttachUrl(deps: AttachDeps, parts: AttachUrlParts): string {
   const secret = deps.getTotpSecret();
-  const code = secret ? mintRelayCode(resolveNowMs(deps)()) : undefined;
+  if (secret === undefined || secret === '') throw new Error(NO_RELAY_SECRET_MESSAGE);
+  const code = mintRelayCode(resolveNowMs(deps)());
   const current = withCurrentRelay(parts, deps.getTunnelStatus());
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
@@ -530,7 +535,7 @@ export async function prepareAttach(
   // checked. SECRET-HANDLING: neither the wss URL nor page URLs are logged.
   const wssForMatch = tunnelForBuild.wssUrl;
   // The tunnel can be reissued while the wait is open, so the address in use now counts too.
-  // debug-console removes `relay=` from the page URL once attached, so the page
+  // debugger-client removes `relay=` from the page URL once attached, so the page
   // is also recognised by the run marker (`rid=`) the deep link carries.
   const totpSecret = getTotpSecret();
   const matchesRelay = (url: string): boolean => {

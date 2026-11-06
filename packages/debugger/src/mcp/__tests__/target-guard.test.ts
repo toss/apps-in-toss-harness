@@ -140,7 +140,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
   });
 
   const fetchScript = () =>
-    fetch(`http://127.0.0.1:${relay.port}/v2/at/${generateTotp(SECRET)}/target.js`);
+    fetch(`http://127.0.0.1:${relay.port}/v3/at/${generateTotp(SECRET)}/target.js`);
 
   it('original bytes when nothing is attached; guarded + no-store when attached', async () => {
     const original = readChiiTargetScript();
@@ -150,7 +150,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
 
     const q = new URLSearchParams({ url: FOO, title: 't' });
     const ws = new WebSocket(
-      `ws://127.0.0.1:${relay.port}/v2/at/${generateTotp(SECRET)}/target/t1?${q}`,
+      `ws://127.0.0.1:${relay.port}/v3/at/${generateTotp(SECRET)}/target/t1?${q}`,
     );
     await new Promise((r) => ws.on('open', r));
     await new Promise((r) => setTimeout(r, 100));
@@ -177,7 +177,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
   it('unprefixed /target.js is refused and never carries an attached host', async () => {
     const q = new URLSearchParams({ url: FOO, title: 't' });
     const ws = new WebSocket(
-      `ws://127.0.0.1:${relay.port}/v2/at/${generateTotp(SECRET)}/target/t2?${q}`,
+      `ws://127.0.0.1:${relay.port}/v3/at/${generateTotp(SECRET)}/target/t2?${q}`,
     );
     await new Promise((r) => ws.on('open', r));
     await new Promise((r) => setTimeout(r, 100));
@@ -186,7 +186,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
         '/target.js',
         '/Target.js',
         '/target.js/',
-        '/v2/at/00000000000000000000000000000000/target.js',
+        '/v3/at/00000000000000000000000000000000/target.js',
       ]) {
         const res = await fetch(`http://127.0.0.1:${relay.port}${path}`);
         expect(res.status).toBe(401);
@@ -204,7 +204,7 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
 
   it('unauthenticated request is still rejected', async () => {
     const res = await fetch(
-      `http://127.0.0.1:${relay.port}/v2/at/00000000000000000000000000000000/target.js`,
+      `http://127.0.0.1:${relay.port}/v3/at/00000000000000000000000000000000/target.js`,
     );
     expect(res.status).toBe(401);
   });

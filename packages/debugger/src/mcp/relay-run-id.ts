@@ -1,10 +1,10 @@
 /**
  * A run marker for the page URL that does not reveal the relay address.
  *
- * debug-console removes `relay=` from the page URL as soon as it has read it,
+ * debugger-client removes `relay=` from the page URL as soon as it has read it,
  * but the daemon still has to tell a page that belongs to this tunnel from a
  * leftover of an earlier one. The deep link therefore also carries
- * `rid=<marker>`, which debug-console leaves alone. The marker is a keyed hash
+ * `rid=<marker>`, which debugger-client leaves alone. The marker is a keyed hash
  * of the tunnel host (key: the relay secret), so it can be compared but not
  * turned back into the host, and it changes whenever the tunnel does.
  *

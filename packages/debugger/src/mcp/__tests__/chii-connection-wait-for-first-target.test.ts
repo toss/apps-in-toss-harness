@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CdpTarget } from '../cdp-connection.js';
 import { ChiiCdpConnection } from '../chii-connection.js';
+import { TEST_RELAY_SECRET } from './relay-test-auth.js';
 
 type Internal = {
   emitter: { emit: (event: string, payload: unknown) => void };
@@ -48,7 +49,10 @@ describe('ChiiCdpConnection.waitForFirstTarget — non-finite timeout guard (dev
   });
 
   it('timeoutMs = Infinity: does not reject after a large timer advance, resolves on target', async () => {
-    const conn = new ChiiCdpConnection({ relayBaseUrl: 'http://127.0.0.1:9999' });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: 'http://127.0.0.1:9999',
+    });
 
     const waitPromise = conn.waitForFirstTarget(
       (targets) => targets.some((t) => t.id === FAKE_TARGET.id),
@@ -89,7 +93,10 @@ describe('ChiiCdpConnection.waitForFirstTarget — non-finite timeout guard (dev
   });
 
   it('finite default (90 000ms) still times out when no target attaches (regression)', async () => {
-    const conn = new ChiiCdpConnection({ relayBaseUrl: 'http://127.0.0.1:9999' });
+    const conn = new ChiiCdpConnection({
+      totpSecret: TEST_RELAY_SECRET,
+      relayBaseUrl: 'http://127.0.0.1:9999',
+    });
 
     const waitPromise = conn.waitForFirstTarget((targets) =>
       targets.some((t) => t.id === FAKE_TARGET.id),

@@ -49,14 +49,15 @@ import { childProcessEnv } from './child-env.js';
 import { buildDeepLinkAttachUrl, validateSchemeAuthority } from './deeplink.js';
 import type { UnbootedEnv } from './envelope.js';
 import type { McpEnvironment } from './environment.js';
-import { isRelayEnv, toLegacyEnv } from './environment.js';
+import { isRelayEnv } from './environment.js';
+import { isPidAlive } from './parent-watcher.js';
 import { type RelayKeyAge, relayKeyHint } from './relay-key-age.js';
 import { maskRelayUrl, redactRelayText } from './relay-redact.js';
 import { relayRunId } from './relay-run-id.js';
 import { attachSignature } from './relay-signing.js';
 import { RESTART_CMD } from './restart-hint.js';
 import { lookupSignature, warnPassthrough } from './sdk-signatures.js';
-import { isPidAlive } from './server-lock.js';
+import { MAX_LISTED_OTHER_SESSIONS, type SessionsSnapshot } from './session-registry.js';
 import { mintRelayCode, RELAY_CODE_MIN_AGE_SECONDS } from './totp.js';
 
 /** Tunnel state surfaced by `list_pages`. */
@@ -322,7 +323,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'that means a non-dog-food bundle (redeploy via `RELEASE_CHANNEL=dogfood npm run build` — ' +
       '`npm run bundle:ait` on the 2.x fallback — then ' +
       "the console MCP's `bundle_upload`/`bundle_upload_complete`); " +
-      'on local (--target=local, env 1) it means the dev bridge is not installed ' +
+      'on local (local-browser, env 1) it means the dev bridge is not installed ' +
       '(start the dev server with `npm run dev`).\n\n' +
       'SECURITY: method name, args, and result value are not redacted — never include secrets.\n\n' +
       'Host allowlist kill-switch (#665): blocked when the attached page is not on ' +
@@ -459,14 +460,14 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'attachStages (stage history of the latest start_attach attempt: tunnel, qr-issued, device-handshake, auth, ' +
       'target-connected/disconnected, matched — time + result only, no URLs or codes) and ' +
       'attachDiagnosis ({kind, lastStage, summary, actions[]} — where the latest attempt stopped and what the user should do, or null before any attempt), ' +
-      'environment (kind: mock|relay-dev, env: mock|relay backward-compat, reason, ' +
-      'liveGuardActive: always false — relay-live and LIVE guard removed (#665); ' +
+      'environment (kind: mock|relay-dev|none, reason; ' +
       'start_debug mode→kind mapping: relay-staging→relay-dev, local-browser→mock), ' +
-      'serverLockHolder (pid + startedAt from the lock file, or null), ' +
+      'otherSessions ({count, sessions[{project, startedAt}]} — other debugger sessions running on this machine, each with its own relay and dashboard; ' +
+      'never interferes with this session, informational only; no hosts, URLs or PIDs), ' +
       'nextRecommendedAction ({tool, reason} or null — the single next tool to call; ' +
       'in local-target mode tunnel.up=false is normal so "restart" is never recommended). ' +
       'All fields are nullable — missing data is null, not an error. ' +
-      'debug-mode only — dev-mode (--mode=dev) does not support relay diagnostics. ' +
+      'debug-mode only — dev-mode does not support relay diagnostics. ' +
       'Tier C (both mock and relay).',
     inputSchema: {
       type: 'object',
@@ -497,7 +498,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'the transport + report. The per-file results array is the progress record — on partial failure ' +
       'you see exactly which files passed/failed/timed-out. ' +
       'Positive-allowlist kill-switch (#665): blocked when the attached page is on a non-debug host. ' +
-      'debug-mode only — dev-mode (--mode=dev) has no CDP. ' +
+      'debug-mode only — dev-mode has no CDP. ' +
       'Tier C (both mock/local and relay).',
     inputSchema: {
       type: 'object',
@@ -838,7 +839,7 @@ export function listPages(connection: CdpConnection, tunnel: TunnelStatus): List
   const crashMs = isCrashAware(connection) ? connection.getLastCrashDetectedAt() : null;
   const crashDetectedAt = crashMs !== null ? new Date(crashMs).toISOString() : null;
   const crashWarning = crashDetectedAt
-    ? `[ait-debug] page crash 감지됨 — 새 attach 필요 (관측 시각: ${crashDetectedAt})`
+    ? `[ait-debugger] page crash 감지됨 — 새 attach 필요 (관측 시각: ${crashDetectedAt})`
     : null;
 
   // The tunnel address is shown masked: only start_attach carries the real one.
@@ -853,7 +854,7 @@ export function listPages(connection: CdpConnection, tunnel: TunnelStatus): List
 
 /** A `buildAttachUrl()` result: the spliced deep-link the phone should open. */
 export interface BuildAttachUrlResult {
-  /** The scheme URL with `debug=1&relay=<wss>[&at=<totp-code>]` spliced in. */
+  /** The scheme URL with `debug=1&relay=<wss>&at=<totp-code>` spliced in. */
   attachUrl: string;
   /** The relay URL that was spliced in (this session's quick tunnel). */
   relayUrl: string;
@@ -864,14 +865,14 @@ export interface BuildAttachUrlResult {
    */
   authorityWarning?: string;
   /**
-   * TOTP metadata — present when `AIT_DEBUG_TOTP_SECRET` is set.
+   * TOTP metadata of the spliced code.
    *
    * SECRET-HANDLING: the `at=` code value is spliced into `attachUrl` only.
    * It is never surfaced separately here to avoid inadvertent logging of the
    * one-time code outside of the URL.
    */
-  totp?: {
-    /** `true` when a TOTP code was spliced into `attachUrl`. */
+  totp: {
+    /** Always `true`: a TOTP code is always spliced into `attachUrl`. */
     enabled: true;
     /** RFC 6238 step duration in seconds. */
     ttlSeconds: number;
@@ -885,8 +886,8 @@ export interface BuildAttachUrlResult {
  * URL plus this session's live relay. Throws if the tunnel is not up yet (no
  * relay URL to splice in) — the caller surfaces that as a tool error.
  *
- * When `AIT_DEBUG_TOTP_SECRET` is set, generates the current TOTP code and
- * splices it as `at=<code>` into the attach URL. The code is valid for
+ * Generates the current TOTP code and splices it as `at=<code>` into the
+ * attach URL. The code is valid for
  * 30-35 s (the relay gate uses RELAY_VERIFY_SKEW_STEPS=6, accepting
  * the 6 past steps backwards from issuance). The start_attach handler
  * auto re-mints a fresh code before `totp.expiresAt` elapses during its wait (#490).
@@ -898,20 +899,19 @@ export interface BuildAttachUrlResult {
  * `buildDeepLinkAttachUrl` works — hard errors for relay, soft warning for
  * the scheme authority which is in the caller's input, not ours to own).
  *
- * SECRET-HANDLING: `totpSecret` (if provided) is used only to compute a code
+ * SECRET-HANDLING: `totpSecret` is used only to compute a code
  * and must never appear in any log, error message, or output outside of the
  * spliced `at=` param in `attachUrl`.
  *
  * @param schemeUrl - The `intoss-private://…?_deploymentId=<uuid>` URL.
  * @param tunnel - Current tunnel status from the running debug server.
- * @param totpSecret - Optional hex-encoded TOTP secret (from
- *   `AIT_DEBUG_TOTP_SECRET`). When provided, the current code is spliced into
- *   the attach URL as `at=<code>`.
+ * @param totpSecret - Hex-encoded TOTP secret (from `AIT_DEBUG_TOTP_SECRET`).
+ *   Required: the current code is spliced into the attach URL as `at=<code>`.
  */
 export function buildAttachUrl(
   schemeUrl: string,
   tunnel: TunnelStatus,
-  totpSecret?: string,
+  totpSecret: string,
 ): BuildAttachUrlResult {
   if (!tunnel.up || tunnel.wssUrl === null) {
     throw new Error(
@@ -921,25 +921,18 @@ export function buildAttachUrl(
   }
   const authorityWarning = validateSchemeAuthority(schemeUrl) ?? undefined;
 
-  // Generate a live TOTP code when a secret is provided.
-  // SECRET-HANDLING: the code value is placed into attachUrl only — not logged.
-  let totpCode: string | undefined;
-  let totpMeta: BuildAttachUrlResult['totp'];
-  if (totpSecret !== undefined && totpSecret !== '') {
-    const now = Date.now();
-    totpCode = mintRelayCode(now);
-    // expiresAt reflects the relay gate's actual acceptance window (#490):
-    // the gate uses RELAY_VERIFY_SKEW_STEPS=6 steps of 5 s, so the code issued
-    // NOW is valid until step (currentStep + 7) starts, i.e. 30-35 s from
-    // issuance. We report issuanceTime + RELAY_CODE_MIN_AGE_SECONDS (30 s) as a
-    // conservative lower bound.
-    const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;
-    totpMeta = {
-      enabled: true,
-      ttlSeconds: RELAY_CODE_MIN_AGE_SECONDS,
-      expiresAt: new Date(expiresAtMs).toISOString(),
-    };
+  if (totpSecret === '') {
+    throw new Error('relay auth secret is required to build an attach URL');
   }
+  // SECRET-HANDLING: the code value is placed into attachUrl only — not logged.
+  const now = Date.now();
+  const totpCode = mintRelayCode(now);
+  // expiresAt reflects the relay gate's actual acceptance window (#490):
+  // the gate uses RELAY_VERIFY_SKEW_STEPS=6 steps of 5 s, so the code issued
+  // NOW is valid until step (currentStep + 7) starts, i.e. 30-35 s from
+  // issuance. We report issuanceTime + RELAY_CODE_MIN_AGE_SECONDS (30 s) as a
+  // conservative lower bound.
+  const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;
 
   return {
     attachUrl: buildDeepLinkAttachUrl(
@@ -951,7 +944,11 @@ export function buildAttachUrl(
     ),
     relayUrl: tunnel.wssUrl,
     ...(authorityWarning !== undefined ? { authorityWarning } : {}),
-    ...(totpMeta !== undefined ? { totp: totpMeta } : {}),
+    totp: {
+      enabled: true,
+      ttlSeconds: RELAY_CODE_MIN_AGE_SECONDS,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    },
   };
 }
 
@@ -1750,7 +1747,7 @@ export interface DiagnosticsError {
 
 /**
  * Tunnel state in the diagnostics snapshot. Same shape as `TunnelStatus` but
- * extended with the lock-file data (pid, startedAt) when available.
+ * extended with this daemon's registry data (pid, startedAt) when available.
  */
 export interface DiagnosticsTunnelInfo {
   /** Whether the cloudflared quick tunnel is currently up. */
@@ -1758,13 +1755,13 @@ export interface DiagnosticsTunnelInfo {
   /** Public `wss://*.trycloudflare.com` relay URL, or `null`. */
   wssUrl: string | null;
   /**
-   * PID of the MCP server process that owns the tunnel (from the lock file),
-   * or `null` when no lock is present.
+   * PID of this MCP server process (from its session registry entry), or `null`
+   * when the registry is not available.
    */
   pid: number | null;
   /**
-   * ISO timestamp when the owning server process started (from the lock file),
-   * or `null`.
+   * ISO timestamp when this server process started (from its session registry
+   * entry), or `null`.
    */
   startedAt: string | null;
   /**
@@ -1781,14 +1778,16 @@ export interface DiagnosticsTunnelInfo {
 }
 
 /**
- * Server-lock holder info from `~/.ait-devtools/server.lock`. `null` when
- * no lock file exists (server was cleanly shut down or never started).
+ * The other debugger sessions running on this machine, from the session
+ * registry. Each session has its own daemon, relay, tunnel and dashboard, so
+ * this is informational: it never means the current session is blocked.
+ * SECRET-HANDLING: project label and start time only — no PID, host or URL.
  */
-export interface DiagnosticsLockHolder {
-  pid: number;
-  startedAt: string;
-  /** wssUrl recorded in the lock file — may be `null` when tunnel is still starting. */
-  wssUrl: string | null;
+export interface DiagnosticsOtherSessions {
+  /** How many other sessions are running. */
+  count: number;
+  /** Up to {@link MAX_LISTED_OTHER_SESSIONS} of them, oldest first. */
+  sessions: Array<{ project: string; startedAt: string }>;
 }
 
 /**
@@ -1846,7 +1845,7 @@ export interface DiagnosticsResult {
   mcpVersion: string | null;
   /** `@apps-in-toss/debugger` package version string. */
   devtoolsVersion: string | null;
-  /** Tunnel state including lock-file pid/startedAt. */
+  /** Tunnel state including this daemon's pid/startedAt. */
   tunnel: DiagnosticsTunnelInfo;
   /** Current list_pages result (pages + crash info + singleAttachModel). */
   pages: ListPagesResult | null;
@@ -1896,28 +1895,20 @@ export interface DiagnosticsResult {
   /**
    * Resolved environment and the reason string.
    *
-   * `kind` — the precise environment (`mock` | `relay-dev`). Use this for new
-   *   code. (`relay-live` removed #665, `relay-mobile` #103.)
-   * `env`  — backward-compat two-value alias (`mock` | `relay`). Kept so
-   *   existing callers that only distinguish mock vs relay continue to work.
+   * `kind` — the precise environment (`mock` | `relay-dev`).
+   *   (`relay-live` removed #665, `relay-mobile` #103.)
    */
   environment: {
     /** `'none'` — 환경을 아직 띄우지 않은 데몬(start_debug·start_attach 전). */
     kind: McpEnvironment | UnbootedEnv;
-    /** @deprecated Use `kind` instead. Kept for backward compatibility. */
-    env: 'mock' | 'relay' | UnbootedEnv;
     reason: string;
-    /**
-     * @deprecated Always `false` — relay-live and the LIVE guard removed (#665).
-     * Kept for backward compatibility with consumers that read this field.
-     */
-    liveGuardActive: false;
   };
   /**
-   * Contents of `~/.ait-devtools/server.lock`, or `null` when absent.
-   * Useful for diagnosing stale-lock conflicts without running the full server.
+   * Other debugger sessions on this machine (count, project label, start time).
+   * Every session has its own relay, tunnel and dashboard; this only helps tell
+   * dashboard tabs apart.
    */
-  serverLockHolder: DiagnosticsLockHolder | null;
+  otherSessions: DiagnosticsOtherSessions;
   /**
    * Basic process identity for the running MCP server daemon.
    * Useful for diagnosing orphaned daemons and stale parent associations.
@@ -2315,8 +2306,8 @@ export interface GetDiagnosticsInput {
   booted?: boolean;
   /** Diagnostics collector for errors / attach events. */
   collector: DiagnosticsCollector;
-  /** Lock-file reader — injected so tests can override without touching the FS. */
-  readLock: () => import('./server-lock.js').LockData | null;
+  /** Session registry reader — injected so tests can override without touching the FS. */
+  readSessions: () => SessionsSnapshot | null;
   /** Maximum number of recent errors to include (default 10). */
   recentErrorsLimit?: number;
   /** Optional async resolver for the MCP SDK version. */
@@ -2328,7 +2319,7 @@ export interface GetDiagnosticsInput {
   checkParentAlive?: () => boolean;
   /**
    * PID of the cloudflared child process — obtained from `QuickTunnel.childPid`
-   * and written to the lock file via `LockHandle.updateTunnelChildPid`.
+   * and written to the session registry via `SessionHandle.updateTunnelChildPid`.
    *
    * FIX 2 (issue #571): when this PID is known, `getDiagnostics` performs a
    * live `isPidAlive(tunnelChildPid)` check and overrides `tunnel.up = false`
@@ -2356,11 +2347,12 @@ function relayKeyReport(age: RelayKeyAge | null): DiagnosticsResult['relayKey'] 
  * SECRET-HANDLING:
  *   - `recentErrors` messages are already redacted by `recordError` (via
  *     `redactErrorMessage`). No additional redaction needed here.
- *   - `tunnel.wssUrl` and the lock holder's `wssUrl` are shown masked
+ *   - `tunnel.wssUrl` is shown masked
  *     (`wss://***.<domain>`): the tunnel host is secret-class and only
  *     `start_attach` returns the real address. It must not be copied into
  *     stderr, logs or error messages.
- *   - Lock file data contains only pid + startedAt + wssUrl — no secrets.
+ *   - Registry data is this daemon's pid + startedAt, and for other sessions only
+ *     project label + startedAt — no secrets, no hosts, no PIDs.
  */
 export async function getDiagnostics(input: GetDiagnosticsInput): Promise<DiagnosticsResult> {
   const {
@@ -2369,7 +2361,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     env,
     envReason,
     collector,
-    readLock: readLockFn,
+    readSessions: readSessionsFn,
     recentErrorsLimit = 10,
     getMcpVersion = readMcpSdkVersion,
     checkParentAlive = () => isPidAlive(process.ppid),
@@ -2383,11 +2375,17 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     Promise.resolve(readDevtoolsVersion()),
   ]);
 
-  // Read lock file for serverLockHolder + tunnel pid/startedAt.
-  const lockData = readLockFn();
-  const serverLockHolder: DiagnosticsLockHolder | null = lockData
-    ? { pid: lockData.pid, startedAt: lockData.startedAt, wssUrl: maskRelayUrl(lockData.wssUrl) }
-    : null;
+  // This daemon's own registry entry (tunnel pid/startedAt) plus the other
+  // sessions. Other sessions are reported by label and start time only.
+  const sessions = readSessionsFn();
+  const selfEntry = sessions?.self ?? null;
+  const others = sessions?.others ?? [];
+  const otherSessions: DiagnosticsOtherSessions = {
+    count: others.length,
+    sessions: others
+      .slice(0, MAX_LISTED_OTHER_SESSIONS)
+      .map((o) => ({ project: o.project, startedAt: o.startedAt })),
+  };
 
   // FIX 2 (issue #571): if the cloudflared child PID is known, perform a live
   // probe to detect child death even when the cached `tunnel.up` is still true.
@@ -2395,10 +2393,11 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
   // was never invalidated.
   //
   // Source priority: explicit `tunnelChildPid` arg (in-memory, always current) →
-  // lock file's `tunnelChildPid` (populated by FIX 3 via onTunnelChildPid) →
-  // null (no probe). The lock-file fallback ensures the check fires even when the
-  // handler didn't pass the in-memory PID explicitly (issue #572 review).
-  const effectiveTunnelChildPid = tunnelChildPid ?? lockData?.tunnelChildPid ?? null;
+  // this daemon's own registry entry `tunnelChildPid` (populated via
+  // onTunnelChildPid) → null (no probe). The registry fallback ensures the check
+  // fires even when the handler didn't pass the in-memory PID explicitly
+  // (issue #572 review).
+  const effectiveTunnelChildPid = tunnelChildPid ?? selfEntry?.tunnelChildPid ?? null;
   let effectiveUp = tunnel.up;
   if (
     tunnel.up &&
@@ -2412,8 +2411,8 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
   const tunnelInfo: DiagnosticsTunnelInfo = {
     up: effectiveUp,
     wssUrl: maskRelayUrl(tunnel.wssUrl),
-    pid: lockData?.pid ?? null,
-    startedAt: lockData?.startedAt ?? null,
+    pid: selfEntry?.pid ?? null,
+    startedAt: selfEntry?.startedAt ?? null,
     droppedAt: tunnel.droppedAt ?? null,
     reissueAttempts: tunnel.reissueAttempts ?? 0,
   };
@@ -2492,12 +2491,10 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     environment: booted
       ? {
           kind: env,
-          env: toLegacyEnv(env),
           reason: envReason,
-          liveGuardActive: false, // relay-live and LIVE guard removed (#665)
         }
-      : { kind: 'none', env: 'none', reason: UNBOOTED_ENV_REASON, liveGuardActive: false },
-    serverLockHolder,
+      : { kind: 'none', reason: UNBOOTED_ENV_REASON },
+    otherSessions,
     process: {
       pid: process.pid,
       ppid: process.ppid,

@@ -17,14 +17,14 @@ The packages this repo owns:
 
 - `packages/agent-plugin`
 - `packages/debugger`
-- `packages/debug-console`
+- `packages/debugger-client`
 - `shared/internal-protocol`
 
 Out of scope: third-party dependencies, packages this repo does not publish (for example `@apps-in-toss/web-framework`), and the Apps in Toss console and servers. Please report those to the owning project.
 
 ## No secret goes into a bundle
 
-A debug bundle carries relay public keys only. The relay signing key derives from the same secret as the connection codes, so a secret inside a bundle would let anyone who unpacks it sign their own tunnel. `debug-console` therefore has no device-side code-verification hook and no build define for injecting a secret; only the relay verifies a code value. `check:gate-dist` fails if the shipped artifact carries a name that would bring either back. If you find a secret in a bundle, please report it as described above.
+A debug bundle carries relay public keys only. The relay signing key derives from the same secret as the connection codes, so a secret inside a bundle would let anyone who unpacks it sign their own tunnel. `debugger-client` therefore has no device-side code-verification hook and no build define for injecting a secret; only the relay verifies a code value. `check:gate-dist` fails if the shipped artifact carries a name that would bring either back. If you find a secret in a bundle, please report it as described above.
 
 ## Known limitations
 

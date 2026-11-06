@@ -2,9 +2,9 @@
  * `DualConnectionRouter` direction-symmetry tests (issues #356, #378, #396).
  *
  * #354 introduced the dual-connection router but wired it only into the
- * relay-launched `runDebugServer`. A `--target=local` start (`runLocalDebugServer`)
- * still pinned a single-connection router, so a cross-family `start_debug`
- * (local → relay) was rejected as "restart required". #356 generalized the
+ * relay-launched `runDebugServer`, so a cross-family `start_debug` starting
+ * from the local browser (local → relay) was rejected as "restart required".
+ * #356 generalized the
  * router to be **direction-neutral**: any family could be the eager (startup)
  * one and a lazy resolver booted the rest. #378 generalized the lazy slot from a
  * single "opposite kind" into a `bootLazyFor(key: FamilyKey)` resolver keyed by
@@ -45,6 +45,7 @@ import {
 } from '../debug-server.js';
 import { AutoDevtoolsOpener } from '../devtools-opener.js';
 import { InMemoryDiagnosticsCollector, type TunnelStatus } from '../tools.js';
+import { testVerifyAuth } from './relay-test-auth.js';
 
 // ---- Fakes -----------------------------------------------------------------
 
@@ -176,7 +177,7 @@ describe('DualConnectionRouter — relay-first (runDebugServer entry, #354 behav
   });
 });
 
-describe('DualConnectionRouter — local-first (runLocalDebugServer entry, #356 core, all-lazy #396)', () => {
+describe('DualConnectionRouter — local-first (#356 core, all-lazy #396)', () => {
   it('local first switch lazy-boots the local family, never booting relay', async () => {
     const { router, local, getRelayBootCount, getLocalBootCount } = makeRouter('local');
     const report = await router.switchMode('local-browser');
@@ -363,12 +364,16 @@ describe('bootRelayFamily — relay-auth baseline (#250)', () => {
   });
 
   it('rejects boot when AIT_DEBUG_TOTP_SECRET is unset (public relay must be authed)', async () => {
-    await expect(bootRelayFamily()).rejects.toThrow(/AIT_DEBUG_TOTP_SECRET/);
+    await expect(bootRelayFamily({ verifyAuth: testVerifyAuth() })).rejects.toThrow(
+      /AIT_DEBUG_TOTP_SECRET/,
+    );
   });
 
   it('rejects boot when AIT_DEBUG_TOTP_SECRET is a weak (non-hex) value', async () => {
     process.env.AIT_DEBUG_TOTP_SECRET = 'Z'.repeat(40);
-    await expect(bootRelayFamily()).rejects.toThrow(/AIT_DEBUG_TOTP_SECRET/);
+    await expect(bootRelayFamily({ verifyAuth: testVerifyAuth() })).rejects.toThrow(
+      /AIT_DEBUG_TOTP_SECRET/,
+    );
   });
 });
 

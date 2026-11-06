@@ -1,9 +1,9 @@
 /**
- * 폰 쪽 `target.js` 가드 — debug-console 버전과 무관하게 "다른 미니앱이 이미 붙어 있다"를
+ * 폰 쪽 `target.js` 가드 — debugger-client 버전과 무관하게 "다른 미니앱이 이미 붙어 있다"를
  * 미니앱 화면에 알린다.
  *
  * 거부된 미니앱은 옛 debug-console(≤0.1.7)을 싣고 있는 경우가 많아 4409 WS close를 화면에
- * 띄우지 못한다. 그런데 모든 debug-console 버전은 relay의 `target.js`를 script 태그로 불러
+ * 띄우지 못한다. 그런데 모든 debug-console·debugger-client 버전은 relay의 `target.js`를 script 태그로 불러
  * 실행한다. relay가 붙은 미니앱이 있을 때만 chii의 `target.js` 앞에 이 가드를 붙여 내려주면,
  * 페이지 호스트가 붙은 호스트와 다를 때 경고를 그리고 chii 코드를 실행하지 않는다. 같은
  * 호스트(새로고침·재스캔)는 chii 본문을 그대로 실행한다.
@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { isPreRenameDeviceProtocol } from '@apps-in-toss/internal-protocol/attach-handshake';
 import { hostLabel } from './target-busy.js';
 
 const require = createRequire(import.meta.url);
@@ -93,15 +94,26 @@ return true;
   return `${guard}${chiiBody}\n}).call(this);\n`;
 }
 
-/** On-phone text for a device whose protocol differs from the relay's. */
+/**
+ * On-phone text for a device whose protocol differs from the relay's.
+ *
+ * A device older than the relay is a pre-rename `@apps-in-toss/debug-console` (protocol 2 or
+ * lower, see `isPreRenameDeviceProtocol`; a newer-but-still-older `debugger-client` gets a plain
+ * "update debugger-client" text): the package continues as `@apps-in-toss/debugger-client`, so the text names the new
+ * package and the 0.3.1 floor of both packages instead of "update debug-console". A device
+ * newer than the relay needs a newer daemon.
+ */
 export function updateRequiredText(devicePathProtocol: number, hostProtocol: number): string {
-  return devicePathProtocol < hostProtocol
-    ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console이 디버거보다 오래돼서 연결하지 않았어요. debug-console을 최신 버전으로 올려 다시 배포한 뒤 QR을 다시 스캔하세요.'
-    : '디버거(@apps-in-toss/debugger)가 이 미니앱의 debug-console보다 오래돼서 연결하지 않았어요. 디버거를 최신 버전으로 올려 다시 실행하세요.';
+  if (devicePathProtocol < hostProtocol) {
+    return isPreRenameDeviceProtocol(devicePathProtocol)
+      ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고, 지금 디버거와는 연결되지 않아요. debug-console을 지우고 @apps-in-toss/debugger-client 0.3.1 이상을 설치해 다시 배포한 뒤 QR을 다시 스캔하세요.'
+      : '이 미니앱의 @apps-in-toss/debugger-client가 디버거(@apps-in-toss/debugger)보다 오래돼서 연결하지 않았어요. debugger-client를 최신 버전으로 올려 다시 배포한 뒤 QR을 다시 스캔하세요.';
+  }
+  return '디버거(@apps-in-toss/debugger)가 이 미니앱의 @apps-in-toss/debugger-client보다 오래돼서 연결하지 않았어요. 디버거를 0.3.1 이상 최신 버전으로 올려 다시 실행하세요.';
 }
 
 export const UPDATE_REQUIRED_CONSOLE_WARNING =
-  '[ait-debugger] debug-console과 디버거의 프로토콜이 달라서 연결하지 않았어요. 업데이트가 필요해요.';
+  '[ait-debugger] 디버거와 미니앱 쪽 패키지의 프로토콜이 달라서 연결하지 않았어요. @apps-in-toss/debugger와 @apps-in-toss/debugger-client를 0.3.1 이상으로 함께 맞추세요.';
 
 /**
  * `target.js` 대신 내려주는 스크립트. 프로토콜이 다른 기기는 chii 코드를 받지 못하고, 화면 위쪽에

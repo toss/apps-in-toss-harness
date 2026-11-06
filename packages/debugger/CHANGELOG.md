@@ -1,5 +1,31 @@
 # @apps-in-toss/debugger
 
+## 0.3.1
+
+### Patch Changes
+
+디버거 0.3.1과 debugger-client 0.3.1은 프로토콜 버전 3을 쓰므로 반드시 함께 올려야 한다. 0.3.0 이하의 debug-console과 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나온다.
+
+- 폰 쪽 패키지 `@apps-in-toss/debug-console`의 이름이 `@apps-in-toss/debugger-client`로 바뀌었다. 데몬의 에러와 폰 화면 안내가 새 이름을 말한다.
+- MCP 서버 키와 서버 이름이 `ait-debugger`로 바뀌었다(전에는 키 `ait-devtools`, 서버 이름 `ait-debug`·`ait-devtools`). 도구 이름이 `mcp__ait-debugger__*`가 되므로 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`에서 옮긴다. `.mcp.json`의 키도 `ait-debugger`로 바꾼다. `AIT_DEBUG_*` 환경 변수는 그대로다.
+- 프로토콜 버전이 3이 됐다. relay는 `/v3/at/<code>/` 경로만 받는다. 프로토콜 2 이하의 기기(`debug-console` 0.3.0 이하)에는 `target.js` 자리에 업데이트 안내 막대를 내려주고, `start_attach`는 "미니앱에서 `@apps-in-toss/debug-console`을 지우고 `@apps-in-toss/debugger-client` 0.3.1 이상을 설치해 재배포하라"는 에러를 돌려준다. 기기 쪽 프로토콜이 더 높으면 데몬을 0.3.1 이상으로 올리라고 안내한다.
+- 설치 주소가 `debugger-v0.3.1` 릴리스로 바뀌었다. 기존 `ait-devtools` 항목은 `/ait:setup-debugger`(agent-plugin 0.3.1)가 새 키와 주소로 옮겨 준다.
+- 세션마다 데몬이 따로 뜬다. MCP 클라이언트 세션(Claude Code 창 하나)마다 relay, cloudflared 터널, 대시보드, 포트가 독립이라 여러 세션을 동시에 써도 서로 막거나 끊지 않는다. 다른 세션의 데몬이 있어도 차단 모드로 시작하지 않고 모든 도구를 쓴다. relay 하나는 계속 미니앱 하나만 받는다(close 4409).
+- 머신 전체 잠금 `~/.ait-devtools/server.lock`이 `~/.ait-debugger/sessions/<데몬 PID>.json`(폴더 0700, 파일 0600) 세션 기록으로 바뀌었다. 기록에는 프로젝트 이름(프로젝트 폴더 이름만), 시작 시각, 클라이언트 PID, 데몬과 cloudflared의 PID·프로세스 시작 시각을 담고 relay 주소는 담지 않는다. 새 데몬은 PID가 없어졌거나 PID의 프로세스 시작 시각이 기록과 다른 데몬의 기록을 치우고, 시작 시각이 맞고 부모가 없는 cloudflared만 함께 종료한다. 실행 명령 줄에 어떤 글자가 들어 있는지로는 데몬을 끝난 것으로 보지 않는다. 같은 클라이언트가 같은 프로젝트에 남긴 이전 데몬은 실행 명령이 debugger이고 이미 부모를 잃었을 때(MCP 재연결 뒤 남은 것)만 종료한다. 부모가 살아 있는 같은 클라이언트의 데몬은 다른 살아 있는 세션으로 보고 그대로 둔다. 살아 있는 다른 클라이언트의 데몬에는 신호를 보내지 않고, 터널 자식이 죽었다는 이유로 살아 있는 데몬을 정리 대상으로 보지 않는다. `--force`(`--takeover`)는 같은 클라이언트가 다른 프로젝트에 남긴 데몬까지, 부모가 살아 있어도 종료한다. 0.3.0 데몬의 `~/.ait-devtools/server.lock`은 읽지 않고, 떠 있는 0.3.0 데몬도 종료하지 않는다.
+- `get_debug_status`의 `serverLockHolder`가 `otherSessions`(`{count, sessions: [{project, startedAt}]}`)로 바뀌었다. 다른 세션의 프로젝트 이름과 시작 시각만 알려 주고 PID·주소는 담지 않는다. `tunnel.pid`와 `tunnel.startedAt`은 이 데몬의 값이다.
+- 대시보드와 QR 페이지의 탭 제목 끝에 프로젝트 이름이 붙어 동시에 열린 세션을 구분할 수 있다. 대시보드는 기본 포트 8317부터 비어 있는 포트를 찾으며, 세션마다 접근 토큰과 쿠키가 따로다.
+- 로컬 Chromium(`local-browser`)의 프로필 폴더를 세션마다 따로 만들고 세션이 끝나면 지운다. 전에는 사용자마다 하나를 공유해, 두 번째 세션의 브라우저가 첫 번째 브라우저에 합쳐지고 디버깅 포트가 열리지 않았다. 디버깅 포트는 Chromium이 직접 골라(`--remote-debugging-port=0`) 프로필의 `DevToolsActivePort`로 알려 주므로, 두 세션이 동시에 떠도 같은 포트를 받지 않는다.
+- cloudflared 실행 파일을 준비할 때 내려받은 파일을 임시 폴더에서 검증한 뒤 한 번에 교체한다. 여러 세션이 동시에 처음 실행해도 반쯤 쓰인 파일이나 지워진 파일을 만나지 않는다. 내려받다 중단돼 남은 임시 폴더(`.cloudflared-stage-*`)는 한 시간이 지나면 다음 실행에서 지운다.
+- `.ait_relay`를 처음 만들 때 완성된 파일만 나타나도록 임시 파일을 만들어 연결한다. 같은 프로젝트에서 두 세션이 동시에 `debugger relay-key`를 실행해도 키가 서로 덮어써지지 않고 같은 키를 쓴다. 쓰다 중단돼 남을 수 있는 임시 파일(`.ait_relay.*.tmp`)도 프로젝트 `.gitignore`에 함께 들어간다.
+- `debugger-test`는 다른 debugger 세션이 있어도 멈추지 않고 자기 relay로 실행한다. `--separate-relay`는 받기만 하고 아무 일도 하지 않는다. 러너의 대시보드 탭 제목에도 프로젝트 이름이 붙는다.
+- 시작 플래그 `--mode`와 `--target`이 없어졌다. 데몬은 시작할 때 아무것도 띄우지 않고, 세션 안에서 `start_debug`(`local-browser` 또는 `relay-staging`)로 고른다. 모르는 플래그를 넘기면 오류로 끝나고, 쓸 수 있는 플래그(`--force`, `--takeover`, `--help`, `--version`)를 안내한다. `AIT_DEVTOOLS_URL`은 로컬 브라우저가 여는 dev 서버 주소로 그대로 쓴다.
+- relay는 항상 접속 코드를 확인한다. 코드 검사 없이 뜨는 경로가 없어졌다. 폰의 요청은 `/v3/at/<code>/d/<기기 id>/` 경로로 와야 하고, 이 경로 밖의 터널 요청은 코드 검사 횟수에 세지 않고 거절한다. 프로토콜 1·2 경로(`/at/<code>/`, `/v2/at/<code>/`)는 업데이트 안내를 내려주는 용도로만 해석한다. 같은 머신에서 데몬이 직접 붙는 연결만 `at=` 쿼리로 코드를 보낸다. 코드 비밀이 없으면 attach 링크와 인스펙터 링크를 만들지 않는다.
+- 프로토콜 값을 보내지 않는 기기(debug-console 0.1.5 이하)를 프로토콜 1로 보고 받아 주던 처리가 없어졌다. 프로토콜 3이 아닌 기기는 모두 업데이트 안내를 받는다.
+- `get_debug_status`의 `environment`는 `{kind, reason}`만 담는다. 옛 두 값짜리 `env`와 `liveGuardActive` 필드가 없어졌고, 환경을 띄우기 전에는 `kind`가 `none`이다.
+- 에러 메시지 끝에 덧붙던 영어 호환 문구가 없어졌다. dev 서버 모드의 `devtools_get_mock_state` 별칭 도구도 없어졌고 `AIT.getMockState`를 쓴다.
+- `@apps-in-toss/debugger/mcp/debug-server`가 다른 모듈의 심볼을 다시 내보내던 것이 없어졌다(attach 오케스트레이터, 부모·최대 수명 감시, `buildRelayVerifyAuth`). 필요한 심볼은 각 모듈(`attach-orchestrator`, `totp` 등)에서 가져온다.
+- 터미널과 stderr 로그의 접두사가 `[ait-debug]`에서 `[ait-debugger]`로 바뀌었다. `AIT_AUTO_DEVTOOLS`는 `1`일 때만 인스펙터를 자동으로 연다.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -3,4 +3,4 @@ description: 'Wire the Tossface emoji web font (이모지 서체) into the proje
 argument-hint: ''
 ---
 
-Load the `inject` skill — the user invoked the **tossface facet** (`/ait:inject-tossface`): they want to render emoji as Tossface glyphs, either via a CDN link (zero bundle cost, network-dependent) or by bundling the specific font subsets the project actually uses (deterministic, adds ~520KB–1.9MB per subset, requires the license file). Jump to the "tossface facet — `/ait:inject-tossface`" section, not the devtools or debug-console facet. Takes no argument.
+Load the `inject` skill — the user invoked the **tossface facet** (`/ait:inject-tossface`): they want to render emoji as Tossface glyphs, either via a CDN link (zero bundle cost, network-dependent) or by bundling the specific font subsets the project actually uses (deterministic, adds ~520KB–1.9MB per subset, requires the license file). Jump to the "tossface facet — `/ait:inject-tossface`" section, not the devtools or debugger-client facet. Takes no argument.

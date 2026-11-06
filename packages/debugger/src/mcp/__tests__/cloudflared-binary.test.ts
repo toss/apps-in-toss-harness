@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,8 +66,11 @@ describe('ensureVerifiedCloudflaredBin', () => {
     writeFileSync(bin, 'latest-from-postinstall');
     const install = vi.fn(async (to: string) => writeFileSync(to, 'good'));
     await ensureVerifiedCloudflaredBin(bin, { expectedSha256: sha('good'), install });
-    expect(install).toHaveBeenCalledWith(bin, CLOUDFLARED_VERSION);
+    // The download goes to a private staging path and is renamed over bin.
+    expect(install).toHaveBeenCalledWith(expect.any(String), CLOUDFLARED_VERSION);
+    expect(install.mock.calls[0]?.[0]).not.toBe(bin);
     expect(readFileSync(bin, 'utf8')).toBe('good');
+    expect(readdirSync(dir)).toEqual(['cloudflared']);
   });
 
   it('downloads the pinned version when the binary is missing', async () => {
@@ -73,6 +85,47 @@ describe('ensureVerifiedCloudflaredBin', () => {
       ensureVerifiedCloudflaredBin(bin, { expectedSha256: sha('good'), install }),
     ).rejects.toThrow(/sha256 verification/);
     expect(existsSync(bin)).toBe(false);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('never leaves bin missing or half-written while a replacement downloads', async () => {
+    writeFileSync(bin, 'latest-from-postinstall');
+    let seenDuringDownload: string | null = null;
+    const install = vi.fn(async (to: string) => {
+      // Another session starting now still finds the old executable in place.
+      seenDuringDownload = readFileSync(bin, 'utf8');
+      writeFileSync(to, 'good');
+    });
+    await ensureVerifiedCloudflaredBin(bin, { expectedSha256: sha('good'), install });
+    expect(seenDuringDownload).toBe('latest-from-postinstall');
+    expect(readFileSync(bin, 'utf8')).toBe('good');
+  });
+
+  it('lets two sessions provision at the same time and ends with the verified build', async () => {
+    const install = vi.fn(async (to: string) => {
+      await new Promise((r) => setTimeout(r, 10));
+      writeFileSync(to, 'good');
+    });
+    await Promise.all([
+      ensureVerifiedCloudflaredBin(bin, { expectedSha256: sha('good'), install }),
+      ensureVerifiedCloudflaredBin(bin, { expectedSha256: sha('good'), install }),
+    ]);
+    expect(readFileSync(bin, 'utf8')).toBe('good');
+    expect(readdirSync(dir)).toEqual(['cloudflared']);
+  });
+
+  it('sweeps staging directories a killed download left behind, but only old ones', async () => {
+    const oldStage = path.join(dir, '.cloudflared-stage-dead');
+    const freshStage = path.join(dir, '.cloudflared-stage-live');
+    mkdirSync(oldStage);
+    mkdirSync(freshStage);
+    writeFileSync(path.join(oldStage, 'cloudflared'), 'half');
+    const past = new Date(Date.now() - 2 * 60 * 60_000);
+    utimesSync(oldStage, past, past);
+    const install = vi.fn(async (to: string) => writeFileSync(to, 'good'));
+    await ensureVerifiedCloudflaredBin(bin, { expectedSha256: sha('good'), install });
+    expect(existsSync(oldStage)).toBe(false);
+    expect(existsSync(freshStage)).toBe(true);
   });
 
   it('refuses when the download produced no file', async () => {

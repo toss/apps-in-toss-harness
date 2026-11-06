@@ -5,7 +5,7 @@
  *
  * 왜 이 게이트가 존재하는가 (npm-less 전환 설계 §3 B6 · §6 W-C):
  *
- *   npm-less 전환은 `@apps-in-toss/debugger`·`@apps-in-toss/debug-console`을
+ *   npm-less 전환은 `@apps-in-toss/debugger`·`@apps-in-toss/debugger-client`을
  *   npmjs에 발행하는 대신, GitHub Releases에 올린 `pnpm pack` tarball을
  *   버전 고정 URL(`.../releases/download/<pkg>-v<ver>/<file>.tgz`)로 설치하게
  *   한다. URL은 npm dist-tag와 달리 **불변 고정**이라, 패키지를 새 버전으로
@@ -83,7 +83,7 @@
  *
  * devtools 패키지 자체는 이 검사에서 전량 제외한다(ARMED_SCOPE_PACKAGES에
  * 없음, EXCLUDED_SCOPE_PACKAGE로 파일 수집 단계에서도 skip) — devtools는
- * npm-less 전환(harness 소유 `debugger`·`debug-console` 2패키지 한정, 설계 §3
+ * npm-less 전환(harness 소유 `debugger`·`debugger-client` 2패키지 한정, 설계 §3
  * "손대지 않는 것" 참고)의 범위 밖이다. devtools는 오히려 반대 방향이다:
  * 발행 주체(wf 소스 monorepo(사내))가 `@apps-in-toss/devtools`로
  * 공개 npm(registry.npmjs.org)에 이미 발행했다(`3.0.2`, 2026-08-04). 이 파일이
@@ -130,7 +130,7 @@ export const EXPECTED_REPO = 'apps-in-toss-harness';
 const EXCLUDED_SCOPE_PACKAGE = 'devtools';
 
 /** 설치·실행 명령 문맥에서 잡아야 하는 (구) 커뮤니티 org 스코프 패키지들. */
-const ARMED_SCOPE_PACKAGES = ['debugger', 'debug-console'];
+const ARMED_SCOPE_PACKAGES = ['debugger', 'debugger-client', 'debug-console'];
 
 /**
  * `releases/download` 형상의 URL 전부를 잡는다 — host/owner/repo는 아직
@@ -326,8 +326,9 @@ export function checkArmedScopeReferences(lines, armed) {
   const violations = [];
   for (const { file, line, text } of lines) {
     for (const scopePkg of ARMED_SCOPE_PACKAGES) {
-      const needle = `@ait-co/${scopePkg}`;
-      if (!text.includes(needle)) continue;
+      // `debugger`가 `debugger-client`에도 걸려 한 참조가 두 번 보고되지 않도록 이름 끝을 막는다.
+      const needle = new RegExp(`@ait-co/${scopePkg}(?![\\w-])`);
+      if (!needle.test(text)) continue;
       violations.push({ file, line, text: text.trim(), scopePackage: scopePkg });
     }
   }

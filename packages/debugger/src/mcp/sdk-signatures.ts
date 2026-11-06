@@ -264,7 +264,9 @@ export function lookupSignature(name: string): SdkSignature | undefined {
 export function warnPassthrough(name: string): void {
   if (_warnedPassthrough.has(name)) return;
   _warnedPassthrough.add(name);
-  process.stderr.write(`[ait-debug] call_sdk: "${name}" 시그니처가 등록되지 않음 — passthrough\n`);
+  process.stderr.write(
+    `[ait-debugger] call_sdk: "${name}" 시그니처가 등록되지 않음 — passthrough\n`,
+  );
 }
 
 /**

@@ -121,7 +121,7 @@ describe('sdkAbsentError — 상태 4: SDK 부재', () => {
     expect(sdkAbsentError().isError).toBe(true);
   });
 
-  // issue #360 — local 세션(`--target=local`, env 1)은 dog-food 재배포가 아니라
+  // issue #360 — local 세션(`local-browser`, env 1)은 dog-food 재배포가 아니라
   // dev 서버/unplugin alias 확인이 다음 행동이다.
   it('isLocal=true: "npm run dev" + unplugin alias 안내 포함', () => {
     const text = getText(sdkAbsentError('call_sdk', true));
@@ -166,10 +166,10 @@ describe('tierRejectionError — Tier A/B 환경 불일치', () => {
     expect(text).toContain('relay');
   });
 
-  it('하위 호환 영문 패턴 포함 (기존 테스트 어서션 유지)', () => {
+  it('영문 호환 문구를 덧붙이지 않는다', () => {
     const text = getText(tierRejectionError('start_attach', 'relay', 'mock', 'default-mock'));
-    expect(text).toContain('available only in relay');
-    expect(text).toContain('Current environment is mock');
+    expect(text).not.toContain('available only in');
+    expect(text).not.toContain('Current environment is');
   });
 
   it('relay 환경 필요 → start_attach hint 포함', () => {
@@ -254,7 +254,7 @@ describe('classifyToolError — 에러 패턴 자동 분류', () => {
   });
 
   it('replaced-by-new-attach → pageCrashError 메시지', () => {
-    const err = new Error('[ait-debug] replaced-by-new-attach — 이전 page 교체됨');
+    const err = new Error('[ait-debugger] replaced-by-new-attach — 이전 page 교체됨');
     const result = classifyToolError(err, 'take_screenshot');
     expect(getText(result)).toContain('crash');
   });

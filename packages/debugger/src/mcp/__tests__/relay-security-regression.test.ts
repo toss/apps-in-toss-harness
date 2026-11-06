@@ -172,7 +172,9 @@ beforeEach(() => {
 
 describe('relay: path routing and code check (tunnel)', () => {
   it('control: a valid code serves the script', async () => {
-    const script = await raw(port, `/v2/at/${code()}/target.js`, { headers: TUNNEL });
+    const script = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+      headers: TUNNEL,
+    });
     expect(script.status).toBe(200);
     expect(script.headers['content-type']).toContain('javascript');
   });
@@ -201,7 +203,7 @@ describe('relay: path routing and code check (tunnel)', () => {
   ])(
     'control-paired: %s is not served through the tunnel, with or without a code',
     async (path) => {
-      for (const prefix of ['', `/v2/at/${code()}`]) {
+      for (const prefix of ['', `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA`]) {
         const res = await raw(port, `${prefix}${path}`, { headers: PHONE });
         expect(res.status, `${prefix}${path}`).toBe(404);
         expect(json(res)).toEqual({ error: 'not-found' });
@@ -211,7 +213,7 @@ describe('relay: path routing and code check (tunnel)', () => {
 
   it.each([
     ['/target.js', 401, RELAY_AUTH_REJECT_REASON],
-    ['/ait-attach?p=2&v=x', 401, RELAY_AUTH_REJECT_REASON],
+    ['/ait-attach?p=3&v=x', 401, RELAY_AUTH_REJECT_REASON],
   ])('no code: %s is refused by the code check', async (path, status, error) => {
     const res = await raw(port, path, { headers: TUNNEL });
     expect(res.status).toBe(status);
@@ -229,13 +231,17 @@ describe('relay: path routing and code check (tunnel)', () => {
   });
 
   it('a wrong code is refused by the code check, not by an earlier layer', async () => {
-    const res = await raw(port, `/v2/at/${'0'.repeat(32)}/target.js`, { headers: TUNNEL });
+    const res = await raw(port, `/v3/at/${'0'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+      headers: TUNNEL,
+    });
     expect(res.status).toBe(401);
     expect(json(res)).toEqual({ error: RELAY_AUTH_REJECT_REASON });
   });
 
   it('control then variant: a spelling variant of a served path still needs the code', async () => {
-    const ok = await raw(port, `/v2/at/${code()}/TARGET.JS`, { headers: TUNNEL });
+    const ok = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/TARGET.JS`, {
+      headers: TUNNEL,
+    });
     // Exact routes fold case, so this is the same route and is served with a code.
     expect(ok.status).toBe(200);
     const bare = await raw(port, '/TARGET.JS', { headers: TUNNEL });
@@ -246,9 +252,13 @@ describe('relay: path routing and code check (tunnel)', () => {
 
 describe('relay: /proxy is refused', () => {
   const proxied = (url: string) =>
-    raw(port, `/v2/at/${code()}/proxy?url=${encodeURIComponent(url)}&__chobitsu-hide__=true`, {
-      headers: PHONE,
-    });
+    raw(
+      port,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/proxy?url=${encodeURIComponent(url)}&__chobitsu-hide__=true`,
+      {
+        headers: PHONE,
+      },
+    );
 
   // Fresh code, phone origin: the code check passes and the route does not
   // exist, so the answer is the one any unknown route gets. Nothing is fetched,
@@ -280,7 +290,10 @@ describe('relay: /proxy is refused', () => {
   it.each(['GET', 'HEAD', 'POST', 'PUT', 'OPTIONS'])(
     'refuses %s with a fresh code and no url',
     async (method) => {
-      const res = await raw(port, `/v2/at/${code()}/proxy`, { method, headers: PHONE });
+      const res = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/proxy`, {
+        method,
+        headers: PHONE,
+      });
       expect(res.status).toBe(404);
       expect(upstreamHits).toEqual([]);
     },
@@ -289,7 +302,7 @@ describe('relay: /proxy is refused', () => {
   it('refuses a wrong code with the code check', async () => {
     const res = await raw(
       port,
-      `/v2/at/${'0'.repeat(32)}/proxy?url=${encodeURIComponent(`http://127.0.0.1:${upstreamPort}/a.css`)}`,
+      `/v3/at/${'0'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/proxy?url=${encodeURIComponent(`http://127.0.0.1:${upstreamPort}/a.css`)}`,
       { headers: PHONE },
     );
     expect(res.status).toBe(401);
@@ -300,7 +313,7 @@ describe('relay: /proxy is refused', () => {
 
 describe('relay: sockets, origin and host', () => {
   const targetPath = (c: string, id: string, page = PAGE_URL) =>
-    `/v2/at/${c}/target/${id}?url=${page}&title=x`;
+    `/v3/at/${c}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/${id}?url=${page}&title=x`;
 
   it('control: a valid code and the app origin attach a target socket', async () => {
     const out = track(await ws(port, targetPath(code(), 't1'), PHONE));
@@ -308,12 +321,20 @@ describe('relay: sockets, origin and host', () => {
   });
 
   it('a tunnel caller never gets a client socket, even with a valid code and origin', async () => {
-    const out = await ws(port, `/v2/at/${code()}/client/x?target=t1`, PHONE);
+    const out = await ws(
+      port,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/client/x?target=t1`,
+      PHONE,
+    );
     expectClosed(out, RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
   });
 
   it('a client socket from the tunnel without an origin is stopped by the origin rule', async () => {
-    const out = await ws(port, `/v2/at/${code()}/client/x?target=t1`, TUNNEL);
+    const out = await ws(
+      port,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/client/x?target=t1`,
+      TUNNEL,
+    );
     expectClosed(out, RELAY_ORIGIN_REJECT_CLOSE_CODE, RELAY_ORIGIN_REJECT_REASON);
   });
 
@@ -336,7 +357,7 @@ describe('relay: sockets, origin and host', () => {
   it('a wrong origin on /proxy is stopped by the origin rule, before the destination policy', async () => {
     const res = await raw(
       port,
-      `/v2/at/${code()}/proxy?url=${encodeURIComponent('http://127.0.0.1:1/')}`,
+      `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/proxy?url=${encodeURIComponent('http://127.0.0.1:1/')}`,
       { headers: { ...TUNNEL, Origin: 'https://evil.example' } },
     );
     expect(res.status).toBe(403);
@@ -344,11 +365,11 @@ describe('relay: sockets, origin and host', () => {
   });
 
   it('rebinding Host without the tunnel marks is refused as host-not-allowed (http)', async () => {
-    const ok = await raw(port, `/v2/at/${code()}/target.js`, {
+    const ok = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       headers: { Host: TUNNEL_HOST, 'cf-connecting-ip': '203.0.113.9' },
     });
     expect(ok.status).toBe(200);
-    const bad = await raw(port, `/v2/at/${code()}/target.js`, {
+    const bad = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
       headers: { Host: 'evil.example' },
     });
     expect(bad.status).toBe(403);
@@ -368,13 +389,16 @@ describe('relay: sockets, origin and host', () => {
     const noCode = await raw(port, '/targets', { headers: local });
     expect(noCode.status).toBe(401);
     expect(json(noCode)).toEqual({ error: RELAY_AUTH_REJECT_REASON });
-    const withCode = await raw(port, `/v2/at/${code()}/targets`, { headers: local });
+    const withCode = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/targets`, {
+      headers: local,
+    });
     expect(withCode.status).toBe(200);
   });
 });
 
 describe('relay: code freshness and guessing', () => {
-  const target = (c: string, id: string) => `/v2/at/${c}/target/${id}?url=${PAGE_URL}&title=x`;
+  const target = (c: string, id: string) =>
+    `/v3/at/${c}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/${id}?url=${PAGE_URL}&title=x`;
 
   it('control: a current code attaches', async () => {
     expect(track(await ws(port, target(code(), 'f1'), PHONE)).kind).toBe('open');
@@ -386,20 +410,28 @@ describe('relay: code freshness and guessing', () => {
   });
 
   it('a code from the future is refused by the code check', async () => {
-    const res = await raw(port, `/v2/at/${code(Date.now() + 300_000)}/target.js`, {
-      headers: TUNNEL,
-    });
+    const res = await raw(
+      port,
+      `/v3/at/${code(Date.now() + 300_000)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+      {
+        headers: TUNNEL,
+      },
+    );
     expect(res.status).toBe(401);
     expect(json(res)).toEqual({ error: RELAY_AUTH_REJECT_REASON });
   });
 
   it('malformed codes are refused and do not lock out a correct code', async () => {
     for (let i = 0; i < 40; i++) {
-      const res = await raw(port, `/v2/at/x${i}/target.js`, { headers: TUNNEL });
+      const res = await raw(port, `/v3/at/x${i}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+        headers: TUNNEL,
+      });
       expect(res.status).toBe(401);
       expect(json(res)).toEqual({ error: RELAY_AUTH_REJECT_REASON });
     }
-    const ok = await raw(port, `/v2/at/${code()}/target.js`, { headers: TUNNEL });
+    const ok = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+      headers: TUNNEL,
+    });
     expect(ok.status).toBe(200);
   });
 
@@ -407,7 +439,9 @@ describe('relay: code freshness and guessing', () => {
     const statuses: number[] = [];
     let lockedBody: unknown;
     for (let i = 1; i <= 40; i++) {
-      const res = await raw(port, `/v2/at/${wrongCodeN(i)}/target.js`, { headers: TUNNEL });
+      const res = await raw(port, `/v3/at/${wrongCodeN(i)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+        headers: TUNNEL,
+      });
       statuses.push(res.status);
       if (res.status === 429) lockedBody = json(res);
     }
@@ -417,17 +451,25 @@ describe('relay: code freshness and guessing', () => {
     expect(lockedBody).toEqual({ error: RELAY_AUTH_LOCKED_REASON });
 
     // Locked now: another wrong code is told so...
-    const stillLocked = await raw(port, `/v2/at/${wrongCodeN(99)}/target.js`, { headers: TUNNEL });
+    const stillLocked = await raw(
+      port,
+      `/v3/at/${wrongCodeN(99)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`,
+      { headers: TUNNEL },
+    );
     expect(stillLocked.status).toBe(429);
     // ...but the correct code gets through, over http and over a socket.
-    const ok = await raw(port, `/v2/at/${code()}/target.js`, { headers: TUNNEL });
+    const ok = await raw(port, `/v3/at/${code()}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+      headers: TUNNEL,
+    });
     expect(ok.status).toBe(200);
     expect(track(await ws(port, target(code(), 'f3'), PHONE)).kind).toBe('open');
   });
 
   it('a locked socket attempt is told so with the lock close code', async () => {
     for (let i = 1; i <= 40; i++)
-      await raw(port, `/v2/at/${wrongCodeN(i)}/target.js`, { headers: TUNNEL });
+      await raw(port, `/v3/at/${wrongCodeN(i)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
+        headers: TUNNEL,
+      });
     const out = await ws(port, target(wrongCodeN(77), 'f4'), PHONE);
     expectClosed(out, RELAY_AUTH_LOCKED_CLOSE_CODE, RELAY_AUTH_LOCKED_REASON);
   });

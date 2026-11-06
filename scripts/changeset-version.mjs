@@ -23,7 +23,7 @@
  *     를 찍고 exit 1 한다.
  *   그래서 기존 우회(루트에 복사하고 `cd packages/<name>` 에서 실행)는 changeset 을
  *   패키지 쪽 원본에서만 읽게 되어 루트 복사본이 무의미해졌고, 패키지 쪽에 changeset
- *   이 없으면(debugger·debug-console 처럼 루트 복사본만 쓰는 경우) "No unreleased
+ *   이 없으면(debugger·debugger-client 처럼 루트 복사본만 쓰는 경우) "No unreleased
  *   changesets found" 로 실패한다. 해법은 **cwd 를 workspace root 로 두고** 실행하는
  *   것이다 — 설정과 changeset 이 모두 루트 임시 `.changeset/` 에서 읽힌다.
  *

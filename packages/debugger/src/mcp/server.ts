@@ -16,8 +16,7 @@
  * `AIT.getSdkCallHistory`). In dev mode they are backed by the HTTP mock-state
  * endpoint (see `HttpAitSource`); in debug mode by the Chii channel. So an AI
  * sees a coherent tool whether attached to a phone (debug) or a dev browser
- * (dev). `devtools_get_mock_state` (the original devtools#130 name) is kept as a
- * backward-compatible alias of `AIT.getMockState`.
+ * (dev).
  *
  * Issue #305 (M2-1) — dev/debug tool-surface unification:
  * dev-mode now also exposes `list_pages`, `get_debug_status`, `measure_safe_area`,
@@ -38,21 +37,11 @@
  *                   `take_snapshot`, `list_console_messages`,
  *                   `list_network_requests`, `list_exceptions`) — return an
  *                   explicit tier-filter error explaining that CDP is unavailable
- *                   in dev-mode and pointing to `--mode=local` or `--mode=debug`.
+ *                   in dev-mode and pointing to the `debugger` daemon (start_debug / start_attach).
  *
- * This module is reached via the `debugger --mode=dev` CLI entry (see
- * `cli.ts`); the default (no flag) bin mode is the debug-mode CDP/Chii server.
- *
- * Usage (in your MCP client config, e.g. Claude Desktop):
- *   {
- *     "mcpServers": {
- *       "ait-devtools": {
- *         "command": "npx",
- *         "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.0/apps-in-toss-debugger-0.3.0.tgz", "debugger", "--mode=dev"],
- *         "env": { "AIT_DEVTOOLS_URL": "http://localhost:5173" }
- *       }
- *     }
- *   }
+ * This module has no CLI entry (the `--mode=dev` flag was removed in 0.3.1; the
+ * `debugger` bin is always the debug-mode CDP/Chii daemon). Start it
+ * programmatically: `import { runDevServer } from '@apps-in-toss/debugger/mcp/server'`.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -74,8 +63,8 @@ import {
 /** Error message prefix for CDP-dependent tools called in dev-mode. */
 const CDP_UNAVAILABLE_IN_DEV_MODE =
   'dev-mode에서는 CDP 연결이 없어 이 도구를 사용할 수 없습니다. ' +
-  '실기기 또는 로컬 Chromium에 붙이려면 `debugger --mode=local` 또는 ' +
-  '`debugger` (debug 모드 기본)로 전환하세요.';
+  '실기기 또는 로컬 Chromium에 붙이려면 `debugger` 데몬(debug 모드)을 MCP 서버로 등록해 ' +
+  '`start_debug`/`start_attach`를 쓰세요.';
 
 /**
  * Tool descriptors served by the dev-mode server.
@@ -118,14 +107,6 @@ const DEV_TOOL_DEFINITIONS = [
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
-  {
-    name: 'devtools_get_mock_state',
-    description:
-      'Backward-compatible alias of AIT.getMockState (the original devtools#130 name). Returns the ' +
-      'current AIT DevTools mock state snapshot. Read-only. Prefer AIT.getMockState in new configs.',
-    inputSchema: { type: 'object', properties: {}, required: [] },
-    availableIn: 'both' as ToolAvailability,
-  },
   /* ------------------------------------------------------------------ */
   /* Unified surface — dev-mode shims (issue #305)                       */
   /* ------------------------------------------------------------------ */
@@ -135,7 +116,7 @@ const DEV_TOOL_DEFINITIONS = [
       'dev-mode: returns the Vite dev server URL as a single-entry page list. ' +
       'No CDP relay is involved — `tunnel.up` is always false and `devMode: true` marks ' +
       'this as a shim result. Call this first to confirm the dev server is reachable. ' +
-      'In debug mode (`debugger` / `--mode=local`) this returns real attached pages.',
+      'In debug mode (the `debugger` daemon) this returns real attached pages.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -197,7 +178,7 @@ const DEV_TOOL_DEFINITIONS = [
   /*                                                                      */
   /* start_attach is relay-only (Tier B per RFC #277). Listing it        */
   /* here in dev-mode ensures agents don't hit "Unknown tool" and get a  */
-  /* clear hand-off hint toward --mode=debug (station 2 → 3 seam).      */
+  /* clear hand-off hint toward the debugger daemon (station 2 → 3 seam).  */
   /* ------------------------------------------------------------------ */
   {
     name: 'start_attach',
@@ -205,7 +186,7 @@ const DEV_TOOL_DEFINITIONS = [
       'Switches into a relay mode (if given), builds a self-attaching deep-link QR for a real device, ' +
       'and waits for the phone to attach — all in one call. ' +
       'NOT available in dev-mode — requires a live cloudflared relay (Tier B, relay-only). ' +
-      'To use this tool: restart the MCP server with `--mode=debug` (or omit --mode), then call ' +
+      'To use this tool: register the `debugger` daemon as the MCP server (it is debug mode), then call ' +
       'start_attach({mode:"relay-staging", …}) to bring up the relay and generate the QR for ' +
       'phone scanning. No environment variable is involved. ' +
       'See: docs MCP (apps-in-toss-docs) searchDocumentation for "debug relay".',
@@ -242,7 +223,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Evaluates an arbitrary JavaScript expression via CDP Runtime.evaluate. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug` for CDP access.',
+      'Use the `debugger` daemon (start_debug) for CDP access.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -257,7 +238,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Captures a PNG screenshot via CDP Page.captureScreenshot. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -266,7 +247,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Returns the DOM tree via CDP DOM.getDocument. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -275,7 +256,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Captures a serialized page snapshot via CDP DOMSnapshot.captureSnapshot. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -284,7 +265,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Lists console messages captured via CDP Runtime.consoleAPICalled. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -293,7 +274,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Lists network requests captured via CDP Network events. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -302,7 +283,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Lists JS exceptions captured via CDP Runtime.exceptionThrown. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -317,7 +298,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Runs mini-app test files on the attached page over CDP (Runtime.evaluate). ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Switch to `--mode=local` or `--mode=debug`.',
+      'Use the `debugger` daemon (start_debug).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -354,7 +335,7 @@ const CDP_ONLY_TOOL_NAMES = new Set<string>([
 /**
  * Tier B tools — relay-only per RFC #277.
  * Listed in dev-mode tool surface (issue #323) so agents get a hand-off hint
- * toward `--mode=debug` instead of "Unknown tool".
+ * toward the `debugger` daemon instead of "Unknown tool".
  */
 const TIER_B_TOOL_NAMES = new Set<string>(['start_attach']);
 
@@ -490,8 +471,8 @@ async function buildDevCallSdk(
         ok: false,
         error:
           `dev-mode-unsupported: "${methodName}"은 dev-mode에서 직접 호출할 수 없습니다. ` +
-          'CDP bridge(window.__sdkCall)가 없으므로 실제 SDK 호출은 `--mode=local` 또는 ' +
-          'debug 모드에서만 가능합니다. ' +
+          'CDP bridge(window.__sdkCall)가 없으므로 실제 SDK 호출은 ' +
+          '`debugger` 데몬(debug 모드)에서만 가능합니다. ' +
           '지원 메서드: getOperationalEnvironment (mock state에서 읽음).',
       };
     }
@@ -505,7 +486,7 @@ export function createDevServer(deps: CreateDevServerDeps = {}): Server {
   const aitSource = deps.aitSource ?? new HttpAitSource({ stateEndpoint });
 
   const server = new Server(
-    { name: 'ait-devtools', version: __VERSION__ },
+    { name: 'ait-debugger', version: __VERSION__ },
     { capabilities: { tools: {} } },
   );
 
@@ -525,7 +506,7 @@ export function createDevServer(deps: CreateDevServerDeps = {}): Server {
     }
 
     // Tier B tools (relay-only) — return a tier-filter error with a hand-off
-    // hint toward --mode=debug so the station 2 → 3 seam is explicit.
+    // hint toward the debugger daemon so the station 2 → 3 seam is explicit.
     // (issue #323, Option B: list Tier B in dev tools/list + reject on call)
     if (TIER_B_TOOL_NAMES.has(name)) {
       // dev-mode는 debug 데몬과 별개 프로세스라 런타임 warm swap 대상이 아니다 —
@@ -540,15 +521,14 @@ export function createDevServer(deps: CreateDevServerDeps = {}): Server {
         'relay',
         'mock',
         'dev-mode — Vite HTTP endpoint, no CDP/relay connection',
-        'dev-mode 서버에는 CDP·relay 연결이 없습니다. `--mode=debug`로(또는 `--mode` 없이) ' +
-          '데몬을 재시작한 뒤 `start_attach({mode:"relay-staging", scheme_url, projectRoot})`로 ' +
+        'dev-mode 서버에는 CDP·relay 연결이 없습니다. `debugger` 데몬을 MCP 서버로 ' +
+          '등록한 뒤 `start_attach({mode:"relay-staging", scheme_url, projectRoot})`로 ' +
           '실기기를 attach하세요. 환경 변수를 설정할 필요는 없습니다.',
       );
     }
 
     try {
-      // `devtools_get_mock_state` is an alias of `AIT.getMockState`.
-      const effective = name === 'devtools_get_mock_state' ? 'AIT.getMockState' : name;
+      const effective = name;
 
       // AIT.* tools backed by HTTP mock-state endpoint.
       if (isAitToolName(effective)) {
@@ -617,7 +597,7 @@ function jsonResult(value: unknown) {
  * "attached" page).
  *
  * When `AIT_MCP_COMPAT=chrome-devtools` the envelope is skipped and the raw
- * value is returned — identical to `jsonResult` (0.1.x back-compat).
+ * value is returned — identical to `jsonResult`.
  */
 function envelopeResult(tool: string, value: unknown) {
   const wrapped = wrapEnvelope(value, { tool, env: 'mock', attached: true });

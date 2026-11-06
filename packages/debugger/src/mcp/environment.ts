@@ -70,20 +70,6 @@ export function isRelayEnv(env: McpEnvironment): boolean {
 }
 
 /**
- * Maps the `McpEnvironment` union to the legacy two-value union
- * (`'mock' | 'relay'`) for backward-compatible fields in diagnostics output.
- * Written as an exhaustive switch so a missing arm is a TS compile error.
- */
-export function toLegacyEnv(env: McpEnvironment): 'mock' | 'relay' {
-  switch (env) {
-    case 'mock':
-      return 'mock';
-    case 'relay-dev':
-      return 'relay';
-  }
-}
-
-/**
  * Reconstructs the two-value `McpEnvironment` output string from the connection
  * kind (issues #348, #665, #103):
  *

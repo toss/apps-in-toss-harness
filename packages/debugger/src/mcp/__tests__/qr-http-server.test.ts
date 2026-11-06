@@ -12,7 +12,7 @@
  * i18n: 대부분의 테스트는 `Accept-Language: ko` 헤더를 명시해 한국어 응답을
  * 얻는다. Accept-Language 없이 fetch하면 기본값 'en'이 적용된다.
  *
- * 포트 격리 (devtools#752): 이 파일은 `startQrHttpServer()`를 100회 이상
+ * 포트 격리 (devtools#752): 이 파일은 `startQrHttpServer(() => IDLE_DASHBOARD_STATE)`를 100회 이상
  * 순차 호출한다. #752 이전에는 기본이 순수 ephemeral(매 호출 랜덤 포트)이라
  * 서버 close() 직후 OS 포트 회수 지연(TIME_WAIT 등)과 무관하게 각 테스트가
  * 항상 새 포트를 받았다. #752로 기본이 고정 base 포트로 바뀌었으므로, 이
@@ -32,7 +32,11 @@ import {
   SSE_EVICTION_WINDOW_MS,
 } from '../qr-http-server.js';
 import { signRelay } from '../relay-signing.js';
-import { dashboardCookieForPort, startQrHttpServer } from './dashboard-auth-helper.js';
+import {
+  dashboardCookieForPort,
+  IDLE_DASHBOARD_STATE,
+  startQrHttpServer,
+} from './dashboard-auth-helper.js';
 
 process.env.AIT_DEBUG_HTTP_PORT = '0';
 
@@ -70,42 +74,7 @@ async function readFirstSseFrame(url: string, timeoutMs = 3_000): Promise<unknow
 }
 
 // ---------------------------------------------------------------------------
-// getDashboardState 미주입 — GET / 와 GET /events 204
-// ---------------------------------------------------------------------------
-
-describe('startQrHttpServer — getDashboardState 미주입', () => {
-  it('GET / → 204 (dashboard 비활성)', async () => {
-    const srv = await startQrHttpServer();
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/`);
-      expect(res.status).toBe(204);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it('GET /events → 204 (SSE 비활성)', async () => {
-    const srv = await startQrHttpServer();
-    try {
-      const res = await fetch(`http://127.0.0.1:${srv.port}/events`);
-      expect(res.status).toBe(204);
-    } finally {
-      await srv.close();
-    }
-  });
-
-  it('notifyStateChange() — no-op (에러 없음)', async () => {
-    const srv = await startQrHttpServer();
-    try {
-      expect(() => srv.notifyStateChange()).not.toThrow();
-    } finally {
-      await srv.close();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getDashboardState 주입 — GET / dashboard HTML 렌더
+// GET / dashboard HTML 렌더
 // ---------------------------------------------------------------------------
 
 describe('startQrHttpServer — GET / dashboard HTML', () => {
@@ -837,8 +806,8 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
     }
   });
 
-  it('GET /attach?u= → HTML (back-compat 라우트 유지)', async () => {
-    // /attach?u= 라우트는 back-compat으로 유지됨 (#595).
+  it('GET /attach?u= → HTML', async () => {
+    // /attach?u= 는 대시보드 없이 attach 링크만 그리는 단독 라우트다.
     const attachUrl =
       'intoss-private://aitc-sdk-example?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
     const srv = await startQrHttpServer(() => ({
@@ -876,7 +845,7 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
   });
 
   // ── /attach page — SSE injection & id="attach-section" (Defect 1 fix, #435) ─
-  // back-compat: /attach?u= 라우트는 #595 이후에도 유지됨. 이 테스트들은 직접 URL로 검증.
+  // /attach?u= 단독 라우트. 이 테스트들은 직접 URL로 검증.
 
   it('GET /attach HTML contains EventSource(/events) SSE script (#435)', async () => {
     // buildAttachHtml injects buildSseScript so the /attach page subscribes
@@ -890,7 +859,7 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
       phase: 'active',
     }));
     try {
-      // /attach?u= 직접 사용 (back-compat 라우트, #595 이후에도 유지됨).
+      // /attach?u= 직접 사용.
       const res = await fetch(
         `http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`,
         { headers: { 'Accept-Language': 'ko' } },
@@ -917,7 +886,7 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
       phase: 'active',
     }));
     try {
-      // /attach?u= 직접 사용 (back-compat 라우트, #595 이후에도 유지됨).
+      // /attach?u= 직접 사용.
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`, {
           headers: { 'Accept-Language': 'ko' },
@@ -945,7 +914,7 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
       phase: 'active',
     }));
     try {
-      // /attach?u= 직접 사용 (back-compat 라우트, #595 이후에도 유지됨).
+      // /attach?u= 직접 사용.
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`)
       ).text();
@@ -1201,7 +1170,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
   // ── /attach 표면 ─────────────────────────────────────────────────────────
 
   it('GET /attach — .url-row + .copy-btn + id="url-box" 포함', async () => {
-    // back-compat 라우트 직접 테스트 (#595).
+    // /attach?u= 라우트 직접 테스트.
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
@@ -1225,7 +1194,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
   it('GET /attach — id="url-section" 섹션에 url-row 포함 (url-box는 #url-section에만)', async () => {
     // 이중 표시 방지 (#458): url-box가 #attach-section 안에 없고
     // #url-section 안에만 있어야 한다.
-    // back-compat 라우트 직접 테스트 (#595).
+    // /attach?u= 라우트 직접 테스트.
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
@@ -1255,7 +1224,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
   it('GET /attach — SSE 스크립트가 attach 표면 분기(img src 교체 + #url-box textContent 갱신) 포함', async () => {
     // /attach 표면: innerHTML 전체 교체가 아니라 img src 교체 + url-box textContent만 갱신해야
     // SSE push 때 url-box가 이중으로 생기지 않는다(#458 핵심 수정).
-    // back-compat 라우트 직접 테스트 (#595).
+    // /attach?u= 라우트 직접 테스트.
     const srv = await startQrHttpServer(() => ({
       tunnel: { up: true, wssUrl: null },
       pages: [],
@@ -1311,7 +1280,7 @@ describe('startQrHttpServer — /attach mode-aware chrome 분기 (#468)', () => 
     attachUrl: string,
     lang: 'ko' | 'en',
   ): Promise<string> {
-    // /attach?u= 직접 사용 — back-compat 라우트 (#595 이후에도 유지됨).
+    // /attach?u= 직접 사용.
     // mode-aware 카피 분기는 /attach 라우트에서 렌더되므로 직접 URL로 검증한다.
     const srv = await startQrHttpServer(() => makeState(mode, attachUrl));
     try {
@@ -1539,7 +1508,7 @@ describe('startQrHttpServer — /attach 페이지 inspector 버튼 (#544)', () =
   const attachUrlDummy =
     'intoss-private://aitc-sdk-example?_deploymentId=test-inspector&debug=1&relay=wss%3A%2F%2Fx.tc.com';
 
-  // #595: 이 테스트들은 /attach?u= 라우트를 직접 사용 (back-compat 유지됨).
+  // 이 테스트들은 /attach?u= 라우트를 직접 사용한다.
   // buildAttachPageUrl은 루트 `/`를 반환하지만 /attach 라우트의 inspector 동작을 검증하려면
   // 직접 URL이 필요하다.
 
@@ -1803,9 +1772,9 @@ describe('startQrHttpServer — GET /devtools/ → chii 302 redirect (#248)', ()
     }
   });
 
-  it('getDirectInspectorUrl 미주입 → startQrHttpServer(undefined) → GET /devtools/ 503', async () => {
+  it('getDirectInspectorUrl 미주입 → startQrHttpServer(() => IDLE_DASHBOARD_STATE) → GET /devtools/ 503', async () => {
     // getDashboardState도 미주입인 경우 (서버 옵션 없음).
-    const srv = await startQrHttpServer();
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
     try {
       const res = await fetch(`http://127.0.0.1:${srv.port}/devtools/`);
       expect(res.status).toBe(503);
@@ -2786,7 +2755,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
     const basePort = 41717; // 흔치 않은 테스트 전용 포트
     const occupied = await occupyPort(basePort);
     try {
-      const srv = await startQrHttpServer(undefined, { dashboardPort: basePort });
+      const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE, { dashboardPort: basePort });
       try {
         expect(srv.port).toBe(basePort + 1);
       } finally {
@@ -2799,7 +2768,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
 
   it('base 포트가 비어 있으면 base 그대로 bind한다', async () => {
     const basePort = 41727;
-    const srv = await startQrHttpServer(undefined, { dashboardPort: basePort });
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE, { dashboardPort: basePort });
     try {
       expect(srv.port).toBe(basePort);
     } finally {
@@ -2810,14 +2779,16 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
   it('EADDRINUSE가 아닌 에러는 즉시 reject한다 (스캔하지 않음)', async () => {
     // 포트 범위를 벗어난 값(음수)은 Node http server.listen에서
     // ERR_SOCKET_BAD_PORT(EADDRINUSE 아님)로 즉시 reject되어야 한다.
-    await expect(startQrHttpServer(undefined, { dashboardPort: -1 })).rejects.toThrow();
+    await expect(
+      startQrHttpServer(() => IDLE_DASHBOARD_STATE, { dashboardPort: -1 }),
+    ).rejects.toThrow();
   });
 
   it('명시적 0은 스캔 없이 순수 ephemeral bind를 유지한다', async () => {
     const basePort = 41737;
     const occupied = await occupyPort(basePort);
     try {
-      const srv = await startQrHttpServer(undefined, { dashboardPort: 0 });
+      const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE, { dashboardPort: 0 });
       try {
         // ephemeral 포트는 OS가 할당 — base 값과 다르고 0도 아니다.
         expect(srv.port).not.toBe(0);
@@ -2835,7 +2806,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
     process.env.AIT_DEBUG_HTTP_PORT = String(basePort);
     const occupied = await occupyPort(basePort);
     try {
-      const srv = await startQrHttpServer(undefined);
+      const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
       try {
         expect(srv.port).toBe(basePort + 1);
       } finally {
@@ -2848,7 +2819,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
 
   it('AIT_DEBUG_HTTP_PORT=0 env는 순수 ephemeral 동작을 유지한다 (명시적 opt-out)', async () => {
     process.env.AIT_DEBUG_HTTP_PORT = '0';
-    const srv = await startQrHttpServer(undefined);
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
     try {
       expect(srv.port).not.toBe(0);
     } finally {
@@ -2870,7 +2841,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
       requested.push(args[0]);
       return (realListen as (...a: unknown[]) => Server).call(this, 0, args[1], args[2]);
     } as never);
-    const srv = await startQrHttpServer(undefined);
+    const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE);
     try {
       expect(requested[0]).toBe(DEFAULT_DASHBOARD_PORT);
     } finally {
@@ -2885,7 +2856,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
     const occupiedB = await occupyPort(basePort + 1);
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const srv = await startQrHttpServer(undefined, {
+      const srv = await startQrHttpServer(() => IDLE_DASHBOARD_STATE, {
         dashboardPort: basePort,
         portScanRange: range,
       });
@@ -3653,5 +3624,82 @@ describe('startQrHttpServer — attach 링크 검증', () => {
     expect(
       isCurrentAttachUrl(`${base}&at=${code}`, `${base.replace('0123456789', '9876543210')}`),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 세션마다 대시보드가 따로 뜬다 — 프로젝트 라벨과 서로 간섭 없음
+// ---------------------------------------------------------------------------
+
+describe('startQrHttpServer — 동시 세션의 대시보드', () => {
+  const state: DashboardState = {
+    tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
+    pages: [],
+    attachUrl: null,
+    phase: 'active',
+  };
+  const attachUrl =
+    'intoss-private://app?_deploymentId=test-label&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+
+  it('대시보드와 QR 페이지 탭 제목에 프로젝트 라벨이 붙는다', async () => {
+    const srv = await startQrHttpServer(() => ({ ...state, attachUrl }), {
+      projectLabel: 'shop-app',
+    });
+    try {
+      const dash = await (
+        await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
+      ).text();
+      expect(dash).toMatch(/<title>[^<]*· shop-app<\/title>/);
+      const attach = await (
+        await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`, {
+          headers: { 'Accept-Language': 'ko' },
+        })
+      ).text();
+      expect(attach).toMatch(/<title>[^<]*· shop-app<\/title>/);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('라벨을 HTML로 이스케이프하고 `$` 치환 패턴을 해석하지 않는다', async () => {
+    const srv = await startQrHttpServer(() => state, { projectLabel: '<b>$&app' });
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
+      expect(html).toContain('· &#60;b&#62;$&#38;app</title>');
+      expect(html).not.toContain('<b>$&app');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('라벨이 없으면 제목은 그대로다', async () => {
+    const srv = await startQrHttpServer(() => state);
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
+      expect(html).not.toMatch(/<title>[^<]*·[^<]*<\/title>/);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('같은 base 포트를 쓰는 두 세션은 서로 다른 포트·토큰을 받고 서로의 쿠키로 열리지 않는다', async () => {
+    const basePort = 41771;
+    const a = await startQrHttpServer(() => state, { dashboardPort: basePort, projectLabel: 'a' });
+    const b = await startQrHttpServer(() => state, { dashboardPort: basePort, projectLabel: 'b' });
+    try {
+      expect(a.port).toBe(basePort);
+      expect(b.port).toBe(basePort + 1);
+      expect(dashboardCookieForPort(a.port)).not.toBe(dashboardCookieForPort(b.port));
+      const own = await fetch(`http://127.0.0.1:${b.port}/`);
+      expect(own.status).toBe(200);
+      // A's cookie name and token mean nothing to B.
+      const crossed = await fetch(`http://127.0.0.1:${b.port}/`, {
+        headers: { cookie: dashboardCookieForPort(a.port), 'x-test-no-auth': '1' },
+      });
+      expect(crossed.status).toBe(403);
+    } finally {
+      await a.close();
+      await b.close();
+    }
   });
 });

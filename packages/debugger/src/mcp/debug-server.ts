@@ -19,8 +19,9 @@
  * Best-effort child cleanup: SIGINT/SIGTERM/SIGHUP handlers call shutdown() to
  * stop cloudflared and the relay. uncaughtException/unhandledRejection also
  * call shutdown() before exit. SIGKILL cannot be intercepted by Node, so
- * cloudflared orphans from SIGKILL remain (port 0 makes them harmless). Users
- * can clean up manually: `pkill -f 'cloudflared.*trycloudflare'`.
+ * cloudflared orphans from SIGKILL remain (port 0 makes them harmless); the next
+ * daemon reaps the one its session registry entry names. A name-wide `pkill` is
+ * wrong now: other sessions run their own cloudflared.
  *
  * The tool layer reads from an injectable `CdpConnection` (CDP) and `AitSource`
  * (AIT.*), so every tool is unit-testable with a fake (no phone). This module
@@ -32,8 +33,8 @@
  * `notifications/tools/list_changed`. Before any page attaches, only bootstrap
  * tools (`start_attach`, `list_pages`) are listed. Once a target appears,
  * the full attach-dependent tool set is added and a `list_changed` notification
- * is sent — without requiring a session restart. `runDebugServer` and
- * `runLocalDebugServer` start a polling watcher that detects the 0→N target
+ * is sent — without requiring a session restart. `runDebugServer`
+ * starts a polling watcher that detects the 0→N target
  * transition and calls `server.sendToolListChanged()`.
  *
  * Note: `src/mcp/server.ts` (dev mode, HTTP mock-state) is NOT subject to this
@@ -45,7 +46,7 @@
 // The host allowlist is shared with the device-side gate. Before the split this
 // was `import … from '../in-app/gate.js'` — the daemon reaching into the
 // browser tree. That reverse edge would now be a hard `@apps-in-toss/debugger` →
-// `@apps-in-toss/debug-console` dependency, which is exactly what the split forbids:
+// `@apps-in-toss/debugger-client` dependency, which is exactly what the split forbids:
 // it would put the device-side runtime's dependencies in the daemon's install
 // graph while the bundle grep still passed. The predicate lives in the shared protocol package instead and
 // is inlined into both bundles at build time.
@@ -88,25 +89,6 @@ import {
   buildDashboardTimelineState,
   createRelayStageHooks,
 } from './attach-timeline.js';
-import { installExitTriggers } from './exit-triggers.js';
-import { startMaxAgeWatchdog } from './parent-watcher.js';
-import { createProtocolVersionMonitor } from './protocol-version.js';
-import { redirectConsoleToStderr } from './stdout-guard.js';
-import { shouldRejectNewTarget } from './target-busy.js';
-
-// Back-compat re-exports (issue #684 PR1): these symbols moved to
-// `attach-orchestrator.ts` but were previously exported from here. Re-export so
-// existing importers (tests) keep resolving them from `./debug-server.js`
-// unchanged — a pure refactor must not move a public symbol's import path.
-export {
-  type AttachUrlParts,
-  extractDeploymentId,
-  isRelayPageFresh,
-  RELAY_STALE_PAGE_MS,
-  START_ATTACH_SEGMENT_MS,
-} from './attach-orchestrator.js';
-
-import { runBlockedServer } from './blocked-server.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { ChiiCdpConnection } from './chii-connection.js';
 import { type ChiiRelay, startChiiRelay } from './chii-relay.js';
@@ -132,24 +114,29 @@ import {
   sdkAbsentError,
   tierRejectionError,
 } from './errors.js';
+import { installExitTriggers } from './exit-triggers.js';
 import { LocalCdpConnection } from './local-connection.js';
 import { launchChromium } from './local-launcher.js';
 import { logError, logInfo, logWarn } from './log.js';
+import { startMaxAgeWatchdog } from './parent-watcher.js';
+import { createProtocolVersionMonitor } from './protocol-version.js';
 import {
   type DashboardState,
   type QrHttpServer,
   type QrHttpServerOptions,
   startQrHttpServer,
 } from './qr-http-server.js';
+import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
+import { relayCodeSecret } from './relay-code-secret.js';
+import { appNameFromSchemeUrl } from './relay-origin.js';
+import { redactRelayText } from './relay-redact.js';
+import { relayRunId } from './relay-run-id.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
 import { attachSignature, relayCertDocument } from './relay-signing.js';
 import { RESTART_CMD } from './restart-hint.js';
-import {
-  acquireLock,
-  type LockHandle,
-  readServerLock,
-  ServerLockConflictError,
-} from './server-lock.js';
+import { listOtherSessions, registerSession, type SessionsSnapshot } from './session-registry.js';
+import { redirectConsoleToStderr } from './stdout-guard.js';
+import { shouldRejectNewTarget } from './target-busy.js';
 import {
   BOOTSTRAP_TOOL_NAMES,
   callSdk,
@@ -182,14 +169,6 @@ import {
   mintRelayCode,
   RELAY_QR_REFRESH_INTERVAL_MS,
 } from './totp.js';
-
-export { startMaxAgeWatchdog, startParentWatcher } from './parent-watcher.js';
-
-import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
-import { relayCodeSecret } from './relay-code-secret.js';
-import { appNameFromSchemeUrl } from './relay-origin.js';
-import { redactRelayText } from './relay-redact.js';
-import { relayRunId } from './relay-run-id.js';
 import {
   makeTunnelStatus,
   printAttachBanner,
@@ -198,11 +177,6 @@ import {
   startTunnelHealthProbe,
 } from './tunnel.js';
 import { createTunnelRotationPolicy, type TunnelRotationOptions } from './tunnel-rotation.js';
-
-// RELAY_STALE_PAGE_MS / START_ATTACH_SEGMENT_MS /
-// isRelayPageFresh / extractDeploymentId
-// moved to `attach-orchestrator.ts` (issue #684 PR1) and are re-exported above
-// for back-compat.
 
 /**
  * The result of a `start_debug` mode switch (issue #348). Reported back to the
@@ -272,11 +246,6 @@ export function envForMode(mode: StartDebugMode): McpEnvironment {
   }
 }
 
-// AttachUrlParts / AttachTotpMeta / PrepareAttachResult / McpResult moved to
-// `attach-orchestrator.ts` (issue #684 PR1). AttachUrlParts / PrepareAttachResult
-// / McpResult are imported above; AttachUrlParts is also re-exported for
-// back-compat.
-
 /**
  * Owns the two coexisting CDP connections (local + relay) and the `active`
  * pointer that `start_debug` flips (issue #348 — DUAL-CONNECTION-COEXIST).
@@ -322,8 +291,7 @@ export interface DebugServerDeps {
    * read the live connection through `router.active` and `start_debug` calls
    * `router.switchMode()`. When omitted (the dominant test path), a trivial
    * router pinned to `deps.connection` is synthesized and `start_debug` reports
-   * that dynamic switching is unavailable — back-compat with every existing
-   * single-connection test.
+   * that dynamic switching is unavailable (single-connection tests).
    */
   router?: ConnectionRouter;
   /** AIT.* domain source — forwarded over the same Chii channel in production. */
@@ -357,7 +325,7 @@ export interface DebugServerDeps {
   /**
    * Diagnostics collector — records server-side errors, attach/detach events,
    * and surfaces them via `get_debug_status`. When omitted a no-op collector is
-   * used (backwards-compatible with existing tests that don't inject one).
+   * used.
    */
   diagnosticsCollector?: DiagnosticsCollector;
   /**
@@ -435,23 +403,21 @@ export interface DebugServerDeps {
    * Returns the cloudflared child PID of the currently active tunnel.
    * When provided, `get_debug_status` passes it to `getDiagnostics` as the
    * live in-memory source for FIX 2 (issue #571) — the PID is also picked up
-   * from the lock file as a fallback, but the in-memory value is preferred as
-   * it stays current across reissues.
+   * from this daemon's own registry entry as a fallback, but the in-memory value
+   * is preferred as it stays current across reissues.
    *
    * Production: injected by the run functions via a captured `activeTunnelChildPid`
    * variable that is updated whenever `onTunnelChildPid` fires (including reissues).
    * Tests inject a controlled value. Omitting it (old tests) falls back to the
-   * lock-file path in `getDiagnostics`.
+   * registry entry in `getDiagnostics`.
    */
   getTunnelChildPid?: () => number | null | undefined;
   /**
-   * Lock-file reader — injected here so tests can control the lock data without
-   * touching the filesystem. Defaults to `readServerLock` (the real file).
-   *
-   * This also enables handler-level tests for FIX 2 (issue #572 review) that
-   * need to simulate a stale lock with a dead tunnelChildPid.
+   * Session registry reader — injected here so tests can control the session
+   * data without touching the filesystem. Defaults to this daemon's own entry
+   * plus the other live sessions from the real registry directory.
    */
-  readLock?: () => import('./server-lock.js').LockData | null;
+  readSessions?: () => SessionsSnapshot | null;
   /**
    * Maximum age (ms) of a page's `lastSeenAt` before it is treated as a
    * ghost and excluded from `wait_for_attach` short-circuit logic (issue #610).
@@ -509,7 +475,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     totpSecret,
     onAttachUrlBuilt,
     getTunnelChildPid,
-    readLock: readLockDep,
+    readSessions: readSessionsDep,
     stalePageThresholdMs = RELAY_STALE_PAGE_MS,
     nowMs = () => Date.now(),
   } = deps;
@@ -521,11 +487,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // SECRET-HANDLING: the returned value is used only for the at= code, never logged.
   const getTotpSecret = deps.getTotpSecret ?? (() => totpSecret);
 
-  // Lock-file reader — defaults to the real file reader; injected by tests to
-  // control lock data without touching the filesystem. Also used by the
-  // get_debug_status handler to forward lock data into getDiagnostics for the
-  // FIX 2 lock-file fallback (issue #572 review).
-  const readLockFn = readLockDep ?? readServerLock;
+  // Session registry reader — defaults to the real registry (this daemon's own
+  // entry plus the other live sessions); injected by tests to control the data
+  // without touching the filesystem. Forwarded into getDiagnostics.
+  const readSessionsFn =
+    readSessionsDep ?? ((): SessionsSnapshot => ({ self: null, others: listOtherSessions() }));
 
   // Dual-connection router (issue #348). Production passes a real router that
   // holds both the local + relay connections and flips `active` on
@@ -595,7 +561,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   };
 
   const server = new Server(
-    { name: 'ait-debug', version: __VERSION__ },
+    { name: 'ait-debugger', version: __VERSION__ },
     // listChanged: true — the server emits notifications/tools/list_changed when
     // a page attaches (0→N target transition), promoted attach-dependent tools.
     { capabilities: { tools: { listChanged: true } } },
@@ -879,7 +845,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           envReason,
           booted,
           collector,
-          readLock: readLockFn,
+          readSessions: readSessionsFn,
           recentErrorsLimit,
           tunnelChildPid: getTunnelChildPid?.() ?? undefined,
           attachTimeline: timeline,
@@ -1012,7 +978,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             typeof sdkResult.error === 'string' &&
             sdkResult.error.startsWith('sdk-absent:')
           ) {
-            // issue #360: local(`--target=local`) 세션은 dog-food 재배포가 아니라
+            // issue #360: local(`local-browser`) 세션은 dog-food 재배포가 아니라
             // dev 서버/unplugin alias 확인이 맞는 안내다 — connection.kind로 분기.
             return sdkAbsentError('call_sdk', conn.kind === 'local');
           }
@@ -1246,7 +1212,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
  *   'local-browser' | 'relay-staging'
  *
  * Hard rename (issue #398): the older `local`/`mobile`/`staging`/`live` names
- * and their aliases are no longer accepted — pre-1.0, no back-compat.
+ * and their aliases are no longer accepted.
  * `relay-live` (env 4) removed in #665, `relay-sandbox` (env 2) in #103.
  */
 export function normalizeStartDebugMode(raw: unknown): StartDebugMode | null {
@@ -1340,9 +1306,11 @@ export function makeSingleConnectionRouter(connection: CdpConnection): Connectio
  * getDashboardState). The minted code rides inside attachUrl's at= param only —
  * never logged. mintRelayCode() relies on its Date.now() default.
  */
-export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): string {
+export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): string | null {
   const secret = process.env.AIT_DEBUG_TOTP_SECRET;
-  const code = secret ? mintRelayCode() : undefined;
+  // No relay secret loaded: there is no code-less link to show.
+  if (secret === undefined || secret === '') return null;
+  const code = mintRelayCode();
   // 터널이 새로 발급됐으면 start_attach 때 잡아 둔 옛 주소 대신 지금 주소로 링크를 만든다.
   const current = withCurrentRelay(parts, tunnel);
   return buildDeepLinkAttachUrl(
@@ -1700,23 +1668,19 @@ export interface RunDebugServerOptions {
    * Passing 0 lets the OS choose a free port on each startup — this prevents
    * EADDRINUSE when a stale cloudflared orphan still holds a fixed port (the
    * root cause of -32000 MCP handshake failures). Pass an explicit port number
-   * only when a fixed port is specifically required (backwards-compatible).
+   * only when a fixed port is specifically required.
    */
   relayPort?: number;
   /**
-   * When `true`, terminates the process holding the existing server lock and
-   * takes over the session. Corresponds to `--force` / `--takeover` CLI flags.
+   * When `true`, also ends leftover daemons of the same MCP client in other
+   * projects (the default ends only a same-client leftover of this project).
+   * Daemons of other clients are never touched. Corresponds to the
+   * `--force` / `--takeover` CLI flags.
    *
    * Default `false`.
    */
   force?: boolean;
 }
-
-// `buildRelayVerifyAuth` now lives in `./totp.js` (lightweight, node:crypto
-// only) so the unplugin's relay can wire the same TOTP upgrade gate
-// without pulling the heavy MCP server module graph. Re-exported here so
-// existing importers (and tests) keep resolving it from `debug-server.js`.
-export { buildRelayVerifyAuth };
 
 /**
  * Factory that constructs a `ChiiCdpConnection` for the given relay base URL.
@@ -1731,15 +1695,12 @@ export { buildRelayVerifyAuth };
  */
 function createRelayConnection(relayBaseUrl: string, timeline?: AttachTimeline): ChiiCdpConnection {
   // Pass the SECRET (not a code) so the connection mints a fresh TOTP per
-  // (re)connect. Read from env directly: both callers run
-  // assertRelayAuthConfigured() first, so when a TOTP-gated relay is up this is
-  // a valid hex secret; when TOTP is disabled it is undefined and no `at=` is
-  // appended (backward compatible). SECRET-HANDLING: forwarded, never logged.
+  // (re)connect. The relay boot runs assertRelayAuthConfigured() first, so a
+  // relay that is up always has its secret. SECRET-HANDLING: forwarded, never logged.
   return new ChiiCdpConnection({
     relayBaseUrl,
-    // The connection mints `at` codes with the process code key (relay-code-secret.ts);
-    // the relay secret only decides whether codes are used at all.
-    totpSecret: process.env.AIT_DEBUG_TOTP_SECRET ? relayCodeSecret() : undefined,
+    // The connection mints `at` codes with the process code key (relay-code-secret.ts).
+    totpSecret: relayCodeSecret(),
     // 안전망: relay 게이트를 통과한 다른 호스트 target도 갈아타지 않고 거부로 기록한다.
     onTargetRejectedBusy: (e) => timeline?.recordBusyRejection(e.rejectedHost, e.attachedHost),
     onTargetReplaced: () => {
@@ -1792,8 +1753,7 @@ export interface BootedFamily {
   getTunnelStatus?: () => TunnelStatus;
   /**
    * Local HTTP base URL of the Chii relay (e.g. `http://127.0.0.1:9100` for
-   * the intoss relay). Used by
-   * {@link AutoDevtoolsOpener} to build the Chii self-hosted inspector URL
+   * the intoss relay). Used to build the Chii self-hosted inspector URL
    * (`<relayHttpUrl>/front_end/chii_app.html`). `undefined` for the local-
    * browser family (no relay, F12 is available directly).
    *
@@ -1839,11 +1799,11 @@ export interface BootRelayFamilyOptions {
    * `AIT_DEBUG_TOTP_SECRET` at the call site via {@link buildRelayVerifyAuth}.
    * `undefined` disables the gate.
    */
-  verifyAuth?: (req: import('node:http').IncomingMessage) => boolean;
+  verifyAuth: (req: import('node:http').IncomingMessage) => boolean;
   /**
    * Called whenever the public tunnel URL is (re)assigned, so the caller can
-   * mirror it into the server lock file (`lockHandle.updateWssUrl`). The wssUrl
-   * carries the relay host — callers MUST NOT log it directly.
+   * refresh the dashboard. The wssUrl carries the relay host — callers MUST NOT
+   * log it directly, and it never goes into the session registry.
    */
   onWssUrl?: (wssUrl: string) => void;
   /**
@@ -1872,10 +1832,10 @@ export interface BootRelayFamilyOptions {
   /**
    * Called with the cloudflared child PID once the tunnel is up.
    *
-   * FIX 3 (issue #571): callers wire this to
-   * `lockHandle.updateTunnelChildPid(pid)` so the lock file records the child
-   * PID and a subsequent `acquireLock` can detect a zombie daemon (Node
-   * process alive, tunnel child dead) without requiring `--force`.
+   * Callers wire this to `session.updateTunnelChildPid(pid)` so the session
+   * registry records the child PID: a later daemon that finds this daemon dead
+   * can then reap the orphaned cloudflared. A live daemon is never judged stale
+   * because its tunnel child died — it restarts its own tunnel.
    */
   onTunnelChildPid?: (pid: number) => void;
   /**
@@ -1927,7 +1887,7 @@ export interface BootRelayFamilyOptions {
  * SECRET-HANDLING: the TOTP secret rides only inside `verifyAuth`; the wssUrl
  * (relay host) is never logged here directly.
  */
-export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Promise<BootedFamily> {
+export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<BootedFamily> {
   // Relay-auth baseline (issue #250): this boots a public-internet-exposed relay
   // (cloudflared quick tunnel), so a configured TOTP secret is MANDATORY — Layer
   // C is the only fail-fast layer that stops a leaked tunnel URL from attaching.
@@ -1939,7 +1899,6 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
   // orphans (SIGKILL survivors) that would otherwise block a fixed port and
   // cause -32000 MCP handshake failures on reconnect.
   const relayPort = options.relayPort ?? 0;
-  const totpEnabled = options.verifyAuth !== undefined;
 
   // relay 훅 → 단계 기록. 기존 콜백(진단 수집기·프로토콜 버전 모니터)과 나란히 호출한다.
   const stageHooks = options.timeline ? createRelayStageHooks(options.timeline) : undefined;
@@ -2001,7 +1960,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
   });
   relayRef.current = relay;
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
-  logInfo('server.start', { port: relay.port, totpEnabled });
+  logInfo('server.start', { port: relay.port });
 
   let tunnel: QuickTunnel | null = null;
   let tunnelStatus: TunnelStatus = makeTunnelStatus(false, null);
@@ -2017,14 +1976,14 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
       tunnel = t;
       tunnelStatus = makeTunnelStatus(true, t.wssUrl);
       options.onWssUrl?.(t.wssUrl);
-      // FIX 3 (issue #571): notify caller of the cloudflared child PID so it
-      // can be persisted in the server lock file for zombie detection.
+      // Notify the caller of the cloudflared child PID so it can be recorded in
+      // the session registry for orphan reaping.
       // childPid is a plain integer — not a secret.
       if (t.childPid !== undefined) {
         options.onTunnelChildPid?.(t.childPid);
       }
       // SECRET-HANDLING: wssUrl contains the relay host — do not log it directly.
-      logInfo('tunnel.up', { totpEnabled });
+      logInfo('tunnel.up', {});
       options.timeline?.record('tunnel', 'ok');
 
       // Start the health probe now that the tunnel URL is known.
@@ -2041,15 +2000,15 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
           if (reason === 'rotation') {
             options.onTunnelRotated?.();
           }
-          // FIX (issue #572 review): update the lock's tunnelChildPid so a later
-          // acquireLock sees the reissued tunnel's child — not the original dead one.
+          // Record the reissued tunnel's child PID (not the original dead one) so an
+          // orphan reaper later finds the right process.
           // childPid is a plain integer — not a secret.
           if (newTunnel.childPid !== undefined) {
             options.onTunnelChildPid?.(newTunnel.childPid);
           }
           // Reprint the notice; the new URL + QR come from start_attach / the dashboard.
-          void printAttachBanner({ totpEnabled }).then(() => {
-            logInfo('tunnel.up', { totpEnabled, reissued: true });
+          void printAttachBanner().then(() => {
+            logInfo('tunnel.up', { reissued: true });
           });
         },
         onPermanentDrop: (droppedAt) => {
@@ -2066,7 +2025,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions = {}): Pro
         },
       });
 
-      return printAttachBanner({ totpEnabled });
+      return printAttachBanner();
     },
     (err) => {
       const message = err instanceof Error ? err.message : String(err);
@@ -2209,7 +2168,7 @@ const NULL_CDP_CONNECTION: CdpConnection = {
  * first `start_debug` boots and activates one. Plus an `active` pointer and the
  * single attach watcher armed on the active connection. The router is
  * **direction-neutral** (#356): any family can be the first one booted, so a
- * `--target=local` session can hot-switch into relay (and vice versa) without
+ * `local-browser` session can hot-switch into relay (and vice versa) without
  * restarting the MCP server.
  *
  * Why a KEYED map and not a single lazy slot (#378): each mode gets its own
@@ -2337,20 +2296,13 @@ export class DualConnectionRouter implements ConnectionRouter {
           // callback, so listTargets() is guaranteed to be non-empty.
           const firstTarget = activeFamily.connection.listTargets()[0];
           const env = deriveEnvironment(activeFamily.connection.kind);
-          // Prefer the stable /inspector URL (issue #530): no relay secret, no
-          // expiry race. Falls back to the direct URL path when qrServer is
-          // not yet available (should not happen in practice).
+          // The stable /inspector URL (issue #530): no relay secret, no expiry
+          // race. Null (open is a no-op) when the dashboard server failed to start.
           const inspectorStableUrl = this.deps.getInspectorStableUrl?.() ?? null;
           this.deps.devtoolsOpener.open({
             inspectorStableUrl,
             inspectorOpenUrl: this.deps.getInspectorOpenUrl?.() ?? null,
-            relayHttpBaseUrl: activeFamily.relayHttpUrl,
             targetId: firstTarget?.id,
-            // Mint a fresh TOTP code from the daemon's secret at open time.
-            // The relay gate accepts codes up to RELAY_VERIFY_SKEW_STEPS=6 steps old (30-35 s).
-            // SECRET-HANDLING: the closure captures only the getter, never logs.
-            // Only used when inspectorStableUrl is absent (legacy path).
-            mintTotp: process.env.AIT_DEBUG_TOTP_SECRET ? () => mintRelayCode() : undefined,
             env,
           });
         }
@@ -2443,27 +2395,6 @@ export class DualConnectionRouter implements ConnectionRouter {
 }
 
 /**
- * Acquires the server lock. When another live client holds it and stdin is a
- * pipe (an MCP client, not a human at a terminal), starts the blocked-mode MCP
- * server instead of exiting so the user sees why in the tool results, and
- * returns `null`. On a TTY the conflict error is rethrown (CLI exit code 1).
- */
-function acquireLockOrBlock(force: boolean): LockHandle | null {
-  try {
-    return acquireLock({ force });
-  } catch (err) {
-    if (err instanceof ServerLockConflictError && !process.stdin.isTTY) {
-      void runBlockedServer(err).catch((e: unknown) => {
-        process.stderr.write(`[ait-debug] 차단 모드 시작 실패: ${String(e)}\n`);
-        process.exitCode = 1;
-      });
-      return null;
-    }
-    throw err;
-  }
-}
-
-/**
  * Boots the live debug stack and serves it over stdio:
  *   1. start the Chii relay on an OS-assigned port (with TOTP auth if
  *      AIT_DEBUG_TOTP_SECRET is set),
@@ -2474,12 +2405,11 @@ function acquireLockOrBlock(force: boolean): LockHandle | null {
 export async function runDebugServer(options: RunDebugServerOptions = {}): Promise<void> {
   // stdout은 MCP JSON-RPC 전용 — console.log/info/debug를 stderr로 돌린다.
   redirectConsoleToStderr();
-  // Enforce a single debug session per machine. If another server is alive,
-  // ServerLockConflictError is thrown — the MCP host surfaces the message to
-  // the agent without a relay or cloudflared ever starting.
-  // `force: true` kills the existing process and takes over the lock.
-  const lockHandle = acquireLockOrBlock(options.force ?? false);
-  if (lockHandle === null) return;
+  // Every MCP client session runs its own daemon (own relay, tunnel, dashboard,
+  // ports). The registry only cleans up what a dead or same-client predecessor
+  // left behind and lets get_debug_status name the other running sessions; it
+  // never blocks startup and never touches another client's daemon.
+  const session = registerSession({ takeover: options.force ?? false });
 
   // Dual-connection router (issues #348, #356, #378, #396): ALL families are
   // lazy-booted on the first matching `start_debug`. Nothing boots at startup —
@@ -2517,19 +2447,17 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
             verifyAuth: buildRelayVerifyAuth(),
             getAppName: () =>
               lastAttachParts ? appNameFromSchemeUrl(lastAttachParts.schemeUrl) : null,
-            // Mirror the assigned tunnel URL into the lock file so a second
-            // caller sees the correct wssUrl in the conflict error message, and
-            // notify the dashboard SSE clients of the tunnel URL change.
-            onWssUrl: (wssUrl) => {
-              lockHandle.updateWssUrl(wssUrl);
+            // Notify the dashboard SSE clients of the tunnel URL change. The URL
+            // itself is never persisted.
+            onWssUrl: () => {
               qrServer?.notifyStateChange();
             },
-            // FIX 3 (issue #571): persist the cloudflared child PID in the
-            // lock file so a subsequent acquireLock can detect zombie daemons.
-            // Also update the in-memory tracker (source a for FIX 2).
+            // Record the cloudflared child PID in the session registry (so a later
+            // daemon can reap it if this one dies) and in the in-memory tracker
+            // (source a for FIX 2).
             onTunnelChildPid: (pid) => {
               activeTunnelChildPid = pid;
-              lockHandle.updateTunnelChildPid(pid);
+              session.updateTunnelChildPid(pid);
             },
             // Issue #467: count relay TOTP 401s (secret-free) so
             // get_debug_status can distinguish "phone never arrived" from
@@ -2644,7 +2572,10 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // GUI 없는 환경에서는 startQrHttpServer가 실패해도 text QR fallback으로 동작한다.
   let qrServer: QrHttpServer | undefined;
   try {
-    qrServer = await startQrHttpServer(getDashboardState, { getDirectInspectorUrl });
+    qrServer = await startQrHttpServer(getDashboardState, {
+      getDirectInspectorUrl,
+      projectLabel: session.entry.project,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     logWarn('server.start', { msg: `QR HTTP 서버 시작 실패 (text QR fallback 사용): ${message}` });
@@ -2674,6 +2605,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // FIX (issue #572 review): expose the live cloudflared child PID (source a)
     // so get_debug_status can feed it into getDiagnostics for the FIX 2 probe.
     getTunnelChildPid: () => activeTunnelChildPid,
+    readSessions: () => session.snapshot(),
     get qrHttpServer() {
       return qrServer;
     },
@@ -2708,7 +2640,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   //
   // SIGKILL cannot be intercepted — cloudflared may remain orphaned (PPID 1).
   // Port 0 makes such orphans harmless: the next startup gets a fresh port.
-  // Manual cleanup if needed: `pkill -f 'cloudflared.*trycloudflare'`
+  // The next daemon reaps the orphan its registry entry names; never kill cloudflared by
+  // name — other sessions run their own.
   // ---------------------------------------------------------------------------
 
   let closed = false;
@@ -2739,8 +2672,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // server.close(), qrServer.close() are async — fine for signal handlers.
     void server.close();
     void qrServer?.close();
-    // Remove the lock file so the next startup can proceed immediately.
-    lockHandle.release();
+    // Remove this daemon's registry entry.
+    session.release();
   };
 
   // 신호·부모 종료 경로: 폰의 배지 제거 프레임이 relay 종료 전에 닿도록 잠깐 기다린 뒤
@@ -2765,8 +2698,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
       if (totpRefreshHandle) clearInterval(totpRefreshHandle);
       router.stopWatcher();
       for (const family of router.bootedFamilies()) family.stop();
-      // Synchronous lock release — rmSync is safe from exit handlers.
-      lockHandle.release();
+      // Synchronous release — rmSync is safe from exit handlers.
+      session.release();
     }
   });
 
@@ -2797,8 +2730,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
 
   // Self-terminate when the MCP client goes away: stdin end/close, transport
   // close, SIGHUP/SIGTERM/SIGINT, or the parent dying without a signal (watchdog).
-  // Without this the daemon is a zombie that holds the server lock and a stale
-  // cloudflared tunnel, so the client's next reconnect fails. See exit-triggers.ts.
+  // Without this the daemon is a zombie that keeps a stale cloudflared tunnel and
+  // a registry entry alive after its client is gone. See exit-triggers.ts.
   // AIT_DEBUG_NO_PARENT_WATCH=1 disables the client-gone triggers.
   exitTriggers = installExitTriggers({ shutdown: shutdownGracefully, server });
 
@@ -2816,384 +2749,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     maxAgeWatchdog = startMaxAgeWatchdog(
       () => {
         process.stderr.write(
-          '[ait-debug] max-age watchdog: daemon lifetime exceeded — shutting down for a fresh start.\n',
-        );
-        void shutdownGracefully().then(() => process.exit(0));
-      },
-      { maxAgeMs },
-    );
-  }
-}
-
-export interface RunLocalDebugServerOptions {
-  /**
-   * CDP remote debugging port for the local Chromium. Default 0 (OS-assigned).
-   * Uses an ephemeral free port when 0, avoiding EADDRINUSE on reconnect.
-   */
-  cdpPort?: number;
-  /**
-   * URL to open in the launched browser. Defaults to `AIT_DEVTOOLS_URL` env var
-   * or `http://localhost:5173`.
-   */
-  devUrl?: string;
-  /**
-   * When `true`, terminates the process holding the existing server lock and
-   * takes over the session. Corresponds to `--force` / `--takeover` CLI flags.
-   *
-   * Default `false`.
-   */
-  force?: boolean;
-}
-
-/**
- * Serves the debug stack over stdio with the local browser as the default
- * target. Since #396 NOTHING boots at startup — every family (including the
- * local Chromium) is lazy-booted on its first `start_debug`:
- *   1. `start_debug({ mode: 'local-browser' })` launches a local Chromium with
- *      `--remote-debugging-port=<port>` and attaches a `LocalCdpConnection`;
- *   2. the intoss relay family lazy-boots on the first
- *      `start_debug({ mode: 'relay-staging' })` (#665: relay-live removed,
- *      #103: relay-sandbox removed);
- *   3. all of this runs through the SAME direction-neutral
- *      `DualConnectionRouter` that `runDebugServer` uses (issue #356).
- *
- * Symmetry with `runDebugServer` (#356): starting with `--target=local` no
- * longer pins a single-connection router. A `--target=local` session can
- * hot-switch into relay (env 1 → env 3) without restarting the MCP server,
- * closing the asymmetry where only the default (relay-target) entry point had
- * bidirectional hot-switch. The intended fidelity-ladder flow — "validate in
- * env 1 (local), then env 3 (intoss-private) in ONE session, no restart" — now
- * works from either entry point.
- *
- * `start_attach` (relay-specific) stays effectively hidden / non-applicable
- * until the relay family is booted: before the first relay switch the env
- * derives to `mock` and `relayTunnelStatus()` reports "down", so the tool fails
- * with a clear "tunnel not up" message. After a relay switch the relay tunnel
- * is live and the tool works.
- *
- * The AIT.* tools (`AIT.getSdkCallHistory`, `AIT.getMockState`,
- * `AIT.getOperationalEnvironment`) ride the *active* connection's CDP channel
- * via `RoutingAitSource`, so they follow `start_debug` swaps.
- */
-export async function runLocalDebugServer(options: RunLocalDebugServerOptions = {}): Promise<void> {
-  // stdout은 MCP JSON-RPC 전용 — console.log/info/debug를 stderr로 돌린다.
-  redirectConsoleToStderr();
-  // Enforce a single debug session per machine (same lock as relay mode).
-  // `force: true` kills the existing process and takes over the lock.
-  const lockHandle = acquireLockOrBlock(options.force ?? false);
-  if (lockHandle === null) return;
-
-  const cdpPort = options.cdpPort ?? 0;
-  const devUrl = options.devUrl ?? process.env.AIT_DEVTOOLS_URL ?? 'http://localhost:5173';
-
-  // Local family boot, deferred into the lazy resolver (all-lazy, #396). Launches
-  // the Chromium + attaches a LocalCdpConnection only when `start_debug({ mode:
-  // 'local-browser' })` first fires — so a session that goes straight to relay never
-  // spawns a Chromium it would have to clean up. Honors this entry's
-  // cdpPort/devUrl options (vs the env-only `bootLocalFamily`).
-  const bootLocalFamilyForEntry = async (): Promise<BootedFamily> => {
-    const chromium = await launchChromium({ port: cdpPort, devUrl });
-    // Give Chromium a moment to start the CDP endpoint before we connect.
-    // 800 ms is enough on most machines; the connection retries if it fails.
-    await new Promise<void>((r) => setTimeout(r, 800));
-    const localConnection = new LocalCdpConnection({ devtoolsHttpUrl: chromium.devtoolsUrl });
-    return {
-      connection: localConnection,
-      stop() {
-        localConnection.close();
-        chromium.stop();
-      },
-    };
-  };
-
-  // Dual-connection router (issues #348, #356, #378, #396): ALL families are
-  // lazy-booted — the local family on the first `start_debug({ mode:
-  // 'local-browser' })`, the intoss relay on `relay-staging`. `relay-live`
-  // removed (#665), `relay-sandbox` removed (#103).
-  const devtoolsOpener = new AutoDevtoolsOpener();
-  const diagnosticsCollector = new InMemoryDiagnosticsCollector();
-  // Host half of the attach protocol handshake. Compares the device's
-  // `PROTOCOL_VERSION` with this daemon's; package versions are never compared
-  // (the two packages are versioned independently).
-  const protocolVersionMonitor = createProtocolVersionMonitor();
-  // attach 단계 기록기 — relay 훅·오케스트레이터·터널 이벤트가 쓰고, progress 알림·
-  // get_debug_status·대시보드·구조화 로그가 읽는다.
-  const attachTimeline = createDaemonAttachTimeline(() => qrServer?.notifyStateChange());
-  const sessionStartedAt = new Date().toISOString();
-
-  // FIX (issue #572 review): track the live cloudflared child PID in memory so
-  // get_debug_status can pass it to getDiagnostics as source (a). Updated by
-  // onTunnelChildPid on initial boot and on every reissue.
-  let activeTunnelChildPid: number | null = null;
-
-  const router = new DualConnectionRouter({
-    // Lazy resolver for both family slots (#378, #396, #424).
-    // verifyAuth is built INSIDE the lambda (lazily, at the relay boot site) so it
-    // reads the env AFTER switchMode's project-local secret load (#396) has
-    // populated AIT_DEBUG_TOTP_SECRET — never captured at server startup.
-    bootLazyFor: async (key) =>
-      key === 'local-browser'
-        ? bootLocalFamilyForEntry()
-        : bootRelayFamily({
-            verifyAuth: buildRelayVerifyAuth(),
-            getAppName: () =>
-              lastAttachParts ? appNameFromSchemeUrl(lastAttachParts.schemeUrl) : null,
-            onWssUrl: (wssUrl) => {
-              lockHandle.updateWssUrl(wssUrl);
-              qrServer?.notifyStateChange();
-            },
-            // FIX 3 (issue #571): persist cloudflared child PID for zombie detection.
-            // Also update the in-memory tracker (source a for FIX 2).
-            onTunnelChildPid: (pid) => {
-              activeTunnelChildPid = pid;
-              lockHandle.updateTunnelChildPid(pid);
-            },
-            // Issue #467: secret-free relay TOTP 401 counter for get_debug_status.
-            onAuthReject: () => diagnosticsCollector.recordAuthReject(),
-            // The tunnel was reissued to cut off a caller that held the old URL.
-            onTunnelRotated: () => {
-              diagnosticsCollector.recordTunnelRotation();
-              qrServer?.notifyStateChange();
-            },
-            // Attach version handshake: record what the device says it is so
-            // `start_attach` can name a device↔host skew instead of letting
-            // the value-duplicated contract misbehave silently.
-            onAttachHandshake: (event) =>
-              protocolVersionMonitor.record({
-                protocol: event.deviceProtocol,
-                version: event.deviceVersion,
-              }),
-            // Issue #631: on permanent tunnel drop, immediately push the
-            // new state so the dashboard swaps the dead QR for the error
-            // state (mirror of onWssUrl's notifyStateChange).
-            onTunnelDown: () => qrServer?.notifyStateChange(),
-            timeline: attachTimeline,
-          }),
-    diagnosticsCollector,
-    devtoolsOpener,
-    onPageAttach: () => qrServer?.notifyStateChange(),
-    // Fix #705-A: push an immediate SSE update when the phone silently disconnects.
-    onPageDetach: () => {
-      attachTimeline.commitDetach();
-      qrServer?.notifyStateChange();
-    },
-    // Stable /inspector URL for auto-open (issue #530).
-    getInspectorStableUrl: () => qrServer?.inspectorStableUrl ?? null,
-    getInspectorOpenUrl: () =>
-      qrServer ? qrServer.tokenizeUrl(qrServer.inspectorStableUrl) : null,
-  });
-
-  // AIT.* methods ride the *active* connection's command channel (local CDP or,
-  // after a relay switch, relay Chii), so the AIT source follows swaps.
-  const aitSource = new RoutingAitSource(() => {
-    const active = router.active as CdpConnection & {
-      sendCommand(method: string, params?: Record<string, unknown>): Promise<unknown>;
-    };
-    return active;
-  });
-
-  // dashboard용 lastAttachParts 상태 — start_attach 호출마다 갱신.
-  // 완성 URL 대신 컴포넌트를 저장해 getDashboardState 호출마다 fresh TOTP를 mint (Defect 1).
-  // SECRET-HANDLING: 컴포넌트에는 tunnel/scheme host가 있으므로 로그 출력 금지.
-  let lastAttachParts: AttachUrlParts | null = null;
-
-  // 세션 생애주기 phase (#730) — daemon은 'shutdown' 전환 시에만 갱신한다.
-  let currentPhase: DashboardState['phase'] = 'active';
-
-  const getDashboardState = (): DashboardState => {
-    const targets = router.active.listTargets();
-    // inspectorUrl — /inspector 안정 진입점 (issue #530).
-    // SECRET-HANDLING: /inspector URL에는 relay 시크릿도 접근 토큰도 없다 — 출력 가능.
-    const inspectorUrl = qrServer?.inspectorStableUrl ?? null;
-    return {
-      tunnel: { up: router.relayTunnelStatus().up, wssUrl: router.relayTunnelStatus().wssUrl },
-      pages: targets.map((t) => ({ id: t.id, url: t.url })),
-      attachUrl: lastAttachParts
-        ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
-        : null,
-      inspectorUrl,
-      phase: currentPhase, // #730
-      ...buildDashboardTimelineState(attachTimeline, sessionStartedAt),
-    };
-  };
-
-  // getDirectInspectorUrl — /inspector 라우트에서 직접 chii front_end URL을 조립.
-  // getDashboardState().inspectorUrl(= /inspector 자기 자신)을 쓰면 무한 루프가 발생하므로
-  // 별도 getter로 분리한다. 매 요청마다 호출되어 TOTP를 요청 시점에 mint한다.
-  // SECRET-HANDLING: ok:true url에 relay host + at= 코드가 담긴다 — 로그/stdout 출력 금지.
-  const getDirectInspectorUrl = (): ReturnType<
-    NonNullable<QrHttpServerOptions['getDirectInspectorUrl']>
-  > => {
-    const relayHttpUrl = router.activeRelayHttpUrl;
-    if (!relayHttpUrl) {
-      return { ok: false, reason: 'relayDown' };
-    }
-    const targets = router.active.listTargets();
-    if (targets.length === 0) {
-      return { ok: false, reason: 'noTarget' };
-    }
-    const totpSecret = process.env.AIT_DEBUG_TOTP_SECRET;
-    if (!totpSecret) {
-      return { ok: false, reason: 'totpUnavailable' };
-    }
-    const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () => mintRelayCode(Date.now()));
-    if (url === null) {
-      return { ok: false, reason: 'totpUnavailable' };
-    }
-    return { ok: true, url };
-  };
-
-  // Local QR HTTP server — awaited so the first start_attach call (after a
-  // relay switch) doesn't race its startup. Failure falls back to text QR.
-  let qrServer: QrHttpServer | undefined;
-  try {
-    qrServer = await startQrHttpServer(getDashboardState, { getDirectInspectorUrl });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    logWarn('server.start', { msg: `QR HTTP 서버 시작 실패 (text QR fallback 사용): ${message}` });
-  }
-
-  // TOTP 주기 갱신 타이머 — 이벤트 없이 페이지가 방치될 때 at= 코드가 stale되는 갭 수정 (#448).
-  // TOTP step은 5초이고 코드는 30~35초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
-  // RELAY_QR_REFRESH_INTERVAL_MS(5초) 주기로 push한다.
-  // local-only 동안엔 lastAttachParts가 null이라 no-op — relay로 전환된 뒤 첫 start_attach
-  // 호출 시 lastAttachParts가 세팅되면 갱신이 시작된다.
-  // SECRET-HANDLING: 콜백은 단순 trigger만 — TOTP 값·at= 코드는 절대 로그/stdout 출력 금지.
-  const TOTP_REFRESH_INTERVAL_MS = RELAY_QR_REFRESH_INTERVAL_MS;
-  let totpRefreshHandle: ReturnType<typeof setInterval> | null = null;
-  totpRefreshHandle = setInterval(() => {
-    if (lastAttachParts !== null) {
-      qrServer?.notifyStateChange();
-    }
-  }, TOTP_REFRESH_INTERVAL_MS);
-  totpRefreshHandle.unref();
-
-  const server = createDebugServer({
-    connection: router.active,
-    router,
-    aitSource,
-    // Tunnel status follows the relay family once it is lazy-booted (#356);
-    // until then it reports "down" (no relay tunnel exists), which keeps
-    // start_attach correctly gated.
-    getTunnelStatus: () => router.relayTunnelStatus(),
-    // FIX (issue #572 review): expose the live cloudflared child PID (source a)
-    // so get_debug_status can feed it into getDiagnostics for the FIX 2 probe.
-    getTunnelChildPid: () => activeTunnelChildPid,
-    get qrHttpServer() {
-      return qrServer;
-    },
-    diagnosticsCollector,
-    attachTimeline,
-    // Device↔host version skew, or null. Read at call time so a device that
-    // reports after the server was built is still seen.
-    getProtocolVersionSkew: () => protocolVersionMonitor.getMismatch(),
-    // SECRET-HANDLING: the TOTP secret is read from env AT CALL TIME (inside
-    // start_attach) so the project-local .ait_relay secret loaded by
-    // switchMode (#396) is visible. It is used only to generate the at= code and
-    // is never logged or surfaced in any output.
-    getTotpSecret: () => process.env.AIT_DEBUG_TOTP_SECRET,
-    // dashboard 갱신 콜백 — URL 컴포넌트 저장 후 SSE push (Defect 1 fix).
-    onAttachUrlBuilt: (parts) => {
-      lastAttachParts = parts;
-      qrServer?.notifyStateChange();
-    },
-  });
-
-  const transport = new StdioServerTransport();
-
-  // ---------------------------------------------------------------------------
-  // Unified dual-family shutdown (issues #356, #396, mirrors runDebugServer):
-  // tears down every family ever booted at process exit (all lazy now). Each
-  // family's stop() owns its infra — the local family kills its Chromium, a
-  // lazily-booted relay family stops its tunnel + probe + relay. Inactive infra
-  // is left warm during the session.
-  // ---------------------------------------------------------------------------
-
-  let closed = false;
-  let exitTriggers: { stop(): void } | null = null;
-  let maxAgeWatchdog: { stop(): void } | null = null;
-
-  const shutdown = () => {
-    if (closed) return;
-    closed = true;
-
-    // #730: push the terminal SSE frame FIRST — see runDebugServer's shutdown
-    // for the full ordering rationale (mirrors that daemon variant).
-    currentPhase = 'shutdown';
-    qrServer?.notifyStateChange();
-
-    exitTriggers?.stop();
-    maxAgeWatchdog?.stop();
-    if (totpRefreshHandle) clearInterval(totpRefreshHandle);
-    router.stopWatcher();
-    // Tear down every booted family (all lazy, #396 — only those ever started).
-    for (const family of router.bootedFamilies()) family.stop();
-    void server.close();
-    void qrServer?.close();
-    // Remove the lock file so the next startup can proceed immediately.
-    lockHandle.release();
-  };
-
-  // 신호·부모 종료 경로: 폰의 배지 제거 프레임이 relay 종료 전에 닿도록 잠깐 기다린 뒤
-  // shutdown()한다(한 번만 실행). 동기여야 하는 exit·uncaughtException 경로는 shutdown()을 직접 쓴다.
-  let gracefulShutdown: Promise<void> | null = null;
-  const shutdownGracefully = (): Promise<void> => {
-    if (closed) return Promise.resolve();
-    gracefulShutdown ??= shutdownAfterBadgeRemoval(router.active, shutdown);
-    return gracefulShutdown;
-  };
-
-  process.on('exit', () => {
-    if (!closed) {
-      closed = true;
-      exitTriggers?.stop();
-      maxAgeWatchdog?.stop();
-      if (totpRefreshHandle) clearInterval(totpRefreshHandle);
-      router.stopWatcher();
-      for (const family of router.bootedFamilies()) family.stop();
-      lockHandle.release();
-    }
-  });
-
-  process.on('uncaughtException', (err) => {
-    logError('tool.error', {
-      msg: `uncaughtException: ${String(err)}`,
-      errorKind: 'uncaught',
-      mode: 'local-browser',
-    });
-    shutdown();
-    process.exit(1);
-  });
-
-  process.on('unhandledRejection', (reason) => {
-    logError('tool.error', {
-      msg: `unhandledRejection: ${String(reason)}`,
-      errorKind: 'unhandled-rejection',
-      mode: 'local-browser',
-    });
-    shutdown();
-    process.exit(1);
-  });
-
-  await server.connect(transport);
-
-  // Bind the server to the router. No family is active yet (all-lazy, #396) —
-  // the attach watcher is armed by the first `start_debug` and re-armed on every
-  // swap.
-  router.start(server);
-
-  // Self-terminate when the MCP client goes away (see exit-triggers.ts).
-  exitTriggers = installExitTriggers({ shutdown: shutdownGracefully, server });
-
-  // FIX 4 (issue #571): max-age watchdog.
-  if (process.env.AIT_DEBUG_NO_MAX_AGE !== '1') {
-    const maxAgeMs = process.env.AIT_DEBUG_MAX_AGE_MS
-      ? Number.parseInt(process.env.AIT_DEBUG_MAX_AGE_MS, 10) || undefined
-      : undefined;
-    maxAgeWatchdog = startMaxAgeWatchdog(
-      () => {
-        process.stderr.write(
-          '[ait-debug] max-age watchdog: daemon lifetime exceeded — shutting down for a fresh start.\n',
+          '[ait-debugger] max-age watchdog: daemon lifetime exceeded — shutting down for a fresh start.\n',
         );
         void shutdownGracefully().then(() => process.exit(0));
       },

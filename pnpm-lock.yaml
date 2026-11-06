@@ -213,33 +213,6 @@ importers:
         specifier: ^5.0.4
         version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.15)(yaml@2.9.0))
 
-  packages/debug-console:
-    devDependencies:
-      '@apps-in-toss/web-framework':
-        specifier: 3.8.0
-        version: 3.8.0(@babel/preset-env@7.28.5(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(supports-color@8.1.1)(typanion@3.14.0)(typescript@7.0.2)
-      '@biomejs/biome':
-        specifier: 2.5.15
-        version: 2.5.15
-      '@changesets/cli':
-        specifier: ^3.0.3
-        version: 3.0.3
-      '@types/node':
-        specifier: ^26.6.5
-        version: 26.6.5
-      jsdom:
-        specifier: ^30.1.2
-        version: 30.1.2
-      tsdown:
-        specifier: ^0.23.1
-        version: 0.23.1(tsx@4.23.15)(typescript@7.0.2)(unrun@0.2.39)
-      typescript:
-        specifier: ~7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.15)(yaml@2.9.0))
-
   packages/debugger:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -261,9 +234,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
-      '@apps-in-toss/debug-console':
+      '@apps-in-toss/debugger-client':
         specifier: workspace:*
-        version: link:../debug-console
+        version: link:../debugger-client
       '@biomejs/biome':
         specifier: 2.5.15
         version: 2.5.15
@@ -306,6 +279,33 @@ importers:
       vite:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.15)(yaml@2.9.0)
+      vitest:
+        specifier: ^5.0.4
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.15)(yaml@2.9.0))
+
+  packages/debugger-client:
+    devDependencies:
+      '@apps-in-toss/web-framework':
+        specifier: 3.8.0
+        version: 3.8.0(@babel/preset-env@7.28.5(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(supports-color@8.1.1)(typanion@3.14.0)(typescript@7.0.2)
+      '@biomejs/biome':
+        specifier: 2.5.15
+        version: 2.5.15
+      '@changesets/cli':
+        specifier: ^3.0.3
+        version: 3.0.3
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+      jsdom:
+        specifier: ^30.1.2
+        version: 30.1.2
+      tsdown:
+        specifier: ^0.23.1
+        version: 0.23.1(tsx@4.23.15)(typescript@7.0.2)(unrun@0.2.39)
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
       vitest:
         specifier: ^5.0.4
         version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.15)(yaml@2.9.0))

@@ -407,7 +407,7 @@ describe('unbooted daemon — bootstrap tools and start_attach default', () => {
     );
     expect(envelope.meta.env).toBe('none');
     expect(envelope.data.environment.kind).toBe('none');
-    expect(envelope.data.environment.env).toBe('none');
+    expect(envelope.data.environment.env).toBeUndefined();
     expect(envelope.data.environment.reason).toMatch(/^unbooted/);
     expect(envelope.data.pages).toBeNull();
     expect(envelope.data.nextRecommendedAction.tool).toBe('start_attach');
@@ -432,7 +432,7 @@ describe('unbooted daemon — bootstrap tools and start_attach default', () => {
     );
     expect(envelope.meta.env).toBe('relay-dev');
     expect(envelope.data.environment.kind).toBe('relay-dev');
-    expect(envelope.data.environment.env).toBe('relay');
+    expect(envelope.data.environment.env).toBeUndefined();
   });
 });
 

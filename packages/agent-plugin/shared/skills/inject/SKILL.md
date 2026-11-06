@@ -5,7 +5,7 @@ description: |
   `/ait:inject-devtools` adds the `@apps-in-toss/devtools` unplugin for browser dev,
   registered for whichever bundler the project uses ("기존 Vite 프로젝트에 devtools
   붙여줘", "Rspack 쓰는 기존 프로젝트에 devtools 붙여줘");
-  `/ait:inject-debug-console` installs `@apps-in-toss/debug-console` (on-device
+  `/ait:inject-debugger-client` installs `@apps-in-toss/debugger-client` (on-device
   attach) as a devDependency behind an opt-in build flag so release builds do not contain it; `/ait:inject-tossface` wires the Tossface emoji web font
   (CDN link or subset bundling) into the project's global stylesheet. Idempotent,
   minimal edits. This skill only
@@ -17,7 +17,7 @@ argument-hint: ''
 
 # inject skill
 
-이 skill은 세 facet을 담는다 — `/ait:inject-devtools`(devtools unplugin 주입), `/ait:inject-debug-console`(on-device attach 패키지 설치), `/ait:inject-tossface`(이모지 서체 Tossface 배선). 셋 다 기존 프로젝트의 빌드 셋업을 최소 변경으로 패치하는 brownfield station 2 도구라 하나로 묶였다(agent-plugin#280 debug-console facet 추가). 사용자가 어느 command로 진입했는지에 따라 아래 해당 facet으로 분기한다 — 세 facet은 독립이며 서로를 자동 실행하지 않는다.
+이 skill은 세 facet을 담는다 — `/ait:inject-devtools`(devtools unplugin 주입), `/ait:inject-debugger-client`(on-device attach 패키지 설치), `/ait:inject-tossface`(이모지 서체 Tossface 배선). 셋 다 기존 프로젝트의 빌드 셋업을 최소 변경으로 패치하는 brownfield station 2 도구라 하나로 묶였다(agent-plugin#280 debugger-client facet 추가). 사용자가 어느 command로 진입했는지에 따라 아래 해당 facet으로 분기한다 — 세 facet은 독립이며 서로를 자동 실행하지 않는다.
 
 ## 목적
 
@@ -30,7 +30,7 @@ argument-hint: ''
 
 - **devtools facet** (`/ait:inject-devtools`): `@apps-in-toss/devtools` unplugin을 빌드 config에
   추가해 토스 앱 없이 브라우저에서 mock SDK로 개발·테스트한다. 인자 없음.
-- **debug-console facet** (`/ait:inject-debug-console`): `@apps-in-toss/debug-console`(on-device
+- **debugger-client facet** (`/ait:inject-debugger-client`): `@apps-in-toss/debugger-client`(on-device
   attach)을 **`devDependencies`**로 설치하고, 빌드 타임 `__DEBUG_BUILD__` 게이트 import를
   진입점에, 그 값을 정하는 `define`을 번들러 설정에 와이어업한다. 기본 빌드는 값이 `false`라
   번들에 attach 코드가 들어가지 않고, `AIT_DEBUG_BUILD=1`을 명시한 디버그 빌드만
@@ -57,16 +57,16 @@ lockfile로 패키지 매니저를 감지해 `@apps-in-toss/devtools`를 devDep�
 
 **상세가 필요하면 Read `<이 skill의 base directory>/references/devtools.md`.**
 
-## debug-console facet — `/ait:inject-debug-console`
+## debugger-client facet — `/ait:inject-debugger-client`
 
-`@apps-in-toss/debug-console`을 **`devDependencies`**로 설치하고(harness GitHub Release
+`@apps-in-toss/debugger-client`을 **`devDependencies`**로 설치하고(harness GitHub Release
 tarball URL — npm 미발행), 진입점에 빌드 타임 게이트 import를 멱등하게 삽입한다.
 
 ```ts
 declare const __DEBUG_BUILD__: boolean;
 
 if (__DEBUG_BUILD__) {
-  import('@apps-in-toss/debug-console').then((m) =>
+  import('@apps-in-toss/debugger-client').then((m) =>
     m.startDebugConsole({ relayPublicKeys: ['<debugger relay-key 출력>'] }),
   );
 }
@@ -86,16 +86,20 @@ if (__DEBUG_BUILD__) {
 런타임 self-gate만 있는 `/auto` import는 코드가 번들에 남으므로 삽입하지 않는다.
 프로젝트에 이미 `/auto` import가 있으면 사용자에게 알린 뒤 게이트 import로 바꾼다.
 
+프로젝트에 0.3.0 이하의 옛 이름 `@apps-in-toss/debug-console`이 있으면 "이미 설치됨"으로 끝내지
+않는다. 이름이 `@apps-in-toss/debugger-client`로 바뀌었고 debugger와 함께 0.3.1 이상이어야 연결되므로,
+`setup-debugger/references/upgrade-check.md`의 마이그레이션 경로(0절·2-B절)로 안내한다.
+
 이 패키지는 예전 `@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP
 데몬·on-device attach 표면이 `debugger` 패키지(`@apps-in-toss/debugger` +
-`@apps-in-toss/debug-console`)로 분리되면서 나뉘었다.
+`@apps-in-toss/debugger-client`)로 분리되면서 나뉘었다.
 
 핵심 절차: (1) `package.json` 확인 → (2) 기존 설치·와이어업 확인(idempotency, 게이트 없는
 `/auto` 발견 포함) → (3) 번들러 감지 → (4) `devDependencies`로 설치 → (5) 진입점 감지 +
 게이트 import 삽입 → (6) 번들러 `define` 추가 → (7) 빌드 두 번으로 검증(기본 빌드에서 마커
 0건, 마지막 빌드는 릴리즈 빌드로 남김) → (8) 완료 seam. 하지 말아야 할 것은 —
 
-**상세가 필요하면 Read `<이 skill의 base directory>/references/debug-console.md`.**
+**상세가 필요하면 Read `<이 skill의 base directory>/references/debugger-client.md`.**
 
 ## tossface facet — `/ait:inject-tossface`
 
@@ -135,10 +139,10 @@ skip한다. 콘솔 인증 불필요 — 로컬 작업이다.
                             #   말로: "브라우저에서 앱 상태가 이상한데 디버깅해줘"
 ```
 
-**debug-console facet** 완료 후:
+**debugger-client facet** 완료 후:
 
 ```
-@apps-in-toss/debug-console 설정 완료 · <진입점>에 __DEBUG_BUILD__ 게이트 import, <설정 파일>에 define 추가
+@apps-in-toss/debugger-client 설정 완료 · <진입점>에 __DEBUG_BUILD__ 게이트 import, <설정 파일>에 define 추가
 
 다음 단계 (명령을 몰라도 됩니다 — 따옴표 안 문장을 그대로 말해도 같은 단계로 갑니다):
   AIT_DEBUG_BUILD=1 npm run build  # 디버그 빌드에만 attach 표면 포함 (기본 빌드에는 없음, 검수·출시에 올리지 않음)
@@ -172,10 +176,10 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
 - ❌ (devtools) 브라우저에서 panel이 실제로 뜨는지의 E2E 검증 — 사용자가 직접 `npm run dev`로 확인. (dev 서버·빌드가 에러 없이 도는지까지만 이 skill이 확인한다.)
 - ❌ (devtools) 라이브러리 빌드에 mock 주입 — 앱(미니앱) 전용.
 - ❌ (devtools) README에 없는 번들러에 추측으로 배선 — 사용자에게 알리고 묻는다.
-- ❌ **실행 중인 앱을 진단하는 것** — 이 skill은 패키지를 *설치*할 뿐이다. "폰에서 이상하게 동작한다", "라이브 상태를 보고 싶다"는 `/ait:debug`(`debug` skill). debug-console facet은 그 진단을 *가능하게 하는 준비물*이지 진단 자체가 아니다.
-- ❌ (debug-console) MCP 데몬 등록 — `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선(`/ait:debug` §5 참조).
-- ❌ (debug-console) 게이트 없는 `import '@apps-in-toss/debug-console/auto'` 삽입 — 배포 번들에 코드가 남는다.
-- ❌ (debug-console) 번들러가 불확실한 채로 `define`을 추측해 쓰는 것 — 사용자에게 묻는다.
+- ❌ **실행 중인 앱을 진단하는 것** — 이 skill은 패키지를 *설치*할 뿐이다. "폰에서 이상하게 동작한다", "라이브 상태를 보고 싶다"는 `/ait:debug`(`debug` skill). debugger-client facet은 그 진단을 *가능하게 하는 준비물*이지 진단 자체가 아니다.
+- ❌ (debugger-client) MCP 데몬 등록 — `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선(`/ait:debug` §5 참조).
+- ❌ (debugger-client) 게이트 없는 `import '@apps-in-toss/debugger-client/auto'` 삽입 — 배포 번들에 코드가 남는다.
+- ❌ (debugger-client) 번들러가 불확실한 채로 `define`을 추측해 쓰는 것 — 사용자에게 묻는다.
 - ❌ (tossface) 재-subsetting·포맷 변환 — 원본 파일을 그대로만 배치한다
   (`references/tossface.md`의 "tossface facet 하지 말아야 할 것" 절 참조).
 - ❌ (tossface) 본문 서체로 사용 — 이모지 서체다. 본문 서체 금지는 `design` skill의
@@ -195,10 +199,10 @@ Tossface 배선 완료 · <모드 A: CDN 링크 추가 | 모드 B: subset <N>개
 - 표준 dev 환경 셋업(브라우저 mock·실기기 미리보기) 등 주제별 가이드는 docs MCP
   (`searchDocumentation`/`getPage`)로 조회한다.
 - devtools facet 상세: `<이 skill의 base directory>/references/devtools.md`
-- debug-console facet 상세: `<이 skill의 base directory>/references/debug-console.md`
+- debugger-client facet 상세: `<이 skill의 base directory>/references/debugger-client.md`
 - tossface facet 상세: `<이 skill의 base directory>/references/tossface.md`
-- 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 브라우저 panel 또는 debug-console facet이 깔아둔 환경 3 attach 표면을 소비하는 디버깅), `design` (tossface facet 배선 후 화면 렌더 무결성 판정 — "토스 브랜드·UI 모방 금지" 절이 이모지 서체 정책의 정본).
+- 짝 skill: `new-miniapp` (새 프로젝트 생성 — create-ait-app 호출 + devtools 후처리 배선), `debug` (devtools facet이 깔아둔 브라우저 panel 또는 debugger-client facet이 깔아둔 환경 3 attach 표면을 소비하는 디버깅), `design` (tossface facet 배선 후 화면 렌더 무결성 판정 — "토스 브랜드·UI 모방 금지" 절이 이모지 서체 정책의 정본).
 - `@apps-in-toss/devtools`(mock+panel+unplugin, 브라우저 dev 전용) 소스 — 구 repo 이력에만 존재(재생성으로 링크 소멸, maintainer 로컬 백업 mirror에서 열람 가능)
-- `@apps-in-toss/debug-console`(on-device attach): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debug-console
+- `@apps-in-toss/debugger-client`(on-device attach): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger-client
 - `@apps-in-toss/debugger`(MCP 데몬, `/ait:setup-debugger`가 프로젝트 `.mcp.json`에 배선): https://github.com/toss/apps-in-toss-harness/tree/main/packages/debugger
 - `Tossface`(공개 배포 이모지 서체): https://github.com/toss/tossface (`LICENSE` 전문, 공개 안내 페이지 `https://toss.im/tossface/copyright`).

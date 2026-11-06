@@ -27,11 +27,20 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync } from 'node:fs';
-import net from 'node:net';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { platform, tmpdir, userInfo } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { childProcessEnv } from './child-env.js';
+import { isPidAlive } from './parent-watcher.js';
 
 /** A handle returned by `launchChromium`. */
 export interface ChromiumHandle {
@@ -45,8 +54,10 @@ export interface ChromiumHandle {
 
 export interface LaunchChromiumOptions {
   /**
-   * CDP remote debugging port. If 0 or omitted, an ephemeral free port is
-   * chosen automatically.
+   * CDP remote debugging port. If 0 or omitted, Chromium picks a free port
+   * itself (`--remote-debugging-port=0`) and the launcher reads the choice back
+   * from the profile's `DevToolsActivePort` file, so two sessions starting at
+   * the same moment can never be handed the same port.
    */
   port?: number;
   /**
@@ -63,33 +74,6 @@ export interface LaunchChromiumOptions {
    * `child_process.spawn`. Tests inject a fake to avoid launching a real browser.
    */
   spawnFn?: typeof spawn;
-}
-
-/**
- * Find an ephemeral free TCP port by briefly binding a server on port 0.
- * Resolves with the OS-assigned port number.
- */
-export function findFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr !== null ? addr.port : null;
-      server.close(() => {
-        if (port === null) {
-          reject(new Error('Failed to determine free port from net.Server.'));
-        } else {
-          resolve(port);
-        }
-      });
-    });
-    // net.Server는 EventEmitter를 상속하므로 런타임에 on/once가 있다.
-    // TypeScript 6 + @types/node 없는 환경에서 타입 해석이 누락되므로 unknown cast로 우회.
-    (server as unknown as { on: (ev: string, fn: (err: unknown) => void) => void }).on(
-      'error',
-      reject,
-    );
-  });
 }
 
 /**
@@ -137,16 +121,26 @@ export function findChromeBinary(): string | null {
   return null;
 }
 
+const PROFILE_PREFIX = 'ait-debugger-chromium-profile-';
+
 /**
- * Per-user Chromium profile directory, mode 0700.
+ * Per-session Chromium profile directory, mode 0700.
+ *
+ * Chromium allows one running instance per profile directory: a second launch on
+ * the same directory hands its window to the first instance and exits, so its
+ * `--remote-debugging-port` never opens. Each debugger session therefore gets its
+ * own profile (`…-<uid>-<session>`, `session` defaults to this process's PID) and
+ * two sessions can run local browsers at the same time.
  *
  * `tmpdir()` is shared on Linux, and a directory another user created there
  * first would hold this browser's profile. If the name is taken by something
  * that is not ours, use a fresh private directory instead.
  */
-export function chromiumProfileDir(baseDir: string = tmpdir()): string {
-  const prefix = join(baseDir, 'ait-devtools-chromium-profile-');
-  const dir = `${prefix}${userInfo().uid}`;
+export function chromiumProfileDir(
+  baseDir: string = tmpdir(),
+  session: number | string = process.pid,
+): string {
+  const dir = `${join(baseDir, PROFILE_PREFIX)}${userInfo().uid}-${session}`;
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stat = lstatSync(dir);
@@ -157,7 +151,70 @@ export function chromiumProfileDir(baseDir: string = tmpdir()): string {
   } catch {
     // Fall through to a private one-off directory.
   }
-  return mkdtempSync(prefix);
+  return mkdtempSync(join(baseDir, PROFILE_PREFIX));
+}
+
+/** Removes a profile directory made by {@link chromiumProfileDir}. Best effort. */
+export function removeChromiumProfileDir(dir: string): void {
+  if (!basename(dir).startsWith(PROFILE_PREFIX)) return;
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Chromium may still be flushing; the next session's sweep removes it.
+  }
+}
+
+/**
+ * Waits for Chromium to publish the port it chose, in
+ * `<profileDir>/DevToolsActivePort` (first line = port, second = browser
+ * websocket path). Rejects when the browser exits first or `timeoutMs` passes.
+ */
+export async function readDevToolsActivePort(
+  profileDir: string,
+  hasExited: () => boolean,
+  timeoutMs = 15_000,
+  pollMs = 100,
+): Promise<number> {
+  const file = join(profileDir, 'DevToolsActivePort');
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const first = readFileSync(file, 'utf8').split('\n')[0]?.trim() ?? '';
+      const port = /^\d+$/.test(first) ? Number.parseInt(first, 10) : 0;
+      if (port > 0 && port < 65536) return port;
+    } catch {
+      // Not written yet.
+    }
+    if (hasExited()) throw new Error('Chromium exited before it opened a debugging port.');
+    if (Date.now() >= deadline) {
+      throw new Error('Chromium did not report its debugging port in time.');
+    }
+    await new Promise<void>((r) => setTimeout(r, pollMs));
+  }
+}
+
+/**
+ * Removes profile directories of earlier sessions that no longer run (their PID
+ * is gone), so a crashed session does not leave a profile behind for good. A
+ * directory of a live session, of another user, or one that is not a plain
+ * directory is never touched.
+ */
+export function sweepStaleChromiumProfiles(
+  baseDir: string = tmpdir(),
+  isAlive: (pid: number) => boolean = isPidAlive,
+): void {
+  const pattern = new RegExp(`^${PROFILE_PREFIX}${userInfo().uid}-(\\d+)$`);
+  try {
+    for (const name of readdirSync(baseDir)) {
+      const m = pattern.exec(name);
+      if (m?.[1] === undefined || isAlive(Number.parseInt(m[1], 10))) continue;
+      const full = join(baseDir, name);
+      const st = lstatSync(full);
+      if (st.isDirectory() && st.uid === userInfo().uid) removeChromiumProfileDir(full);
+    }
+  } catch {
+    // Unreadable temp directory — nothing to sweep.
+  }
 }
 
 /**
@@ -170,9 +227,8 @@ export function chromiumProfileDir(baseDir: string = tmpdir()): string {
 export async function launchChromium(options: LaunchChromiumOptions = {}): Promise<ChromiumHandle> {
   const spawnImpl = options.spawnFn ?? spawn;
 
-  // Resolve the CDP port — find a free one if not specified.
+  // An explicit port is passed through; 0 lets Chromium choose and report it.
   const requestedPort = options.port ?? 0;
-  const port = requestedPort === 0 ? await findFreePort() : requestedPort;
 
   const devUrl = options.devUrl ?? process.env.AIT_DEVTOOLS_URL ?? 'http://localhost:5173';
 
@@ -186,13 +242,16 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
     );
   }
 
+  sweepStaleChromiumProfiles();
+  const profileDir = chromiumProfileDir();
+
   const args = [
-    `--remote-debugging-port=${port}`,
+    `--remote-debugging-port=${requestedPort}`,
     '--no-first-run',
     '--no-default-browser-check',
     // Use a separate profile dir so the debugged instance doesn't interfere
-    // with the user's regular Chrome profile.
-    `--user-data-dir=${chromiumProfileDir()}`,
+    // with the user's regular Chrome profile — nor with another session's browser.
+    `--user-data-dir=${profileDir}`,
     ...(options.extraArgs ?? []),
     devUrl,
   ];
@@ -206,6 +265,27 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
 
   // Allow the Node process to exit even if the child is still running.
   child.unref();
+  // The profile belongs to this session only; remove it once the browser is gone.
+  let exited = false;
+  child.once('exit', () => {
+    exited = true;
+    removeChromiumProfileDir(profileDir);
+  });
+
+  let port = requestedPort;
+  if (requestedPort === 0) {
+    try {
+      port = await readDevToolsActivePort(profileDir, () => exited);
+    } catch (err) {
+      try {
+        child.kill();
+      } catch {
+        // Already gone.
+      }
+      removeChromiumProfileDir(profileDir);
+      throw err;
+    }
+  }
 
   const devtoolsUrl = `http://127.0.0.1:${port}`;
 
@@ -224,6 +304,7 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
       } catch {
         // Ignore — the child may have already exited.
       }
+      removeChromiumProfileDir(profileDir);
     },
   };
 }

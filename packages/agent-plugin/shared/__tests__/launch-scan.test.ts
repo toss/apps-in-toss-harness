@@ -190,7 +190,7 @@ describe('launch-scan.sh', () => {
       '[client-ai-key] src/lib/summary.ts:3',
     ]);
     expect(summary(out)).toBe(
-      'launch-scan:viewport-zoom=1 dark-theme=1 cors-any-origin=2 client-ai-key=5 debug-console-bundle=0 debug-artifact=0 total=9',
+      'launch-scan:viewport-zoom=1 dark-theme=1 cors-any-origin=2 client-ai-key=5 debugger-client-bundle=0 debug-artifact=0 total=9',
     );
 
     // 설명에는 변수 이름·호스트·접두사 라벨만 실린다
@@ -240,7 +240,7 @@ describe('launch-scan.sh', () => {
     expect(rows[1]).toMatch(/^launch-scan:clean 후보 0건이다\..*통과했다는 뜻이 아니다/);
     expect(rows[1]).toContain('"후보 없음');
     expect(rows[2]).toBe(
-      'launch-scan:viewport-zoom=0 dark-theme=0 cors-any-origin=0 client-ai-key=0 debug-console-bundle=0 debug-artifact=0 total=0',
+      'launch-scan:viewport-zoom=0 dark-theme=0 cors-any-origin=0 client-ai-key=0 debugger-client-bundle=0 debug-artifact=0 total=0',
     );
   });
 
@@ -282,7 +282,7 @@ describe('launch-scan.sh', () => {
 
     expect(candidates(out)).toEqual([]);
     expect(summary(out)).toBe(
-      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=0 client-ai-key=0 debug-console-bundle=0 debug-artifact=0 total=0',
+      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=0 client-ai-key=0 debugger-client-bundle=0 debug-artifact=0 total=0',
     );
     expect(out).not.toContain('node_modules');
   });
@@ -299,7 +299,7 @@ describe('launch-scan.sh', () => {
 
     expect(heads(out)).toEqual(['[cors-any-origin] server/app.ts:1']);
     expect(summary(out)).toBe(
-      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=1 client-ai-key=0 debug-console-bundle=0 debug-artifact=0 total=1',
+      'launch-scan:viewport-zoom=skip(no-html) dark-theme=0 cors-any-origin=1 client-ai-key=0 debugger-client-bundle=0 debug-artifact=0 total=1',
     );
   });
 
@@ -711,9 +711,9 @@ describe('launch-scan.sh', () => {
     expect(heads(scan(dir))).toEqual(['[dark-theme] theme.css:1', '[cors-any-origin] server.js:1']);
   });
 
-  describe('debug-console-bundle', () => {
-    const PKG = '@apps-in-toss/debug-console';
-    const DC_URL = 'https://example.invalid/debug-console.tgz';
+  describe('debugger-client-bundle', () => {
+    const PKG = '@apps-in-toss/debugger-client';
+    const DC_URL = 'https://example.invalid/debugger-client.tgz';
 
     it('dependencies 항목은 후보이고 devDependencies 항목은 후보가 아니다', () => {
       const bad = mkFixture({
@@ -727,8 +727,8 @@ describe('launch-scan.sh', () => {
           '}',
         ),
       });
-      expect(heads(scan(bad))).toEqual(['[debug-console-bundle] package.json:5']);
-      expect(summary(scan(bad))).toContain('debug-console-bundle=1 debug-artifact=0 total=1');
+      expect(heads(scan(bad))).toEqual(['[debugger-client-bundle] package.json:5']);
+      expect(summary(scan(bad))).toContain('debugger-client-bundle=1 debug-artifact=0 total=1');
 
       const good = mkFixture({
         'package.json': L(
@@ -743,17 +743,38 @@ describe('launch-scan.sh', () => {
         ),
       });
       expect(heads(scan(good))).toEqual([]);
-      expect(summary(scan(good))).toContain('debug-console-bundle=0 debug-artifact=0 total=0');
+      expect(summary(scan(good))).toContain('debugger-client-bundle=0 debug-artifact=0 total=0');
+    });
+
+    it('옛 이름(@apps-in-toss/debug-console)도 같은 규칙으로 잡는다', () => {
+      const OLD = '@apps-in-toss/debug-console';
+      const badDeps = mkFixture({
+        'package.json': L('{', '  "dependencies": {', `    "${OLD}": "${DC_URL}"`, '  }', '}'),
+      });
+      expect(heads(scan(badDeps))).toEqual(['[debugger-client-bundle] package.json:3']);
+      const badImport = mkFixture({
+        'src/main.ts': L("import '@apps-in-toss/debug-console/auto';", 'start();'),
+      });
+      expect(heads(scan(badImport))).toEqual(['[debugger-client-bundle] src/main.ts:1']);
+      const gated = mkFixture({
+        'package.json': L('{', '  "devDependencies": {', `    "${OLD}": "${DC_URL}"`, '  }', '}'),
+        'src/main.ts': L(
+          'if (__DEBUG_BUILD__) {',
+          "  import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());",
+          '}',
+        ),
+      });
+      expect(heads(scan(gated))).toEqual([]);
     });
 
     it('게이트 없는 import(/auto 포함)는 후보이고 __DEBUG_BUILD__ 게이트 안의 import는 아니다', () => {
       const bad = mkFixture({
-        'src/main.ts': L("import '@apps-in-toss/debug-console/auto';", 'start();'),
-        'src/other.ts': L("import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());"),
+        'src/main.ts': L("import '@apps-in-toss/debugger-client/auto';", 'start();'),
+        'src/other.ts': L("import('@apps-in-toss/debugger-client').then((m) => m.maybeAttach());"),
       });
       expect(heads(scan(bad))).toEqual([
-        '[debug-console-bundle] src/main.ts:1',
-        '[debug-console-bundle] src/other.ts:1',
+        '[debugger-client-bundle] src/main.ts:1',
+        '[debugger-client-bundle] src/other.ts:1',
       ]);
 
       const good = mkFixture({
@@ -761,7 +782,7 @@ describe('launch-scan.sh', () => {
           'declare const __DEBUG_BUILD__: boolean;',
           '',
           'if (__DEBUG_BUILD__) {',
-          "  import('@apps-in-toss/debug-console').then((m) => m.maybeAttach());",
+          "  import('@apps-in-toss/debugger-client').then((m) => m.maybeAttach());",
           '}',
         ),
       });
@@ -771,12 +792,12 @@ describe('launch-scan.sh', () => {
     it('게이트 없는 startDebugConsole·maybeAttach 연결은 후보이고, 게이트가 4줄 넘게 떨어져 있으면 게이트로 치지 않는다', () => {
       const bad = mkFixture({
         'src/a.ts': L(
-          "import { startDebugConsole } from '@apps-in-toss/debug-console';",
+          "import { startDebugConsole } from '@apps-in-toss/debugger-client';",
           'startDebugConsole({});',
         ),
-        'src/b.ts': L("const m = await import('@apps-in-toss/debug-console/auto');"),
+        'src/b.ts': L("const m = await import('@apps-in-toss/debugger-client/auto');"),
         'src/c.ts': L(
-          "import { maybeAttach } from '@apps-in-toss/debug-console';",
+          "import { maybeAttach } from '@apps-in-toss/debugger-client';",
           'maybeAttach(result);',
         ),
         'src/d.ts': L(
@@ -784,25 +805,25 @@ describe('launch-scan.sh', () => {
           '',
           '',
           '',
-          "import('@apps-in-toss/debug-console').then((m) => m.startDebugConsole({}));",
+          "import('@apps-in-toss/debugger-client').then((m) => m.startDebugConsole({}));",
         ),
       });
       expect(heads(scan(bad))).toEqual([
-        '[debug-console-bundle] src/a.ts:1',
-        '[debug-console-bundle] src/b.ts:1',
-        '[debug-console-bundle] src/c.ts:1',
-        '[debug-console-bundle] src/d.ts:5',
+        '[debugger-client-bundle] src/a.ts:1',
+        '[debugger-client-bundle] src/b.ts:1',
+        '[debugger-client-bundle] src/c.ts:1',
+        '[debugger-client-bundle] src/d.ts:5',
       ]);
 
       const good = mkFixture({
         'src/a.ts': L(
           'if (__DEBUG_BUILD__) {',
-          "  import('@apps-in-toss/debug-console').then((m) => m.startDebugConsole({}));",
+          "  import('@apps-in-toss/debugger-client').then((m) => m.startDebugConsole({}));",
           '}',
         ),
         'src/b.ts': L(
           'if (__DEBUG_BUILD__) {',
-          "  void import('@apps-in-toss/debug-console/auto');",
+          "  void import('@apps-in-toss/debugger-client/auto');",
           '}',
         ),
       });

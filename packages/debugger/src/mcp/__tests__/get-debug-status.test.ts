@@ -284,7 +284,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     expect(result).toMatchObject({
@@ -293,8 +293,8 @@ describe('getDiagnostics helper', () => {
       lastAttachAt: null,
       lastDetachAt: null,
       recentErrors: [],
-      environment: { kind: 'mock', env: 'mock', reason: 'default-mock', liveGuardActive: false },
-      serverLockHolder: null,
+      environment: { kind: 'mock', reason: 'default-mock' },
+      otherSessions: { count: 0, sessions: [] },
     });
     // versions may be null in test env but the fields must exist
     expect('mcpVersion' in result).toBe(true);
@@ -311,7 +311,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'cdp-target-url-relay-pattern',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     expect(result.pages).not.toBeNull();
@@ -319,23 +319,74 @@ describe('getDiagnostics helper', () => {
     expect(result.pages!.pages[0]!.id).toBe('p1');
   });
 
-  it('surfaces lock-holder data from readLock', async () => {
-    const lockData = {
-      pid: 12345,
-      wssUrl: 'wss://xyz.trycloudflare.com',
-      startedAt: '2026-01-01T00:00:00.000Z',
-    };
+  it("takes the tunnel pid and start time from this daemon's own registry entry", async () => {
     const result = await getDiagnostics({
       tunnel: tunnelUp,
       env: 'relay-dev',
       envReason: 'env-var-relay-dev',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => lockData,
+      readSessions: () => ({
+        self: {
+          pid: 12345,
+          clientPid: 999,
+          ppid: 998,
+          procStart: null,
+          startedAt: '2026-01-01T00:00:00.000Z',
+          tunnelChildPid: null,
+          tunnelChildStart: null,
+          project: 'my-app',
+        },
+        others: [],
+      }),
     });
 
-    expect(result.serverLockHolder).toEqual({ ...lockData, wssUrl: 'wss://***.trycloudflare.com' });
     expect(result.tunnel.pid).toBe(12345);
     expect(result.tunnel.startedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(result.otherSessions).toEqual({ count: 0, sessions: [] });
+  });
+
+  it('lists the other running sessions by project label and start time only', async () => {
+    const result = await getDiagnostics({
+      tunnel: tunnelUp,
+      env: 'relay-dev',
+      envReason: 'env-var-relay-dev',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => ({
+        self: null,
+        others: [
+          { project: 'shop-app', startedAt: '2026-01-01T00:00:00.000Z' },
+          { project: 'game-app', startedAt: '2026-01-01T01:00:00.000Z' },
+        ],
+      }),
+    });
+
+    expect(result.otherSessions).toEqual({
+      count: 2,
+      sessions: [
+        { project: 'shop-app', startedAt: '2026-01-01T00:00:00.000Z' },
+        { project: 'game-app', startedAt: '2026-01-01T01:00:00.000Z' },
+      ],
+    });
+    // Nothing that identifies a process or an address.
+    const text = JSON.stringify(result.otherSessions);
+    expect(text).not.toMatch(/pid|wss|trycloudflare|https?:/i);
+  });
+
+  it('caps the named sessions but counts all of them', async () => {
+    const others = Array.from({ length: 14 }, (_, i) => ({
+      project: `app-${i}`,
+      startedAt: `2026-01-01T00:${String(i).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = await getDiagnostics({
+      tunnel: tunnelUp,
+      env: 'relay-dev',
+      envReason: 'env-var-relay-dev',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => ({ self: null, others }),
+    });
+
+    expect(result.otherSessions.count).toBe(14);
+    expect(result.otherSessions.sessions).toHaveLength(10);
   });
 
   it('includes recent errors respecting the limit', async () => {
@@ -346,7 +397,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
       recentErrorsLimit: 5,
     });
 
@@ -365,7 +416,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     expect(result.lastAttachAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -384,7 +435,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
     expect(result.tunnel.droppedAt).toBe('2026-06-01T10:00:00.000Z');
     expect(result.tunnel.reissueAttempts).toBe(3);
@@ -396,7 +447,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
     expect(result.tunnel.droppedAt).toBeNull();
     expect(result.tunnel.reissueAttempts).toBe(0);
@@ -408,7 +459,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
       checkParentAlive: () => true,
     });
     expect(typeof result.process.pid).toBe('number');
@@ -424,7 +475,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
     expect(result.authRejects).toEqual({ count: 0, lastAt: null });
     expect(result.recentErrors).toHaveLength(0);
@@ -440,7 +491,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     expect(result.authRejects.count).toBe(3);
@@ -458,7 +509,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
     });
     expect(before.tunnelRotations).toEqual({ count: 0, lastAt: null });
 
@@ -469,7 +520,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
     });
     expect(after.tunnelRotations.count).toBe(2);
     expect(after.tunnelRotations.lastAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -485,7 +536,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector,
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     const serialized = JSON.stringify({
@@ -507,7 +558,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
       checkParentAlive: () => true,
     });
     const resultDead = await getDiagnostics({
@@ -515,7 +566,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
       checkParentAlive: () => false,
     });
     expect(resultAlive.process.parentAlive).toBe(true);
@@ -537,7 +588,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     // refreshTargets must have been called at least once.
@@ -566,7 +617,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     // No error propagated — result is valid.
@@ -585,7 +636,7 @@ describe('getDiagnostics helper', () => {
       env: 'mock',
       envReason: 'default-mock',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     expect(result.pages).toBeNull();
@@ -621,7 +672,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     // FIX 2 must override the cached value.
@@ -637,7 +688,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     expect(result.tunnel.up).toBe(true);
@@ -652,7 +703,7 @@ describe('getDiagnostics helper', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
     });
 
     // No override when pid unknown.
@@ -675,13 +726,7 @@ describe('get_debug_status MCP tool', () => {
     const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const data = parseResult(result) as Record<string, unknown>;
-    expect(data.environment).toMatchObject({
-      kind: 'mock',
-      env: 'mock',
-      reason: 'test-pinned-mock',
-      // liveGuardActive is always false — relay-live and LIVE guard removed (#665)
-      liveGuardActive: false,
-    });
+    expect(data.environment).toEqual({ kind: 'mock', reason: 'test-pinned-mock' });
   });
 
   it('is available in relay-dev env', async () => {
@@ -689,13 +734,7 @@ describe('get_debug_status MCP tool', () => {
     const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const data = parseResult(result) as Record<string, unknown>;
-    // kind = relay-dev, legacy env = relay (backward-compat), liveGuardActive always false (#665)
-    expect(data.environment).toMatchObject({
-      kind: 'relay-dev',
-      env: 'relay',
-      reason: 'test-pinned-relay-dev',
-      liveGuardActive: false,
-    });
+    expect(data.environment).toEqual({ kind: 'relay-dev', reason: 'test-pinned-relay-dev' });
   });
 
   // relay-live env test removed — relay-live and LIVE guard removed (#665).
@@ -715,7 +754,7 @@ describe('get_debug_status MCP tool', () => {
     const host = 'secret-words-here.trycloudflare.com';
     const tunnelUp: TunnelStatus = { up: true, wssUrl: `wss://${host}` };
     const collector = new InMemoryDiagnosticsCollector();
-    collector.recordError(`dial wss://${host}/v2/at/${'a'.repeat(32)}/target/x failed`);
+    collector.recordError(`dial wss://${host}/v3/at/${'a'.repeat(32)}/target/x failed`);
     const client = await makeClient({
       env: 'relay-dev',
       tunnelStatus: tunnelUp,
@@ -843,12 +882,19 @@ describe('get_debug_status MCP tool', () => {
       connection: new FakeCdpConnection(),
       aitSource: new FakeAitSource(),
       getTunnelStatus: () => tunnelUp,
-      // No getTunnelChildPid — relies on lock fallback (source b).
-      readLock: () => ({
-        pid: process.pid,
-        wssUrl: 'wss://abc.trycloudflare.com',
-        startedAt: new Date().toISOString(),
-        tunnelChildPid: deadChildPid,
+      // No getTunnelChildPid — relies on the registry fallback (source b).
+      readSessions: () => ({
+        self: {
+          pid: process.pid,
+          clientPid: null,
+          ppid: null,
+          procStart: null,
+          startedAt: new Date().toISOString(),
+          tunnelChildPid: deadChildPid,
+          tunnelChildStart: null,
+          project: 'test-app',
+        },
+        others: [],
       }),
       getEnvironment: () => 'relay-dev',
       getEnvironmentReason: () => 'test',
@@ -899,7 +945,7 @@ describe('computeNextRecommendedAction', () => {
       pages: pages.map((p) => ({ ...p, lastSeenAt: null })),
       tunnel: tunnelDown,
       crashDetectedAt,
-      crashWarning: crashDetectedAt ? `[ait-debug] page crash 감지됨 — 새 attach 필요` : null,
+      crashWarning: crashDetectedAt ? `[ait-debugger] page crash 감지됨 — 새 attach 필요` : null,
       singleAttachModel: true,
     };
   }
@@ -1165,7 +1211,7 @@ describe('getDiagnostics — attach timeline', () => {
       env: 'relay-dev',
       envReason: 'test',
       collector: new InMemoryDiagnosticsCollector(),
-      readLock: () => null,
+      readSessions: () => null,
       attachTimeline: timeline,
     });
   }

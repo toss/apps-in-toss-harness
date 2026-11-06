@@ -17,14 +17,14 @@
 
 - `packages/agent-plugin`
 - `packages/debugger`
-- `packages/debug-console`
+- `packages/debugger-client`
 - `shared/internal-protocol`
 
 서드파티 의존성, `@apps-in-toss/web-framework`처럼 이 repo가 발행하지 않는 패키지, 앱인토스 콘솔과 서버는 대상이 아닙니다. 해당 프로젝트의 보안 창구에 알려 주세요.
 
 ## 번들에 비밀을 넣지 않습니다
 
-디버그 번들은 relay 공개키만 갖습니다. relay 서명 키는 접속 코드와 같은 비밀에서 파생되므로, 비밀이 번들에 들어가면 번들을 풀어 본 누구나 자기 터널에 서명할 수 있습니다. 그래서 `debug-console`에는 기기 쪽 코드 검증 훅과 비밀 주입용 빌드 정의가 없고, 코드 값은 relay만 검증합니다. 배포 산출물에 이를 되살리는 이름이 있으면 `check:gate-dist`가 실패합니다. 번들에서 비밀을 찾았다면 위 방법으로 알려 주세요.
+디버그 번들은 relay 공개키만 갖습니다. relay 서명 키는 접속 코드와 같은 비밀에서 파생되므로, 비밀이 번들에 들어가면 번들을 풀어 본 누구나 자기 터널에 서명할 수 있습니다. 그래서 `debugger-client`에는 기기 쪽 코드 검증 훅과 비밀 주입용 빌드 정의가 없고, 코드 값은 relay만 검증합니다. 배포 산출물에 이를 되살리는 이름이 있으면 `check:gate-dist`가 실패합니다. 번들에서 비밀을 찾았다면 위 방법으로 알려 주세요.
 
 ## 알려진 한계
 

@@ -50,7 +50,7 @@ const codeNow = (): string => generateTotp(SECRET, clock);
 function dial(code: string, id: string, settleMs = 250) {
   return new Promise<{ closeCode: number | null; ws: WebSocket }>((resolve, reject) => {
     const q = new URLSearchParams({ url: PAGE, title: 't' });
-    const ws = new WebSocket(`ws://127.0.0.1:${relay.port}/v2/at/${code}/target/${id}?${q}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${relay.port}/v3/at/${code}/target/${id}?${q}`);
     const out: { closeCode: number | null; ws: WebSocket } = { closeCode: null, ws };
     ws.on('close', (c) => {
       out.closeCode = c;
@@ -88,16 +88,16 @@ describe('relay code window (30 to 35 s)', () => {
   it('accepts a code minted at the start of a step until the end of the last accepted step', async () => {
     const code = codeNow();
     clock = STEP_START + (SKEW + 1) * STEP_MS - 1_000;
-    expect(await get(`/v2/at/${code}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${code}/target.js`)).toBe(200);
     clock = STEP_START + (SKEW + 1) * STEP_MS + 1_000;
-    expect(await get(`/v2/at/${code}/target.js`)).toBe(401);
+    expect(await get(`/v3/at/${code}/target.js`)).toBe(401);
   });
 
   it('accepts a code minted at the end of a step for at least SKEW steps (30 s)', async () => {
     clock = STEP_START + STEP_MS - 1;
     const code = codeNow();
     clock = STEP_START + STEP_MS - 1 + SKEW * STEP_MS;
-    expect(await get(`/v2/at/${code}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${code}/target.js`)).toBe(200);
   });
 
   it('refuses a fresh connection with a code that is older than the window', async () => {
@@ -113,10 +113,10 @@ describe('relay code window (30 to 35 s)', () => {
     clock += 10 * 60_000;
     // Reload while the socket is still up: the page fetches the script, the
     // handshake with the code it kept in history.state.
-    expect(await get(`/v2/at/${code}/target.js`)).toBe(200);
-    expect(await get(`/v2/at/${code}/ait-attach?v=0.0.0`)).not.toBe(401);
+    expect(await get(`/v3/at/${code}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${code}/ait-attach?v=0.0.0`)).not.toBe(401);
     // There is no /proxy route to reach, aged code or not.
-    expect(await get(`/v2/at/${code}/proxy`)).toBe(401);
+    expect(await get(`/v3/at/${code}/proxy`)).toBe(401);
     // Another phone cannot join on the aged code.
     expect((await dial(code, 'someone-else')).closeCode).toBe(4401);
     first.ws.terminate();
@@ -127,7 +127,7 @@ describe('relay code window (30 to 35 s)', () => {
     const first = await dial(code, 'tid');
     await closeSocket(first.ws);
     clock += 3 * 60_000; // the code is long past its window, the session is inside its grace
-    expect(await get(`/v2/at/${code}/target.js`)).toBe(200);
+    expect(await get(`/v3/at/${code}/target.js`)).toBe(200);
     const again = await dial(code, 'tid');
     expect(again.closeCode).toBeNull();
     again.ws.terminate();
@@ -149,6 +149,6 @@ describe('relay code window (30 to 35 s)', () => {
     await closeSocket(first.ws);
     clock += 5 * 60_000 + 1_000;
     expect((await dial(code, 'tid')).closeCode).toBe(4401);
-    expect(await get(`/v2/at/${code}/target.js`)).toBe(401);
+    expect(await get(`/v3/at/${code}/target.js`)).toBe(401);
   });
 });

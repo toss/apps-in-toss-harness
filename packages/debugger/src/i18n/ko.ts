@@ -89,7 +89,7 @@ export const ko = {
   'attach.intoss.faq.chii':
     '<strong>Chii 주입 실패 / 콘솔이 비어 있는 경우</strong> — 미니앱 번들에 <code>in-app</code> debug import가 있는지 확인',
   'attach.intoss.faq.totp':
-    '<strong>TOTP gate Layer C가 비활성인 경우</strong> — relay 서버에 <code>AIT_DEBUG_TOTP_SECRET</code>이 설정돼 있는지 확인',
+    '<strong>인증 코드가 만료됐다고 나오는 경우</strong> — 이 대시보드의 최신 QR로 다시 스캔 (오래된 QR의 코드는 받아 주지 않음)',
 } as const;
 
 export type StringKey = keyof typeof ko;

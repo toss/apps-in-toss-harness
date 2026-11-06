@@ -55,7 +55,7 @@ jobs:
       - run: pnpm -r check:test-runner-dist
       - run: pnpm -r check:debug-surface-absent
       # 배포 산출물이 attach 게이트를 소스와 같게 판정하는지 본다. 방금 빌드한
-      # debug-console dist(ESM·CJS)로 `evaluateDebugGate`를 표 몇 줄에 돌려, 운영 호스트
+      # debugger-client dist(ESM·CJS)로 `evaluateDebugGate`를 표 몇 줄에 돌려, 운영 호스트
       # 거부·서명 없는 QR 호스트 거부·정상 attach를 확인한다. dist가 없으면 실패한다.
       - run: pnpm -r check:gate-dist
       # 소비자 Vitest 호환 게이트. relay pool은 Vitest 내부 API(`_testRun`)로

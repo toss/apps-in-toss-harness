@@ -15,7 +15,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// isPidAlive — extracted from src/mcp/server-lock.ts
+// isPidAlive
 // ---------------------------------------------------------------------------
 
 /**
@@ -79,7 +79,7 @@ export function startParentWatcher(
   // PID 1 is init/launchd — running under a process manager or as a detached
   // daemon. There is no meaningful parent to watch; skip the watcher entirely.
   if (initialPpid <= 1) {
-    log('[ait-debug] parent-pid watcher: no parent to watch (ppid<=1), skipping\n');
+    log('[ait-debugger] parent-pid watcher: no parent to watch (ppid<=1), skipping\n');
     return { stop() {} };
   }
 
@@ -95,7 +95,7 @@ export function startParentWatcher(
       fired = true;
       clearInterval(handle);
       log(
-        `[ait-debug] parent-pid watcher: parent PID ${initialPpid} is gone (currentPpid=${currentPpid}) — shutting down\n`,
+        `[ait-debugger] parent-pid watcher: parent PID ${initialPpid} is gone (currentPpid=${currentPpid}) — shutting down\n`,
       );
       onOrphaned();
     }

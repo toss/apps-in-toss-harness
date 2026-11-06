@@ -8,7 +8,7 @@
  *
  * These tests cover:
  *   - `deriveEnvironment(kind)` — both arms
- *   - `isRelayEnv` / `toLegacyEnv`
+ *   - `isRelayEnv`
  *   - the narrow `setEnvironmentOverride` test hook
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -17,7 +17,6 @@ import {
   getEnvironmentOverride,
   isRelayEnv,
   setEnvironmentOverride,
-  toLegacyEnv,
 } from '../environment.js';
 
 describe('deriveEnvironment — connection.kind', () => {
@@ -41,13 +40,6 @@ describe('isRelayEnv', () => {
 });
 
 // isLiveRelayEnv removed — relay-live and LIVE guard removed in #665.
-
-describe('toLegacyEnv', () => {
-  it('collapses the two-value env to mock | relay', () => {
-    expect(toLegacyEnv('mock')).toBe('mock');
-    expect(toLegacyEnv('relay-dev')).toBe('relay');
-  });
-});
 
 describe('setEnvironmentOverride — narrow test hook', () => {
   afterEach(() => setEnvironmentOverride(null));

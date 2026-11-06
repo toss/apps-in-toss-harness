@@ -1,5 +1,5 @@
 name: "✨ 기능 제안"
-description: harness(ait 플러그인·debugger·debug-console)에 추가되었으면 하는 기능이나 개선을 제안합니다.
+description: harness(ait 플러그인·debugger·debugger-client)에 추가되었으면 하는 기능이나 개선을 제안합니다.
 title: "[Feature] "
 labels: ["enhancement"]
 body:

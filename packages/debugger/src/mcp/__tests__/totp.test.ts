@@ -244,9 +244,9 @@ function makeReq(atCode: string): import('node:http').IncomingMessage {
 }
 
 describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () => {
-  it('returns undefined when env var is not set', () => {
+  it('refuses every code when the env var is not set', () => {
     const predicate = buildRelayVerifyAuth({});
-    expect(predicate).toBeUndefined();
+    expect(predicate(makeReq(generateTotp(RELAY_TEST_SECRET)))).toBe(false);
   });
 
   it('accepts a code issued at the current time step', () => {
@@ -256,9 +256,8 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
       { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
       RELAY_TEST_SECRET,
     );
-    expect(predicate).toBeDefined();
     // Use a fake req; the predicate reads `at=` from req.url.
-    expect(predicate!(makeReq(code))).toBe(true);
+    expect(predicate(makeReq(code))).toBe(true);
   });
 
   it('accepts a code issued one step ago', () => {
@@ -268,8 +267,7 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
       { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
       RELAY_TEST_SECRET,
     );
-    expect(predicate).toBeDefined();
-    expect(predicate!(makeReq(code))).toBe(true);
+    expect(predicate(makeReq(code))).toBe(true);
   });
 
   it('rejects a code issued 70 s ago (outside the window)', () => {
@@ -279,8 +277,7 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
       { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
       RELAY_TEST_SECRET,
     );
-    expect(predicate).toBeDefined();
-    expect(predicate!(makeReq(code))).toBe(false);
+    expect(predicate(makeReq(code))).toBe(false);
   });
 
   it('rejects a missing at= code', () => {
@@ -288,9 +285,8 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
       { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },
       RELAY_TEST_SECRET,
     );
-    expect(predicate).toBeDefined();
     const reqNoAt = { url: '/client/id?target=t1' } as import('node:http').IncomingMessage;
-    expect(predicate!(reqNoAt)).toBe(false);
+    expect(predicate(reqNoAt)).toBe(false);
   });
 });
 

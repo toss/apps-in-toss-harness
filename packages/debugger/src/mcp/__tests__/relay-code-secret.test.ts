@@ -11,7 +11,7 @@ import { type AttachDeps, type AttachUrlParts, mintAttachUrl } from '../attach-o
 import { rebuildAttachUrl } from '../debug-server.js';
 import { relayCodeSecret } from '../relay-code-secret.js';
 import { buildAttachUrl } from '../tools.js';
-import { buildRelayVerifyAuth, generateTotp } from '../totp.js';
+import { buildRelayVerifyAuth, generateTotp, mintRelayCode } from '../totp.js';
 
 const SECRET = 'ab'.repeat(32);
 const WSS = 'wss://abc-def.trycloudflare.com';
@@ -43,7 +43,7 @@ describe('relay code key', () => {
     } as unknown as AttachDeps;
     const urls = [
       mintAttachUrl(deps, parts),
-      rebuildAttachUrl(parts, { up: true, wssUrl: WSS }),
+      rebuildAttachUrl(parts, { up: true, wssUrl: WSS }) ?? '',
       buildAttachUrl(SCHEME, { up: true, wssUrl: WSS }, SECRET).attachUrl,
     ];
     for (const url of urls) {
@@ -57,13 +57,13 @@ describe('relay code key', () => {
 
   it('a code derived from the relay secret is refused', () => {
     process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
-    expect(buildRelayVerifyAuth()!(req(generateTotp(SECRET)))).toBe(false);
+    expect(buildRelayVerifyAuth()(req(generateTotp(SECRET)))).toBe(false);
   });
 
-  it('without a relay secret no code is minted and no gate is built', () => {
+  it('without a relay secret no code is minted and the gate refuses everything', () => {
     delete process.env.AIT_DEBUG_TOTP_SECRET;
-    expect(buildRelayVerifyAuth()).toBeUndefined();
-    expect(atOf(rebuildAttachUrl(parts, { up: true, wssUrl: WSS }))).toBe('');
+    expect(rebuildAttachUrl(parts, { up: true, wssUrl: WSS })).toBeNull();
+    expect(buildRelayVerifyAuth()(req(mintRelayCode()))).toBe(false);
   });
 
   it('never reaches the environment', () => {

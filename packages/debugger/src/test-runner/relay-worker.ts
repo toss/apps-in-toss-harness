@@ -548,7 +548,7 @@ export async function runTestFilesOverRelay(
  * Renders one `Runtime.consoleAPICalled` event to a single line of text, the
  * same way `tools.ts#normalizeConsoleMessage` does (args rendered + space-
  * joined). Inlined here (≈8 lines) so this module avoids importing `tools.ts`,
- * which would drag the heavy MCP/Node graph (server-lock, parent-watcher, …)
+ * which would drag the heavy MCP/Node graph (session-registry, parent-watcher, …)
  * onto the test-runner entry.
  *
  * SECRET-HANDLING: this only stringifies console args; the caller's

@@ -170,11 +170,13 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
   전부 이 변형이다. 빌드 전에 셸에 `AIT_DEBUG_BUILD`가 남아 있지 않은지 본다
   (`echo "${AIT_DEBUG_BUILD:-}"`가 비어 있어야 한다. 값이 있으면 `unset`한 뒤 빌드한다).
 - **디버그 빌드**: 사용자가 실기기에서 CDP attach로 디버깅하겠다고 한 경우에만, 프로젝트에
-  `/ait:inject-debug-console` 배선이 돼 있을 때 `AIT_DEBUG_BUILD=1`을 붙여 빌드한다
-  (프로젝트 build 스크립트 앞에 환경 변수로 준다). 배선이 없으면 `/ait:inject-debug-console`을
+  `/ait:inject-debugger-client` 배선이 돼 있을 때 `AIT_DEBUG_BUILD=1`을 붙여 빌드한다
+  (프로젝트 build 스크립트 앞에 환경 변수로 준다). 배선이 없으면 `/ait:inject-debugger-client`을
   먼저 안내한다. 사용자가 디버깅을 말하지 않았는데 이 변형으로 빌드하지 않는다.
   디버그 도구 버전이 `../setup-debugger/references/min-versions.json`의 최소 버전보다 낮은지도
-  이 빌드 전에 확인한다(`references/debug-builds.md` 끝 절).
+  이 빌드 전에 확인한다(`references/debug-builds.md` 끝 절). 프로젝트에 옛 이름
+  `@apps-in-toss/debug-console`이나 `.mcp.json`의 `ait-devtools`가 남아 있으면 "배선 없음"이 아니라
+  업그레이드가 필요한 상태다(`../setup-debugger/references/upgrade-check.md` 0절).
 
 업로드할 번들은 `NODE_ENV=production`으로 빌드한다. devtools unplugin이 이 값으로 활성화를 판단해,
 없으면 일부 번들러(webpack CLI, esbuild, Rollup)가 mock과 패널을 번들에 남긴다. 웹 빌드 출력
@@ -342,7 +344,7 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 
 - 짝 skill: `new-miniapp`(scaffold), `design`(화면·등록용 이미지 자산),
   `setup-debugger`·`debug`(실기기 CDP attach — 이 skill 다음 단계),
-  `inject`의 debug-console facet(디버그 빌드에 attach 표면 설치).
+  `inject`의 debugger-client facet(디버그 빌드에 attach 표면 설치).
 - `references/debug-builds.md`: 디버그 빌드 배포 기록 파일 형식과 절차.
 - 콘솔 MCP(`ait-console`) 인가는 `/mcp` 1회. 세션이 보는 워크스페이스는
   인가한 계정의 멤버십을 따른다(2).

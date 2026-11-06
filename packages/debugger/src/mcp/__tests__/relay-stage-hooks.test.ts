@@ -7,7 +7,6 @@
  *     including the `/at/<code>/` path-prefix form;
  *   - a rejected target upgrade reports `accepted: false`; an accepted one `true`;
  *   - `/target.js` serving is reported once per served script and not for a 401;
- *   - the observer fires even with NO TOTP gate (`verifyAuth` undefined);
  *   - a target socket close fires `onTargetClose`;
  *   - SECRET-HANDLING: no hook payload carries the code, `at=`, `/at/`, the id or any URL.
  */
@@ -61,7 +60,6 @@ describe('relay stage hooks — TOTP gate on', () => {
 
   beforeAll(async () => {
     const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET }, TEST_SECRET);
-    if (verifyAuth === undefined) throw new Error('verifyAuth was not built');
     relay = await startChiiRelay({
       port: 0,
       verifyAuth,
@@ -84,7 +82,7 @@ describe('relay stage hooks — TOTP gate on', () => {
     seen.targetCloses = 0;
     const code = generateTotp(TEST_SECRET);
     const ws = await dialWs(
-      `ws://127.0.0.1:${relay.port}/v2/at/${code}/target/stage-hook-id?${new URLSearchParams({ url: 'https://example.invalid/p', title: 't' })}`,
+      `ws://127.0.0.1:${relay.port}/v3/at/${code}/target/stage-hook-id?${new URLSearchParams({ url: 'https://example.invalid/p', title: 't' })}`,
     );
     await waitFor(() => seen.upgrades.length > 0);
     expect(seen.upgrades).toEqual([{ kind: 'target', accepted: true }]);
@@ -98,7 +96,7 @@ describe('relay stage hooks — TOTP gate on', () => {
     seen.upgrades.length = 0;
     seen.targetCloses = 0;
     const closeCode = await dialWsAwaitClose(
-      `ws://127.0.0.1:${relay.port}/v2/at/${wrongCode()}/target/stage-bad-id?url=u`,
+      `ws://127.0.0.1:${relay.port}/v3/at/${wrongCode()}/target/stage-bad-id?url=u`,
     );
     expect(closeCode).toBe(4401);
     await waitFor(() => seen.upgrades.length > 0);
@@ -123,11 +121,11 @@ describe('relay stage hooks — TOTP gate on', () => {
 
   it('counts /target.js only when it is actually served (valid code), not on a 401', async () => {
     seen.scriptServed = 0;
-    const bad = await fetch(`${relay.baseUrl}/v2/at/${wrongCode()}/target.js`);
+    const bad = await fetch(`${relay.baseUrl}/v3/at/${wrongCode()}/target.js`);
     expect(bad.status).toBe(401);
     expect(seen.scriptServed).toBe(0);
 
-    const ok = await fetch(`${relay.baseUrl}/v2/at/${generateTotp(TEST_SECRET)}/target.js`);
+    const ok = await fetch(`${relay.baseUrl}/v3/at/${generateTotp(TEST_SECRET)}/target.js`);
     expect(ok.status).toBe(200);
     expect(seen.scriptServed).toBe(1);
   });
@@ -136,7 +134,7 @@ describe('relay stage hooks — TOTP gate on', () => {
     seen.upgrades.length = 0;
     const code = generateTotp(TEST_SECRET);
     const ws = await dialWs(
-      `ws://127.0.0.1:${relay.port}/v2/at/${code}/target/secret-probe-id?url=https%3A%2F%2Fexample.invalid%2F&title=t`,
+      `ws://127.0.0.1:${relay.port}/v3/at/${code}/target/secret-probe-id?url=https%3A%2F%2Fexample.invalid%2F&title=t`,
     );
     await waitFor(() => seen.upgrades.length > 0);
     ws.close();
@@ -151,44 +149,11 @@ describe('relay stage hooks — TOTP gate on', () => {
   });
 });
 
-describe('relay stage hooks — no TOTP gate (verifyAuth undefined)', () => {
-  let relay: ChiiRelay;
-  const seen = newSeen();
-
-  beforeAll(async () => {
-    relay = await startChiiRelay({
-      port: 0,
-      onWsUpgrade: (e) => seen.upgrades.push(e),
-      onTargetScriptServed: () => {
-        seen.scriptServed += 1;
-      },
-      onTargetClose: () => {
-        seen.targetCloses += 1;
-      },
-    });
-  });
-
-  afterAll(async () => {
-    await relay.close();
-  });
-
-  it('still reports target upgrades, script serving and target close', async () => {
-    const res = await fetch(`${relay.baseUrl}/target.js`);
-    expect(res.status).toBe(200);
-    expect(seen.scriptServed).toBe(1);
-
-    const ws = await dialWs(
-      `ws://127.0.0.1:${relay.port}/target/open-gate-id?url=https%3A%2F%2Fexample.invalid%2F&title=t`,
-    );
-    await waitFor(() => seen.upgrades.length > 0);
-    expect(seen.upgrades).toEqual([{ kind: 'target', accepted: true }]);
-    ws.close();
-    await waitFor(() => seen.targetCloses > 0);
-    expect(seen.targetCloses).toBe(1);
-  });
-
-  it('a throwing hook never breaks the relay', async () => {
+describe('relay stage hooks — a throwing hook', () => {
+  it('never breaks the relay', async () => {
+    const verifyAuth = buildRelayVerifyAuth({ AIT_DEBUG_TOTP_SECRET: TEST_SECRET }, TEST_SECRET);
     const throwing = await startChiiRelay({
+      verifyAuth,
       port: 0,
       onWsUpgrade: () => {
         throw new Error('hook failure');
@@ -201,10 +166,11 @@ describe('relay stage hooks — no TOTP gate (verifyAuth undefined)', () => {
       },
     });
     try {
-      const res = await fetch(`${throwing.baseUrl}/target.js`);
+      const code = generateTotp(TEST_SECRET);
+      const res = await fetch(`${throwing.baseUrl}/v3/at/${code}/target.js`);
       expect(res.status).toBe(200);
       const ws = await dialWs(
-        `ws://127.0.0.1:${throwing.port}/target/throw-id?url=https%3A%2F%2Fexample.invalid%2F&title=t`,
+        `ws://127.0.0.1:${throwing.port}/v3/at/${code}/target/throw-id?url=https%3A%2F%2Fexample.invalid%2F&title=t`,
       );
       ws.close();
       await new Promise((r) => setTimeout(r, 100));

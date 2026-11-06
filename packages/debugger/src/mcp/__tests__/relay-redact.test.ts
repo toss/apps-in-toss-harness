@@ -6,7 +6,7 @@ const CODE = 'c0ffee00'.repeat(4);
 
 describe('maskRelayUrl', () => {
   it('keeps the scheme and the domain, masks the first label, drops path and query', () => {
-    expect(maskRelayUrl(`wss://abc-def.trycloudflare.com/v2/at/${CODE}/x?at=${CODE}`)).toBe(
+    expect(maskRelayUrl(`wss://abc-def.trycloudflare.com/v3/at/${CODE}/x?at=${CODE}`)).toBe(
       'wss://***.trycloudflare.com',
     );
   });
@@ -29,7 +29,7 @@ describe('redactRelayText', () => {
   });
 
   it('masks the at path prefix, versioned or not', () => {
-    expect(redactRelayText(`GET /v2/at/${CODE}/target.js`)).toBe('GET /v2/at/<redacted>/target.js');
+    expect(redactRelayText(`GET /v3/at/${CODE}/target.js`)).toBe('GET /v3/at/<redacted>/target.js');
     expect(redactRelayText(`GET /at/${CODE}/target/abc`)).toBe('GET /at/<redacted>/target/abc');
   });
 
@@ -57,7 +57,7 @@ describe('redactRelayText', () => {
 
   it('is applied by the error-message redactor', () => {
     const out = redactErrorMessage(
-      `request /v2/at/${CODE}/target.js to wss://abc.trycloudflare.com failed`,
+      `request /v3/at/${CODE}/target.js to wss://abc.trycloudflare.com failed`,
     );
     expect(out).not.toContain(CODE);
     expect(out).not.toContain('abc.trycloudflare.com');

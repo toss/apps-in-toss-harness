@@ -260,7 +260,7 @@ describe('getDiagnostics — relayKey', () => {
     tunnel: { up: false, wssUrl: null },
     env: 'mock' as const,
     envReason: 'test',
-    readLock: () => null,
+    readSessions: () => null,
   };
 
   it('is null when no relay session recorded a key age', async () => {

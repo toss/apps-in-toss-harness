@@ -40,9 +40,6 @@ describe('daemon entry points install the redirect', () => {
     expect(afterSig(debugSrc, 'export async function runDebugServer(')).toContain(
       'redirectConsoleToStderr()',
     );
-    expect(afterSig(debugSrc, 'export async function runLocalDebugServer(')).toContain(
-      'redirectConsoleToStderr()',
-    );
     expect(afterSig(devSrc, 'export async function runDevServer(')).toContain(
       'redirectConsoleToStderr()',
     );

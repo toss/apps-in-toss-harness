@@ -21,7 +21,7 @@ harness 전체 흐름을 한눈에 보고 첫 station(`/ait:new`)으로 곧장 �
 여기 더해 이 skill은 **현재 환경·연동 상태를 가볍게 점검**하고, 그 결과에 따라
 다음 조치를 권유·제안하거나(사용자 동의 시) 전담 skill로 이어간다 — git·
 Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, docs·콘솔 MCP
-노출 여부, 프로젝트 `.mcp.json`의 `ait-devtools` 배선 여부가 대상이다.
+노출 여부, 프로젝트 `.mcp.json`의 `ait-debugger` 배선 여부가 대상이다.
 
 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주하는 흐름을
 `/ait` 명령으로 엮는다.
@@ -70,7 +70,7 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 - 기능을 붙이려는 기존 프로젝트 → `/ait:feature`. 실기기 확인은 스택과 무관하게
   `/ait:test-on-device`다.
 - Unity 프로젝트(`Packages/manifest.json`에 Apps in Toss Unity SDK 항목이 있음)
-  → 웹 번들러용 `inject`의 devtools·debug-console facet 대상이 아니다. 기능 구현은
+  → 웹 번들러용 `inject`의 devtools·debugger-client facet 대상이 아니다. 기능 구현은
   `/ait:feature`, 빌드한 결과의 실기기 확인은 `/ait:test-on-device`로 안내한다.
   Unity 쪽 빌드 메뉴와 `.ait` 산출 경로는 웹과 달라서 `feature`가 읽는
   `../feature/references/stack-pitfalls.md`와 docs MCP를 기준으로 삼는다.
@@ -99,9 +99,11 @@ Claude Code:
 - 콘솔 MCP 도구가 안 보이면(설치 직후 기본 상태 — 미인가) `/mcp`에서 1회
   인가를 권유한다. 문서 MCP는 무인증이라 보통 바로 보인다.
 - cwd가 기존 프로젝트(스택 무관)면 프로젝트 `.mcp.json`을 `Read`해
-  `mcpServers.ait-devtools` 항목이 있는지 확인한다(파일이 없으면 "미배선"으로
-  본다). 없으면 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에
-  넣는다 — 강제하지 않는다(디버깅 계획이 없는 세션도 많다).
+  `mcpServers.ait-debugger` 항목이 있는지 확인한다(파일이 없으면 "미배선"으로
+  본다). 옛 키 `mcpServers.ait-devtools`(0.3.0 이하 이름)나 `package.json`의
+  `@apps-in-toss/debug-console`이 있으면 "미배선"이 아니라 **이름 변경 업그레이드 필요**로 본다
+  (`../setup-debugger/references/upgrade-check.md` 0절). 둘 다 없으면 "디버깅 쓸 계획이면
+  `/ait:setup-debugger`"를 제안 목록에 넣는다 — 강제하지 않는다(디버깅 계획이 없는 세션도 많다).
 - 항목이 **있으면** 버전만 가볍게 본다. 이미 읽은 `.mcp.json`에서 `args`의
   debugger Release URL 버전을 `../setup-debugger/references/upgrade-check.md`
   1단계 규칙대로 판별하고, 이 플러그인의 기준(`setup-debugger/SKILL.md` 4단계
@@ -126,8 +128,9 @@ Cursor:
   `agent mcp login ait-console` 으로 인가한다(루트 README Cursor 절
   참고).
 - cwd가 기존 프로젝트(스택 무관)면 `.cursor/mcp.json`을 `Read`해
-  `mcpServers.ait-devtools` 항목이 있는지 확인한다. 없으면 Claude Code와
-  동일하게 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에 넣는다.
+  `mcpServers.ait-debugger` 항목이 있는지 확인한다. 옛 키 `ait-devtools`나 옛 패키지
+  `@apps-in-toss/debug-console`이 있으면 Claude Code와 같이 이름 변경 업그레이드 필요로 본다.
+  모두 없으면 동일하게 "디버깅 쓸 계획이면 `/ait:setup-debugger`"를 제안 목록에 넣는다.
 - 항목이 있으면 Claude Code와 같은 방식으로 `args`의 debugger Release URL 버전만
   upgrade-check reference 1단계 규칙대로 비교하고, 낮을 때만 업그레이드 점검을
   제안한다.
@@ -164,12 +167,16 @@ skill §5 adapter-note와 동일 패턴).
   ⚠️ 콘솔 MCP(ait-console) 도구가 안 보입니다 — 1회 인가가 필요합니다:
      /mcp   # 말로: "콘솔 MCP 인가 화면을 열어줘"
   ✅ 문서 MCP(apps-in-toss-docs) 연결됨
-  ⚠️ 이 프로젝트 .mcp.json에 ait-devtools 배선이 없습니다 — 온디바이스 디버깅이
+  ⚠️ 이 프로젝트 .mcp.json에 ait-debugger 배선이 없습니다 — 온디바이스 디버깅이
      필요하면:
      /ait:setup-debugger
      말로: "나중에 폰 디버깅할 수 있게 디버거 연결을 미리 세팅해줘"
-  ⚠️ .mcp.json의 ait-devtools가 옛 debugger 버전에 고정돼 있습니다 — 업그레이드
+  ⚠️ .mcp.json의 ait-debugger가 옛 debugger 버전에 고정돼 있습니다 — 업그레이드
      여부를 확인하려면:
+     /ait:setup-debugger
+  ⚠️ 이 프로젝트는 옛 이름(ait-devtools 키 또는 @apps-in-toss/debug-console)으로 배선돼 있습니다 —
+     0.3.1부터 ait-debugger·@apps-in-toss/debugger-client로 바뀌었고, 한쪽만 올리면 연결되지 않습니다.
+     한꺼번에 옮기려면:
      /ait:setup-debugger
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
      https://github.com/toss/apps-in-toss-harness/blob/main/.github/install-troubleshooting.md
@@ -267,8 +274,10 @@ Apps in Toss 플러그인이 설치됐습니다.
 - Unity·엔진 빌드 프로젝트 + 기능 구현 동의 → `/ait:feature`, 확인 동의 →
   `/ait:test-on-device`. 이 프로젝트에는 `inject` facet을 제안하지 않는다.
 - 디버깅 계획 + `.mcp.json` 미배선 동의 → `/ait:setup-debugger`.
-- `ait-devtools`가 옛 버전이라는 안내에 동의 → `/ait:setup-debugger`(3단계가
+- `ait-debugger`가 옛 버전이라는 안내에 동의 → `/ait:setup-debugger`(3단계가
   `references/upgrade-check.md`로 old→new를 보여 주고 URL 한 줄을 바꾼다).
+- 옛 이름(`ait-devtools` 키, `@apps-in-toss/debug-console`) 안내에 동의 → `/ait:setup-debugger`
+  (같은 reference의 0절·2-B절이 키·패키지·import를 한꺼번에 새 이름으로 옮긴다).
 - 콘솔 MCP 인가 동의 → `/mcp` 안내(직접 실행은 사용자 몫 — 브라우저 OAuth).
 
 동의 없이 임의로 실행하지 않는다 — 2단계 인쇄까지가 이 skill의 기본 종료
@@ -277,7 +286,7 @@ Apps in Toss 플러그인이 설치됐습니다.
 ## Out of scope
 
 - 프로젝트 생성·파일 변경 — 그건 `/ait:new`(`new-miniapp` skill), 기존
-  프로젝트 패치는 `/ait:inject-devtools`/`/ait:inject-debug-console`(`inject`
+  프로젝트 패치는 `/ait:inject-devtools`/`/ait:inject-debugger-client`(`inject`
   skill), MCP 배선은 `/ait:setup-debugger`. **이 skill은 점검·안내·hand-off까지만
   하고 어떤 파일도 스스로 쓰지 않는다** — mutation은 전부 위 전담 skill에
   위임한다.

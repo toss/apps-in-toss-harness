@@ -13,7 +13,7 @@
  * "attach failed" surfaces as `factory.open()` rejecting; we pin exit 1 there.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,7 +77,6 @@ const {
   ALLOWED_CELL_PLATFORMS,
   normalizePaceArgv,
   renderSummary,
-  findLiveRelayOwner,
 } = await import('./cli.js');
 
 const FAKE_CONN = { kind: 'relay' as const };
@@ -93,14 +92,14 @@ function passingRun() {
   };
 }
 
-// 락 파일은 테스트마다 빈 임시 디렉터리로 격리한다 — 개발 머신에서 실제 debugger 데몬이
+// 세션 레지스트리는 테스트마다 빈 임시 디렉터리로 격리한다 — 개발 머신에서 실제 debugger 데몬이
 // 떠 있어도 이 파일의 main() 테스트가 영향받지 않게 한다.
 let lockDir: string;
 
 describe('debugger-test main() exit codes', () => {
   beforeEach(() => {
     lockDir = mkdtempSync(join(tmpdir(), 'ait-cli-lock-'));
-    vi.stubEnv('AIT_DEVTOOLS_LOCK_DIR', lockDir);
+    vi.stubEnv('AIT_DEBUGGER_STATE_DIR', lockDir);
     vi.clearAllMocks();
     process.exitCode = undefined;
     // Default happy-ish setup: 1 file discovered, factory opens, run passes.
@@ -1128,27 +1127,31 @@ describe('renderSummary — per-file failure exposure (fix #1, devtools#723)', (
   });
 });
 
-describe('debugger-test live relay owner detection (read-only)', () => {
+describe('debugger-test beside a running debugger MCP session', () => {
   let dir: string;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
 
-  function writeLock(data: Record<string, unknown>): void {
-    writeFileSync(join(dir, 'server.lock'), JSON.stringify(data));
-  }
-
-  /** 확실히 살아 있는 PID(부모 프로세스)와, 확실히 죽은 PID. */
-  const ALIVE_PID = process.ppid;
-  const DEAD_PID = 2 ** 22 + 12345;
-
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'ait-cli-lock-'));
-    vi.stubEnv('AIT_DEVTOOLS_LOCK_DIR', dir);
+    dir = mkdtempSync(join(tmpdir(), 'ait-cli-sessions-'));
+    vi.stubEnv('AIT_DEBUGGER_STATE_DIR', dir);
     vi.clearAllMocks();
     process.exitCode = undefined;
     discoverTestFilesMock.mockResolvedValue(['/abs/foo.ait.test.ts']);
     factoryOpenMock.mockResolvedValue(FAKE_CONN);
     runTestFilesOverRelayMock.mockResolvedValue(passingRun());
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    // A live session of another client is on record.
+    mkdirSync(join(dir, 'sessions'), { recursive: true });
+    writeFileSync(
+      join(dir, 'sessions', `${process.ppid}.json`),
+      JSON.stringify({
+        pid: process.ppid,
+        clientPid: process.ppid,
+        startedAt: new Date().toISOString(),
+        tunnelChildPid: null,
+        project: 'other-app',
+      }),
+    );
   });
 
   afterEach(() => {
@@ -1161,54 +1164,16 @@ describe('debugger-test live relay owner detection (read-only)', () => {
   const stderrText = (): string =>
     stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
 
-  it('returns null when there is no lock file', async () => {
-    expect(await findLiveRelayOwner()).toBeNull();
-  });
-
-  it('returns null for a stale lock (dead PID)', async () => {
-    writeLock({ pid: DEAD_PID, startedAt: new Date().toISOString(), wssUrl: null });
-    expect(await findLiveRelayOwner()).toBeNull();
-  });
-
-  it('returns null for a zombie lock (holder alive but tunnel child dead)', async () => {
-    writeLock({
-      pid: ALIVE_PID,
-      startedAt: new Date().toISOString(),
-      wssUrl: null,
-      tunnelChildPid: DEAD_PID,
-    });
-    expect(await findLiveRelayOwner()).toBeNull();
-  });
-
-  it('returns the PID of a live holder and never modifies the lock file', async () => {
-    writeLock({ pid: ALIVE_PID, startedAt: new Date().toISOString(), wssUrl: null });
-    expect(await findLiveRelayOwner()).toEqual({ pid: ALIVE_PID });
-    expect(await findLiveRelayOwner()).toEqual({ pid: ALIVE_PID });
-  });
-
-  it('stops with exit 1 and a Korean message (no relay boot) when a live debugger holds the lock', async () => {
-    writeLock({ pid: ALIVE_PID, startedAt: new Date().toISOString(), wssUrl: null });
+  it('boots its own relay and never refuses because another session is running', async () => {
     await main(ARGS);
-    expect(process.exitCode).toBe(1);
-    expect(createRelayConnectionFactoryMock).not.toHaveBeenCalled();
-    const text = stderrText();
-    expect(text).toContain(`이미 debugger 프로세스(PID ${ALIVE_PID})가 relay를 운영 중이에요`);
-    expect(text).toContain('`run_tests` 도구');
-    expect(text).toContain('--separate-relay');
+    expect(createRelayConnectionFactoryMock).toHaveBeenCalledOnce();
+    expect(process.exitCode).not.toBe(1);
+    expect(stderrText()).not.toContain('relay를 운영 중이에요');
   });
 
-  it('--separate-relay forces the run and labels it a test-runner session', async () => {
-    writeLock({ pid: ALIVE_PID, startedAt: new Date().toISOString(), wssUrl: null });
+  it('still accepts --separate-relay (no effect)', async () => {
     await main([...ARGS, '--separate-relay']);
     expect(createRelayConnectionFactoryMock).toHaveBeenCalledOnce();
     expect(process.exitCode).not.toBe(1);
-    expect(stderrText()).toContain('테스트 러너 세션');
-  });
-
-  it('runs normally when the lock is stale', async () => {
-    writeLock({ pid: DEAD_PID, startedAt: new Date().toISOString(), wssUrl: null });
-    await main(ARGS);
-    expect(createRelayConnectionFactoryMock).toHaveBeenCalledOnce();
-    expect(stderrText()).not.toContain('relay를 운영 중이에요');
   });
 });

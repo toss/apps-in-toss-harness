@@ -10,7 +10,8 @@
  * entries.
  *
  * TOTP auth (relay-side, authoritative gate):
- *   When `verifyAuth` is provided, this module gates both inbound surfaces:
+ *   `verifyAuth` is required: there is no relay without a code check. This
+ *   module gates both inbound surfaces:
  *
  *   - HTTP 'request': after `chii.start()` has registered Koa, we take over
  *     the request chain the same way as the upgrade chain below. Koa is
@@ -52,8 +53,8 @@
  *      stock `target.js` derives its WS endpoint from the script `src`
  *      (`scriptEl.src.replace('target.js','')`), so the only way for the
  *      phone to carry a code is to embed it in the script URL path. The
- *      in-app attach injects `https://<host>/v2/at/<code>/target.js`; both the
- *      script fetch and the derived `wss://<host>/v2/at/<code>/target/<id>` WS
+ *      in-app attach injects `https://<host>/v3/at/<code>/target.js`; both the
+ *      script fetch and the derived `wss://<host>/v3/at/<code>/target/<id>` WS
  *      dial then carry the prefix. The prefix is versioned: a device on another
  *      protocol (the unversioned `/at/…` is protocol 1) gets the code check, then
  *      an update-required answer instead of service. The handlers below rewrite the prefix
@@ -289,13 +290,13 @@ export interface RelayAuthRejectEvent {
  */
 export interface AttachHandshakeEvent {
   /**
-   * The `@apps-in-toss/debug-console` build version the device reported, or `''` when
+   * The `@apps-in-toss/debugger-client` build version the device reported, or `''` when
    * the query parameter was absent or empty.
    */
   deviceVersion: string;
   /**
    * The raw protocol value (`p`) the device reported, or `''` when absent
-   * (a legacy debug-console <= 0.1.5 reports only `deviceVersion`).
+   * (the path prefix proves it for a device that skipped the handshake).
    */
   deviceProtocol: string;
 }
@@ -321,9 +322,9 @@ const AT_PREFIX_RE =
  * Rewrites a path-prefixed request URL (`/v<N>/at/<code>/…`, or the unversioned
  * `/at/<code>/…` of protocol 1) into the equivalent query-based form, e.g.:
  *
- *   `/v2/at/<code>/target.js`        → `/target.js?at=<code>`
- *   `/v2/at/<code>/target/x?url=u`   → `/target/x?url=u&at=<code>`
- *   `/v2/at/<code>/`                 → `/?at=<code>`
+ *   `/v3/at/<code>/target.js`        → `/target.js?at=<code>`
+ *   `/v3/at/<code>/target/x?url=u`   → `/target/x?url=u&at=<code>`
+ *   `/v3/at/<code>/`                 → `/?at=<code>`
  *
  * Every protocol's prefix is rewritten, so the code check treats them all the
  * same; {@link atPrefixProtocol} says which protocol the caller spoke, and the
@@ -570,7 +571,7 @@ export interface StartChiiRelayOptions {
    * which makes the MCP handshake fail with -32000. With port 0 the new relay
    * always gets a fresh port, making any orphaned process harmless.
    *
-   * Pass an explicit number to restore fixed-port behaviour (backwards-compatible).
+   * Pass an explicit number to use a fixed port.
    */
   port?: number;
   /** Bind host. Default 127.0.0.1 (tunnel reaches it locally). */
@@ -583,11 +584,12 @@ export interface StartChiiRelayOptions {
    */
   getRelayCertDocument?: () => RelayCertDocument;
   /**
-   * Optional auth predicate for WebSocket upgrade requests.
+   * Auth predicate for HTTP and WebSocket upgrade requests. Required: the
+   * relay never serves a request whose code it did not check.
    *
-   * When provided, every inbound WebSocket upgrade is checked by calling
-   * `verifyAuth(req)` before Chii processes it. Return `true` to allow the
-   * upgrade; return `false` to reject with HTTP 401 and destroy the socket.
+   * Every inbound request that reaches a protected route is checked by calling
+   * `verifyAuth(req)` before Chii processes it. Return `true` to allow it;
+   * return `false` to reject (HTTP 401, or close code 4401 for a WebSocket).
    *
    * The predicate MUST NOT log the secret or any TOTP code — it is a black-box
    * from this module's perspective.
@@ -599,10 +601,10 @@ export interface StartChiiRelayOptions {
    *   query-only predicate covers both transports.
    * @returns `true` if the upgrade is authorised, `false` to reject.
    */
-  verifyAuth?: (req: IncomingMessage) => boolean;
+  verifyAuth: (req: IncomingMessage) => boolean;
   /**
    * Secret-free observability callback fired on every auth rejection
-   * (issue #467). Only meaningful together with `verifyAuth`.
+   * (issue #467).
    *
    * SECRET-HANDLING: the event carries ONLY the rejection kind — never
    * `req.url`, query strings, TOTP codes, or the secret. Implementations must
@@ -648,8 +650,7 @@ export interface StartChiiRelayOptions {
    * Fired for every WebSocket upgrade, classified by the pathname AFTER
    * `rewriteAtPathPrefix` (`/target/<id>` = the phone page, `/client/<id>` =
    * the daemon/inspector side; any other path is not reported). `accepted` is
-   * `false` when the TOTP gate rejected the upgrade. Installed outside the
-   * `verifyAuth` block, so a no-TOTP relay is observed too. Exceptions are
+   * `false` when the TOTP gate rejected the upgrade. Exceptions are
    * swallowed.
    *
    * SECRET-HANDLING: the event carries ONLY `kind` and `accepted` — the target
@@ -736,7 +737,7 @@ export interface StartChiiRelayOptions {
  * do not affect which port the server binds. The connection path (clients
  * connecting to `relay.baseUrl`) always uses the post-listen confirmed port.
  */
-export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promise<ChiiRelay> {
+export async function startChiiRelay(options: StartChiiRelayOptions): Promise<ChiiRelay> {
   const requestedPort = options.port ?? 0;
   const host = options.host ?? '127.0.0.1';
   const {
@@ -809,6 +810,17 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   }
   /** Device id from the path prefix, recorded before the URL is rewritten. */
   const requestDevice = new WeakMap<IncomingMessage, string | null>();
+  // Requests that carry the path prefix a phone must use, `/v<N>/at/<code>/d/<id>/…`
+  // (the id is required from the current protocol on). A tunnel request outside
+  // this set is refused whatever its code; only the daemon's own loopback dial
+  // may carry its code as an `at=` query.
+  const prefixedRequests = new WeakSet<IncomingMessage>();
+  const notePrefix = (req: IncomingMessage, rawUrl: string): void => {
+    const protocol = atPrefixProtocol(rawUrl);
+    if (protocol === undefined) return;
+    if (protocol === PROTOCOL_VERSION && atPrefixDevice(rawUrl) === null) return;
+    prefixedRequests.add(req);
+  };
   /** Whether `code` is bound to a live session of another device. */
   const sessionOfOtherDevice = (code: string, device: string | null): boolean => {
     const session = sessions.get(code);
@@ -902,10 +914,15 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     kind: RelayAuthRejectEvent['kind'],
     use?: SessionUse,
   ): AuthVerdict => {
-    if (verifyAuth === undefined) return 'ok';
     const scope: RelayAuthScope = isTunnelRequest(req, host) ? 'tunnel' : 'local';
     const code = readAtParam(req.url ?? '');
     const locked = authThrottle.lockRemainingMs(scope) > 0;
+    // A phone without the code prefix cannot be a current device and cannot
+    // have guessed anything: refused, not counted toward the lock.
+    if (scope === 'tunnel' && !prefixedRequests.has(req)) {
+      notifyAuthReject(kind);
+      return locked ? 'locked' : 'rejected';
+    }
     if (!isRelayAuthCode(code)) {
       notifyAuthReject(kind);
       return locked ? 'locked' : 'rejected';
@@ -1015,6 +1032,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     // everything below and chii itself see one shape.
     const pathProtocol = atPrefixProtocol(req.url ?? '');
     requestDevice.set(req, atPrefixDevice(req.url ?? ''));
+    notePrefix(req, req.url ?? '');
     const rewritten = rewriteAtPathPrefix(req.url ?? '');
     if (rewritten !== null) req.url = rewritten;
     const url = req.url ?? '';
@@ -1224,8 +1242,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
   // chii's listeners and re-dispatching only on auth pass closes that hole.
   // Upgrades the gate below rejected, so the observer after it can report
   // `accepted: false` without re-running the verifier (and re-reading the code).
-  // The gate is unconditional: without a verifier it still enforces the path
-  // shape, and `passesAuth` simply says yes.
+  // The gate is unconditional: every upgrade passes the path shape and the code check.
   const rejectedUpgrades = new WeakSet<IncomingMessage>();
   const chiiUpgradeListeners = httpServer.listeners('upgrade') as Array<
     (req: IncomingMessage, socket: Duplex, head: Buffer) => void
@@ -1246,10 +1263,11 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     }
     // Phone-target transport (issue #466): normalise a `/at/<code>/…` path
     // prefix into the query form before verification, and strip it from the
-    // URL chii will see. No-prefix URLs pass through untouched (daemon
-    // client query transport — back-compat).
+    // URL chii will see. The daemon's own `/client` dial on loopback carries
+    // its code as an `at=` query instead and passes through untouched.
     const pathProtocol = atPrefixProtocol(req.url ?? '');
     requestDevice.set(req, atPrefixDevice(req.url ?? ''));
+    notePrefix(req, req.url ?? '');
     const rewritten = rewriteAtPathPrefix(req.url ?? '');
     if (rewritten !== null) {
       req.url = rewritten;
@@ -1395,7 +1413,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
       }
       const boundCode = readAtParam(req.url ?? '');
       const bound =
-        verifyAuth !== undefined && upgradeTarget !== undefined && isRelayAuthCode(boundCode)
+        upgradeTarget !== undefined && isRelayAuthCode(boundCode)
           ? bindSession(boundCode, upgradeTarget, requestDevice.get(req) ?? null)
           : undefined;
       if (bound === null) {
@@ -1433,11 +1451,9 @@ export async function startChiiRelay(options: StartChiiRelayOptions = {}): Promi
     }
   });
 
-  // Upgrade observer (phone-leg vs daemon-leg, accepted vs rejected). Registered
-  // OUTSIDE the `verifyAuth` block on purpose — a no-TOTP relay must be observable
-  // too, exactly like the unconditional handshake listener above. It only reads
-  // the pathname and never touches the socket's data or the chii listeners; the
-  // gate above (when present) has already run, so `req.url` is in the query form
+  // Upgrade observer (phone-leg vs daemon-leg, accepted vs rejected). It only
+  // reads the pathname and never touches the socket's data or the chii
+  // listeners; the gate above has already run, so `req.url` is in the query form
   // and `rejectedUpgrades` already holds a rejected request.
   //
   // SECRET-HANDLING: only the pathname's first segment is classified. `req.url`,

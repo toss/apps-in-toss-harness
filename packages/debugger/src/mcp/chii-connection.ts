@@ -153,13 +153,13 @@ export interface ChiiCdpConnectionOptions {
    */
   commandTimeoutMs?: number;
   /**
-   * Hex-encoded TOTP secret (the SECRET, never a code). When set, each client WS
-   * (re)connect mints a fresh `at=` code so it lands inside the relay's 30-35 s
-   * acceptance window. Leave undefined when the relay has TOTP disabled.
+   * Hex-encoded TOTP secret (the SECRET, never a code). Required: each client WS
+   * (re)connect and each `/targets` poll mints a fresh `at=` code so it lands
+   * inside the relay's 30-35 s acceptance window.
    * SECRET-HANDLING: stored privately, never logged; the minted code rides only
    * in the WS URL query.
    */
-  totpSecret?: string;
+  totpSecret: string;
   /**
    * "먼저 붙은 미니앱이 이긴다"의 안전망. relay 게이트(`shouldRejectTarget`)가 이미 다른 호스트의
    * 새 target을 거부하지만, 어떤 이유로 목록에 들어와도 이 연결은 살아 있는 기존 target에서
@@ -189,7 +189,7 @@ export class ChiiCdpConnection implements CdpConnection {
   private readonly relayBaseUrl: string;
   private readonly bufferSize: number;
   private readonly commandTimeoutMs: number;
-  private readonly totpSecret: string | undefined;
+  private readonly totpSecret: string;
   private readonly onTargetRejectedBusy: ChiiCdpConnectionOptions['onTargetRejectedBusy'];
   private readonly onTargetReplaced: ChiiCdpConnectionOptions['onTargetReplaced'];
   /** busy로 이미 알린 target id — 폴링마다 같은 거부를 되풀이해 알리지 않는다. */
@@ -257,17 +257,13 @@ export class ChiiCdpConnection implements CdpConnection {
 
   /** Refresh the attached-target list from the relay's `GET /targets`. */
   async refreshTargets(): Promise<CdpTarget[]> {
-    // When TOTP is active, append a freshly-minted code as `?at=<code>` so the
+    // Append a freshly-minted code as `?at=<code>` so the
     // relay's /targets gate (issue #474) accepts this daemon poll. Mirrors the
     // existing /client WS pattern (~line 412). `generateTotp` defaults `when` to
     // Date.now() — rely on that default; never hand-compute the time.
     // SECRET-HANDLING: never log `code` or `this.totpSecret`; the code rides only
     // in the at= param.
-    let targetsUrl = `${this.relayBaseUrl}/targets`;
-    if (this.totpSecret) {
-      const code = generateTotp(this.totpSecret);
-      targetsUrl += `?at=${encodeURIComponent(code)}`;
-    }
+    const targetsUrl = `${this.relayBaseUrl}/targets?at=${encodeURIComponent(generateTotp(this.totpSecret))}`;
     const res = await fetch(targetsUrl);
     if (!res.ok) {
       throw new Error(`Chii relay /targets returned HTTP ${res.status} ${res.statusText}`);
@@ -504,17 +500,13 @@ export class ChiiCdpConnection implements CdpConnection {
 
     const wsBase = this.relayBaseUrl.replace(/^http/, 'ws');
     const clientId = `debugger-${Date.now()}`;
-    let clientUrl = `${wsBase}/client/${clientId}?target=${encodeURIComponent(target.id)}`;
+    const clientUrl = `${wsBase}/client/${clientId}?target=${encodeURIComponent(target.id)}&at=${encodeURIComponent(generateTotp(this.totpSecret))}`;
     // Append a freshly-minted TOTP code so the relay's WS upgrade gate
     // (chii-relay.ts verifyAuth) accepts this /client upgrade. Minted per-connect
     // so reconnects stay inside the 30-35 s acceptance window. generateTotp defaults
     // `when` to Date.now() — rely on that default; never hand-compute the time.
     // SECRET-HANDLING: never log `code` or `this.totpSecret`; the code rides only
     // in the URL query.
-    if (this.totpSecret) {
-      const code = generateTotp(this.totpSecret);
-      clientUrl += `&at=${encodeURIComponent(code)}`;
-    }
     const ws = new WebSocket(clientUrl);
     this.ws = ws;
 
@@ -700,7 +692,7 @@ export class ChiiCdpConnection implements CdpConnection {
     this.targetLastSeenAt.delete(targetId);
 
     const err = new Error(
-      `[ait-debug] replaced-by-new-attach — 이전 page 세션이 새 attach로 교체됐습니다 (targetId=${targetId}). ` +
+      `[ait-debugger] replaced-by-new-attach — 이전 page 세션이 새 attach로 교체됐습니다 (targetId=${targetId}). ` +
         'list_pages로 현재 attach 상태를 확인하세요.',
     );
     for (const waiter of this.pending.values()) {
@@ -760,7 +752,7 @@ export class ChiiCdpConnection implements CdpConnection {
           ? 'target 종료 (Target.targetDestroyed)'
           : 'target detach (Target.detachedFromTarget)';
     const err = new Error(
-      `[ait-debug] ${label} 감지됨 — relay에서 제거됐습니다. ` +
+      `[ait-debugger] ${label} 감지됨 — relay에서 제거됐습니다. ` +
         '새 attach가 필요합니다 (list_pages로 확인 → enableDomains()로 재연결).',
     );
     for (const waiter of this.pending.values()) {

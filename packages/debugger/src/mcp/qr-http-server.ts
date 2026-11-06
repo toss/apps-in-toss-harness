@@ -197,7 +197,6 @@ export interface QrHttpServer {
   tokenizeUrl(url: string): string;
   /**
    * 상태 변경 시 호출 — SSE 구독자에게 최신 상태를 push한다.
-   * `getDashboardState`가 주입돼 있지 않으면 no-op.
    */
   notifyStateChange(): void;
   /**
@@ -249,6 +248,16 @@ const NO_FRAME_HEADERS = {
 } as const;
 
 /** HTML 특수문자를 이스케이프한다. */
+/**
+ * 페이지 `<title>` 뒤에 프로젝트 라벨을 붙인다. 세션마다 대시보드가 따로 뜨므로 탭 제목으로
+ * 어느 세션인지 구분한다. 라벨은 프로젝트 루트의 basename뿐이다(전체 경로·relay host 없음).
+ * 라벨이 없으면 HTML을 그대로 돌려준다.
+ */
+function withProjectLabel(html: string, label: string | null | undefined): string {
+  if (label === undefined || label === null || label === '') return html;
+  return html.replace('</title>', () => ` · ${escapeHtml(label)}</title>`);
+}
+
 /** 대시보드가 받는 Host 헤더의 호스트명. 포트는 보지 않는다(포트 포워딩된 탭도 정상 사용). */
 const DASHBOARD_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -1198,6 +1207,11 @@ export interface QrHttpServerOptions {
    */
   dashboardPort?: number;
   /**
+   * 이 세션의 프로젝트 라벨(프로젝트 루트의 basename). 대시보드·QR 페이지의 탭 제목에
+   * 붙어 동시에 떠 있는 세션을 구분하게 한다. 미지정이면 제목은 그대로다.
+   */
+  projectLabel?: string | null;
+  /**
    * bind 재시도 스캔 폭 (테스트 전용 주입). 미지정 시 {@link PORT_SCAN_RANGE}.
    * 20개 실 소켓을 점유하지 않고 "범위 소진 → ephemeral fallback" 경로를
    * 검증하기 위한 internal testability hook — 사용자 대면 옵션이 아니다.
@@ -1291,14 +1305,14 @@ async function bindWithIncrement(
  *
  * MCP debug server 생애주기에 묶어 사용 — `runDebugServer` shutdown 시 `close()`로 정리.
  *
- * @param getDashboardState - dashboard 상태를 반환하는 클로저. 주입 시 `GET /` dashboard와
- *   `GET /events` SSE 스트림이 활성화된다. 미주입 시 두 라우트는 204/서비스 없음으로 응답.
+ * @param getDashboardState - dashboard 상태를 반환하는 클로저. `GET /` dashboard와
+ *   `GET /events` SSE 스트림이 이 상태를 쓴다.
  * @param options - 서버 옵션. `sseRefreshIntervalMs`로 idle 탭 TOTP 만료 방지 주기를 조정.
  *   `getDirectInspectorUrl`로 /inspector 라우트에서 직접 조립 URL을 제공해 redirect 루프를 방지.
  *   `dashboardPort`로 bind base 포트를 override.
  */
 export async function startQrHttpServer(
-  getDashboardState?: () => DashboardState,
+  getDashboardState: () => DashboardState,
   options?: QrHttpServerOptions,
 ): Promise<QrHttpServer> {
   const { default: QRCode } = await import('qrcode');
@@ -1423,11 +1437,6 @@ export async function startQrHttpServer(
 
     // ── GET / — dashboard 루트 ─────────────────────────────────────────────
     if (path === '/') {
-      if (!getDashboardState) {
-        res.writeHead(204, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end();
-        return;
-      }
       const state = getDashboardState();
       let qrDataUrl: string | null = null;
       if (state.attachUrl) {
@@ -1463,14 +1472,14 @@ export async function startQrHttpServer(
         'Cache-Control': 'no-store',
         ...NO_FRAME_HEADERS,
       });
-      res.end(html);
+      res.end(withProjectLabel(html, options?.projectLabel));
       return;
     }
 
     // ── GET /events — SSE 스트림 ──────────────────────────────────────────
     if (path === '/events') {
       // 표식 없는 오래된 클라이언트는 슬롯 없이 204로 돌려보내 재연결을 멈춘다.
-      if (!getDashboardState || params.get(SSE_PROTOCOL_PARAM) !== SSE_PROTOCOL_VERSION) {
+      if (params.get(SSE_PROTOCOL_PARAM) !== SSE_PROTOCOL_VERSION) {
         res.writeHead(204, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end();
         return;
@@ -1510,7 +1519,7 @@ export async function startQrHttpServer(
       const attachUrl: string = encodedU;
 
       // 이 데몬이 지금 보여 주는 attach 링크만 그린다. 임의 u는 거절.
-      if (!isCurrentAttachUrl(encodedU, getDashboardState?.().attachUrl)) {
+      if (!isCurrentAttachUrl(encodedU, getDashboardState().attachUrl)) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('이 서버가 만든 attach 링크가 아닙니다.');
         return;
@@ -1528,11 +1537,9 @@ export async function startQrHttpServer(
       }
 
       // 현재 세션 mode + pages 상태 — 카피 분기(#468), inspector 게이트(#544).
-      // getDashboardState 미주입(legacy) 시 undefined → 환경 라벨 없음 fallback.
-      const currentState = getDashboardState?.();
-      const mode = currentState?.mode;
-      const pagesAttached =
-        Array.isArray(currentState?.pages) && (currentState?.pages.length ?? 0) > 0;
+      const currentState = getDashboardState();
+      const mode = currentState.mode;
+      const pagesAttached = Array.isArray(currentState.pages) && currentState.pages.length > 0;
       // inspectorStableUrl: /inspector 안정 URL (relay 시크릿·접근 토큰 없음) — getDirectInspectorUrl 주입 시만 활성.
       // 서버 주소는 listen 후에만 확정되므로 server.address()로 런타임에 읽는다.
       // (요청은 listen 완료 후 들어오므로 address()는 항상 non-null이다.)
@@ -1565,7 +1572,7 @@ export async function startQrHttpServer(
             'Cache-Control': 'no-store',
             ...NO_FRAME_HEADERS,
           });
-          res.end(html);
+          res.end(withProjectLabel(html, options?.projectLabel));
         })
         .catch(() => {
           res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -1644,7 +1651,7 @@ export async function startQrHttpServer(
       // 보여줄 attach URL이 없으면(터널 부팅 전) 404.
       const encodedU = params.get('u');
       if (encodedU === null) {
-        const current = getDashboardState?.().attachUrl;
+        const current = getDashboardState().attachUrl;
         if (!current) {
           res.writeHead(404, {
             'Content-Type': 'text/plain; charset=utf-8',
@@ -1691,7 +1698,7 @@ export async function startQrHttpServer(
         return;
       }
 
-      if (!isCurrentAttachUrl(encodedU, getDashboardState?.().attachUrl)) {
+      if (!isCurrentAttachUrl(encodedU, getDashboardState().attachUrl)) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('이 서버가 만든 attach 링크가 아닙니다.');
         return;
@@ -1737,7 +1744,6 @@ export async function startQrHttpServer(
 
   /** idle 탭 TOTP 만료 방지용 주기 SSE 갱신 interval. */
   function notifyStateChangeInternal(): void {
-    if (!getDashboardState) return;
     const state = getDashboardState();
     for (const client of sseClients) {
       try {
@@ -1753,7 +1759,7 @@ export async function startQrHttpServer(
   // .unref()로 프로세스 종료를 막지 않는다.
   // refreshIntervalMs는 createServer 앞에서 이미 선언됨 (#681 — 핸들러 클로저에서 참조).
   const refreshHandle = setInterval(() => {
-    if (sseClients.length > 0 && getDashboardState) {
+    if (sseClients.length > 0) {
       notifyStateChangeInternal();
     }
   }, refreshIntervalMs).unref();

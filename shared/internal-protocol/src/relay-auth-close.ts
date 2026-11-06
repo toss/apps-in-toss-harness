@@ -11,7 +11,7 @@
  *
  * Three parties share this contract:
  *   - the relay (`@apps-in-toss/debugger`, Node) sends the close frame / HTTP error body;
- *   - the on-device console (`@apps-in-toss/debug-console`, browser) observes
+ *   - the on-device console (`@apps-in-toss/debugger-client`, browser) observes
  *     relay-bound WebSockets and surfaces the code to the launcher shell;
  *   - the daemon's own CDP client (`@apps-in-toss/debugger`, Node) recognises the code
  *     as an auth failure on its `/client` dial.
