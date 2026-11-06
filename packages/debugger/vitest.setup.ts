@@ -12,3 +12,7 @@ process.env.AIT_DEBUGGER_STATE_DIR = dir;
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
+
+// 원격 최소 버전 게이트가 테스트에서 실제 GitHub에 붙지 않게 URL을 닫힌 loopback 포트로 돌린다(fail-open이라
+// 연결 거부는 unknown). 게이트를 직접 시험하는 테스트는 URL이나 fetch를 주입한다.
+process.env.AIT_DEBUGGER_MIN_VERSIONS_URL = 'http://127.0.0.1:1/min-versions.json';

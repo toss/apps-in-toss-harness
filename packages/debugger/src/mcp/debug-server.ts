@@ -118,6 +118,11 @@ import { installExitTriggers } from './exit-triggers.js';
 import { LocalCdpConnection } from './local-connection.js';
 import { launchChromium } from './local-launcher.js';
 import { logError, logInfo, logWarn } from './log.js';
+import {
+  type MinVersionGateState,
+  startMinVersionGate,
+  updateRequiredMessage,
+} from './min-version-gate.js';
 import { startMaxAgeWatchdog } from './parent-watcher.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
 import {
@@ -159,6 +164,7 @@ import {
   listNetworkRequests,
   listPages,
   measureSafeArea,
+  readDevtoolsVersion,
   type TunnelStatus,
   takeScreenshot,
   takeSnapshot,
@@ -347,6 +353,11 @@ export interface DebugServerDeps {
    * else — no relay URL, tunnel host, or TOTP value.
    */
   getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
+  /**
+   * 원격 최소 버전 게이트 결과(min-version-gate.ts). `update-required`이면 `get_debug_status`를
+   * 뺀 모든 도구가 업데이트 안내 에러를 돌려준다. 생략하면 게이트 없음(테스트 기본값).
+   */
+  getMinVersionGate?: () => Promise<MinVersionGateState>;
   /**
    * Hex-encoded TOTP secret for `start_attach` auto-splice.
    *
@@ -602,6 +613,12 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       };
     }
 
+    // 원격 최소 버전 게이트: 지원이 끝난 버전이면 get_debug_status 외 전부 막는다(fail-open).
+    const gate = (await deps.getMinVersionGate?.()) ?? null;
+    if (gate?.status === 'update-required' && name !== 'get_debug_status') {
+      return mcpError(updateRequiredMessage(gate.current, gate.minimum));
+    }
+
     // PER-CALL SNAPSHOT (issue #348). Capture the active connection exactly
     // once at handler entry and use ONLY `conn` for the rest of this call.
     // `start_debug` may flip `router.active` mid-flight (and other concurrent
@@ -851,7 +868,18 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           attachTimeline: timeline,
         });
         const attached = conn.listTargets().length > 0;
-        return envelopeResult(result, name, booted ? env : 'none', attached);
+        const payload =
+          gate?.status === 'update-required'
+            ? {
+                ...result,
+                updateRequired: { current: gate.current, minimum: gate.minimum },
+                nextRecommendedAction: {
+                  tool: '/ait:setup-debugger',
+                  reason: updateRequiredMessage(gate.current, gate.minimum),
+                },
+              }
+            : result;
+        return envelopeResult(payload, name, booted ? env : 'none', attached);
       } catch (err) {
         return errorResult(err, name);
       }
@@ -2428,6 +2456,16 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // get_debug_status·대시보드·구조화 로그가 읽는다.
   const attachTimeline = createDaemonAttachTimeline(() => qrServer?.notifyStateChange());
   const sessionStartedAt = new Date().toISOString();
+  // 원격 최소 버전 게이트: 시작만 하고 기다리지 않는다. 도구 호출이 결과를 기다린다.
+  const getMinVersionGate = startMinVersionGate({
+    current: readDevtoolsVersion(),
+    onUpdateRequired: (s) => {
+      if (s.status !== 'update-required') return;
+      process.stderr.write(
+        `[ait-debugger] ${updateRequiredMessage(s.current, s.minimum)} 도구 호출을 막습니다.\n`,
+      );
+    },
+  });
 
   // FIX (issue #572 review): track the live cloudflared child PID in memory so
   // get_debug_status can pass it to getDiagnostics as source (a). Updated by
@@ -2614,6 +2652,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // Device↔host version skew, or null. Read at call time so a device that
     // reports after the server was built is still seen.
     getProtocolVersionSkew: () => protocolVersionMonitor.getMismatch(),
+    getMinVersionGate,
     // SECRET-HANDLING: the TOTP secret is read from env AT CALL TIME (inside
     // start_attach) so the project-local .ait_relay secret loaded by
     // switchMode (#396) is visible. It is used only to generate the at= code and

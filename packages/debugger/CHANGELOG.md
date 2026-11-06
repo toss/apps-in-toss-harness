@@ -25,6 +25,7 @@
 - 에러 메시지 끝에 덧붙던 영어 호환 문구가 없어졌다. dev 서버 모드의 `devtools_get_mock_state` 별칭 도구도 없어졌고 `AIT.getMockState`를 쓴다.
 - `@apps-in-toss/debugger/mcp/debug-server`가 다른 모듈의 심볼을 다시 내보내던 것이 없어졌다(attach 오케스트레이터, 부모·최대 수명 감시, `buildRelayVerifyAuth`). 필요한 심볼은 각 모듈(`attach-orchestrator`, `totp` 등)에서 가져온다.
 - 터미널과 stderr 로그의 접두사가 `[ait-debug]`에서 `[ait-debugger]`로 바뀌었다. `AIT_AUTO_DEVTOOLS`는 `1`일 때만 인스펙터를 자동으로 연다.
+- 시작할 때 GitHub main의 `min-versions.json`을 한 번 읽어(타임아웃 3초) 이 버전이 최소 버전보다 낮으면 `get_debug_status`를 뺀 모든 도구가 `/ait:setup-debugger` 재실행 안내 에러를 돌려준다. `get_debug_status`에는 `updateRequired: {current, minimum}`이 붙는다. 네트워크 실패·타임아웃·파싱 실패는 막지 않고 그대로 실행한다(끄는 설정 없음). 테스트용으로 `AIT_DEBUGGER_MIN_VERSIONS_URL`이 `https:`·loopback `http:` 주소를 받는다.
 
 ## 0.3.0
 

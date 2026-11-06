@@ -88,6 +88,10 @@ export default definePhoneTestConfig({
 });
 ```
 
+## Minimum version check
+
+When the daemon starts, it reads the minimum-version file (`min-versions.json`) from GitHub main once. If the running version is older than the minimum, every tool except `get_debug_status` is blocked and only an instruction to rerun `/ait:setup-debugger` is returned. If the network is unavailable or the response can't be read, the check is skipped and the daemon runs as usual. The check can't be turned off.
+
 ## Exports / bins
 
 | subpath | contents |
