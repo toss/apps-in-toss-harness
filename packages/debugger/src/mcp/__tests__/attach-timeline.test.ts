@@ -128,6 +128,21 @@ describe('diagnoseAttach — priority table', () => {
     expect(diagnoseAttach(tl.snapshot()).kind).toBe('script-not-loaded');
   });
 
+  it('protocol-skew when the handshake arrived from a device on another protocol', () => {
+    const { tl } = freshAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('device-handshake', 'ok');
+    const d = diagnoseAttach(tl.snapshot(), {
+      protocolSkew: { match: false, deviceProtocol: 2, hostProtocol: 3, deviceVersion: '0.3.0' },
+    });
+    expect(d.kind).toBe('protocol-skew');
+    expect(d.summary).toContain('프로토콜 2');
+    expect(d.summary).toContain('프로토콜 3');
+    expect(d.actions[0]).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
+    // a skew-free daemon keeps the generic diagnosis
+    expect(diagnoseAttach(tl.snapshot(), { protocolSkew: null }).kind).toBe('script-not-loaded');
+  });
+
   it('wrong-page when a target connected but nothing matched', () => {
     const { tl } = freshAttempt();
     tl.record('qr-issued', 'ok', 'mint');

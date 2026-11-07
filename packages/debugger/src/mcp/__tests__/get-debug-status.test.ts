@@ -1274,6 +1274,30 @@ describe('getDiagnostics — attach timeline', () => {
     expect(result.nextRecommendedAction?.reason).toContain('직전 시도');
   });
 
+  it('reports a protocol skew instead of script-not-loaded and repeats the update action', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('device-handshake', 'ok');
+    const r = await getDiagnostics({
+      tunnel: tunnelUp,
+      connection: new FakeCdpConnection([]),
+      env: 'relay-dev',
+      envReason: 'test',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => null,
+      attachTimeline: tl,
+      getProtocolVersionSkew: () => ({
+        match: false,
+        deviceProtocol: 2,
+        hostProtocol: 3,
+        deviceVersion: '0.3.0',
+      }),
+    });
+    expect(r.attachDiagnosis?.kind).toBe('protocol-skew');
+    expect(r.nextRecommendedAction?.reason).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
+  });
+
   it('get_debug_status tool exposes attachStages when a timeline is injected', async () => {
     const tl = new AttachTimeline();
     tl.beginAttempt();

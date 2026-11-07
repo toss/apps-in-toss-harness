@@ -174,6 +174,7 @@ import {
   RELAY_QR_REFRESH_INTERVAL_MS,
 } from './totp.js';
 import { printAttachBanner } from './tunnel.js';
+import { dnsResolvesTunnelHost } from './tunnel-dns.js';
 import { createTunnelRotationPolicy, type TunnelRotationOptions } from './tunnel-rotation.js';
 import { createTunnelSupervisor, type TunnelSupervisor } from './tunnel-supervisor.js';
 
@@ -303,6 +304,15 @@ export interface DebugServerDeps {
    * not wait.
    */
   waitForTunnel?(maxMs: number): Promise<TunnelStatus>;
+  /**
+   * Checks whether a tunnel hostname resolves in public DNS. When set, `start_attach` waits
+   * (up to 60 s) for a fresh tunnel host to resolve before it shows the QR. Production wires
+   * the real resolver; absent: no DNS wait.
+   */
+  resolveTunnelHost?: (host: string) => Promise<boolean>;
+  /** DNS check interval and cap in ms for `resolveTunnelHost` (tests use small values). */
+  tunnelDnsPollMs?: number;
+  tunnelDnsMaxMs?: number;
   /**
    * Maximum time in ms to wait for a page to attach when `wait_for_attach=true`.
    * Default 60 000 ms. Exposed for testing so tests can use a small value without
@@ -569,6 +579,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     // 삼켜지던 대기 중 에러를 get_debug_status.recentErrors로 흘려보낸다(redact는 collector).
     recordError: (message, category) => collector.recordError(message, category),
     getProtocolVersionSkew: deps.getProtocolVersionSkew,
+    resolveTunnelHost: deps.resolveTunnelHost,
+    tunnelDnsPollMs: deps.tunnelDnsPollMs,
+    tunnelDnsMaxMs: deps.tunnelDnsMaxMs,
   };
 
   const server = new Server(
@@ -753,7 +766,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           waitForAttach,
           callTimeoutMs,
           attachConn,
-          { signal: waitSignal, onQrText: (text) => progress?.announce(text) },
+          {
+            signal: waitSignal,
+            onQrText: (text) => progress?.announce(text),
+            onNotice: (text) => progress?.announce(text),
+          },
         );
         if (!attachResult.isError) {
           // The device reported its build version on the handshake path while
@@ -866,6 +883,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           recentErrorsLimit,
           tunnelChildPid: getTunnelChildPid?.() ?? undefined,
           attachTimeline: timeline,
+          getProtocolVersionSkew: deps.getProtocolVersionSkew,
         });
         const attached = conn.listTargets().length > 0;
         const payload =
@@ -2637,6 +2655,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // Tunnel status follows the active relay family once one is lazy-booted (#356).
     getTunnelStatus: () => router.relayTunnelStatus(),
     waitForTunnel: (maxMs) => router.waitForRelayTunnel(maxMs),
+    resolveTunnelHost: dnsResolvesTunnelHost,
     // FIX (issue #572 review): expose the live cloudflared child PID (source a)
     // so get_debug_status can feed it into getDiagnostics for the FIX 2 probe.
     getTunnelChildPid: () => activeTunnelChildPid,

@@ -123,6 +123,12 @@ describe('protocolVersionMismatchError', () => {
     expect(olderText).toContain('0.3.0');
   });
 
+  it('does not repeat the word 패키지 in the pre-rename mismatch text', () => {
+    expect(olderText.match(/패키지/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(olderText).toContain('옛 @apps-in-toss/debug-console (0.3.0)');
+    expect(olderText).not.toContain('들어 있는 패키지');
+  });
+
   it('says that an update is required and that the device was not connected', () => {
     expect(olderText).toContain('업데이트가 필요합니다');
     expect(olderText).toContain('연결하지 않았습니다');

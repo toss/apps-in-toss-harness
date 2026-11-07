@@ -1,17 +1,21 @@
+import { EventEmitter } from 'node:events';
 import {
   chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   chromiumProfileDir,
+  launchChromium,
   removeChromiumProfileDir,
   sweepStaleChromiumProfiles,
 } from '../local-launcher.js';
@@ -90,5 +94,58 @@ describe('profile cleanup', () => {
     expect(existsSync(dead)).toBe(false);
     expect(existsSync(alive)).toBe(true);
     expect(existsSync(legacy)).toBe(true);
+  });
+});
+
+describe('launchChromium profile cleanup', () => {
+  let base: string;
+
+  beforeEach(() => {
+    base = mkdtempSync(join(tmpdir(), 'ait-profile-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  function fakeSpawn() {
+    const child = Object.assign(new EventEmitter(), {
+      kill: () => true,
+      unref: () => undefined,
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: minimal ChildProcess stand-in
+    return { child, spawnFn: (() => child) as any };
+  }
+
+  it('removes the profile directory it created on stop(), including nested files', async () => {
+    const { spawnFn } = fakeSpawn();
+    const handle = await launchChromium({
+      port: 9222,
+      devUrl: 'http://localhost:1',
+      spawnFn,
+      binaryPath: process.execPath,
+      profileBaseDir: base,
+    });
+    const [profile] = readdirSync(base);
+    expect(profile).toBeDefined();
+    const dir = join(base, profile ?? '');
+    mkdirSync(join(dir, 'Default'));
+    writeFileSync(join(dir, 'Default', 'Cookies'), 'x');
+    handle.stop();
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('removes the profile directory when the browser exits on its own', async () => {
+    const { child, spawnFn } = fakeSpawn();
+    await launchChromium({
+      port: 9222,
+      devUrl: 'http://localhost:1',
+      spawnFn,
+      binaryPath: process.execPath,
+      profileBaseDir: base,
+    });
+    expect(readdirSync(base)).toHaveLength(1);
+    child.emit('exit');
+    expect(readdirSync(base)).toHaveLength(0);
   });
 });

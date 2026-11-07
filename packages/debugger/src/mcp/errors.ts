@@ -14,12 +14,10 @@
  * relay-live / LIVE guard 전체가 positive-allowlist kill-switch로 대체됐다.
  */
 
-import {
-  isPreRenameDeviceProtocol,
-  type ProtocolVersionCheck,
-} from '@apps-in-toss/internal-protocol/attach-handshake';
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
 import { UNTRUSTED_DATA_NOTE } from './envelope.js';
+import { protocolSkewParts } from './protocol-version.js';
 import { type TunnelStatus, tunnelErrorLabel } from './tools.js';
 
 /** MCP tool-result 에러 응답 형식. */
@@ -304,37 +302,8 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * @param check - `match: false`인 프로토콜 비교 결과.
  */
 export function protocolVersionMismatchError(check: ProtocolVersionCheck): McpErrorResult {
-  const device = check.deviceProtocol === null ? '없음(옛 버전)' : String(check.deviceProtocol);
-  const label = check.deviceVersion !== '' ? ` (패키지 ${check.deviceVersion})` : '';
-  const deviceOlder = check.deviceProtocol === null || check.deviceProtocol < check.hostProtocol;
-  if (deviceOlder && isPreRenameDeviceProtocol(check.deviceProtocol)) {
-    return mcpError(
-      `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-        `기기에 들어 있는 패키지${label}는 프로토콜 ${device}인 옛 @apps-in-toss/debug-console이고, ` +
-        `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-        '0.3.1부터 두 패키지는 같은 프로토콜로만 연결되고, debug-console은 ' +
-        '@apps-in-toss/debugger-client로 이름이 바뀌었습니다. 이 기기는 연결하지 않았습니다. ' +
-        '미니앱에서 @apps-in-toss/debug-console을 지우고 @apps-in-toss/debugger-client 0.3.1 이상을 ' +
-        '설치해 재배포하세요(설치 명령은 debugger-client README 참고). ' +
-        '데몬은 @apps-in-toss/debugger 0.3.1 이상이어야 합니다.',
-    );
-  }
-  if (deviceOlder) {
-    return mcpError(
-      `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-        `기기의 @apps-in-toss/debugger-client${label}은 프로토콜 ${device}, ` +
-        `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-        '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
-        '미니앱의 @apps-in-toss/debugger-client를 최신 릴리스로 올려 재배포하세요(설치 명령은 debugger-client README 참고).',
-    );
-  }
-  return mcpError(
-    `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-      `기기의 @apps-in-toss/debugger-client${label}은 프로토콜 ${device}, ` +
-      `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-      '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
-      '데몬의 @apps-in-toss/debugger를 0.3.1 이상 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).',
-  );
+  const { detail, action } = protocolSkewParts(check);
+  return mcpError(`업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ${detail} ${action}`);
 }
 
 /* -------------------------------------------------------------------------- */

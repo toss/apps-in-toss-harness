@@ -22,6 +22,7 @@
  *     - `AIT.getOperationalEnvironment`
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type {
   AitMockState,
   AitOperationalEnvironment,
@@ -2335,7 +2336,11 @@ export function computeNextRecommendedAction(
       attachDiagnosis !== null &&
       attachDiagnosis.kind !== 'not-started' &&
       attachDiagnosis.kind !== 'attached'
-        ? ` — 직전 시도: ${attachDiagnosis.summary}`
+        ? ` — 직전 시도: ${attachDiagnosis.summary}${
+            attachDiagnosis.kind === 'protocol-skew' && attachDiagnosis.actions[0] !== undefined
+              ? ` ${attachDiagnosis.actions[0]}`
+              : ''
+          }`
         : '';
     return {
       tool: 'start_attach',
@@ -2407,6 +2412,8 @@ export interface GetDiagnosticsInput {
    * 않게 하려는 것이다.
    */
   attachTimeline?: AttachTimeline;
+  /** 데몬이 마지막으로 본 device↔host 프로토콜 skew. 있으면 attach 진단이 skew를 직접 말한다. */
+  getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
 }
 
 /** The `relayKey` block of `get_debug_status` for a recorded key age (`null` when none). */
@@ -2441,6 +2448,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     checkParentAlive = () => isPidAlive(process.ppid),
     tunnelChildPid,
     attachTimeline,
+    getProtocolVersionSkew,
     booted = true,
   } = input;
 
@@ -2552,6 +2560,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
       ? diagnoseAttach(timelineSnapshot, {
           observedPages: pages?.pages ?? [],
           matchesCurrentPage: attachTimeline?.matchesCurrentPage(pages?.pages ?? []) ?? false,
+          protocolSkew: getProtocolVersionSkew?.() ?? null,
         })
       : null;
 

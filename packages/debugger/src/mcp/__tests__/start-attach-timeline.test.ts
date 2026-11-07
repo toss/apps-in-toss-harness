@@ -84,6 +84,7 @@ async function makeClient(opts: {
   connection: FakeCdpConnection;
   timeline?: AttachTimeline;
   waitForAttachTimeoutMs?: number;
+  resolveTunnelHost?: (host: string) => Promise<boolean>;
 }): Promise<Client> {
   const server = createDebugServer({
     connection: opts.connection,
@@ -94,6 +95,9 @@ async function makeClient(opts: {
     getEnvironmentReason: () => 'test-pinned-relay-dev',
     totpSecret: SECRET,
     attachTimeline: opts.timeline,
+    ...(opts.resolveTunnelHost
+      ? { resolveTunnelHost: opts.resolveTunnelHost, tunnelDnsPollMs: 20, tunnelDnsMaxMs: 600 }
+      : {}),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -345,5 +349,61 @@ describe('get_debug_status — attach diagnosis when the page attaches outside t
       { id: 't9', title: 'old', url: 'intoss-private://miniapp?_deploymentId=stale-9' },
     ]);
     expect(await diagnosisKind(client)).toBe('wrong-page');
+  });
+});
+
+describe('start_attach — fresh tunnel DNS wait', () => {
+  it('waits for the host to resolve before the attach timer starts, and keeps the host out of progress', async () => {
+    let calls = 0;
+    const seenHosts: string[] = [];
+    const startedAt = Date.now();
+    const client = await makeClient({
+      connection: new FakeCdpConnection([]),
+      waitForAttachTimeoutMs: 120,
+      resolveTunnelHost: async (host) => {
+        seenHosts.push(host);
+        calls += 1;
+        return Date.now() - startedAt >= 300;
+      },
+    });
+    const messages: string[] = [];
+    const result = await client.callTool(
+      {
+        name: 'start_attach',
+        arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=dns-1' },
+      },
+      undefined,
+      {
+        timeout: 5_000,
+        onprogress: (p) => {
+          if (p.message) messages.push(p.message);
+        },
+      },
+    );
+    const elapsed = Date.now() - startedAt;
+    expect(result.isError).toBe(true);
+    expect(calls).toBeGreaterThan(2);
+    expect(seenHosts[0]).toBe('abc123.trycloudflare.com');
+    // DNS wait (>= 300 ms) comes before the 120 ms attach wait instead of eating into it.
+    expect(elapsed).toBeGreaterThanOrEqual(400);
+    expect(messages.some((m) => m.includes('DNS'))).toBe(true);
+    expect(messages.join('\n')).not.toContain('trycloudflare');
+  });
+
+  it('gives up waiting at the cap and goes on with the QR', async () => {
+    const client = await makeClient({
+      connection: new FakeCdpConnection([]),
+      waitForAttachTimeoutMs: 60,
+      resolveTunnelHost: async () => false,
+    });
+    const result = await client.callTool(
+      {
+        name: 'start_attach',
+        arguments: { scheme_url: 'intoss-private://miniapp?_deploymentId=dns-2' },
+      },
+      undefined,
+      { timeout: 5_000 },
+    );
+    expect(text(result)).toContain('attach 타임아웃');
   });
 });
