@@ -15,13 +15,13 @@ callable**해진다 — 세션 재시작·재승인 불필요:
 | `list_exceptions` | 런타임 예외 ring buffer 읽기 |
 | `get_dom_document` | 현재 DOM 스냅샷 (ARIA tree 포함) |
 | `take_snapshot` | 페이지 접근성 트리 캡처 |
-| `take_screenshot` | 폰 화면 PNG 캡처 |
+| `take_screenshot` | 폰 화면 캡처. 실기기에서는 DOM을 다시 그린 이미지라 `<canvas>`·WebGL(Unity 등)은 비어 보일 수 있다 |
 | `measure_safe_area` | safe-area inset 측정 (노치·홈바 여백) |
 | `call_sdk` | SDK 메서드 직접 호출 |
 | `evaluate` | WebView JS 표현식 평가 |
 | `run_tests` | 프로젝트의 `*.ait.test.ts` 파일을 이미 attach된 실기기 WebView에서 실행해 pass/fail/skip 결과 반환 |
-| `AIT.getSdkCallHistory` | SDK 호출 이력 조회 |
-| `AIT.getMockState` | devtools mock 상태 스냅샷 조회 |
+| `AIT.getSdkCallHistory` | SDK 호출 이력 조회 (로컬 mock 전용) |
+| `AIT.getMockState` | devtools mock 상태 스냅샷 조회 (로컬 mock 전용) |
 | `AIT.getOperationalEnvironment` | 운영 환경 정보 + SDK 버전 조회 |
 
 **attach 전에 보이는 도구는 bootstrap 4종(`start_debug`·`start_attach`·

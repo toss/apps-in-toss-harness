@@ -22,6 +22,7 @@
  *     - `AIT.getOperationalEnvironment`
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type {
   AitMockState,
   AitOperationalEnvironment,
@@ -43,6 +44,7 @@ import type {
   DomSnapshotResult,
   NetworkRequestWillBeSentEvent,
   NetworkResponseReceivedEvent,
+  PageScreencastFrameEvent,
   RuntimeExceptionThrownEvent,
 } from './cdp-connection.js';
 import { childProcessEnv } from './child-env.js';
@@ -58,7 +60,45 @@ import { attachSignature } from './relay-signing.js';
 import { RESTART_CMD } from './restart-hint.js';
 import { lookupSignature, warnPassthrough } from './sdk-signatures.js';
 import { MAX_LISTED_OTHER_SESSIONS, type SessionsSnapshot } from './session-registry.js';
+import { ToolMessageError } from './tool-message-error.js';
 import { mintRelayCode, RELAY_CODE_MIN_AGE_SECONDS } from './totp.js';
+
+/**
+ * Where the cloudflared tunnel is in its life cycle.
+ * - `starting`: the first attempt is in flight (the binary may still be downloading).
+ * - `up`: the tunnel answers.
+ * - `retrying`: an attempt failed; the next one is in flight or scheduled.
+ * - `down`: no tunnel and no attempt scheduled (no relay environment booted, or retrying is paused).
+ */
+export type TunnelState = 'starting' | 'up' | 'retrying' | 'down';
+
+/**
+ * Why the last tunnel attempt failed.
+ * - `rate-limited`: Cloudflare answered the quick-tunnel request with 429.
+ * - `exited`: cloudflared exited before it assigned a URL.
+ * - `timeout`: cloudflared ran but reported no URL in time.
+ * - `download`: the cloudflared binary could not be downloaded or verified.
+ * - `dropped`: a tunnel that had been up stopped answering and could not be reissued.
+ */
+export type TunnelErrorKind = 'rate-limited' | 'exited' | 'timeout' | 'download' | 'dropped';
+
+/** Short Korean label for a tunnel failure class, for status text and error messages. */
+export function tunnelErrorLabel(kind: TunnelErrorKind | null | undefined): string {
+  switch (kind) {
+    case 'rate-limited':
+      return 'Cloudflare 요청 한도(429)에 걸렸어요';
+    case 'download':
+      return 'cloudflared 바이너리 내려받기 실패';
+    case 'timeout':
+      return 'cloudflared가 제한 시간 안에 주소를 못 받았어요';
+    case 'dropped':
+      return '뜨던 터널이 끊겼어요';
+    case 'exited':
+      return 'cloudflared가 주소를 받기 전에 종료됐어요';
+    default:
+      return '원인 확인 중';
+  }
+}
 
 /** Tunnel state surfaced by `list_pages`. */
 export interface TunnelStatus {
@@ -79,6 +119,16 @@ export interface TunnelStatus {
    * (3) before the probe gives up and enters the permanent-error state.
    */
   reissueAttempts?: number;
+  /** Life-cycle state. Absent on callers that predate the retry loop (treated as `up ? 'up' : 'down'`). */
+  state?: TunnelState;
+  /** Failed attempts in a row since the tunnel was last up (0 while up). */
+  attempts?: number;
+  /** ISO timestamp of the next scheduled attempt, or `null` when none is scheduled. */
+  nextRetryAt?: string | null;
+  /** Reason class of the last failed attempt, or `null` when none failed since the tunnel was last up. */
+  lastErrorKind?: TunnelErrorKind | null;
+  /** PID of the live cloudflared child, or `null` when no child runs. A plain integer, not a secret. */
+  childPid?: number | null;
 }
 
 /**
@@ -236,8 +286,12 @@ export const DEBUG_TOOL_DEFINITIONS = [
   {
     name: 'take_screenshot',
     description:
-      'Captures a PNG screenshot of the attached mini-app page over CDP (Page.captureScreenshot) ' +
+      'Captures a screenshot of the attached mini-app page over CDP (Page.captureScreenshot) ' +
       'so the agent can see the phone screen directly. Read-only. ' +
+      'On a real device (relay) the page cannot take native screenshots, so the image is a DOM ' +
+      're-render (html2canvas, via Page.startScreencast): <canvas>/WebGL content (e.g. Unity) may ' +
+      'come out blank, and video and cross-origin images may be missing. It can take several ' +
+      'seconds (15 s timeout). ' +
       'Returns an image content block — this is the only debug tool that returns an image; ' +
       'all other debug tools return text (JSON).',
     inputSchema: { type: 'object', properties: {}, required: [] },
@@ -364,7 +418,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
     description:
       'Returns the recent Apps in Toss SDK call trace (method, args, result/error, timestamp) that ' +
       'raw CDP cannot observe. Read-only. Use to confirm an SDK call fired and how it resolved ' +
-      '(e.g. a saveBase64Data permission regression).',
+      '(e.g. a saveBase64Data permission regression). Local mock environment only: a real device ' +
+      '(relay) records no call trace, so this returns an error there — use call_sdk or ' +
+      'list_console_messages instead.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -373,7 +429,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
     description:
       'Returns the devtools mock state snapshot (window.__ait) — environment, permissions, location, ' +
       'auth, network, IAP, and more. Read-only. In dev mode this is the live browser mock state; in ' +
-      'debug mode the in-app side reports it over the AIT domain.',
+      'debug mode the in-app side reports it over the AIT domain. Local mock environment only: a ' +
+      'real device (relay) has no window.__ait mock, so this returns an error there.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -381,7 +438,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
     name: 'AIT.getOperationalEnvironment',
     description:
       'Returns getOperationalEnvironment() plus the resolved SDK version — metadata raw CDP cannot ' +
-      'observe. Read-only.',
+      'observe. Read-only. On a real device the value is read through window.__sdkCall.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -916,7 +973,7 @@ export function buildAttachUrl(
   if (!tunnel.up || tunnel.wssUrl === null) {
     throw new Error(
       'tunnel-down: cloudflared 터널이 안 떠 있습니다. ' +
-        'MCP 서버를 재시작하거나 잠시 후 list_pages로 터널 상태를 다시 확인하세요.',
+        '잠시 후 start_attach를 다시 호출하거나 list_pages로 터널 상태를 확인하세요.',
     );
   }
   const authorityWarning = validateSchemeAuthority(schemeUrl) ?? undefined;
@@ -1152,19 +1209,153 @@ export function takeSnapshot(connection: CdpConnection): Promise<DomSnapshotResu
   return connection.send('DOMSnapshot.captureSnapshot', {});
 }
 
-/** A `take_screenshot` result: the raw base64 PNG plus a ready-to-use data URI. */
+/** A `take_screenshot` result: the raw base64 image plus a ready-to-use data URI. */
 export interface ScreenshotResult {
-  /** Base64-encoded PNG bytes (no data-URI prefix). */
+  /** Base64-encoded image bytes (no data-URI prefix). */
   data: string;
-  /** `data:image/png;base64,…` form for clients that render a URI. */
+  /** `data:image/...;base64,…` form for clients that render a URI. */
   dataUri: string;
-  mimeType: 'image/png';
+  mimeType: 'image/png' | 'image/jpeg';
 }
 
-/** Captures a PNG screenshot of the attached page (`Page.captureScreenshot`). */
-export async function takeScreenshot(connection: CdpConnection): Promise<ScreenshotResult> {
-  const { data } = await connection.send('Page.captureScreenshot', { format: 'png' });
-  return { data, dataUri: `data:image/png;base64,${data}`, mimeType: 'image/png' };
+/** Max wait for the first `Page.screencastFrame` (html2canvas on a phone is slow). */
+export const SCREENCAST_TIMEOUT_MS = 15_000;
+
+/**
+ * True when a CDP error means "the page does not implement this method"
+ * (chobitsu answers `<method> unimplemented`; Chromium says "wasn't found").
+ */
+export function isUnimplementedCdpError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /unimplemented|not implemented|method not found|wasn't found|was not found/i.test(message);
+}
+
+const NO_SCREENCAST_MESSAGE =
+  'take_screenshot 실패: 이 기기의 페이지가 Page.captureScreenshot과 Page.startScreencast를 ' +
+  '모두 지원하지 않아 화면을 캡처할 수 없습니다. get_dom_document·evaluate로 대신 확인하세요.';
+
+/** Connections whose page already answered `Page.captureScreenshot` as unimplemented. */
+const screenshotNeedsScreencast = new WeakSet<CdpConnection>();
+
+function mimeFromBase64(data: string): ScreenshotResult['mimeType'] {
+  return data.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+}
+
+function toScreenshot(data: string): ScreenshotResult {
+  const mimeType = mimeFromBase64(data);
+  return { data, dataUri: `data:${mimeType};base64,${data}`, mimeType };
+}
+
+/** Best-effort viewport size (CSS px × dpr, capped) for the screencast size hint. */
+async function screencastSizeHint(
+  connection: CdpConnection,
+): Promise<{ maxWidth: number; maxHeight: number } | null> {
+  try {
+    const res = await connection.send('Runtime.evaluate', {
+      expression:
+        'JSON.stringify([window.innerWidth, window.innerHeight, Math.min(window.devicePixelRatio || 1, 2)])',
+      returnByValue: true,
+    });
+    const raw = res.result.value;
+    if (typeof raw !== 'string') return null;
+    const [w, h, dpr] = JSON.parse(raw) as number[];
+    if (!(w > 0) || !(h > 0)) return null;
+    return { maxWidth: Math.round(w * dpr), maxHeight: Math.round(h * dpr) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Screenshot via `Page.startScreencast` — for pages (chii/chobitsu on a real
+ * device) that do not implement `Page.captureScreenshot`. Takes the first
+ * `Page.screencastFrame`, acks it, and always stops the screencast.
+ */
+async function screenshotViaScreencast(
+  connection: CdpConnection,
+  timeoutMs: number,
+): Promise<ScreenshotResult> {
+  const size = await screencastSizeHint(connection);
+  let unsubscribe: () => void = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let started = false;
+  try {
+    const frame = new Promise<PageScreencastFrameEvent>((resolve, reject) => {
+      if (!connection.onTransient) {
+        reject(new ToolMessageError(NO_SCREENCAST_MESSAGE));
+        return;
+      }
+      unsubscribe = connection.onTransient('Page.screencastFrame', resolve);
+      timer = setTimeout(
+        () =>
+          reject(
+            new ToolMessageError(
+              `take_screenshot 실패: ${Math.round(timeoutMs / 1000)}초 안에 화면 프레임을 받지 못했습니다. ` +
+                '실기기에서는 화면을 DOM으로 다시 그려 캡처(html2canvas)하는데, 페이지가 무겁거나 ' +
+                '토스 앱이 백그라운드면 오래 걸리거나 실패합니다. 앱을 앞으로 가져온 뒤 다시 시도하거나 ' +
+                'get_dom_document·evaluate로 상태를 확인하세요.',
+            ),
+          ),
+        timeoutMs,
+      );
+    });
+    // 프레임 이벤트를 구독한 뒤에 시작해야 첫 프레임을 놓치지 않는다.
+    // frame이 먼저 reject돼도 처리되지 않은 rejection이 되지 않게 미리 흡수한다.
+    frame.catch(() => {});
+    try {
+      await connection.send('Page.startScreencast', {
+        format: 'jpeg',
+        quality: 80,
+        ...(size ?? {}),
+        everyNthFrame: 1,
+      });
+      started = true;
+    } catch (err) {
+      if (isUnimplementedCdpError(err)) {
+        throw new ToolMessageError(NO_SCREENCAST_MESSAGE);
+      }
+      throw err;
+    }
+    const first = await frame;
+    try {
+      await connection.send('Page.screencastFrameAck', { sessionId: first.sessionId });
+    } catch {
+      // ack 실패는 이미 받은 프레임에 영향이 없다.
+    }
+    return toScreenshot(first.data);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    unsubscribe();
+    if (started) {
+      try {
+        await connection.send('Page.stopScreencast', {});
+      } catch {
+        // 정리 실패는 결과를 바꾸지 않는다.
+      }
+    }
+  }
+}
+
+/**
+ * Captures a screenshot of the attached page. Uses `Page.captureScreenshot`;
+ * when the page reports it as unimplemented (real-device chii target) falls
+ * back to a one-frame `Page.startScreencast`.
+ */
+export async function takeScreenshot(
+  connection: CdpConnection,
+  opts: { screencastTimeoutMs?: number } = {},
+): Promise<ScreenshotResult> {
+  const timeoutMs = opts.screencastTimeoutMs ?? SCREENCAST_TIMEOUT_MS;
+  if (!screenshotNeedsScreencast.has(connection)) {
+    try {
+      const { data } = await connection.send('Page.captureScreenshot', { format: 'png' });
+      return toScreenshot(data);
+    } catch (err) {
+      if (!isUnimplementedCdpError(err)) throw err;
+      screenshotNeedsScreencast.add(connection);
+    }
+  }
+  return screenshotViaScreencast(connection, timeoutMs);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1755,8 +1946,8 @@ export interface DiagnosticsTunnelInfo {
   /** Public `wss://*.trycloudflare.com` relay URL, or `null`. */
   wssUrl: string | null;
   /**
-   * PID of this MCP server process (from its session registry entry), or `null`
-   * when the registry is not available.
+   * PID of the cloudflared child process, or `null` when no child runs (the
+   * tunnel is starting, retrying or down). Not the daemon's own PID.
    */
   pid: number | null;
   /**
@@ -1775,6 +1966,14 @@ export interface DiagnosticsTunnelInfo {
    * 0 when no drop has occurred.
    */
   reissueAttempts: number;
+  /** `starting` | `up` | `retrying` | `down`. */
+  state?: TunnelState;
+  /** Failed attempts in a row since the tunnel was last up. */
+  attempts?: number;
+  /** ISO timestamp of the next scheduled retry, or `null`. */
+  nextRetryAt?: string | null;
+  /** Reason class of the last failed attempt, or `null`. */
+  lastErrorKind?: TunnelErrorKind | null;
 }
 
 /**
@@ -2183,9 +2382,28 @@ export function computeNextRecommendedAction(
   attachDiagnosis: AttachDiagnosis | null = null,
   tunnelRotations: TunnelRotationsSnapshot | null = null,
 ): NextRecommendedAction | null {
-  // Rule 0: permanent tunnel drop — highest priority, beats crash / empty-pages rules.
-  // droppedAt is set by the health probe after exhausting all reissue attempts.
-  if (tunnel.droppedAt != null) {
+  // Rule 0a: the tunnel is coming up or being retried automatically. Restarting
+  // the server would only throw the retry loop away; start_attach waits for it.
+  if (
+    !tunnel.up &&
+    isRelayEnv(env) &&
+    (tunnel.state === 'starting' || tunnel.state === 'retrying')
+  ) {
+    const kind = tunnel.lastErrorKind ?? null;
+    const when = tunnel.nextRetryAt != null ? `, 다음 재시도 ${tunnel.nextRetryAt}` : '';
+    return {
+      tool: 'start_attach',
+      reason:
+        tunnel.state === 'starting'
+          ? 'cloudflared 터널이 뜨는 중이에요 — start_attach를 호출하면 터널이 뜰 때까지 최대 45초 기다려요'
+          : `cloudflared 터널을 자동으로 다시 시도하고 있어요 (${tunnelErrorLabel(kind)}, 연속 실패 ${tunnel.attempts ?? 0}회${when}) — ` +
+            '서버 재시작은 필요 없어요. start_attach를 호출하면 터널이 뜰 때까지 최대 45초 기다려요',
+    };
+  }
+
+  // Rule 0: tunnel gone with no retry loop behind it — highest priority, beats crash / empty-pages rules.
+  // droppedAt is set when a tunnel that had been up could not be reissued.
+  if (tunnel.droppedAt != null && tunnel.state !== 'starting' && tunnel.state !== 'retrying') {
     return {
       tool: 'restart',
       reason:
@@ -2261,7 +2479,11 @@ export function computeNextRecommendedAction(
       attachDiagnosis !== null &&
       attachDiagnosis.kind !== 'not-started' &&
       attachDiagnosis.kind !== 'attached'
-        ? ` — 직전 시도: ${attachDiagnosis.summary}`
+        ? ` — 직전 시도: ${attachDiagnosis.summary}${
+            attachDiagnosis.kind === 'protocol-skew' && attachDiagnosis.actions[0] !== undefined
+              ? ` ${attachDiagnosis.actions[0]}`
+              : ''
+          }`
         : '';
     return {
       tool: 'start_attach',
@@ -2333,6 +2555,8 @@ export interface GetDiagnosticsInput {
    * 않게 하려는 것이다.
    */
   attachTimeline?: AttachTimeline;
+  /** 데몬이 마지막으로 본 device↔host 프로토콜 skew. 있으면 attach 진단이 skew를 직접 말한다. */
+  getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
 }
 
 /** The `relayKey` block of `get_debug_status` for a recorded key age (`null` when none). */
@@ -2367,6 +2591,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     checkParentAlive = () => isPidAlive(process.ppid),
     tunnelChildPid,
     attachTimeline,
+    getProtocolVersionSkew,
     booted = true,
   } = input;
 
@@ -2408,13 +2633,31 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     effectiveUp = false;
   }
 
+  // The supervisor's own child pid wins (null while no child runs). Callers that
+  // predate it fall back to the registry pid, and only while the tunnel is up.
+  const reportedChildPid =
+    tunnel.childPid !== undefined
+      ? tunnel.childPid
+      : effectiveUp && typeof effectiveTunnelChildPid === 'number'
+        ? effectiveTunnelChildPid
+        : null;
+  // A child that died under a cached `up` must not be reported as up.
+  const state: TunnelState = effectiveUp
+    ? 'up'
+    : tunnel.state === undefined || tunnel.state === 'up'
+      ? 'down'
+      : tunnel.state;
   const tunnelInfo: DiagnosticsTunnelInfo = {
     up: effectiveUp,
     wssUrl: maskRelayUrl(tunnel.wssUrl),
-    pid: selfEntry?.pid ?? null,
+    pid: reportedChildPid,
     startedAt: selfEntry?.startedAt ?? null,
     droppedAt: tunnel.droppedAt ?? null,
     reissueAttempts: tunnel.reissueAttempts ?? 0,
+    state,
+    attempts: tunnel.attempts ?? 0,
+    nextRetryAt: tunnel.nextRetryAt ?? null,
+    lastErrorKind: tunnel.lastErrorKind ?? null,
   };
 
   // list_pages — non-fatal; null on any error.
@@ -2460,6 +2703,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
       ? diagnoseAttach(timelineSnapshot, {
           observedPages: pages?.pages ?? [],
           matchesCurrentPage: attachTimeline?.matchesCurrentPage(pages?.pages ?? []) ?? false,
+          protocolSkew: getProtocolVersionSkew?.() ?? null,
         })
       : null;
 

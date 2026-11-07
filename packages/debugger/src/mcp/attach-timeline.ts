@@ -16,7 +16,9 @@
  * 동적 import로 불러도 chii/cloudflared/React를 끌어오지 않는다.
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachHandshakeEvent, RelayAuthRejectEvent } from './chii-relay.js';
+import { protocolSkewParts } from './protocol-version.js';
 import type { DashboardState } from './qr-http-server.js';
 import { hostLabel } from './target-busy.js';
 
@@ -260,6 +262,7 @@ export type AttachDiagnosisKind =
   | 'page-not-opened'
   | 'qr-expired'
   | 'script-not-loaded'
+  | 'protocol-skew'
   | 'wrong-page'
   | 'session-dropped'
   | 'rejected-busy'
@@ -286,6 +289,11 @@ export interface DiagnoseContext {
    * 남기 때문이다.
    */
   matchesCurrentPage?: boolean;
+  /**
+   * 데몬이 마지막으로 본 device↔host 프로토콜 skew(없으면 `null`). 이번 시도에서 기기 핸드셰이크가
+   * 있었고 아직 붙지 못했다면 `script-not-loaded` 대신 `protocol-skew`로 진단한다.
+   */
+  protocolSkew?: ProtocolVersionCheck | null;
 }
 
 const MAX_OBSERVED_PAGES = 3;
@@ -437,6 +445,16 @@ export function diagnoseAttach(
   }
 
   if (lastEvent(events, (e) => e.stage === 'device-handshake') !== undefined) {
+    const skew = ctx.protocolSkew ?? null;
+    if (skew !== null) {
+      const { detail, action } = protocolSkewParts(skew);
+      return {
+        kind: 'protocol-skew',
+        lastStage,
+        summary: `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ${detail}`,
+        actions: [action, 'start_attach를 다시 호출해 새 QR을 스캔하세요.'],
+      };
+    }
     return {
       kind: 'script-not-loaded',
       lastStage,

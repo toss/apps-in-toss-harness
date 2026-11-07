@@ -19,6 +19,7 @@ import {
   sanitizeCloudflaredOutput,
   startQuickTunnel,
   startTunnelHealthProbe,
+  TunnelStartError,
 } from '../tunnel.js';
 
 // startQuickTunnel spawns the `cloudflared` binary via child_process — out of
@@ -445,6 +446,7 @@ describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
     await vi.advanceTimersByTimeAsync(0);
     fakeTunnel.emit('stderr', 'fatal: could not reach secret-real-host.trycloudflare.com\n');
     fakeTunnel.emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(100);
 
     const err = await resultPromise;
     expect(err).toBeInstanceOf(Error);
@@ -453,6 +455,44 @@ describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
     expect(message).toContain('code 1');
     expect(message).not.toContain('secret-real-host');
     expect(message).toContain('<HOST>.trycloudflare.com');
+  });
+
+  it('classifies an exit with a Cloudflare 429 as rate-limited', async () => {
+    const resultPromise = startQuickTunnel(5173).then(
+      () => {
+        throw new Error('expected startQuickTunnel to reject');
+      },
+      (err: unknown) => err,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    fakeTunnel.emit('exit', 1);
+    // The 429 notice can arrive just after 'exit'.
+    fakeTunnel.emit('stderr', 'failed to request quick Tunnel: status 429 Too Many Requests\n');
+    await vi.advanceTimersByTimeAsync(100);
+
+    const err = await resultPromise;
+    expect(err).toBeInstanceOf(TunnelStartError);
+    expect((err as TunnelStartError).kind).toBe('rate-limited');
+  });
+
+  it('classifies a plain exit as exited', async () => {
+    const resultPromise = startQuickTunnel(5173).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    fakeTunnel.emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(((await resultPromise) as TunnelStartError).kind).toBe('exited');
+  });
+
+  it('kills the cloudflared child when the start is aborted', async () => {
+    const controller = new AbortController();
+    const resultPromise = startQuickTunnel(5173, { signal: controller.signal }).catch(
+      (err: unknown) => err,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    expect(fakeTunnel.stop).toHaveBeenCalledTimes(1);
+    expect(await resultPromise).toBeInstanceOf(TunnelStartError);
   });
 
   it('does not attach a stderr tail when no stderr was captured', async () => {
@@ -465,6 +505,7 @@ describe('startQuickTunnel — #421 timeout + stderr-tail diagnostics', () => {
 
     await vi.advanceTimersByTimeAsync(0);
     fakeTunnel.emit('exit', null);
+    await vi.advanceTimersByTimeAsync(100);
 
     const message = ((await resultPromise) as Error).message;
     expect(message).not.toContain('cloudflared 출력');

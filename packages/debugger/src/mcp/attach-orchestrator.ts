@@ -44,9 +44,9 @@ import type { McpEnvironment } from './environment.js';
 import {
   attachSupersededError,
   attachTimeoutMessage,
-  classifyToolError,
   mcpError,
   protocolVersionMismatchError,
+  tunnelUnavailableError,
 } from './errors.js';
 import { logInfo } from './log.js';
 import type { QrHttpServer } from './qr-http-server.js';
@@ -66,6 +66,8 @@ import {
   relayCodeStep,
 } from './totp.js';
 import { renderQr } from './tunnel.js';
+import { waitForTunnelDns } from './tunnel-dns.js';
+import { ATTACH_TUNNEL_WAIT_MS } from './tunnel-supervisor.js';
 
 /**
  * Why a QR scan can silently do nothing: when the mini-app is ALREADY open in
@@ -273,6 +275,11 @@ export interface RenderAndWaitOptions {
    * tool, like the final result.
    */
   onQrText?: (text: string) => void;
+  /**
+   * 대기 상태를 알리는 한 줄(진행 알림 채널). 터널 호스트가 아직 DNS에서 안 풀려 QR을 미루는
+   * 동안 한 번 불린다. 호스트·URL은 담기지 않는다.
+   */
+  onNotice?: (text: string) => void;
 }
 
 /**
@@ -309,6 +316,11 @@ export type PrepareAttachResult =
 export interface AttachDeps {
   /** relay 터널 up/wssUrl. CLI는 bootRelayFamily().getTunnelStatus를 그대로 넘긴다. */
   getTunnelStatus(): TunnelStatus;
+  /**
+   * 터널이 뜨는 중이거나 곧 재시도될 때 최대 `maxMs`까지 기다린 뒤 상태를 돌려준다.
+   * 없으면 기다리지 않는다.
+   */
+  waitForTunnel?(maxMs: number): Promise<TunnelStatus>;
   /**
    * Late-bound TOTP secret accessor (issue #396) — read from env AT CALL TIME so
    * the project-local `.ait_relay` secret loaded by `switchMode` is visible.
@@ -348,6 +360,15 @@ export interface AttachDeps {
    * 기기↔호스트 프로토콜 불일치 조회(선택). 타임아웃 진단에 원인 후보로 함께 싣는다.
    */
   getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
+  /**
+   * 터널 호스트가 공개 DNS에서 풀리는지 확인하는 함수(선택). 주면 QR을 내기 전에 풀릴 때까지
+   * (최대 60초) 기다린다. 없으면 기다리지 않는다. 호스트 이름은 비밀이라 반환값은 불리언뿐이다.
+   */
+  resolveTunnelHost?: (host: string) => Promise<boolean>;
+  /** DNS 확인 간격(ms). 테스트용. */
+  tunnelDnsPollMs?: number;
+  /** DNS 대기 상한(ms). 테스트용. */
+  tunnelDnsMaxMs?: number;
 }
 
 /** Resolves `deps.nowMs` to its default (`Date.now`). */
@@ -503,9 +524,18 @@ export async function prepareAttach(
 
   // Tunnel-down check (the old buildAttachUrl threw here; we fail-fast with a
   // structured error to keep prepareAttach side-effect-free).
-  const tunnelForBuild = getTunnelStatus();
+  // 터널이 막 뜨는 중이거나(첫 실행이면 바이너리를 내려받느라 20~30초) 곧 재시도될 때는
+  // 바로 실패시키지 않고 정해진 시간까지 기다린다.
+  let tunnelForBuild = getTunnelStatus();
+  const waitStartedAt = Date.now();
+  if ((!tunnelForBuild.up || tunnelForBuild.wssUrl === null) && deps.waitForTunnel !== undefined) {
+    tunnelForBuild = await deps.waitForTunnel(ATTACH_TUNNEL_WAIT_MS);
+  }
   if (!tunnelForBuild.up || tunnelForBuild.wssUrl === null) {
-    return { ok: false, error: classifyToolError(new Error('tunnel-down:'), 'start_attach') };
+    return {
+      ok: false,
+      error: tunnelUnavailableError(tunnelForBuild, Date.now(), Date.now() - waitStartedAt),
+    };
   }
   const authorityWarning = validateSchemeAuthority(schemeUrl) ?? undefined;
 
@@ -630,7 +660,7 @@ export async function renderAndMaybeWait(
   options: RenderAndWaitOptions = {},
 ): Promise<McpResult> {
   const { getTunnelStatus, qrHttpServer, onAttachUrlBuilt } = deps;
-  const { signal, onQrText } = options;
+  const { signal, onQrText, onNotice } = options;
   const nowMs = resolveNowMs(deps);
   // attach 단계 기록: 이 호출이 새 시도를 연다. 기록기가 주입되지 않았으면 이 호출 전용
   // 임시 기록기를 쓴다 — 타임아웃 진단은 QR 발급 이후 단계까지만 알게 된다.
@@ -641,6 +671,29 @@ export async function renderAndMaybeWait(
   let waitError: string | undefined;
   const canOpenBrowserFn = resolveCanOpenBrowser(deps);
   const { parts, isMatchingPage, buildTimeoutError, authorityWarning, totpMeta } = prep;
+
+  // 막 만든 터널 호스트는 폰이 쓰는 DNS에서 15~60초 동안 안 풀릴 수 있다. QR을 내고 대기 시간을
+  // 재기 전에 호스트가 풀리는지 본다. 한도에 닿으면 풀리지 않은 채로 진행한다.
+  // SECRET-HANDLING: 호스트는 어디에도 싣지 않는다.
+  if (deps.resolveTunnelHost !== undefined) {
+    const wss = withCurrentRelay(parts, getTunnelStatus()).wssUrl;
+    await waitForTunnelDns(wss, {
+      resolveHost: deps.resolveTunnelHost,
+      signal,
+      nowMs,
+      ...(deps.tunnelDnsPollMs !== undefined ? { pollMs: deps.tunnelDnsPollMs } : {}),
+      ...(deps.tunnelDnsMaxMs !== undefined ? { maxMs: deps.tunnelDnsMaxMs } : {}),
+      onWaiting: () =>
+        onNotice?.(
+          '새 터널 주소가 아직 DNS에 퍼지는 중이에요 (보통 15~60초). 폰이 닿을 수 있을 때까지 기다린 뒤 QR을 보여 드릴게요.',
+        ),
+    });
+    if (signal?.aborted) {
+      return signal.reason === ATTACH_SUPERSEDED_REASON
+        ? attachSupersededError()
+        : mcpError('start_attach: 호출이 취소됐습니다.');
+    }
+  }
 
   // Initial mint + dashboard notify (components, not a finished URL, so
   // getDashboardState re-mints on every SSE push — Defect 1).

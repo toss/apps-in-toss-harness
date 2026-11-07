@@ -28,6 +28,8 @@ import type {
   CdpEventMap,
   CdpEventName,
   CdpTarget,
+  CdpTransientEventMap,
+  CdpTransientEventName,
 } from './cdp-connection.js';
 import { sanitizeRemoteText } from './errors.js';
 import { logInfo } from './log.js';
@@ -893,6 +895,12 @@ export class ChiiCdpConnection implements CdpConnection {
       return;
     }
 
+    // --- Transient streaming events (live subscribers only, never buffered) ---
+    if (message.method === 'Page.screencastFrame') {
+      this.emitter.emit(message.method, message.params);
+      return;
+    }
+
     // --- Phase 1 event stream (buffered ring-buffer) ---
     if (!this.buffers.has(message.method as CdpEventName)) return;
     const event = message.method as CdpEventName;
@@ -912,6 +920,14 @@ export class ChiiCdpConnection implements CdpConnection {
   }
 
   on<E extends CdpEventName>(event: E, listener: (payload: CdpEventMap[E]) => void): () => void {
+    this.emitter.on(event, listener as (payload: unknown) => void);
+    return () => this.emitter.off(event, listener as (payload: unknown) => void);
+  }
+
+  onTransient<E extends CdpTransientEventName>(
+    event: E,
+    listener: (payload: CdpTransientEventMap[E]) => void,
+  ): () => void {
     this.emitter.on(event, listener as (payload: unknown) => void);
     return () => this.emitter.off(event, listener as (payload: unknown) => void);
   }

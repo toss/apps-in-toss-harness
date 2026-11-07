@@ -319,7 +319,7 @@ describe('getDiagnostics helper', () => {
     expect(result.pages!.pages[0]!.id).toBe('p1');
   });
 
-  it("takes the tunnel pid and start time from this daemon's own registry entry", async () => {
+  it("takes the start time from this daemon's registry entry and reports the cloudflared child pid, not the daemon's", async () => {
     const result = await getDiagnostics({
       tunnel: tunnelUp,
       env: 'relay-dev',
@@ -340,7 +340,8 @@ describe('getDiagnostics helper', () => {
       }),
     });
 
-    expect(result.tunnel.pid).toBe(12345);
+    // The daemon's own pid (12345) is not the tunnel's pid; no child is known here.
+    expect(result.tunnel.pid).toBeNull();
     expect(result.tunnel.startedAt).toBe('2026-01-01T00:00:00.000Z');
     expect(result.otherSessions).toEqual({ count: 0, sessions: [] });
   });
@@ -1271,6 +1272,30 @@ describe('getDiagnostics — attach timeline', () => {
     const result = await base(tl, new FakeCdpConnection([]));
     expect(result.nextRecommendedAction?.tool).toBe('start_attach');
     expect(result.nextRecommendedAction?.reason).toContain('직전 시도');
+  });
+
+  it('reports a protocol skew instead of script-not-loaded and repeats the update action', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('device-handshake', 'ok');
+    const r = await getDiagnostics({
+      tunnel: tunnelUp,
+      connection: new FakeCdpConnection([]),
+      env: 'relay-dev',
+      envReason: 'test',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => null,
+      attachTimeline: tl,
+      getProtocolVersionSkew: () => ({
+        match: false,
+        deviceProtocol: 2,
+        hostProtocol: 3,
+        deviceVersion: '0.3.0',
+      }),
+    });
+    expect(r.attachDiagnosis?.kind).toBe('protocol-skew');
+    expect(r.nextRecommendedAction?.reason).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
   });
 
   it('get_debug_status tool exposes attachStages when a timeline is injected', async () => {
