@@ -28,6 +28,7 @@ import {
   totpRejectedError,
   tunnelDownError,
 } from '../errors.js';
+import { ToolMessageError } from '../tool-message-error.js';
 
 // ---------- 공통 헬퍼 ----------
 
@@ -251,6 +252,28 @@ describe('classifyToolError — 에러 패턴 자동 분류', () => {
     const result = classifyToolError(err, 'call_sdk');
     expect(getText(result)).toContain('dog-food');
     expect(getText(result)).not.toContain('npm run dev');
+  });
+
+  it('일반 에러: attach 안 됐으면 list_pages attach 안내를 붙인다', () => {
+    const result = classifyToolError(new Error('something odd'), 'evaluate');
+    expect(getText(result)).toContain('attach됐는지 확인하세요');
+  });
+
+  it('일반 에러: attach된 상태에서 페이지가 돌려준 오류면 attach 안내를 붙이지 않는다', () => {
+    const result = classifyToolError(
+      new Error('AIT.foo unimplemented'),
+      'AIT.foo',
+      false,
+      undefined,
+      true,
+    );
+    expect(getText(result)).toContain('unimplemented');
+    expect(getText(result)).not.toContain('attach됐는지');
+  });
+
+  it('ToolMessageError는 접두사·표지 없이 메시지 그대로', () => {
+    const result = classifyToolError(new ToolMessageError('직접 쓴 안내'), 'take_screenshot');
+    expect(getText(result)).toBe('직접 쓴 안내');
   });
 
   it('replaced-by-new-attach → pageCrashError 메시지', () => {

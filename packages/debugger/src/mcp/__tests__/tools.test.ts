@@ -350,6 +350,131 @@ describe('takeScreenshot (Phase 2)', () => {
   });
 });
 
+/** Scripted connection for the screencast fallback: records calls, emits frames. */
+class ScreencastConnection extends FakeCdpConnection {
+  readonly calls: string[] = [];
+  private frameListeners: Array<(p: { data: string; sessionId: number }) => void> = [];
+  constructor(
+    private readonly behavior: {
+      captureError?: string;
+      startError?: string;
+      frame?: { data: string; sessionId: number } | null;
+      stopError?: boolean;
+    },
+  ) {
+    super({});
+  }
+  onTransient(event: string, listener: (p: never) => void): () => void {
+    if (event === 'Page.screencastFrame') {
+      this.frameListeners.push(listener as never);
+    }
+    return () => {
+      this.frameListeners = this.frameListeners.filter((l) => l !== (listener as never));
+    };
+  }
+  get listenerCount(): number {
+    return this.frameListeners.length;
+  }
+  override send<M extends CdpCommandName>(
+    method: M,
+    _params?: CdpCommandMap[M]['params'],
+  ): Promise<CdpCommandMap[M]['result']> {
+    this.calls.push(method);
+    const out = (v: unknown) => Promise.resolve(v as CdpCommandMap[M]['result']);
+    switch (method) {
+      case 'Page.captureScreenshot':
+        return this.behavior.captureError
+          ? Promise.reject(new Error(this.behavior.captureError))
+          : out({ data: 'iVBORw0KGgo=' });
+      case 'Runtime.evaluate':
+        return out({ result: { type: 'string', value: '[390,844,3]' } });
+      case 'Page.startScreencast':
+        if (this.behavior.startError) return Promise.reject(new Error(this.behavior.startError));
+        if (this.behavior.frame) {
+          const frame = this.behavior.frame;
+          setTimeout(() => {
+            for (const l of this.frameListeners) l(frame);
+          }, 0);
+        }
+        return out({});
+      case 'Page.stopScreencast':
+        return this.behavior.stopError ? Promise.reject(new Error('gone')) : out({});
+      default:
+        return out({});
+    }
+  }
+}
+
+describe('takeScreenshot screencast fallback (real device)', () => {
+  it('falls back to startScreencast on unimplemented, acks, stops, returns the frame', async () => {
+    const conn = new ScreencastConnection({
+      captureError: 'Page.captureScreenshot unimplemented',
+      frame: { data: '/9j/4AAQ', sessionId: 7 },
+    });
+    const shot = await takeScreenshot(conn);
+    expect(shot.mimeType).toBe('image/jpeg');
+    expect(shot.data).toBe('/9j/4AAQ');
+    expect(shot.dataUri).toBe('data:image/jpeg;base64,/9j/4AAQ');
+    expect(conn.calls).toEqual([
+      'Page.captureScreenshot',
+      'Runtime.evaluate',
+      'Page.startScreencast',
+      'Page.screencastFrameAck',
+      'Page.stopScreencast',
+    ]);
+    expect(conn.listenerCount).toBe(0);
+  });
+
+  it('skips captureScreenshot on later calls once it was reported unimplemented', async () => {
+    const conn = new ScreencastConnection({
+      captureError: 'Page.captureScreenshot unimplemented',
+      frame: { data: 'iVBORw0KGgo=', sessionId: 1 },
+    });
+    await takeScreenshot(conn);
+    conn.calls.length = 0;
+    const shot = await takeScreenshot(conn);
+    expect(shot.mimeType).toBe('image/png');
+    expect(conn.calls).not.toContain('Page.captureScreenshot');
+  });
+
+  it('does not fall back on other capture errors', async () => {
+    const conn = new ScreencastConnection({ captureError: 'boom' });
+    await expect(takeScreenshot(conn)).rejects.toThrow('boom');
+    expect(conn.calls).toEqual(['Page.captureScreenshot']);
+  });
+
+  it('times out with a Korean error and still stops the screencast', async () => {
+    const conn = new ScreencastConnection({
+      captureError: 'Page.captureScreenshot unimplemented',
+      frame: null,
+    });
+    await expect(takeScreenshot(conn, { screencastTimeoutMs: 30 })).rejects.toThrow(
+      /프레임을 받지 못했습니다/,
+    );
+    expect(conn.calls).toContain('Page.stopScreencast');
+    expect(conn.listenerCount).toBe(0);
+  });
+
+  it('reports a clear error when startScreencast is unimplemented too, without stopping', async () => {
+    const conn = new ScreencastConnection({
+      captureError: 'Page.captureScreenshot unimplemented',
+      startError: 'Page.startScreencast unimplemented',
+    });
+    await expect(takeScreenshot(conn)).rejects.toThrow(/모두 지원하지 않아/);
+    expect(conn.calls).not.toContain('Page.stopScreencast');
+    expect(conn.listenerCount).toBe(0);
+  });
+
+  it('ignores a failing stopScreencast', async () => {
+    const conn = new ScreencastConnection({
+      captureError: 'Page.captureScreenshot unimplemented',
+      frame: { data: 'iVBORw0KGgo=', sessionId: 2 },
+      stopError: true,
+    });
+    await expect(takeScreenshot(conn)).resolves.toMatchObject({ mimeType: 'image/png' });
+  });
+});
+
 describe('AIT.* tools (Phase 3)', () => {
   it('getSdkCallHistory returns the canned trace', async () => {
     const source = new FakeAitSource({

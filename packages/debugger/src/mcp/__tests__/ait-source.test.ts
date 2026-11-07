@@ -53,6 +53,58 @@ describe('ChiiAitSource (debug mode, over Chii channel)', () => {
   });
 });
 
+describe('ChiiAitSource on a real device (page has no AIT.* handler)', () => {
+  /** Rejects AIT.* as unimplemented; answers Runtime.evaluate with a canned value. */
+  class UnimplementedSender implements AitCommandSender {
+    readonly sent: string[] = [];
+    constructor(private readonly evalValue: unknown) {}
+    sendCommand(method: string): Promise<unknown> {
+      this.sent.push(method);
+      if (method.startsWith('AIT.')) return Promise.reject(new Error(`${method} unimplemented`));
+      if (method === 'Runtime.evaluate') {
+        return Promise.resolve({ result: { type: 'string', value: this.evalValue } });
+      }
+      return Promise.reject(new Error(`unexpected ${method}`));
+    }
+  }
+
+  it('falls back to window.__sdkCall for getOperationalEnvironment', async () => {
+    const sender = new UnimplementedSender(
+      JSON.stringify({ ok: true, environment: 'toss', sdkVersion: null }),
+    );
+    const env = await new ChiiAitSource(sender).get('AIT.getOperationalEnvironment');
+    expect(env).toEqual({ environment: 'toss', sdkVersion: null });
+    expect(sender.sent).toEqual(['AIT.getOperationalEnvironment', 'Runtime.evaluate']);
+  });
+
+  it('reports a Korean error when the bridge cannot answer', async () => {
+    const sender = new UnimplementedSender(JSON.stringify({ ok: false }));
+    await expect(new ChiiAitSource(sender).get('AIT.getOperationalEnvironment')).rejects.toThrow(
+      /window\.__sdkCall로도 값을 읽지 못했습니다/,
+    );
+  });
+
+  it.each(['AIT.getSdkCallHistory', 'AIT.getMockState'] as const)(
+    '%s returns a local-mock-only error instead of "unimplemented"',
+    async (method) => {
+      const sender = new UnimplementedSender('x');
+      const err = await new ChiiAitSource(sender).get(method).catch((e: Error) => e);
+      expect((err as Error).message).toContain('로컬 mock 환경');
+      expect((err as Error).message).not.toContain('unimplemented');
+      expect(sender.sent).toEqual([method]);
+    },
+  );
+
+  it('rethrows non-unimplemented errors untouched', async () => {
+    const sender: AitCommandSender = {
+      sendCommand: () => Promise.reject(new Error('relay에 연결되어 있지 않습니다')),
+    };
+    await expect(new ChiiAitSource(sender).get('AIT.getMockState')).rejects.toThrow(
+      'relay에 연결되어 있지 않습니다',
+    );
+  });
+});
+
 function fakeFetch(impl: (url: string) => ReturnType<FetchLike>): FetchLike {
   return vi.fn(impl);
 }

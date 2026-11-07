@@ -18,6 +18,7 @@ import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attac
 import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
 import { UNTRUSTED_DATA_NOTE } from './envelope.js';
 import { protocolSkewParts } from './protocol-version.js';
+import { ToolMessageError } from './tool-message-error.js';
 import { type TunnelStatus, tunnelErrorLabel } from './tools.js';
 
 /** MCP tool-result 에러 응답 형식. */
@@ -434,7 +435,11 @@ export function classifyToolError(
   toolName: string,
   isLocal = false,
   gone?: PageGoneContext,
+  attached = false,
 ): McpErrorResult {
+  // 이 서버가 직접 만든 안내 문장은 그대로 돌려준다 (페이지가 보낸 문구가 아니다).
+  if (err instanceof ToolMessageError) return mcpError(err.message);
+
   const message = err instanceof Error ? err.message : String(err);
 
   // 상태 2: page 미attach (sendCommand 경로가 던지는 패턴). 끊긴 적이 있으면 시각·원인을 말한다.
@@ -482,9 +487,9 @@ export function classifyToolError(
   // 그 외: 원본 메시지를 포함하되 list_pages 다음 행동 안내 추가.
   // 메시지는 페이지·CDP가 보낸 문구일 수 있다 — 정제(제어 문자 제거·200자 제한)하고
   // 신뢰 불가 데이터 표지를 붙여 지시로 읽히지 않게 한다.
-  return mcpError(
-    `${toolName} 실패: ${sanitizeRemoteText(message)}\n` +
-      `${UNTRUSTED_DATA_NOTE}\n` +
-      'list_pages로 미니앱이 relay에 attach됐는지 확인하세요.',
-  );
+  // 이미 attach된 상태에서 페이지가 돌려준 오류면 attach 확인 안내는 붙이지 않는다
+  // (원인이 attach가 아니라 페이지 쪽이므로 엉뚱한 곳을 보게 만든다).
+  const base = `${toolName} 실패: ${sanitizeRemoteText(message)}\n${UNTRUSTED_DATA_NOTE}`;
+  if (attached) return mcpError(base);
+  return mcpError(`${base}\nlist_pages로 미니앱이 relay에 attach됐는지 확인하세요.`);
 }

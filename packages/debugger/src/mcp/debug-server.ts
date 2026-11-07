@@ -859,7 +859,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             return unknownTool(name);
         }
       } catch (err) {
-        return errorResult(err, name);
+        return errorResult(err, name, false, undefined, conn.listTargets().length > 0);
       }
     }
 
@@ -1245,7 +1245,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       // issue #360: sdk-absent 분류가 local 세션이면 로컬 dev 브리지 안내
       // (sdkAbsentError의 isLocal 분기, errors.ts)로 갈리도록 connection 종류를
       // 넘긴다. 다른 에러 분류에는 영향 없음(isLocal 미사용).
-      return errorResult(err, name, conn.kind === 'local', pageGoneContext());
+      return errorResult(err, name, conn.kind === 'local', pageGoneContext(), pageAttached());
     }
   });
 
@@ -1522,8 +1522,14 @@ function classifyEnableDomainError(err: unknown, toolName: string, gone?: PageGo
  * CDP/AIT 명령 실행 중 catch된 에러를 4상태로 분류해 tool 결과로 반환한다.
  * debug-server 내부 try/catch 블록에서 공통으로 사용한다.
  */
-function errorResult(err: unknown, name: string, isLocal = false, gone?: PageGoneContext) {
-  return classifyToolError(err, name, isLocal, gone);
+function errorResult(
+  err: unknown,
+  name: string,
+  isLocal = false,
+  gone?: PageGoneContext,
+  attached = false,
+) {
+  return classifyToolError(err, name, isLocal, gone, attached);
 }
 
 /**
