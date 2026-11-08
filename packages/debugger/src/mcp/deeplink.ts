@@ -8,6 +8,8 @@
  * `start_attach` in the env-3 dog-food path.
  */
 
+import { RELAY_CERT_PARAM } from '@apps-in-toss/internal-protocol/relay-signature';
+
 /**
  * Build a self-attaching dog-food deep-link.
  *
@@ -121,7 +123,10 @@ function stripExisting(query: string, key: string): string {
  *   caller that mints a new code passes the signature made for that code.
  * @param host - Optional developer computer name and its signature (`ahn=<name>&ahs=<sig>`,
  *   see `relay-signing.ts`). Clients that predate the name ignore both parameters.
- * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&ahn=<name>&ahs=<sig>][&rid=<runId>]`
+ * @param cert - Optional session certificate that signed `sig` (`arc=<cert>`, 180
+ *   characters, see `relay-signing.ts`). A client that predates it ignores the parameter;
+ *   the current client verifies the link with it and never asks the relay for a certificate.
+ * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&ahn=<name>&ahs=<sig>][&arc=<cert>][&rid=<runId>]`
  *   appended.
  * @throws If `wssUrl` is not a `wss:` URL (the gate rejects anything else, so
  *   producing such a link would be a silent dead end), or if `totpCode` is empty.
@@ -133,6 +138,7 @@ export function buildDeepLinkAttachUrl(
   runId?: string,
   sig?: string,
   host?: { readonly name: string; readonly sig: string },
+  cert?: string,
 ): string {
   let relay: URL;
   try {
@@ -167,6 +173,9 @@ export function buildDeepLinkAttachUrl(
   if (host !== undefined && host.name !== '' && host.sig !== '') {
     appended.push(['ahn', host.name], ['ahs', host.sig]);
   }
+  if (cert !== undefined && cert !== '') {
+    appended.push([RELAY_CERT_PARAM, cert]);
+  }
   if (runId !== undefined && runId !== '') {
     appended.push(['rid', runId]);
   }
@@ -177,6 +186,7 @@ export function buildDeepLinkAttachUrl(
   query = stripExisting(query, 'sig');
   query = stripExisting(query, 'ahn');
   query = stripExisting(query, 'ahs');
+  query = stripExisting(query, RELAY_CERT_PARAM);
   query = stripExisting(query, 'rid');
 
   for (const [key] of appended) {

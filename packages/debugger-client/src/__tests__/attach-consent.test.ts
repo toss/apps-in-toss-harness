@@ -10,10 +10,8 @@ import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   attachSignatures,
-  relayCertDocument,
   relayPublicKey,
   resetRelaySessionKey,
-  signRelay,
 } from '../../../debugger/src/mcp/relay-signing.js';
 import {
   CONSENT_MAX_ORIGINS,
@@ -50,11 +48,11 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 let originalWebSocket: typeof WebSocket;
 
 function setPage(): void {
-  const sig = signRelay(SECRET, RELAY, AT);
+  const signed = attachSignatures(SECRET, RELAY, AT);
   window.history.replaceState(
     null,
     '',
-    `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${sig}&keep=1#h`,
+    `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&arc=${signed?.cert}&keep=1#h`,
   );
 }
 
@@ -70,17 +68,29 @@ function button(action: 'connect' | 'cancel'): HTMLButtonElement {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** Starts an attach; the pending promise is wrapped so `await` does not wait for it. */
-async function start(): Promise<{ pending: Promise<void> | undefined }> {
+/**
+ * Starts an attach; the pending promise is wrapped so `await` does not wait for it.
+ * Verification is real async crypto, so wait (a bounded number of ticks) for the dialog.
+ */
+async function start(keys: string[] = [KEY]): Promise<{ pending: Promise<void> | undefined }> {
   const { maybeAttach } = await import('../attach.js');
-  const pending = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-  await flush();
+  const pending = maybeAttach(GATE, { relayPublicKeys: keys });
+  for (let i = 0; i < 50 && dialogRoot() === null; i++) await flush();
   return { pending };
+}
+
+let xhrOpenSpy: ReturnType<typeof vi.spyOn>;
+let appendSpy: ReturnType<typeof vi.spyOn>;
+
+function scriptAppends(): number {
+  return appendSpy.mock.calls.filter((c: unknown[]) => c[0] instanceof HTMLScriptElement).length;
 }
 
 function expectNothingSent(): void {
   expect(fetchSpy).not.toHaveBeenCalled();
+  expect(xhrOpenSpy).not.toHaveBeenCalled();
   expect(SpyWebSocket.calls).toBe(0);
+  expect(scriptAppends()).toBe(0);
   expect(document.head.querySelector('script')).toBeNull();
 }
 
@@ -93,17 +103,10 @@ beforeEach(() => {
   delete (window as unknown as Record<string, unknown>).__ait_debug_status;
   delete (window as unknown as Record<string, unknown>).__ait_relay_ws_observed;
   vi.stubGlobal('crypto', webcrypto);
-  fetchSpy = vi.fn((url: unknown) =>
-    String(url).endsWith('/relay-cert')
-      ? Promise.resolve({
-          status: 200,
-          redirected: false,
-          headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(relayCertDocument(SECRET))),
-        })
-      : Promise.resolve({ status: 200 }),
-  );
+  fetchSpy = vi.fn(() => Promise.resolve({ status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
+  xhrOpenSpy = vi.spyOn(XMLHttpRequest.prototype, 'open');
+  appendSpy = vi.spyOn(Node.prototype, 'appendChild');
   SpyWebSocket.calls = 0;
   originalWebSocket = window.WebSocket;
   window.WebSocket = SpyWebSocket as unknown as typeof WebSocket;
@@ -157,7 +160,8 @@ describe('consent dialog before a first attach', () => {
     await pending;
     expect(dialogRoot()).toBeNull();
     expect(document.head.querySelector('script')).not.toBeNull();
-    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/relay-cert'))).toBe(true);
+    // The certificate came with the link: the relay was never asked for it.
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/relay-cert'))).toBe(false);
     const stored = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '[]');
     expect(stored).toHaveLength(1);
     expect(Object.keys(stored[0]).sort()).toEqual(['o', 't']);
@@ -188,35 +192,40 @@ describe('consent dialog before a first attach', () => {
     expect(consentBody('wss://127.0.0.1:8443')).toContain('(127.0.0.1:8443)');
   });
 
-  it('"연결" on a link that fails verification remembers nothing', async () => {
+  it('a link that fails verification never shows the dialog, sends nothing and remembers nothing', async () => {
     window.history.replaceState(
       null,
       '',
-      `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${'A'.repeat(8)}.${'A'.repeat(86)}`,
+      `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${'A'.repeat(8)}.${'A'.repeat(86)}&arc=${attachSignatures(SECRET, RELAY, AT)?.cert}&keep=1`,
     );
     const { pending } = await start();
-    button('connect').click();
     await pending;
-    expect(document.head.querySelector('script')).toBeNull();
+    expect(dialogRoot()).toBeNull();
+    expectNothingSent();
+    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
     expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
     // The refused attach leaves no credential in the URL or on the history entry.
     const params = new URLSearchParams(window.location.search);
-    expect(params.has('at')).toBe(false);
-    expect(params.has('sig')).toBe(false);
-    expect(params.has('relay')).toBe(false);
+    for (const name of ['at', 'sig', 'relay', 'arc']) expect(params.has(name)).toBe(false);
     expect(params.get('debug')).toBe('1');
     expect(window.history.state?.__ait_debug_attach).toBeUndefined();
   });
 
-  it('"연결" on a link whose certificate cannot be fetched leaves no at or sig behind', async () => {
-    fetchSpy.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
+  it('a link without a certificate (a debugger older than 0.3.2) asks for an update, no dialog, no request', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT);
+    window.history.replaceState(
+      null,
+      '',
+      `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&keep=1#h`,
+    );
     const { pending } = await start();
-    button('connect').click();
     await pending;
-    expect(document.head.querySelector('script')).toBeNull();
+    expect(dialogRoot()).toBeNull();
+    expectNothingSent();
+    expect(window.__ait_debug_status).toBe('blocked-debugger-update');
     expect(window.location.search).toBe('?debug=1&keep=1');
-    expect(window.location.hash).toBe('#h');
     expect(window.history.state?.__ait_debug_attach).toBeUndefined();
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
 
   it('a verified attach still keeps the values on the history entry for a reload', async () => {
@@ -396,6 +405,7 @@ describe('developer computer name in the dialog', () => {
       sig: signed?.sig ?? '',
       ahn: name,
       ahs: signed?.hostSig ?? '',
+      arc: signed?.cert ?? '',
     });
     edit?.(q);
     window.history.replaceState(null, '', `/p?${q.toString()}`);
@@ -412,22 +422,18 @@ describe('developer computer name in the dialog', () => {
   }
 
   const bodyText = () => dialogRoot()?.getElementById('body')?.textContent;
-  const certFetches = () =>
-    fetchSpy.mock.calls.filter(([url]) => String(url).endsWith('/relay-cert')).length;
 
   it('shows the verified name instead of the tunnel host, then attaches', async () => {
     setNamedPage();
     const { pending } = await startAndWait();
     expect(bodyText()).toBe(NAME_BODY);
-    // Only the public certificate document was requested before the answer.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(SpyWebSocket.calls).toBe(0);
-    expect(document.head.querySelector('script')).toBeNull();
+    // The name is verified against the certificate in the link: nothing was requested.
+    expectNothingSent();
     button('connect').click();
     await pending;
     expect(document.head.querySelector('script')).not.toBeNull();
-    // The document fetched for the name is reused by the attach check.
-    expect(certFetches()).toBe(1);
+    // Only the version handshake went out, after "연결"; never a certificate request.
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/relay-cert'))).toBe(false);
     // Consent is still remembered per relay origin, with no name stored.
     const text = window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '';
     expect(JSON.parse(text)[0].o).toBe(RELAY);
@@ -469,15 +475,13 @@ describe('developer computer name in the dialog', () => {
     await pending;
   });
 
-  it('does not accept a name signed under a different root key', async () => {
-    const { pending } = await (async () => {
-      setNamedPage();
-      return startAndWait([relayPublicKey('22'.repeat(32))]);
-    })();
-    expect(dialogRoot()).not.toBeNull();
-    expect(bodyText()).toBe(TUNNEL_BODY);
-    button('cancel').click();
+  it('a link signed under a different root key never reaches the dialog', async () => {
+    setNamedPage();
+    const { pending } = await start([relayPublicKey('22'.repeat(32))]);
     await pending;
+    expect(dialogRoot()).toBeNull();
+    expectNothingSent();
+    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
   });
 
   it('an old-daemon link (no name) is unchanged: nothing is requested before the answer', async () => {
@@ -505,5 +509,135 @@ describe('developer computer name in the dialog', () => {
     expect(consentBody('wss://abc.trycloudflare.com', 'dev-mac')).toContain('(dev-mac)');
     expect(consentBody('wss://abc.trycloudflare.com', null)).toContain('(abc.trycloudflare.com)');
     expect(consentBody(null, 'dev-mac')).toContain('(dev-mac)');
+  });
+});
+
+describe('nothing leaves for the relay before "연결"', () => {
+  const HOUR = 3_600_000;
+
+  /** Page URL of a daemon link; `edit` can break one part of it. */
+  function setLink(
+    edit?: (q: URLSearchParams) => void,
+    signedWith: { secret?: string; relay?: string; at?: string; now?: number } = {},
+  ): void {
+    const signed = attachSignatures(
+      signedWith.secret ?? SECRET,
+      signedWith.relay ?? RELAY,
+      signedWith.at ?? AT,
+      'dev-mac',
+      signedWith.now ?? Date.now(),
+    );
+    const q = new URLSearchParams({
+      debug: '1',
+      relay: RELAY,
+      at: AT,
+      sig: signed?.sig ?? '',
+      ahn: 'dev-mac',
+      ahs: signed?.hostSig ?? '',
+      arc: signed?.cert ?? '',
+    });
+    edit?.(q);
+    window.history.replaceState(null, '', `/p?${q.toString()}`);
+  }
+
+  it('a valid link: the dialog appears with zero fetch, XHR, WebSocket or script injection', async () => {
+    setLink();
+    const { pending } = await start();
+    expect(dialogRoot()).not.toBeNull();
+    expectNothingSent();
+    // Still nothing a moment later, while the person reads the dialog.
+    await flush();
+    await flush();
+    expectNothingSent();
+    button('connect').click();
+    await pending;
+    expect(scriptAppends()).toBe(1);
+  });
+
+  const invalid: Array<[string, () => void, string]> = [
+    [
+      'tampered link signature',
+      () =>
+        setLink((q) =>
+          q.set(
+            'sig',
+            `${(q.get('sig') ?? '').slice(0, 20)}${'A'.repeat(5)}${(q.get('sig') ?? '').slice(25)}`,
+          ),
+        ),
+      'blocked-relay-signature',
+    ],
+    [
+      'link signed for another code',
+      () => setLink(undefined, { at: 'f'.repeat(32) }),
+      'blocked-relay-signature',
+    ],
+    [
+      'link signed for another relay',
+      () => setLink(undefined, { relay: OTHER_RELAY }),
+      'blocked-relay-signature',
+    ],
+    [
+      'certificate under another root',
+      () => setLink(undefined, { secret: '22'.repeat(32) }),
+      'blocked-relay-signature',
+    ],
+    [
+      'expired certificate',
+      () => setLink(undefined, { now: Date.now() - 2 * HOUR }),
+      'blocked-relay-signature',
+    ],
+    [
+      'malformed certificate',
+      () => setLink((q) => q.set('arc', 'AAAA')),
+      'blocked-relay-signature',
+    ],
+    ['missing certificate', () => setLink((q) => q.delete('arc')), 'blocked-debugger-update'],
+    ['missing sig', () => setLink((q) => q.delete('sig')), 'blocked-relay-signature'],
+  ];
+
+  it.each(invalid)(
+    'an invalid link (%s): no dialog, and zero fetch, XHR, WebSocket or script',
+    async (_n, make, status) => {
+      make();
+      const { pending } = await start();
+      await pending;
+      expect(dialogRoot()).toBeNull();
+      expectNothingSent();
+      expect(window.__ait_debug_status).toBe(status);
+      expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+    },
+  );
+
+  it('declining a valid link also sends nothing, ever', async () => {
+    setLink();
+    const { pending } = await start();
+    button('cancel').click();
+    await pending;
+    await flush();
+    expectNothingSent();
+  });
+});
+
+describe('debugger-client 0.3.1 compatibility (daemon side)', () => {
+  it('a new daemon link still carries the 0.3.1 shape: sig unchanged in form, extra params only added', async () => {
+    const { buildDeepLinkAttachUrl } = await import('../../../debugger/src/mcp/deeplink.js');
+    const signed = attachSignatures(SECRET, RELAY, AT, 'dev-mac');
+    const url = buildDeepLinkAttachUrl(
+      'intoss-private://app?_deploymentId=abc',
+      RELAY,
+      AT,
+      undefined,
+      signed?.sig,
+      { name: 'dev-mac', sig: signed?.hostSig ?? '' },
+      signed?.cert,
+    );
+    const q = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+    // What a 0.3.1 client reads.
+    expect(q.get('relay')).toBe(RELAY);
+    expect(q.get('at')).toBe(AT);
+    expect(q.get('sig')).toMatch(/^[A-Za-z0-9_-]{8}\.[A-Za-z0-9_-]{86}$/);
+    // What it ignores.
+    expect(q.get('arc')).toHaveLength(180);
+    expect(q.get('ahn')).toBe('dev-mac');
   });
 });

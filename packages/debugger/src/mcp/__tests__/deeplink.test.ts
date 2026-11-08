@@ -250,3 +250,34 @@ describe('buildDeepLinkAttachUrl computer name', () => {
     expect(fresh).toContain('ahn=new');
   });
 });
+
+describe('buildDeepLinkAttachUrl certificate', () => {
+  const SCHEME = 'intoss-private://sample-app?_deploymentId=019e3b40-aaaa';
+  const WSS = 'wss://abc-def.trycloudflare.com';
+  const AT = '0123456789abcdef0123456789abcdef';
+  const ARC = 'C'.repeat(180);
+
+  it('adds arc after the name and before rid, and omits it without a certificate', () => {
+    const url = buildDeepLinkAttachUrl(
+      SCHEME,
+      WSS,
+      AT,
+      'rid1',
+      'kid.sig',
+      { name: 'dev-mac', sig: 'S'.repeat(86) },
+      ARC,
+    );
+    const q = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+    expect(q.get('arc')).toBe(ARC);
+    expect(url.indexOf('ahs=')).toBeLessThan(url.indexOf('arc='));
+    expect(url.indexOf('arc=')).toBeLessThan(url.indexOf('rid='));
+    expect(buildDeepLinkAttachUrl(SCHEME, WSS, AT, 'rid1', 'kid.sig')).not.toContain('arc=');
+  });
+
+  it('replaces a stale certificate from a previous link', () => {
+    const stale = `${SCHEME}&arc=old`;
+    expect(buildDeepLinkAttachUrl(stale, WSS, AT)).not.toContain('arc=');
+    const fresh = buildDeepLinkAttachUrl(stale, WSS, AT, undefined, undefined, undefined, ARC);
+    expect(fresh.match(/arc=/g)).toHaveLength(1);
+  });
+});

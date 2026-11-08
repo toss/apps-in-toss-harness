@@ -16,9 +16,10 @@
  * memory only, never written anywhere and never logged. It is replaced every
  * {@link SESSION_KEY_ROTATE_MS} (lazily, on the next signature after that) or
  * when the root changes. The attach link carries only a short key id and the
- * link signature; the relay serves the certificates ({@link relayCertDocument})
- * of the session keys that have not expired, so a link signed just before a
- * rotation still finds its certificate. Its certificate is valid from
+ * link signature, plus the one certificate that signed it (`arc`, 180
+ * characters), so the device never asks the relay for it. The relay still
+ * serves the certificates ({@link relayCertDocument}) of the session keys that
+ * have not expired, but only for debugger-client 0.3.1, which fetches them. Its certificate is valid from
  * {@link CERT_BACKDATE_SECONDS} before issue to {@link CERT_VALID_AFTER_ISSUE_SECONDS}
  * after it, which leaves a link signed by the oldest session key at least
  * 10 minutes of certificate time and tolerates a phone clock up to 5 minutes
@@ -45,6 +46,7 @@ import {
   sign,
 } from 'node:crypto';
 import {
+  formatRelayCertParam,
   formatRelaySignature,
   RELAY_CERT_DOCUMENT_MAX_CERTS,
   RELAY_CERT_DOCUMENT_VERSION,
@@ -192,7 +194,10 @@ export function resetRelaySessionKey(): void {
 }
 
 /**
- * The certificate document the relay serves at `RELAY_CERT_PATH`: the
+ * The certificate document the relay serves at `RELAY_CERT_PATH`, kept only
+ * for debugger-client 0.3.1 (it fetches this after consent; later clients read
+ * `arc` from the link). Remove with the route once the runtime floor is above
+ * 0.3.1. It lists the
  * certificates of this process's session keys under `secretHex` that have not
  * expired, newest first. Public data. It never creates a session key; with no
  * valid secret, or before the first link was signed, the list is empty.
@@ -219,8 +224,8 @@ export function relayCertDocument(
  *   origin is signed.
  * @param atCode - The `at` code of the same attach link.
  * @param nowMs - Clock for session rotation and the certificate window.
- * @returns The `sig` value (`<keyId>.<linkSig>`); the certificate is served by
- *   the relay.
+ * @returns The `sig` value (`<keyId>.<linkSig>`); the certificate travels in `arc`
+ *   (see {@link attachSignatures}).
  */
 export function signRelay(
   secretHex: string,
@@ -247,6 +252,11 @@ export interface AttachSignatures {
    * never reads it.
    */
   readonly hostSig?: string;
+  /**
+   * `arc` value: the session certificate that signed `sig` (public data, 180
+   * characters), so the device verifies the link without asking the relay.
+   */
+  readonly cert?: string | undefined;
 }
 
 /**
@@ -272,9 +282,11 @@ export function attachSignatures(
       current.cert.pub,
       signP1363(current.privateKey, relayLinkMessage(origin, atCode)),
     );
-    if (hostName === undefined) return { sig };
+    const cert = formatRelayCertParam(current.cert) ?? undefined;
+    if (hostName === undefined) return { sig, cert };
     return {
       sig,
+      cert,
       hostSig: signP1363(current.privateKey, relayHostMessage(origin, atCode, hostName)),
     };
   } catch {

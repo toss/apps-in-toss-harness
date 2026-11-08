@@ -6,11 +6,7 @@
  */
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  relayCertDocument,
-  relayPublicKey,
-  signRelay,
-} from '../../../debugger/src/mcp/relay-signing.js';
+import { attachSignatures, relayPublicKey } from '../../../debugger/src/mcp/relay-signing.js';
 
 const SECRET = '11'.repeat(32);
 const KEY = relayPublicKey(SECRET);
@@ -43,16 +39,7 @@ beforeEach(() => {
   vi.stubGlobal('crypto', webcrypto);
   vi.stubGlobal(
     'fetch',
-    vi.fn((url: unknown) =>
-      String(url).endsWith('/relay-cert')
-        ? Promise.resolve({
-            status: 200,
-            redirected: false,
-            headers: { get: () => null },
-            text: () => Promise.resolve(JSON.stringify(relayCertDocument(SECRET))),
-          })
-        : Promise.resolve({ status: 200 }),
-    ),
+    vi.fn(() => Promise.resolve({ status: 200 })),
   );
   originalWebSocket = window.WebSocket;
   window.WebSocket = SpyWebSocket as unknown as typeof WebSocket;
@@ -91,8 +78,9 @@ describe('/auto — SDK bridge needs an accepted attach', () => {
   });
 
   it('a signed attach installs the bridge once the signature check settles', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT);
     setPage(
-      `debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signRelay(SECRET, RELAY, AT)}`,
+      `debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&arc=${signed?.cert}`,
     );
     globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
     await import('../auto.js');

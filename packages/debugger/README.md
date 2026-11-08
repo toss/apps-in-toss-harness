@@ -53,7 +53,7 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-to
 
 ### 공개키 출력 (`debugger relay-key`)
 
-QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 프로젝트 폴더에서 `npx -p <tgz URL> debugger relay-key`(`--project <경로>` 선택)를 실행하면 `.ait_relay`가 없을 때 만들고, 공개키만 stdout에 한 줄로 출력한다. 이 값을 `startDebugConsole({ relayPublicKeys: ['…'] })`에 넣는다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 이 공개키는 루트 키이고, 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실려 QR이 작고, 인증서는 relay가 `GET /relay-cert`로 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음). 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다. 세션 키는 파일이나 로그에 남지 않는다.
+QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 프로젝트 폴더에서 `npx -p <tgz URL> debugger relay-key`(`--project <경로>` 선택)를 실행하면 `.ait_relay`가 없을 때 만들고, 공개키만 stdout에 한 줄로 출력한다. 이 값을 `startDebugConsole({ relayPublicKeys: ['…'] })`에 넣는다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 이 공개키는 루트 키이고, 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.3.1을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 런타임 최소 버전이 0.3.1을 넘으면 이 경로는 없앨 수 있다. 0.3.2 클라이언트는 `arc`가 없는 링크(0.3.1 이하 디버거)를 연결하지 않고 업데이트를 안내한다. 세션 키는 파일이나 로그에 남지 않는다.
 
 #### 키 교체 (`debugger relay-key --rotate`)
 

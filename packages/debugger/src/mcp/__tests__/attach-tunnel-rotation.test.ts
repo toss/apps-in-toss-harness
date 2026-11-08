@@ -5,6 +5,7 @@
 import { webcrypto } from 'node:crypto';
 import {
   parseRelayCertDocument,
+  parseRelayCertParam,
   parseRelaySignature,
   relayCertMessage,
   relayLinkMessage,
@@ -215,5 +216,28 @@ describe('mintAttachUrl computer name', () => {
     expect(q.has('ahn')).toBe(false);
     expect(q.has('ahs')).toBe(false);
     expect(q.get('sig')).not.toBeNull();
+  });
+});
+
+describe('mintAttachUrl certificate', () => {
+  const tunnel = { current: { up: true, wssUrl: OLD_WSS } as TunnelStatus };
+  const query = (url: string) => new URLSearchParams(url.slice(url.indexOf('?') + 1));
+
+  it('carries the certificate of the session key that signed the link (arc, 180 characters), with or without a name', () => {
+    for (const getHostName of [() => 'dev-mac', () => undefined]) {
+      const q = query(mintAttachUrl({ ...depsFor(tunnel), getHostName }, parts));
+      expect(q.getAll('arc')).toHaveLength(1);
+      expect(q.get('arc')).toMatch(/^[A-Za-z0-9_-]{180}$/);
+      expect(parseRelayCertParam(q.get('arc'))?.keyId).toBe(
+        parseRelaySignature(q.get('sig'))?.keyId,
+      );
+    }
+  });
+
+  it('the certificate is served at /relay-cert too, for debugger-client 0.3.1', () => {
+    const q = query(mintAttachUrl(depsFor(tunnel), parts));
+    const arc = parseRelayCertParam(q.get('arc'));
+    const listed = parseRelayCertDocument(JSON.stringify(relayCertDocument(SECRET))) ?? [];
+    expect(listed.some((c) => c.certSignature === arc?.certSignature)).toBe(true);
   });
 });

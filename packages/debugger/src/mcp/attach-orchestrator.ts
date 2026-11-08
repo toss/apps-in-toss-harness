@@ -485,6 +485,7 @@ export function mintAttachUrl(deps: AttachDeps, parts: AttachUrlParts): string {
     hostName !== undefined && signed?.hostSig !== undefined
       ? { name: hostName, sig: signed.hostSig }
       : undefined,
+    signed?.cert,
   );
 }
 

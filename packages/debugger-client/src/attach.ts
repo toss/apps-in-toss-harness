@@ -41,11 +41,9 @@ import {
   decodeBase64Url,
   isRelayHostName,
   isRelayPublicKey,
-  parseRelayCertDocument,
+  parseRelayCertParam,
   parseRelayHostSignature,
   parseRelaySignature,
-  RELAY_CERT_DOCUMENT_MAX_BYTES,
-  RELAY_CERT_PATH,
   RELAY_PUBLIC_KEY_BYTES,
   type RelayCert,
   relayCertMessage,
@@ -60,8 +58,6 @@ import { checkDebugGate, type GateResult } from './index.js';
 import {
   dropPageAttachParams,
   hidePageAttachParams,
-  keepVerifiedRelayCert,
-  keptRelayCert,
   pageAttachParamsFromHistory,
   readPageAttachParams,
   relayDeviceId,
@@ -725,18 +721,17 @@ export function installRelayWsObserver(relayUrl: string): void {
  * short-lived session key, certified by one of the root public keys the bundle
  * carries (`options.relayPublicKeys`, else `globalThis.__AIT_DEBUG_RELAY_KEYS__`)
  * for a window that contains the device clock, signs the relay origin and the
- * `at` code. The certificate comes from the relay itself: before verification
- * the page sends exactly one request, a GET for the public certificate document
- * (`/relay-cert`, no `at` code, no credentials, no cache, no redirects, 3 s and
- * 4 KB caps), and parses the answer as data. Nothing from the relay is executed
- * and nothing else is sent (no version handshake, no script, no WebSocket), and
- * the page URL stays as it is, until the signature verifies. A same-page reload
- * that reads the values back from the history entry reuses the certificate kept
- * there (no request) and skips only the clock check. It fails closed: no
- * keys, no WebCrypto, a malformed key or a bad signature stop the attach and set
- * `blocked-relay-key` or `blocked-relay-signature`. Because the check is
- * asynchronous, the call returns a promise on such pages; loopback pages attach
- * synchronously and return nothing.
+ * `at` code. The certificate travels in the link itself (`arc`, 180 characters,
+ * public data), so the whole check is local: the page never asks the relay for
+ * a certificate, and nothing at all is sent to the relay (no request, no
+ * WebSocket, no script) until the person taps "연결" in the consent dialog. A
+ * link without `arc` comes from a debugger older than 0.3.2: the page shows
+ * `blocked-debugger-update` and does not attach. A same-page reload that reads
+ * the values back from the history entry skips only the clock check. It fails
+ * closed: no keys, no WebCrypto, a malformed key, certificate or signature stop
+ * the attach and set `blocked-relay-key` or `blocked-relay-signature`. Because
+ * the check is asynchronous, the call returns a promise on such pages; loopback
+ * pages attach synchronously and return nothing.
  *
  * @param gateResult - Optional pre-evaluated gate result for testability.
  *   Defaults to `checkDebugGate()` which reads the current page URL. Passing a
@@ -831,6 +826,7 @@ export function maybeAttach(
     gateResult.relayUrl,
     atCode,
     params.sig,
+    params.arc,
     { name: params.ahn, sig: params.ahs },
     options,
   ).finally(() => {
@@ -839,44 +835,47 @@ export function maybeAttach(
 }
 
 /**
- * Asks the person before a first attach from the URL (consent.ts), then
- * verifies. A same-page reload of a page that already attached does not ask,
- * nor does a relay origin the person accepted within the last day. Nothing is
- * requested from the relay before the answer; "취소" drops the attach values
- * from the URL and history and leaves no banner. A failed verification drops
- * them too (see {@link verifyThenInject}); only an attach that succeeded keeps
- * them, on the history entry, for a reload.
+ * Verifies the link locally (certificate and signatures, no network), then asks
+ * the person before a first attach from the URL (consent.ts). A same-page
+ * reload of a page that already attached does not ask, nor does a relay origin
+ * the person accepted within the last day. Nothing is sent to the relay before
+ * the answer, on any path; "취소" drops the attach values from the URL and
+ * history and leaves no banner. A failed verification drops them too (see
+ * {@link failAttach}); only an attach that succeeded keeps them, on the history
+ * entry, for a reload.
  */
 async function consentThenVerify(
   relayUrl: string,
   atCode: string,
   sig: string | null,
+  arc: string | null,
   host: { readonly name: string | null; readonly sig: string | null },
   options: MaybeAttachOptions | undefined,
 ): Promise<void> {
   const fromHistory = pageAttachParamsFromHistory();
   const origin = relayOriginOf(relayUrl);
+  const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
+  const verdict = await verifyRelaySignature(relayUrl, atCode, sig, arc, keys, fromHistory);
+  if (verdict.kind !== 'ok') {
+    failAttach(verdict.kind);
+    return;
+  }
   let asked = false;
-  let prefetchedCert: string | null = null;
   if (!fromHistory && (origin === null || !isRelayOriginConsented(origin))) {
     asked = true;
-    // The computer name in the dialog is shown only when its signature
-    // verifies, which needs the relay's public certificate document. That one
-    // GET (no code, no credentials) is the only request before the answer, and
-    // only for a link that carries a name.
+    // The computer name is shown only when its signature verifies under the
+    // certificate that just verified the link (local, no request).
     let hostName: string | null = null;
     if (origin !== null && host.name !== null && host.sig !== null) {
-      const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
-      const checked = await verifyHostName(origin, atCode, sig, host.name, host.sig, keys);
-      hostName = checked.name;
-      prefetchedCert = checked.certDocument;
+      hostName = await verifyHostName(verdict.cert, origin, atCode, host.name, host.sig);
     }
     if (!(await askAttachConsent(origin, hostName))) {
       dropPageAttachParams();
       return;
     }
   }
-  await verifyThenInject(relayUrl, atCode, sig, options, fromHistory, prefetchedCert);
+  // Re-check after the awaits: another path may have attached meanwhile.
+  if (!attached) injectRelay(relayUrl, atCode);
   if (asked && attached && origin !== null) rememberRelayOriginConsent(origin);
 }
 
@@ -906,15 +905,14 @@ declare global {
 let attachInFlight = false;
 
 type SignatureVerdict =
-  | { readonly kind: 'ok'; readonly certDocument: string }
+  | { readonly kind: 'ok'; readonly cert: RelayCert }
   | { readonly kind: 'no-key' }
+  | { readonly kind: 'needs-update' }
   | { readonly kind: 'bad-signature' };
 
 const NO_KEY: SignatureVerdict = { kind: 'no-key' };
+const NEEDS_UPDATE: SignatureVerdict = { kind: 'needs-update' };
 const BAD_SIGNATURE: SignatureVerdict = { kind: 'bad-signature' };
-
-/** How long the certificate request may take before the attach is refused. */
-export const RELAY_CERT_FETCH_TIMEOUT_MS = 3_000;
 
 const ECDSA_P256 = { name: 'ECDSA', namedCurve: 'P-256' } as const;
 const ECDSA_SHA256 = { name: 'ECDSA', hash: 'SHA-256' } as const;
@@ -941,77 +939,6 @@ async function verifyWith(
   }
 }
 
-/** Reads at most `limit` bytes of a response body as text, or `null` when it is longer. */
-async function readCapped(res: Response, limit: number): Promise<string | null> {
-  const declared = Number(res.headers?.get?.('content-length') ?? '');
-  if (Number.isFinite(declared) && declared > limit) return null;
-  const reader = res.body?.getReader?.();
-  if (reader === undefined) {
-    const text = await res.text();
-    return new TextEncoder().encode(text).length > limit ? null : text;
-  }
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    if (total > limit) {
-      void reader.cancel().catch(() => {});
-      return null;
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-}
-
-/**
- * Fetches the relay's public certificate document. One plain GET to
- * `https://<relay host>/relay-cert`: no `at` code, no credentials, no cache, no
- * redirects, at most {@link RELAY_CERT_FETCH_TIMEOUT_MS} and
- * {@link RELAY_CERT_DOCUMENT_MAX_BYTES}. Nothing in the answer is executed; it
- * is parsed as data. `null` on any failure.
- */
-async function fetchRelayCertDocument(relayOrigin: string): Promise<string | null> {
-  if (typeof fetch !== 'function') return null;
-  const url = `https://${relayOrigin.slice('wss://'.length)}${RELAY_CERT_PATH}`;
-  const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => {
-      controller?.abort();
-      resolve(null);
-    }, RELAY_CERT_FETCH_TIMEOUT_MS);
-  });
-  const attempt = (async (): Promise<string | null> => {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        credentials: 'omit',
-        cache: 'no-store',
-        redirect: 'error',
-        referrerPolicy: 'no-referrer',
-        ...(controller !== undefined ? { signal: controller.signal } : {}),
-      });
-      if (res.status !== 200 || res.redirected === true) return null;
-      return await readCapped(res, RELAY_CERT_DOCUMENT_MAX_BYTES);
-    } catch {
-      return null;
-    }
-  })();
-  try {
-    return await Promise.race([attempt, timeout]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
-
 function parseRootKeys(keys: readonly unknown[]): Uint8Array[] {
   const rootKeys: Uint8Array[] = [];
   for (const key of keys) {
@@ -1026,102 +953,76 @@ function parseRootKeys(keys: readonly unknown[]): Uint8Array[] {
 
 /**
  * Checks the developer computer's name carried by a link (`ahn`) against its
- * signature (`ahs`): the session key that the key id in `sig` selects, under a
- * certificate a pinned root key signed and whose window holds the device clock,
- * must have signed the name together with the relay origin and the `at` code.
- * Returns the name only when all of that holds, else `null` (the dialog then
- * shows the relay host as it did before). `certDocument` is the fetched
- * document, handed on so the attach check does not fetch it again. Never throws.
+ * signature (`ahs`): the session key of the certificate that already verified
+ * the link must have signed the name together with the relay origin and the
+ * `at` code. Returns the name only when that holds, else `null` (the dialog
+ * then shows the relay host). Local only. Never throws.
  */
 async function verifyHostName(
+  cert: RelayCert,
   origin: string,
   atCode: string,
-  sig: string | null,
   name: string,
   hostSig: string,
-  keys: readonly unknown[] | undefined,
-): Promise<{ name: string | null; certDocument: string | null }> {
-  const none = { name: null, certDocument: null };
+): Promise<string | null> {
   try {
-    if (!Array.isArray(keys) || !isRelayHostName(name)) return none;
+    if (!isRelayHostName(name)) return null;
     const hostSigBytes = parseRelayHostSignature(hostSig);
-    const link = parseRelaySignature(sig);
     const subtle = globalThis.crypto?.subtle;
-    const rootKeys = parseRootKeys(keys);
-    if (hostSigBytes === null || link === null || subtle === undefined || atCode === '') {
-      return none;
-    }
-    if (rootKeys.length === 0) return none;
-    const certDocument = await fetchRelayCertDocument(origin);
-    const certs = parseRelayCertDocument(certDocument);
-    if (certs === null) return { name: null, certDocument };
-    const now = Math.floor(Date.now() / 1000);
+    if (hostSigBytes === null || subtle === undefined || atCode === '') return null;
     const message = relayHostMessage(origin, atCode, name);
-    for (const cert of certs) {
-      if (cert.keyId !== link.keyId) continue;
-      if (!(await certifiedByRoot(subtle, rootKeys, cert))) continue;
-      if (!(now >= cert.notBefore && now <= cert.notAfter)) continue;
-      if (await verifyWith(subtle, cert.sessionPublicKeyBytes, hostSigBytes, message)) {
-        return { name, certDocument };
-      }
-    }
-    return { name: null, certDocument };
+    return (await verifyWith(subtle, cert.sessionPublicKeyBytes, hostSigBytes, message))
+      ? name
+      : null;
   } catch {
-    return none;
+    return null;
   }
 }
 
 /**
- * Verifies the relay signature with WebCrypto. Fails closed on every path.
+ * Verifies the relay signature with WebCrypto, locally. Fails closed on every
+ * path. Nothing is requested from the relay.
  *
- * The only network activity is one GET for the relay's public certificate
- * document (no code, no credentials), skipped on a same-page reload that kept
- * the certificate on its history entry. Nothing from the relay is executed
- * before this returns `ok`.
- *
- * A certificate counts when it was issued for the key id in `sig`, its root
- * signature verifies against a pinned key, the device clock lies inside its
- * window, and its session key verifies the link signature. The clock check is
- * skipped only when every attach value came from the history entry
- * (`fromHistory`): this page verified them when they came from the URL.
+ * The certificate is the one in the link (`arc`). It counts when it was issued
+ * for the key id in `sig`, its root signature verifies against a pinned key,
+ * the device clock lies inside its window, and its session key verifies the
+ * link signature. The clock check is skipped only when every attach value came
+ * from the history entry (`fromHistory`): this page verified them when they
+ * came from the URL. A link without `arc` (a debugger older than 0.3.2) is
+ * `needs-update`, a malformed one is `bad-signature`.
  */
 async function verifyRelaySignature(
   relayUrl: string,
   atCode: string,
   sig: string | null,
+  arc: string | null,
   keys: readonly unknown[] | undefined,
   fromHistory: boolean,
-  prefetchedCert: string | null = null,
 ): Promise<SignatureVerdict> {
   if (!Array.isArray(keys) || keys.length === 0) return NO_KEY;
   const rootKeys = parseRootKeys(keys);
   if (rootKeys.length === 0) return NO_KEY;
+  if (arc === null || arc === '') return NEEDS_UPDATE;
 
   const subtle = globalThis.crypto?.subtle;
   if (subtle === undefined || atCode === '') return BAD_SIGNATURE;
   const origin = relayOriginOf(relayUrl);
   const link = parseRelaySignature(sig);
-  if (origin === null || link === null) return BAD_SIGNATURE;
-
-  const kept = fromHistory ? keptRelayCert() : null;
-  const certDocument = kept ?? prefetchedCert ?? (await fetchRelayCertDocument(origin));
-  const certs = parseRelayCertDocument(certDocument);
-  if (certDocument === null || certs === null) return BAD_SIGNATURE;
-
+  const cert = parseRelayCertParam(arc);
+  if (origin === null || link === null || cert === null) return BAD_SIGNATURE;
+  if (cert.keyId !== link.keyId) return BAD_SIGNATURE;
+  if (!(await certifiedByRoot(subtle, rootKeys, cert))) return BAD_SIGNATURE;
   const now = Math.floor(Date.now() / 1000);
+  if (!fromHistory && !(now >= cert.notBefore && now <= cert.notAfter)) return BAD_SIGNATURE;
   const linkMessage = relayLinkMessage(origin, atCode);
-  for (const cert of certs) {
-    if (cert.keyId !== link.keyId) continue;
-    if (!(await certifiedByRoot(subtle, rootKeys, cert))) continue;
-    if (!fromHistory && !(now >= cert.notBefore && now <= cert.notAfter)) continue;
-    if (
-      await verifyWith(subtle, cert.sessionPublicKeyBytes, link.linkSignatureBytes, linkMessage)
-    ) {
-      // Keep only the certificate that verified.
-      return { kind: 'ok', certDocument: JSON.stringify({ v: 1, certs: [certJson(cert)] }) };
-    }
-  }
-  return BAD_SIGNATURE;
+  return (await verifyWith(
+    subtle,
+    cert.sessionPublicKeyBytes,
+    link.linkSignatureBytes,
+    linkMessage,
+  ))
+    ? { kind: 'ok', cert }
+    : BAD_SIGNATURE;
 }
 
 async function certifiedByRoot(
@@ -1136,47 +1037,23 @@ async function certifiedByRoot(
   return false;
 }
 
-function certJson(cert: RelayCert): { pub: string; nb: number; na: number; sig: string } {
-  return {
-    pub: cert.sessionPublicKey,
-    nb: cert.notBefore,
-    na: cert.notAfter,
-    sig: cert.certSignature,
-  };
-}
-
-async function verifyThenInject(
-  relayUrl: string,
-  atCode: string,
-  sig: string | null,
-  options: MaybeAttachOptions | undefined,
-  fromHistory: boolean,
-  prefetchedCert: string | null = null,
-): Promise<void> {
-  const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
-  const verdict = await verifyRelaySignature(
-    relayUrl,
-    atCode,
-    sig,
-    keys,
-    fromHistory,
-    prefetchedCert,
-  );
-  if (verdict.kind === 'ok') {
-    // Re-check after the await: another path may have attached meanwhile.
-    if (!attached) {
-      injectRelay(relayUrl, atCode);
-      keepVerifiedRelayCert(verdict.certDocument);
-    }
-    return;
-  }
+/** Reports a failed verification and removes the attach values from the page. */
+function failAttach(kind: 'no-key' | 'needs-update' | 'bad-signature'): void {
   // SECRET-HANDLING: fixed labels only — no key, signature, code, host or URL.
   console.warn(
-    verdict.kind === 'no-key'
+    kind === 'no-key'
       ? '[@apps-in-toss/debugger-client] debug attach skipped — this bundle has no relay public key'
-      : '[@apps-in-toss/debugger-client] debug attach skipped — relay signature did not verify',
+      : kind === 'needs-update'
+        ? '[@apps-in-toss/debugger-client] debug attach skipped — the link has no certificate; update @apps-in-toss/debugger to 0.3.2 or later and rescan'
+        : '[@apps-in-toss/debugger-client] debug attach skipped — relay signature did not verify',
   );
-  setDebugStatus(verdict.kind === 'no-key' ? 'blocked-relay-key' : 'blocked-relay-signature');
+  setDebugStatus(
+    kind === 'no-key'
+      ? 'blocked-relay-key'
+      : kind === 'needs-update'
+        ? 'blocked-debugger-update'
+        : 'blocked-relay-signature',
+  );
   // Nothing attached, so `at` / `sig` have no reason to stay in the URL or on
   // the history entry. Only the success path keeps them (for a reload).
   dropPageAttachParams();

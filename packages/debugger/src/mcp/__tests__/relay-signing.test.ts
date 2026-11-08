@@ -1,6 +1,7 @@
 import { webcrypto } from 'node:crypto';
 import {
   parseRelayCertDocument,
+  parseRelayCertParam,
   parseRelaySignature,
   RELAY_CERT_DOCUMENT_MAX_CERTS,
   RELAY_CERT_MAX_LIFETIME_SECONDS,
@@ -327,5 +328,60 @@ describe('attachSignatures (computer name)', () => {
     expect(attachSignatures(undefined, RELAY, AT, 'x')).toBeUndefined();
     expect(attachSignatures(SECRET, RELAY, undefined, 'x')).toBeUndefined();
     expect(attachSignatures(SECRET, 'https://nope', AT, 'x')).toBeUndefined();
+  });
+});
+
+describe('attachSignatures (certificate in the link)', () => {
+  it('carries the one certificate that signed the link, 180 characters, and nothing else', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT, 'dev-mac', T0);
+    expect(signed?.cert).toMatch(/^[A-Za-z0-9_-]{180}$/);
+    const cert = parseRelayCertParam(signed?.cert);
+    expect(cert).not.toBeNull();
+    // It is the same certificate the relay lists for that key id (what 0.3.1 fetches).
+    const listed = certFor(SECRET, signed?.sig ?? '', T0);
+    expect(cert?.sessionPublicKey).toBe(listed?.sessionPublicKey);
+    expect(cert?.notBefore).toBe(listed?.notBefore);
+    expect(cert?.notAfter).toBe(listed?.notAfter);
+    expect(cert?.certSignature).toBe(listed?.certSignature);
+    // Root-signed, and the session key it names signed the link and the name.
+    const root = fromBase64Url(relayPublicKey(SECRET));
+    expect(
+      await verifyRaw(
+        root,
+        cert?.certSignatureBytes ?? new Uint8Array(),
+        relayCertMessage(cert?.sessionPublicKey ?? '', cert?.notBefore ?? 0, cert?.notAfter ?? 0),
+      ),
+    ).toBe(true);
+    const pub = cert?.sessionPublicKeyBytes ?? new Uint8Array();
+    const origin = relayOriginOf(RELAY) ?? '';
+    expect(
+      await verifyRaw(
+        pub,
+        parseRelaySignature(signed?.sig)?.linkSignatureBytes ?? new Uint8Array(),
+        relayLinkMessage(origin, AT),
+      ),
+    ).toBe(true);
+    expect(
+      await verifyRaw(
+        pub,
+        fromBase64Url(signed?.hostSig ?? ''),
+        relayHostMessage(origin, AT, 'dev-mac'),
+      ),
+    ).toBe(true);
+  });
+
+  it('follows a rotation: each link carries the certificate of its own session key', () => {
+    const first = attachSignatures(SECRET, RELAY, AT, undefined, T0);
+    const second = attachSignatures(SECRET, RELAY, AT, undefined, T0 + SESSION_KEY_ROTATE_MS + 1);
+    expect(first?.cert).not.toBe(second?.cert);
+    expect(parseRelayCertParam(first?.cert)?.keyId).toBe(parseRelaySignature(first?.sig)?.keyId);
+    expect(parseRelayCertParam(second?.cert)?.keyId).toBe(parseRelaySignature(second?.sig)?.keyId);
+  });
+
+  it('debugger-client 0.3.1 still verifies a link from this daemon through /relay-cert, ignoring arc', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT, 'dev-mac');
+    expect(signed?.cert).toBeDefined();
+    // The 0.3.1 check: the certificate from the served document, matched by key id, root and link signature.
+    expect(await verifies(relayPublicKey(SECRET), signed?.sig ?? '', RELAY, AT)).toBe(true);
   });
 });

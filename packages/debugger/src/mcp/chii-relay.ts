@@ -577,7 +577,10 @@ export interface StartChiiRelayOptions {
   /** Bind host. Default 127.0.0.1 (tunnel reaches it locally). */
   host?: string;
   /**
-   * Source of the public session certificates served at `GET /relay-cert`
+   * Source of the public session certificates served at `GET /relay-cert`.
+   * Only debugger-client 0.3.1 and earlier fetch it (the current client reads the
+   * certificate from the link's `arc`), so the route can go once the runtime floor
+   * is above them.
    * (see `@apps-in-toss/internal-protocol/relay-signature`). The route needs no
    * code, never counts toward the code lock, and follows the same Origin rule
    * as the rest of the relay. Absent, or an empty list → 404.

@@ -46,7 +46,8 @@ export type BlockedReason =
   | 'invalid-relay'
   | 'auth'
   | 'relay-signature'
-  | 'relay-key';
+  | 'relay-key'
+  | 'debugger-update';
 
 /**
  * Attach status enum — also the value of `window.__ait_debug_status`.
@@ -54,7 +55,9 @@ export type BlockedReason =
  * - `blocked-*`          gate or signature check refused (never reached the relay).
  *                        `blocked-relay-key`: the bundle carries no usable relay
  *                        public key; `blocked-relay-signature`: the QR link's
- *                        signature is missing or does not verify
+ *                        signature is missing or does not verify;
+ *                        `blocked-debugger-update`: the link carries no certificate (a
+ *                        debugger older than 0.3.2), so nothing was attempted
  * - `connecting`         target.js injected, relay socket not open yet
  * - `connected`          relay socket open
  * - `session-ended`      relay socket closed (non-4401) and did not recover
@@ -103,6 +106,10 @@ const MESSAGES: Record<Exclude<DebugStatus, 'blocked-host'>, { tone: Tone; text:
   'blocked-auth': { tone: 'error', text: RESCAN },
   'blocked-relay-signature': { tone: 'error', text: RESCAN },
   'code-expired': { tone: 'error', text: RESCAN },
+  'blocked-debugger-update': {
+    tone: 'error',
+    text: '디버거를 0.3.2 이상으로 업데이트한 뒤 새 QR을 스캔하세요.',
+  },
   'blocked-relay-key': { tone: 'error', text: '이 번들에 디버거 키가 없어요.' },
   connecting: { tone: 'info', text: '디버거에 연결하는 중이에요…' },
   connected: { tone: 'ok', text: '디버거에 연결됐어요.' },

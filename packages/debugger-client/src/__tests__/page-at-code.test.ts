@@ -31,6 +31,7 @@ describe('page-at-code', () => {
       sig: null,
       ahn: null,
       ahs: null,
+      arc: null,
     });
   });
 
@@ -42,6 +43,7 @@ describe('page-at-code', () => {
       sig: null,
       ahn: null,
       ahs: null,
+      arc: null,
     });
   });
 
@@ -160,6 +162,24 @@ describe('page-at-code', () => {
     hidePageAttachParams();
     expect(pageAttachParamsFromHistory()).toBe(true);
     history.replaceState(history.state, '', `/?ahn=x&a=1`);
+    expect(pageAttachParamsFromHistory()).toBe(false);
+  });
+
+  it('moves the session certificate (arc) off the URL with the rest, and reads it back', () => {
+    const arc = 'C'.repeat(180);
+    history.replaceState(null, '', `/?at=${CODE}&relay=${RELAY_ENC}&arc=${arc}&a=1`);
+    hidePageAttachParams();
+    expect(window.location.search).toBe('?a=1');
+    expect(readPageAttachParams()).toMatchObject({ arc });
+  });
+
+  it('a lone arc in the URL is not a reload: the clock check keeps applying', async () => {
+    const arc = 'C'.repeat(180);
+    history.replaceState(null, '', `/?at=${CODE}&relay=${RELAY_ENC}&sig=k.s&arc=${arc}`);
+    hidePageAttachParams();
+    const { pageAttachParamsFromHistory } = await import('../page-at-code.js');
+    expect(pageAttachParamsFromHistory()).toBe(true);
+    history.replaceState(history.state, '', `/?arc=${arc}`);
     expect(pageAttachParamsFromHistory()).toBe(false);
   });
 });

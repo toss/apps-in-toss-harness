@@ -25,11 +25,19 @@
  *     picks the certificate, the full key is what verifies
  *   - linkSig: session signature over {@link relayLinkMessage} (86 chars)
  *
- * Certificates: the relay answers `GET {@link RELAY_CERT_PATH}` (no code, no
- * credentials) with {@link RelayCertDocument}, the session certificates that
- * are still valid (current and earlier ones until they expire, so a rotation
- * between QR render and scan still verifies). Each certificate is the root
- * signature over {@link relayCertMessage}. The document is public data.
+ * Certificate: the link carries the one session certificate that signed it in
+ * the `arc` parameter ({@link RELAY_CERT_PARAM}), so the device never has to ask
+ * the relay for it. The certificate is the root signature over
+ * {@link relayCertMessage}; it is public data. `arc` is the compact binary form
+ * below, base64url without padding.
+ *
+ *   session public key (65) || notBefore (u32 BE) || notAfter - notBefore
+ *   (u16 BE) || root signature (64) = 135 bytes = 180 characters
+ *
+ * The relay still answers `GET {@link RELAY_CERT_PATH}` with
+ * {@link RelayCertDocument} (the valid session certificates as JSON) only for
+ * debugger-client 0.3.1 and earlier, which fetch it. Remove it once nothing
+ * below that version is supported.
  *
  *   - algorithm: ECDSA over P-256 with SHA-256 (WebCrypto; Ed25519 is missing
  *     from older Android WebViews)
@@ -52,6 +60,12 @@
 
 /** Query parameter that carries the signature. */
 export const RELAY_SIGNATURE_PARAM = 'sig';
+
+/** Query parameter that carries the session certificate (compact binary, base64url). */
+export const RELAY_CERT_PARAM = 'arc';
+
+/** Byte length of the compact certificate behind `arc`. */
+export const RELAY_CERT_COMPACT_BYTES = 135;
 
 /** Domain-separation label that starts the link message (signed by the session key). */
 export const RELAY_LINK_DOMAIN = 'ait-relay-sig-v2';
@@ -91,7 +105,11 @@ const PUBLIC_KEY_CHARS = 87;
 
 const PUBLIC_KEY_RE = new RegExp(`^[A-Za-z0-9_-]{${PUBLIC_KEY_CHARS}}$`);
 
-/** Path the relay serves the certificate document at (unauthenticated, GET). */
+/**
+ * Path the relay serves the certificate document at (unauthenticated, GET).
+ * Kept only for debugger-client 0.3.1, which fetches it; the current client
+ * reads the certificate from the link (`arc`) and never asks the relay.
+ */
 export const RELAY_CERT_PATH = '/relay-cert';
 
 /** `v` of {@link RelayCertDocument}. */
@@ -222,6 +240,62 @@ function parseCert(value: unknown): RelayCert | null {
   };
 }
 
+const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** Encodes bytes as unpadded base64url. */
+export function encodeBase64Url(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i] as number;
+    const b1 = bytes[i + 1];
+    const b2 = bytes[i + 2];
+    out += BASE64URL_ALPHABET[b0 >> 2];
+    out += BASE64URL_ALPHABET[((b0 & 3) << 4) | ((b1 ?? 0) >> 4)];
+    if (b1 !== undefined) out += BASE64URL_ALPHABET[((b1 & 15) << 2) | ((b2 ?? 0) >> 6)];
+    if (b2 !== undefined) out += BASE64URL_ALPHABET[b2 & 63];
+  }
+  return out;
+}
+
+/**
+ * Encodes a certificate as the `arc` value (180 characters), or returns `null`
+ * when it does not fit the compact form (a field out of range, a window that is
+ * not within {@link RELAY_CERT_MAX_LIFETIME_SECONDS}, a malformed key or signature).
+ */
+export function formatRelayCertParam(cert: RelayCertJson): string | null {
+  const parsed = parseCert(cert);
+  if (parsed === null || parsed.notBefore > 0xffffffff) return null;
+  const bytes = new Uint8Array(RELAY_CERT_COMPACT_BYTES);
+  bytes.set(parsed.sessionPublicKeyBytes, 0);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(RELAY_PUBLIC_KEY_BYTES, parsed.notBefore);
+  view.setUint16(RELAY_PUBLIC_KEY_BYTES + 4, parsed.notAfter - parsed.notBefore);
+  bytes.set(parsed.certSignatureBytes, RELAY_PUBLIC_KEY_BYTES + 6);
+  return encodeBase64Url(bytes);
+}
+
+/**
+ * Parses an `arc` value, or returns `null` when it is malformed (wrong length,
+ * alphabet or encoding, or a certificate field out of bounds). Shape only;
+ * nothing is verified.
+ */
+export function parseRelayCertParam(value: unknown): RelayCert | null {
+  if (typeof value !== 'string' || value.length !== (RELAY_CERT_COMPACT_BYTES * 4) / 3) {
+    return null;
+  }
+  const bytes = decodeBase64Url(value);
+  if (bytes === null || bytes.length !== RELAY_CERT_COMPACT_BYTES) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const notBefore = view.getUint32(RELAY_PUBLIC_KEY_BYTES);
+  const lifetime = view.getUint16(RELAY_PUBLIC_KEY_BYTES + 4);
+  return parseCert({
+    pub: encodeBase64Url(bytes.subarray(0, RELAY_PUBLIC_KEY_BYTES)),
+    nb: notBefore,
+    na: notBefore + lifetime,
+    sig: encodeBase64Url(bytes.subarray(RELAY_PUBLIC_KEY_BYTES + 6)),
+  });
+}
+
 /**
  * Parses the certificate document text, or returns `null` unless it is exactly
  * `{"v":1,"certs":[{"pub","nb","na","sig"}, ...]}` with 1 to
@@ -296,8 +370,6 @@ export function relayCertMessage(
 export function relayLinkMessage(relayOrigin: string, atCode: string): string {
   return `${RELAY_LINK_DOMAIN}\n${relayOrigin}\n${atCode}`;
 }
-
-const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /**
  * Decodes unpadded base64url into bytes, or `null` when it is not valid. Only

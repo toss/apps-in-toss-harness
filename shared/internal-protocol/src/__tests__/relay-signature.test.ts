@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   decodeBase64Url,
+  encodeBase64Url,
+  formatRelayCertParam,
   formatRelaySignature,
   isRelayHostName,
   isRelayPublicKey,
   isRelaySignature,
   parseRelayCertDocument,
+  parseRelayCertParam,
   parseRelayHostSignature,
   parseRelaySignature,
+  RELAY_CERT_COMPACT_BYTES,
   RELAY_CERT_DOCUMENT_MAX_BYTES,
   RELAY_CERT_DOCUMENT_MAX_CERTS,
   RELAY_CERT_DOCUMENT_VERSION,
   RELAY_CERT_DOMAIN,
   RELAY_CERT_MAX_LIFETIME_SECONDS,
+  RELAY_CERT_PARAM,
   RELAY_CERT_PATH,
   RELAY_LINK_DOMAIN,
   RELAY_SIGNATURE_BYTES,
@@ -256,5 +261,66 @@ describe('computer name (ahn / ahs)', () => {
     expect(parseRelayHostSignature(`${SIG.slice(0, -1)}B`)).toBeNull();
     expect(parseRelayHostSignature(`${SIG.slice(0, -1)}=`)).toBeNull();
     expect(parseRelayHostSignature(null)).toBeNull();
+  });
+});
+
+describe('compact certificate (arc)', () => {
+  const json = { pub: PUB, nb: NB, na: NA, sig: SIG };
+
+  it('uses the arc parameter and is 135 bytes, 180 characters', () => {
+    expect(RELAY_CERT_PARAM).toBe('arc');
+    const value = formatRelayCertParam(json);
+    expect(value).toHaveLength(180);
+    expect(RELAY_CERT_COMPACT_BYTES).toBe(135);
+  });
+
+  it('round-trips through parseRelayCertParam', () => {
+    const parsed = parseRelayCertParam(formatRelayCertParam(json));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sessionPublicKey).toBe(PUB);
+    expect(parsed?.notBefore).toBe(NB);
+    expect(parsed?.notAfter).toBe(NA);
+    expect(parsed?.certSignature).toBe(SIG);
+    expect(parsed?.keyId).toBe(KID);
+  });
+
+  it('rejects wrong types, lengths, alphabets and non-canonical tails', () => {
+    const ok = formatRelayCertParam(json) as string;
+    expect(parseRelayCertParam(undefined)).toBeNull();
+    expect(parseRelayCertParam(null)).toBeNull();
+    expect(parseRelayCertParam('')).toBeNull();
+    expect(parseRelayCertParam(ok.slice(1))).toBeNull();
+    expect(parseRelayCertParam(`${ok}A`)).toBeNull();
+    expect(parseRelayCertParam(`${ok.slice(0, -1)}+`)).toBeNull();
+  });
+
+  it('rejects a key that is not an uncompressed point', () => {
+    const bytes = decodeBase64Url(formatRelayCertParam(json) as string) as Uint8Array;
+    bytes[0] = 0x02;
+    expect(parseRelayCertParam(encodeBase64Url(bytes))).toBeNull();
+  });
+
+  it('rejects a zero or over-long window', () => {
+    const bytes = decodeBase64Url(formatRelayCertParam(json) as string) as Uint8Array;
+    const view = new DataView(bytes.buffer);
+    view.setUint16(65 + 4, 0);
+    expect(parseRelayCertParam(encodeBase64Url(bytes))).toBeNull();
+    view.setUint16(65 + 4, RELAY_CERT_MAX_LIFETIME_SECONDS + 1);
+    expect(parseRelayCertParam(encodeBase64Url(bytes))).toBeNull();
+  });
+
+  it('refuses to format what does not fit', () => {
+    expect(
+      formatRelayCertParam({ ...json, na: NB + RELAY_CERT_MAX_LIFETIME_SECONDS + 1 }),
+    ).toBeNull();
+    expect(formatRelayCertParam({ ...json, nb: 0xffffffff + 1, na: 0xffffffff + 2 })).toBeNull();
+    expect(formatRelayCertParam({ ...json, pub: 'x' })).toBeNull();
+  });
+
+  it('encodeBase64Url matches the decoder for every tail length', () => {
+    for (const len of [0, 1, 2, 3, 4, 5, 64, 65]) {
+      const bytes = Uint8Array.from({ length: len }, (_, i) => (i * 37 + 11) & 0xff);
+      expect(decodeBase64Url(encodeBase64Url(bytes))).toEqual(bytes);
+    }
   });
 });

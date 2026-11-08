@@ -9,19 +9,17 @@
  *
  * "Zero activity" is asserted with spies on fetch, WebSocket, script
  * insertion and history.replaceState: before verification succeeds, and on
- * every failure path, the only request allowed is one GET for the relay's
- * public certificate document, carrying no code and no credentials.
- *
- * The relay's `/relay-cert` answer is the daemon's real `relayCertDocument`.
+ * every failure path, nothing at all reaches the relay. The session certificate
+ * arrives in the link (`arc`), so the whole check is local and the page never
+ * asks the relay for a certificate (no `/relay-cert` request on any path).
  */
 
 import { generateKeyPairSync, sign, webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  relayCertDocument,
+  attachSignatures,
   relayPublicKey,
   resetRelaySessionKey,
-  signRelay,
 } from '../../../debugger/src/mcp/relay-signing.js';
 import type { GateResult } from '../index.js';
 
@@ -61,28 +59,26 @@ class SpyWebSocket extends EventTarget {
   send(): void {}
 }
 
-function setPage(sig: string | null, at: string = AT): void {
+/** The certificate (`arc`) of the most recent {@link signLink}. */
+let lastArc: string | null = null;
+
+/** Signs a link with the daemon's real code; remembers its `arc` for {@link setPage}. */
+function signLink(secret: string, relay: string, at: string, nowMs: number = Date.now()): string {
+  const signed = attachSignatures(secret, relay, at, undefined, nowMs);
+  lastArc = signed?.cert ?? null;
+  return signed?.sig ?? '';
+}
+
+function setPage(sig: string | null, at: string = AT, arc: string | null = lastArc): void {
   const parts = ['debug=1', `relay=${encodeURIComponent(RELAY)}`, `at=${at}`];
   if (sig !== null) parts.push(`sig=${sig}`);
+  if (arc !== null) parts.push(`arc=${arc}`);
   window.history.replaceState(null, '', `/?${parts.join('&')}`);
   // Setting up the page is not the code under test.
   replaceStateSpy?.mockClear();
 }
 
 let fetchSpy: ReturnType<typeof vi.fn>;
-/** Root secret of the relay that answers `/relay-cert`. */
-let certSecret: string;
-/** What `/relay-cert` answers. */
-let certResponse: (init?: RequestInit) => Promise<unknown>;
-
-function okResponse(body: string, headers: Record<string, string> = {}): Promise<unknown> {
-  return Promise.resolve({
-    status: 200,
-    redirected: false,
-    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
-    text: () => Promise.resolve(body),
-  });
-}
 let replaceStateSpy: ReturnType<typeof vi.spyOn>;
 let appendSpy: ReturnType<typeof vi.spyOn>;
 let originalWebSocket: typeof WebSocket;
@@ -91,40 +87,9 @@ function scriptAppends(): number {
   return appendSpy.mock.calls.filter((c: unknown[]) => c[0] instanceof HTMLScriptElement).length;
 }
 
-const CERT_URL = 'https://abc-def.trycloudflare.com/relay-cert';
-
-type FetchCall = [unknown, RequestInit | undefined];
-
-function certCalls(): FetchCall[] {
-  return (fetchSpy.mock.calls as FetchCall[]).filter(([url]) =>
-    String(url).endsWith('/relay-cert'),
-  );
-}
-
-function otherFetches(): FetchCall[] {
-  return (fetchSpy.mock.calls as FetchCall[]).filter(
-    ([url]) => !String(url).endsWith('/relay-cert'),
-  );
-}
-
-/** The certificate request is one plain GET: no code, no credentials, no cache, no redirects. */
-function expectCleanCertFetches(): void {
-  for (const [url, init] of certCalls()) {
-    expect(String(url)).toBe(CERT_URL);
-    expect(String(url)).not.toContain(AT);
-    expect(init?.credentials).toBe('omit');
-    expect(init?.cache).toBe('no-store');
-    expect(init?.redirect).toBe('error');
-    expect(init?.headers).toBeUndefined();
-    expect(JSON.stringify(init ?? {})).not.toContain(AT);
-  }
-}
-
 function expectNoRelayActivity(): void {
-  // At most the one certificate GET; nothing else reaches the relay.
-  expect(certCalls().length).toBeLessThanOrEqual(1);
-  expectCleanCertFetches();
-  expect(otherFetches()).toHaveLength(0);
+  // Nothing reaches the relay: no request of any kind (so no certificate GET), no socket, no script.
+  expect(fetchSpy).not.toHaveBeenCalled();
   expect(SpyWebSocket.calls).toBe(0);
   expect(scriptAppends()).toBe(0);
   expect(document.querySelector('script')).toBeNull();
@@ -138,7 +103,8 @@ function expectUrlUntouched(): void {
 /** After a refused attach no credential is left in the URL or on the history entry. */
 function expectAttachValuesDropped(): void {
   const params = new URLSearchParams(window.location.search);
-  for (const name of ['at', 'sig', 'relay']) expect(params.has(name)).toBe(false);
+  for (const name of ['at', 'sig', 'relay', 'arc', 'ahn', 'ahs'])
+    expect(params.has(name)).toBe(false);
   expect(params.get('debug')).toBe('1');
   expect(window.history.state?.__ait_debug_attach).toBeUndefined();
 }
@@ -154,11 +120,8 @@ beforeEach(() => {
   delete (window as unknown as Record<string, unknown>).__ait_relay_ws_observed;
   globalThis.__AIT_DEBUG_RELAY_KEYS__ = undefined;
   vi.stubGlobal('crypto', webcrypto);
-  certSecret = SECRET;
-  certResponse = () => okResponse(JSON.stringify(relayCertDocument(certSecret)));
-  fetchSpy = vi.fn((url: unknown, init?: RequestInit) =>
-    String(url).endsWith('/relay-cert') ? certResponse(init) : Promise.resolve({ status: 200 }),
-  );
+  lastArc = null;
+  fetchSpy = vi.fn(() => Promise.resolve({ status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
   SpyWebSocket.calls = 0;
   originalWebSocket = window.WebSocket;
@@ -182,7 +145,7 @@ afterEach(() => {
 
 describe('maybeAttach — relay signature on a QR test page', () => {
   it('verifies a daemon signature, then attaches once', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     const { maybeAttach } = await import('../attach.js');
     const pending = maybeAttach(GATE, { relayPublicKeys: [KEY] });
     expect(pending).toBeInstanceOf(Promise);
@@ -195,27 +158,25 @@ describe('maybeAttach — relay signature on a QR test page', () => {
     expect(document.head.querySelector('script')?.src).toMatch(
       deviceScript(`https://abc-def.trycloudflare.com/v3/at/${AT}`),
     );
-    expect(certCalls()).toHaveLength(1);
-    expectCleanCertFetches();
-    expect(otherFetches()).toHaveLength(1); // the version handshake, after verification
-    // Move the values off the URL, keep the device id, keep the verified certificate.
-    expect(replaceStateSpy).toHaveBeenCalledTimes(3);
+    // The only request is the version handshake, after verification; never a certificate GET.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain('relay-cert');
+    // Move the values off the URL (the certificate with them), then keep the device id.
+    expect(replaceStateSpy).toHaveBeenCalledTimes(2);
     expect(window.history.state?.__ait_debug_attach?.d).toMatch(/^[A-Za-z0-9_-]{22}$/);
-    expect(window.history.state?.__ait_debug_attach?.cert).toBe(
-      JSON.stringify(relayCertDocument(SECRET)),
-    );
+    expect(window.history.state?.__ait_debug_attach?.arc).toBe(lastArc);
     expect(window.__ait_debug_status).toBe('connecting');
   });
 
   it('accepts any one of several keys', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     const { maybeAttach } = await import('../attach.js');
     await maybeAttach(GATE, { relayPublicKeys: [OTHER_KEY, 'not-a-key', KEY] });
     expect(scriptAppends()).toBe(1);
   });
 
   it('falls back to globalThis.__AIT_DEBUG_RELAY_KEYS__', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
     const { maybeAttach } = await import('../attach.js');
     await maybeAttach(GATE);
@@ -223,14 +184,14 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   });
 
   it('startDebugConsole runs the real gate and attaches', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     const { startDebugConsole } = await import('../index.js');
     await startDebugConsole({ relayPublicKeys: [KEY] });
     expect(scriptAppends()).toBe(1);
   });
 
   it('two rapid calls inject once', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     const { maybeAttach } = await import('../attach.js');
     const first = maybeAttach(GATE, { relayPublicKeys: [KEY] });
     const second = maybeAttach(GATE, { relayPublicKeys: [KEY] });
@@ -238,12 +199,11 @@ describe('maybeAttach — relay signature on a QR test page', () => {
     await first;
     await maybeAttach(GATE, { relayPublicKeys: [KEY] });
     expect(scriptAppends()).toBe(1);
-    expect(certCalls()).toHaveLength(1);
-    expect(otherFetches()).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // the version handshake
   });
 
   it('re-verifies after a reload, from the history entry', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     const first = await import('../attach.js');
     await first.maybeAttach(undefined, { relayPublicKeys: [KEY] });
     // The first attach moved relay, at and sig out of the URL.
@@ -262,7 +222,7 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   });
 
   it('a reload with the wrong key set does not attach', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     const first = await import('../attach.js');
     await first.maybeAttach(undefined, { relayPublicKeys: [KEY] });
 
@@ -287,7 +247,7 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
     at?: string;
   };
 
-  const good = (): string => signRelay(SECRET, RELAY, AT);
+  const good = (): string => signLink(SECRET, RELAY, AT);
 
   const cases: Case[] = [
     { name: 'no keys given', sig: good, keys: undefined, status: 'blocked-relay-key' },
@@ -317,17 +277,25 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
     },
     {
       name: 'signature made for another relay host',
-      sig: () => signRelay(SECRET, RELAY_B, AT),
+      sig: () => signLink(SECRET, RELAY_B, AT),
       keys: [KEY],
       status: 'blocked-relay-signature',
     },
     {
       name: 'signature made for another at code',
-      sig: () => signRelay(SECRET, RELAY, AT_B),
+      sig: () => signLink(SECRET, RELAY, AT_B),
       keys: [KEY],
       status: 'blocked-relay-signature',
     },
-    { name: 'missing sig', sig: () => null, keys: [KEY], status: 'blocked-relay-signature' },
+    {
+      name: 'missing sig',
+      sig: () => {
+        good();
+        return null;
+      },
+      keys: [KEY],
+      status: 'blocked-relay-signature',
+    },
     {
       name: 'truncated signature',
       sig: () => good().slice(0, 40),
@@ -386,22 +354,13 @@ function tamper(value: string): string {
 }
 
 /** Puts the attach values only on the history entry, as a same-page reload sees them. */
-function setHistoryOnly(sig: string, cert?: string): void {
+function setHistoryOnly(sig: string, arc: string | null = lastArc): void {
   window.history.replaceState(
-    { __ait_debug_attach: { at: AT, relay: RELAY, sig, ...(cert !== undefined ? { cert } : {}) } },
+    { __ait_debug_attach: { at: AT, relay: RELAY, sig, ...(arc !== null ? { arc } : {}) } },
     '',
     '/?debug=1',
   );
   replaceStateSpy?.mockClear();
-}
-
-/** Serves `doc` (or a document edited by `edit`) from `/relay-cert`. */
-function serveDoc(edit?: (doc: { v: number; certs: Record<string, unknown>[] }) => void): void {
-  certResponse = () => {
-    const doc = JSON.parse(JSON.stringify(relayCertDocument(certSecret)));
-    edit?.(doc);
-    return okResponse(JSON.stringify(doc));
-  };
 }
 
 describe('maybeAttach — session certificate matrix', () => {
@@ -413,77 +372,69 @@ describe('maybeAttach — session certificate matrix', () => {
     await maybeAttach(undefined, { relayPublicKeys: keys });
   }
 
-  function expectBlocked(): void {
+  function expectBlocked(status = 'blocked-relay-signature'): void {
     expectNoRelayActivity();
     expectAttachValuesDropped();
-    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
+    expect(window.__ait_debug_status).toBe(status);
   }
 
-  it('ok: a fresh certificate from the relay, fetched once with no code or credentials', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+  it('ok: the certificate in the link verifies with no request to the relay', async () => {
+    setPage(signLink(SECRET, RELAY, AT));
     await attempt();
     expect(scriptAppends()).toBe(1);
-    expect(certCalls()).toHaveLength(1);
-    expectCleanCertFetches();
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('relay-cert'))).toBe(false);
   });
 
-  it('keeps the attach link short: sig is a key id and one signature', () => {
-    const sig = signRelay(SECRET, RELAY, AT);
+  it('keeps the attach link short: sig is a key id and one signature, arc is 180 characters', () => {
+    const sig = signLink(SECRET, RELAY, AT);
     expect(sig).toMatch(/^[A-Za-z0-9_-]{8}\.[A-Za-z0-9_-]{86}$/);
+    expect(lastArc).toMatch(/^[A-Za-z0-9_-]{180}$/);
   });
 
-  it('wrong root: the relay serves a certificate under another root key', async () => {
-    certSecret = OTHER_SECRET;
-    setPage(signRelay(OTHER_SECRET, RELAY, AT));
+  it('wrong root: a certificate under another root key is blocked', async () => {
+    setPage(signLink(OTHER_SECRET, RELAY, AT));
     await attempt();
     expectBlocked();
   });
 
-  it('expired certificate from the relay is blocked', async () => {
-    const issued = Date.now() - 2 * HOUR;
-    const sig = signRelay(SECRET, RELAY, AT, issued);
-    const doc = JSON.stringify(relayCertDocument(SECRET, issued));
-    certResponse = () => okResponse(doc);
-    setPage(sig);
+  it('expired certificate is blocked', async () => {
+    setPage(signLink(SECRET, RELAY, AT, Date.now() - 2 * HOUR));
     await attempt();
     expectBlocked();
   });
 
   it('expired certificate kept on the history entry (same-page reload) attaches without a request', async () => {
-    const issued = Date.now() - 2 * HOUR;
-    const sig = signRelay(SECRET, RELAY, AT, issued);
-    setHistoryOnly(sig, JSON.stringify(relayCertDocument(SECRET, issued)));
+    const sig = signLink(SECRET, RELAY, AT, Date.now() - 2 * HOUR);
+    setHistoryOnly(sig);
     await attempt();
     expect(scriptAppends()).toBe(1);
-    expect(certCalls()).toHaveLength(0);
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('relay-cert'))).toBe(false);
     expect(document.head.querySelector('script')?.src).toMatch(
       deviceScript(`https://abc-def.trycloudflare.com/v3/at/${AT}`),
     );
   });
 
   it('a kept certificate under another root does not verify on reload', async () => {
-    const sig = signRelay(OTHER_SECRET, RELAY, AT);
-    setHistoryOnly(sig, JSON.stringify(relayCertDocument(OTHER_SECRET)));
+    setHistoryOnly(signLink(OTHER_SECRET, RELAY, AT));
     await attempt();
     expectBlocked();
   });
 
   it('a URL cannot claim the history path: any attach param in the URL keeps the clock check', async () => {
-    const issued = Date.now() - 2 * HOUR;
-    const expired = signRelay(SECRET, RELAY, AT, issued);
-    const doc = JSON.stringify(relayCertDocument(SECRET, issued));
-    certResponse = () => okResponse(doc);
+    const expired = signLink(SECRET, RELAY, AT, Date.now() - 2 * HOUR);
+    const arc = lastArc as string;
     for (const query of [
       `sig=${expired}`,
       `at=${AT}`,
       `relay=${encodeURIComponent(RELAY)}`,
       'sig=',
+      `arc=${arc}`,
     ]) {
       document.head.innerHTML = '';
       vi.resetModules();
       fetchSpy.mockClear();
       window.history.replaceState(
-        { __ait_debug_attach: { at: AT, relay: RELAY, sig: expired, cert: doc } },
+        { __ait_debug_attach: { at: AT, relay: RELAY, sig: expired, arc } },
         '',
         `/?debug=1&${query}`,
       );
@@ -494,7 +445,7 @@ describe('maybeAttach — session certificate matrix', () => {
   });
 
   it('a verified URL attach still re-attaches after the certificate expired (reload)', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
+    setPage(signLink(SECRET, RELAY, AT));
     await attempt();
     expect(scriptAppends()).toBe(1);
     expect(window.location.search).toBe('?debug=1');
@@ -506,87 +457,88 @@ describe('maybeAttach — session certificate matrix', () => {
     vi.resetModules();
     await attempt();
     expect(document.head.querySelector('script')).not.toBeNull();
-    // The certificate kept on the history entry was used; the relay was not asked.
-    expect(certCalls()).toHaveLength(0);
+    // The certificate kept on the history entry was used; the relay was not asked for it.
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('relay-cert'))).toBe(false);
   });
 
   it('notBefore in the future is blocked', async () => {
-    const issued = Date.now() + HOUR;
-    const sig = signRelay(SECRET, RELAY, AT, issued);
-    const doc = JSON.stringify(relayCertDocument(SECRET, issued));
-    certResponse = () => okResponse(doc);
-    setPage(sig);
+    setPage(signLink(SECRET, RELAY, AT, Date.now() + HOUR));
     await attempt();
     expectBlocked();
   });
 
   it('a phone clock up to 5 minutes behind still attaches', async () => {
-    const issued = Date.now() + 4 * MINUTE;
-    const sig = signRelay(SECRET, RELAY, AT, issued);
-    const doc = JSON.stringify(relayCertDocument(SECRET, issued));
-    certResponse = () => okResponse(doc);
-    setPage(sig);
+    setPage(signLink(SECRET, RELAY, AT, Date.now() + 4 * MINUTE));
     await attempt();
     expect(scriptAppends()).toBe(1);
   });
 
   it('rotation boundary: a QR signed by the previous session key still verifies', async () => {
-    const t0 = Date.now() - 6 * MINUTE;
-    const oldSig = signRelay(SECRET, RELAY, AT, t0);
-    // The daemon rotated after the QR was drawn; the relay lists both certificates.
-    const newSig = signRelay(SECRET, RELAY, AT, Date.now());
+    const oldSig = signLink(SECRET, RELAY, AT, Date.now() - 6 * MINUTE);
+    const oldArc = lastArc;
+    // The daemon rotated after the QR was drawn; the old link carries its own certificate.
+    const newSig = signLink(SECRET, RELAY, AT, Date.now());
     expect(newSig.split('.')[0]).not.toBe(oldSig.split('.')[0]);
-    expect(relayCertDocument(SECRET).certs).toHaveLength(2);
-    setPage(oldSig);
+    setPage(oldSig, AT, oldArc);
     await attempt();
     expect(scriptAppends()).toBe(1);
   });
 
   it('tampered link signature is blocked', async () => {
-    const [id, link] = signRelay(SECRET, RELAY, AT).split('.');
+    const [id, link] = signLink(SECRET, RELAY, AT).split('.');
     setPage(`${id}.${tamper(link ?? '')}`);
     await attempt();
     expectBlocked();
   });
 
-  it('tampered certificate signature is blocked', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
-    serveDoc((doc) => {
-      doc.certs[0]!.sig = tamper(String(doc.certs[0]!.sig));
-    });
-    await attempt();
-    expectBlocked();
-  });
-
-  it('tampered certificate window is blocked', async () => {
-    setPage(signRelay(SECRET, RELAY, AT));
-    serveDoc((doc) => {
-      doc.certs[0]!.na = Number(doc.certs[0]!.na) + 60;
-    });
-    await attempt();
-    expectBlocked();
+  it('tampered certificate (root signature, window, key) is blocked', async () => {
+    const sig = signLink(SECRET, RELAY, AT);
+    const arc = lastArc as string;
+    const bytes = Buffer.from(arc, 'base64url');
+    const edits: Array<(b: Buffer) => void> = [
+      (b) => {
+        b[b.length - 1] = (b[b.length - 1] as number) ^ 1; // root signature
+      },
+      (b) => {
+        b[68] = (b[68] as number) ^ 1; // notBefore (low byte)
+      },
+      (b) => {
+        b[70] = (b[70] as number) ^ 1; // lifetime (low byte)
+      },
+      (b) => {
+        b[20] = (b[20] as number) ^ 1; // session public key
+      },
+    ];
+    for (const edit of edits) {
+      const copy = Buffer.from(bytes);
+      edit(copy);
+      document.head.innerHTML = '';
+      vi.resetModules();
+      fetchSpy.mockClear();
+      setPage(sig, AT, copy.toString('base64url'));
+      await attempt();
+      expectBlocked();
+    }
   });
 
   it('certificate does not match the link signature: key id of one session, link of another', async () => {
-    const first = signRelay(SECRET, RELAY, AT).split('.');
+    const first = signLink(SECRET, RELAY, AT).split('.');
     resetRelaySessionKey();
-    const second = signRelay(SECRET, RELAY, AT).split('.');
+    const second = signLink(SECRET, RELAY, AT).split('.');
     expect(second[0]).not.toBe(first[0]);
-    // Only the second session is listed; the id names the first.
+    // The arc is the second session's; the id names the first.
     setPage(`${first[0]}.${second[1]}`);
     await attempt();
     expectBlocked();
   });
 
   it('a certificate whose key id matches but whose key did not sign the link is blocked', async () => {
-    const sig = signRelay(SECRET, RELAY, AT);
+    const sig = signLink(SECRET, RELAY, AT);
     resetRelaySessionKey();
-    signRelay(SECRET, RELAY, AT);
-    // Relabel the only listed certificate so its id matches the link: the key still differs.
-    const doc = relayCertDocument(SECRET);
-    const pub = String(doc.certs[0]?.pub);
-    const forged = `${sig.split('.')[0]}.${sig.split('.')[1]}`;
-    expect(pub.slice(1, 9)).not.toBe(forged.split('.')[0]);
+    signLink(SECRET, RELAY, AT);
+    // Relabel the link with the certificate's own id: the key still differs.
+    const cert = Buffer.from(lastArc as string, 'base64url');
+    const pub = cert.subarray(0, 65).toString('base64url');
     setPage(`${pub.slice(1, 9)}.${sig.split('.')[1]}`);
     await attempt();
     expectBlocked();
@@ -607,69 +559,66 @@ describe('maybeAttach — session certificate matrix', () => {
     setPage(v1);
     await attempt([pinned]);
     expectBlocked();
-    expect(certCalls()).toHaveLength(0);
   });
 });
 
-describe('maybeAttach — certificate request failures', () => {
+describe('maybeAttach — the certificate comes from the link only', () => {
   async function attempt(): Promise<void> {
     const { maybeAttach } = await import('../attach.js');
     await maybeAttach(undefined, { relayPublicKeys: [KEY] });
   }
 
-  function expectBlocked(): void {
-    expectNoRelayActivity();
-    expectAttachValuesDropped();
-    expect(certCalls()).toHaveLength(1);
-    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
-  }
-
-  const failures: Array<[string, () => Promise<unknown>]> = [
-    ['network error', () => Promise.reject(new TypeError('Failed to fetch'))],
-    ['redirect refused by fetch', () => Promise.reject(new TypeError('unexpected redirect'))],
-    [
-      'a response that was redirected',
-      () =>
-        Promise.resolve({
-          status: 200,
-          redirected: true,
-          headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(relayCertDocument(SECRET))),
-        }),
-    ],
-    ['404 (no certificate)', () => Promise.resolve({ status: 404, headers: { get: () => null } })],
-    ['500', () => Promise.resolve({ status: 500, headers: { get: () => null } })],
-    ['malformed JSON', () => okResponse('{"v":1,"certs":[')],
-    ['not an object', () => okResponse('[]')],
-    ['extra key', () => okResponse(JSON.stringify({ ...relayCertDocument(SECRET), x: 1 }))],
-    ['empty list', () => okResponse('{"v":1,"certs":[]}')],
-    ['oversize body', () => okResponse(' '.repeat(5000))],
-    [
-      'oversize by Content-Length',
-      () => okResponse(JSON.stringify(relayCertDocument(SECRET)), { 'content-length': '5000' }),
-    ],
-  ];
-
-  it.each(failures)('%s → blocked', async (_name, respond) => {
-    setPage(signRelay(SECRET, RELAY, AT));
-    certResponse = respond;
-    await attempt();
-    expectBlocked();
-  });
-
-  it('a request that does not answer within 3 s is aborted and blocks', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    setPage(signRelay(SECRET, RELAY, AT));
-    let signal: AbortSignal | undefined;
-    certResponse = (init) => {
-      signal = init?.signal ?? undefined;
-      return new Promise(() => {});
-    };
+  it('a link without arc (a debugger older than 0.3.2) asks for an update and sends nothing', async () => {
+    setPage(signLink(SECRET, RELAY, AT), AT, null);
     const { maybeAttach } = await import('../attach.js');
     const pending = maybeAttach(undefined, { relayPublicKeys: [KEY] });
-    await vi.advanceTimersByTimeAsync(3_000);
+    expectNoRelayActivity();
     await pending;
-    expect(signal?.aborted).toBe(true);
-    expectBlocked();
+    expectNoRelayActivity();
+    expect(window.__ait_debug_status).toBe('blocked-debugger-update');
+    expectAttachValuesDropped();
+    // The consent dialog is not shown either: there is nothing to connect to.
+    expect(document.getElementById('__ait_debug_consent')).toBeNull();
+  });
+
+  it('shows the update message on the status banner', async () => {
+    setPage(signLink(SECRET, RELAY, AT), AT, null);
+    await attempt();
+    const host = document.getElementById('__ait_status_banner');
+    expect(host?.shadowRoot?.textContent ?? host?.textContent).toContain(
+      '디버거를 0.3.2 이상으로 업데이트한 뒤 새 QR을 스캔하세요.',
+    );
+  });
+
+  const malformed: Array<[string, (arc: string) => string]> = [
+    ['empty', () => ''],
+    ['truncated', (arc) => arc.slice(0, 120)],
+    ['too long', (arc) => `${arc}AAAA`],
+    ['outside the alphabet', (arc) => `${arc.slice(0, 50)}+${arc.slice(51)}`],
+  ];
+
+  it.each(malformed)('a malformed arc (%s) never reaches the relay', async (_n, edit) => {
+    signLink(SECRET, RELAY, AT);
+    const sig = signLink(SECRET, RELAY, AT);
+    setPage(sig, AT, edit(lastArc as string));
+    await attempt();
+    expectNoRelayActivity();
+    expectAttachValuesDropped();
+    expect(window.__ait_debug_status).toMatch(/^blocked-(relay-signature|debugger-update)$/);
+  });
+
+  it('no relay-cert request on any path, valid or not', async () => {
+    for (const make of [
+      () => setPage(signLink(SECRET, RELAY, AT)),
+      () => setPage(signLink(OTHER_SECRET, RELAY, AT)),
+      () => setPage(signLink(SECRET, RELAY, AT), AT, null),
+    ]) {
+      document.head.innerHTML = '';
+      vi.resetModules();
+      fetchSpy.mockClear();
+      make();
+      await attempt();
+      expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('relay-cert'))).toBe(false);
+    }
   });
 });

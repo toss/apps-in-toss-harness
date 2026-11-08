@@ -60,6 +60,7 @@ relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데�
 | 막대 문구 | 가능한 상태 값 | 원인을 가르는 법과 조치 |
 |---|---|---|
 | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 그 사람의 `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })` 배열에 추가하고 다시 빌드한다 |
+| 디버거를 0.3.2 이상으로 업데이트한 뒤 새 QR을 스캔하세요. | `blocked-debugger-update` | QR 링크에 세션 인증서(`arc`)가 없다. 0.3.1 이하 디버거가 만든 QR이다. 디버거를 0.3.2 이상으로 올리고 새 QR을 스캔 |
 | 이 번들에 디버거 키가 없어요. | `blocked-relay-key` | `npx debugger relay-key` 출력을 `startDebugConsole({ relayPublicKeys: [...] })`에 넣고 다시 빌드 |
 | 이 화면에서는 디버거를 쓸 수 없어요. / 디버거와 debugger-client 버전이 맞지 않아요. | `relay-origin-rejected` / `relay-version-mismatch` | relay가 연결을 거부했다(close 4403 / 4426). 4426은 디버거와 debugger-client 중 오래된 쪽을 올리고 새 QR을 스캔 |
 | 디버거에 연결하는 중이에요… / 디버거에 연결됐어요. | `connecting` / `connected` | 잠시 기다린다(`connected`는 3초 뒤 자동 숨김) |
