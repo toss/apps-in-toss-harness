@@ -196,3 +196,24 @@ describe('sig follows the at code on every mint path', () => {
     expect(rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS })).toBeNull();
   });
 });
+
+describe('mintAttachUrl computer name', () => {
+  const tunnel = { current: { up: true, wssUrl: OLD_WSS } as TunnelStatus };
+  const query = (url: string) => new URLSearchParams(url.slice(url.indexOf('?') + 1));
+
+  it('carries the sanitized name and its signature', () => {
+    const q = query(
+      mintAttachUrl({ ...depsFor(tunnel), getHostName: () => 'Daves-MacBook-Pro.local' }, parts),
+    );
+    expect(q.get('ahn')).toBe('Daves-MacBook-Pro');
+    expect(q.get('ahs')).toMatch(/^[A-Za-z0-9_-]{86}$/);
+    expect(q.get('sig')).toMatch(/^[A-Za-z0-9_-]{8}\.[A-Za-z0-9_-]{86}$/);
+  });
+
+  it('leaves the name out when nothing usable is left', () => {
+    const q = query(mintAttachUrl({ ...depsFor(tunnel), getHostName: () => '한글.local' }, parts));
+    expect(q.has('ahn')).toBe(false);
+    expect(q.has('ahs')).toBe(false);
+    expect(q.get('sig')).not.toBeNull();
+  });
+});

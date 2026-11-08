@@ -56,6 +56,21 @@ export const RELAY_SIGNATURE_PARAM = 'sig';
 /** Domain-separation label that starts the link message (signed by the session key). */
 export const RELAY_LINK_DOMAIN = 'ait-relay-sig-v2';
 
+/**
+ * Domain-separation label that starts the host-name message (signed by the same
+ * session key as the link message).
+ */
+export const RELAY_HOST_DOMAIN = 'ait-relay-host-v1';
+
+/** Query parameter that carries the developer computer's name (optional). */
+export const RELAY_HOST_PARAM = 'ahn';
+
+/** Query parameter that carries the signature of the name (optional). */
+export const RELAY_HOST_SIGNATURE_PARAM = 'ahs';
+
+/** Longest developer computer name carried in a link. */
+export const RELAY_HOST_NAME_MAX_CHARS = 40;
+
 /** Domain-separation label that starts the certificate message (signed by the root key). */
 export const RELAY_CERT_DOMAIN = 'ait-relay-cert-v1';
 
@@ -305,4 +320,54 @@ export function decodeBase64Url(value: string): Uint8Array | null {
   }
   if (buffer !== 0) return null;
   return Uint8Array.from(bytes);
+}
+
+const HOST_NAME_RE = new RegExp(`^[A-Za-z0-9._-]{1,${RELAY_HOST_NAME_MAX_CHARS}}$`);
+
+/**
+ * Reduces a machine name (for example `os.hostname()`) to what a link may
+ * carry: ASCII letters, digits, `.`, `-` and `_`, at most
+ * {@link RELAY_HOST_NAME_MAX_CHARS} characters, no trailing `.local`. Spaces
+ * become `-`, other characters are dropped, and leading or trailing
+ * separators are trimmed. `undefined` when nothing is left.
+ */
+export function sanitizeRelayHostName(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  let name = raw
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Za-z0-9._-]/g, '');
+  // Cut first, then strip, so a cut that lands before `.local` still ends clean.
+  name = name.slice(0, RELAY_HOST_NAME_MAX_CHARS);
+  for (let i = 0; i < 4; i++) {
+    name = name.replace(/\.local$/i, '').replace(/^[._-]+|[._-]+$/g, '');
+  }
+  return name === '' || /\.local$/i.test(name) ? undefined : name;
+}
+
+/** Whether `value` is a name {@link sanitizeRelayHostName} could have produced. */
+export function isRelayHostName(value: unknown): value is string {
+  return typeof value === 'string' && HOST_NAME_RE.test(value) && !/\.local$/i.test(value);
+}
+
+/**
+ * Parses an `ahs` value (the session signature over {@link relayHostMessage}),
+ * or returns `null` when it is malformed. It carries no key id: it is checked
+ * against the certificate that the key id of `sig` picks.
+ */
+export function parseRelayHostSignature(value: unknown): Uint8Array | null {
+  if (typeof value !== 'string' || value.length !== SIGNATURE_CHARS) return null;
+  const bytes = decodeBase64Url(value);
+  return bytes !== null && bytes.length === RELAY_SIGNATURE_BYTES ? bytes : null;
+}
+
+/**
+ * The byte string the session key signs for the developer computer's name in
+ * one attach link: `ait-relay-host-v1\n<relay origin>\n<at code>\n<name>`.
+ * The same session key that signs {@link relayLinkMessage} signs it, so one
+ * certificate covers both. Binding the origin and the `at` code ties the name
+ * to that link.
+ */
+export function relayHostMessage(relayOrigin: string, atCode: string, hostName: string): string {
+  return `${RELAY_HOST_DOMAIN}\n${relayOrigin}\n${atCode}\n${hostName}`;
 }

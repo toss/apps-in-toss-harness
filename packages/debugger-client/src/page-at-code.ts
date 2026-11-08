@@ -29,13 +29,19 @@ import {
 const HISTORY_STATE_KEY = '__ait_debug_attach';
 
 /** URL parameters that move to the history entry. */
-const MOVED_PARAMS = ['at', 'relay', 'sig'] as const;
+const MOVED_PARAMS = ['at', 'relay', 'sig', 'ahn', 'ahs'] as const;
 type MovedParam = (typeof MOVED_PARAMS)[number];
+
+/** The parameters every attach link carries; `ahn` / `ahs` (computer name) are optional. */
+const REQUIRED_PARAMS = ['at', 'relay', 'sig'] as const;
 
 export interface PageAttachParams {
   readonly at: string | null;
   readonly relay: string | null;
   readonly sig: string | null;
+  /** Developer computer name (`ahn`) and its signature (`ahs`); absent on links from older debuggers. */
+  readonly ahn: string | null;
+  readonly ahs: string | null;
 }
 
 function isPlainState(state: unknown): state is Record<string, unknown> {
@@ -56,12 +62,16 @@ function keptValue(name: MovedParam): string | null {
 
 /** `at`, `relay` and `sig` from the page URL, else from the current history entry. */
 export function readPageAttachParams(): PageAttachParams {
-  if (typeof window === 'undefined') return { at: null, relay: null, sig: null };
+  if (typeof window === 'undefined') {
+    return { at: null, relay: null, sig: null, ahn: null, ahs: null };
+  }
   const fromUrl = new URLSearchParams(window.location.search);
   return {
     at: fromUrl.get('at') ?? keptValue('at'),
     relay: fromUrl.get('relay') ?? keptValue('relay'),
     sig: fromUrl.get('sig') ?? keptValue('sig'),
+    ahn: fromUrl.get('ahn') ?? keptValue('ahn'),
+    ahs: fromUrl.get('ahs') ?? keptValue('ahs'),
   };
 }
 
@@ -80,7 +90,7 @@ export function pageAttachParamsFromHistory(): boolean {
   if (typeof window === 'undefined') return false;
   const fromUrl = new URLSearchParams(window.location.search);
   if (MOVED_PARAMS.some((name) => fromUrl.has(name))) return false;
-  return MOVED_PARAMS.every((name) => {
+  return REQUIRED_PARAMS.every((name) => {
     const value = keptValue(name);
     return value !== null && value !== '';
   });

@@ -9,6 +9,7 @@
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  attachSignatures,
   relayCertDocument,
   relayPublicKey,
   resetRelaySessionKey,
@@ -377,5 +378,132 @@ describe('remembered relay origins', () => {
     expect(stored[0].o).toBe('wss://t7.trycloudflare.com');
     expect(isRelayOriginConsented('wss://t0.trycloudflare.com', now + 8)).toBe(false);
     expect(isRelayOriginConsented('wss://t7.trycloudflare.com', now + 8)).toBe(true);
+  });
+});
+
+describe('developer computer name in the dialog', () => {
+  const NAME_BODY =
+    '개발자 컴퓨터(dev-mac)가 이 앱을 원격으로 조작하고 앱 안의 데이터를 볼 수 있게 돼요. 내가 띄운 QR이 맞을 때만 연결하세요.';
+  const TUNNEL_BODY =
+    '개발자 컴퓨터(abc-def.trycloudflare.com)가 이 앱을 원격으로 조작하고 앱 안의 데이터를 볼 수 있게 돼요. 내가 띄운 QR이 맞을 때만 연결하세요.';
+
+  function setNamedPage(edit?: (q: URLSearchParams) => void, name = 'dev-mac'): void {
+    const signed = attachSignatures(SECRET, RELAY, AT, name);
+    const q = new URLSearchParams({
+      debug: '1',
+      relay: RELAY,
+      at: AT,
+      sig: signed?.sig ?? '',
+      ahn: name,
+      ahs: signed?.hostSig ?? '',
+    });
+    edit?.(q);
+    window.history.replaceState(null, '', `/p?${q.toString()}`);
+  }
+
+  /** Like `start`, but waits for the dialog: verifying the name takes real async crypto. */
+  async function startAndWait(
+    keys: string[] = [KEY],
+  ): Promise<{ pending: Promise<void> | undefined }> {
+    const { maybeAttach } = await import('../attach.js');
+    const pending = maybeAttach(GATE, { relayPublicKeys: keys });
+    for (let i = 0; i < 100 && dialogRoot() === null; i++) await flush();
+    return { pending };
+  }
+
+  const bodyText = () => dialogRoot()?.getElementById('body')?.textContent;
+  const certFetches = () =>
+    fetchSpy.mock.calls.filter(([url]) => String(url).endsWith('/relay-cert')).length;
+
+  it('shows the verified name instead of the tunnel host, then attaches', async () => {
+    setNamedPage();
+    const { pending } = await startAndWait();
+    expect(bodyText()).toBe(NAME_BODY);
+    // Only the public certificate document was requested before the answer.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(SpyWebSocket.calls).toBe(0);
+    expect(document.head.querySelector('script')).toBeNull();
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+    // The document fetched for the name is reused by the attach check.
+    expect(certFetches()).toBe(1);
+    // Consent is still remembered per relay origin, with no name stored.
+    const text = window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '';
+    expect(JSON.parse(text)[0].o).toBe(RELAY);
+    expect(text).not.toContain('dev-mac');
+  });
+
+  it.each([
+    ['an edited name', (q: URLSearchParams) => q.set('ahn', 'evil-pc')],
+    ['a missing signature', (q: URLSearchParams) => q.delete('ahs')],
+    ['a missing name', (q: URLSearchParams) => q.delete('ahn')],
+    ['a malformed signature', (q: URLSearchParams) => q.set('ahs', 'short')],
+    ['a name with markup', (q: URLSearchParams) => q.set('ahn', '<b>x</b>')],
+    [
+      'the link signature in place of the name signature',
+      (q: URLSearchParams) => q.set('ahs', (q.get('sig') ?? '').split('.')[1] ?? ''),
+    ],
+  ])('falls back to the tunnel host for %s, and still attaches', async (_n, edit) => {
+    setNamedPage(edit);
+    const { pending } = await startAndWait();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+  });
+
+  it('does not accept a name signed for another code or another relay', async () => {
+    const other = attachSignatures(SECRET, OTHER_RELAY, AT, 'dev-mac');
+    setNamedPage((q) => q.set('ahs', other?.hostSig ?? ''));
+    let { pending } = await startAndWait();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+    vi.resetModules();
+    const otherCode = attachSignatures(SECRET, RELAY, 'f'.repeat(32), 'dev-mac');
+    setNamedPage((q) => q.set('ahs', otherCode?.hostSig ?? ''));
+    ({ pending } = await startAndWait());
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+  });
+
+  it('does not accept a name signed under a different root key', async () => {
+    const { pending } = await (async () => {
+      setNamedPage();
+      return startAndWait([relayPublicKey('22'.repeat(32))]);
+    })();
+    expect(dialogRoot()).not.toBeNull();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+  });
+
+  it('an old-daemon link (no name) is unchanged: nothing is requested before the answer', async () => {
+    const { pending } = await startAndWait();
+    expectNothingSent();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+  });
+
+  it('a link that carries the name keeps the sig the 0.3.1 client checks', async () => {
+    // The old client ignores ahn / ahs: its signed payload is unchanged.
+    setNamedPage();
+    const q = new URLSearchParams(window.location.search);
+    const { sig } = attachSignatures(SECRET, RELAY, AT) ?? { sig: '' };
+    expect(q.get('sig')).not.toBe(sig); // fresh ECDSA, but same key id and message
+    expect(q.get('sig')?.split('.')[0]).toBe(sig.split('.')[0]);
+    const { pending } = await startAndWait();
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+  });
+
+  it('consentBody shows the name when given, the relay host otherwise', () => {
+    expect(consentBody('wss://abc.trycloudflare.com', 'dev-mac')).toContain('(dev-mac)');
+    expect(consentBody('wss://abc.trycloudflare.com', null)).toContain('(abc.trycloudflare.com)');
+    expect(consentBody(null, 'dev-mac')).toContain('(dev-mac)');
   });
 });

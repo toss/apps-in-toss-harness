@@ -6,12 +6,14 @@ import {
   RELAY_CERT_MAX_LIFETIME_SECONDS,
   type RelayCert,
   relayCertMessage,
+  relayHostMessage,
   relayLinkMessage,
   relayOriginOf,
 } from '@apps-in-toss/internal-protocol/relay-signature';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   attachSignature,
+  attachSignatures,
   CERT_BACKDATE_SECONDS,
   CERT_VALID_AFTER_ISSUE_SECONDS,
   relayCertDocument,
@@ -280,5 +282,50 @@ describe('attachSignature', () => {
     expect(attachSignature(SECRET, RELAY, '')).toBeUndefined();
     expect(attachSignature('not-hex', RELAY, AT)).toBeUndefined();
     expect(attachSignature(SECRET, 'not a url', AT)).toBeUndefined();
+  });
+});
+
+describe('attachSignatures (computer name)', () => {
+  it('signs the name with the same session key as the link, under its own message', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT, 'dev-mac');
+    expect(signed?.hostSig).toMatch(/^[A-Za-z0-9_-]{86}$/);
+    const sig = signed?.sig ?? '';
+    const cert = certFor(SECRET, sig);
+    expect(cert).toBeDefined();
+    const pub = cert?.sessionPublicKeyBytes ?? new Uint8Array();
+    const hostSig = fromBase64Url(signed?.hostSig ?? '');
+    const origin = relayOriginOf(RELAY) ?? '';
+    expect(await verifyRaw(pub, hostSig, relayHostMessage(origin, AT, 'dev-mac'))).toBe(true);
+    // Another name, another code or another relay does not verify.
+    expect(await verifyRaw(pub, hostSig, relayHostMessage(origin, AT, 'other-mac'))).toBe(false);
+    expect(await verifyRaw(pub, hostSig, relayHostMessage(origin, 'f'.repeat(32), 'dev-mac'))).toBe(
+      false,
+    );
+    expect(
+      await verifyRaw(
+        pub,
+        hostSig,
+        relayHostMessage('wss://other.trycloudflare.com', AT, 'dev-mac'),
+      ),
+    ).toBe(false);
+    // The name signature cannot stand in for the link signature, or the reverse.
+    expect(await verifyRaw(pub, hostSig, relayLinkMessage(origin, AT))).toBe(false);
+  });
+
+  it('keeps `sig` exactly what attachSignature returns for the same inputs, with or without a name', async () => {
+    const withName = attachSignatures(SECRET, RELAY, AT, 'dev-mac');
+    const without = attachSignatures(SECRET, RELAY, AT);
+    expect(without?.hostSig).toBeUndefined();
+    // ECDSA is randomized, so compare shape and key id, not bytes.
+    expect(parseRelaySignature(withName?.sig)?.keyId).toBe(
+      parseRelaySignature(without?.sig)?.keyId,
+    );
+    expect(await verifies(relayPublicKey(SECRET), withName?.sig ?? '', RELAY, AT)).toBe(true);
+  });
+
+  it('returns undefined when there is nothing to sign', () => {
+    expect(attachSignatures(undefined, RELAY, AT, 'x')).toBeUndefined();
+    expect(attachSignatures(SECRET, RELAY, undefined, 'x')).toBeUndefined();
+    expect(attachSignatures(SECRET, 'https://nope', AT, 'x')).toBeUndefined();
   });
 });

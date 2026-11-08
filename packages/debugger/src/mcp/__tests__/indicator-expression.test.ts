@@ -79,6 +79,72 @@ describe('buildIndicatorExpression — badge DOM behavior', () => {
     expect(el?.style.display).toBe('block');
   });
 
+  describe('safe-area placement', () => {
+    const w = window as unknown as Record<string, unknown>;
+    const ctl = () => w.__ait_indicator as { topPx: number; leftPx: number };
+    afterEach(() => {
+      delete w.__sdk;
+      delete w.__ait;
+    });
+
+    it('falls back to the CSS env() offset when the SDK insets are unavailable', () => {
+      evalExpression();
+      expect(ctl().topPx).toBe(8);
+      expect(badge()?.style.cssText).toContain('top');
+    });
+
+    it('uses the SDK top inset (CSS env() is 0 in the Toss WebView) plus a margin', () => {
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 59, bottom: 34, left: 0, right: 0 }) } };
+      evalExpression();
+      expect(ctl().topPx).toBe(67);
+    });
+
+    it('reads getSafeAreaInsets() and the mock window.__ait state the way measure_safe_area does', () => {
+      w.__sdk = { getSafeAreaInsets: () => ({ top: 47 }) };
+      evalExpression();
+      expect(ctl().topPx).toBe(55);
+      delete w.__sdk;
+      delete w.__ait_indicator;
+      document.body.innerHTML = '';
+      w.__ait = { state: { safeAreaInsets: { top: 20, bottom: 0, left: 0, right: 0 } } };
+      evalExpression();
+      expect(ctl().topPx).toBe(28);
+    });
+
+    it('re-reads the insets on each heartbeat (late SDK init) and on resize', () => {
+      evalExpression();
+      expect(ctl().topPx).toBe(8);
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 59, left: 0 }) } };
+      vi.advanceTimersByTime(1000);
+      expect(ctl().topPx).toBe(67);
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 0, left: 44 }) } };
+      window.dispatchEvent(new Event('resize'));
+      expect(ctl().topPx).toBe(8);
+      expect(ctl().leftPx).toBe(52);
+    });
+
+    it('ignores garbage and a throwing SDK', () => {
+      w.__sdk = {
+        SafeAreaInsets: {
+          get: () => {
+            throw new Error('boom');
+          },
+        },
+      };
+      expect(() => evalExpression()).not.toThrow();
+      expect(ctl().topPx).toBe(8);
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 'x', left: NaN }) } };
+      vi.advanceTimersByTime(1000);
+      expect(ctl().topPx).toBe(8);
+    });
+
+    it('keeps the badge at the top and puts no bottom offset in the expression', () => {
+      const expr = buildIndicatorExpression();
+      expect(expr).toContain('top:max(12px');
+      expect(expr).not.toMatch(/'bottom:/);
+    });
+  });
+
   describe('client status banner de-duplication', () => {
     const HOST_ID = '__ait_status_' + 'banner';
     const w = window as unknown as Record<string, unknown>;

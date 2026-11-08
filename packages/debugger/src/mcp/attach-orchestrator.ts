@@ -30,7 +30,9 @@
  * Node-only.
  */
 
+import { hostname } from 'node:os';
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { sanitizeRelayHostName } from '@apps-in-toss/internal-protocol/relay-signature';
 import {
   AttachTimeline,
   type AttachTimelineSnapshot,
@@ -51,7 +53,7 @@ import {
 import { logInfo } from './log.js';
 import type { QrHttpServer } from './qr-http-server.js';
 import { relayRunId } from './relay-run-id.js';
-import { attachSignature } from './relay-signing.js';
+import { attachSignatures } from './relay-signing.js';
 import {
   canOpenBrowser as defaultCanOpenBrowser,
   listPages,
@@ -340,6 +342,11 @@ export interface AttachDeps {
   /** 테스트 시계 주입. 기본 () => Date.now(). */
   nowMs?: () => number;
   /**
+   * 폰 동의 창에 보일 이 컴퓨터 이름 override(테스트용). 기본은 `os.hostname()`.
+   * `sanitizeRelayHostName`을 거쳐 링크에 서명돼 실리고, 비면 링크에 싣지 않는다.
+   */
+  getHostName?: () => string | undefined;
+  /**
    * GUI 감지 override (테스트/headless/CLI `--headless`). 기본 `canOpenBrowser`.
    * `renderAndMaybeWait`이 브라우저 자동 열기 가능 여부 판정에 사용한다.
    */
@@ -444,6 +451,14 @@ export function waitForAttachWithEvents(
 const NO_RELAY_SECRET_MESSAGE =
   'relay auth secret is not loaded — no attach code can be minted (the relay never runs without one)';
 
+function safeOsHostname(): string | undefined {
+  try {
+    return hostname();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Synthesizes an attach URL from stored components with a FRESHLY-minted TOTP
  * code (issue #626 §3/§4 — the single mint point). Reads the late-bound secret
@@ -457,12 +472,19 @@ export function mintAttachUrl(deps: AttachDeps, parts: AttachUrlParts): string {
   if (secret === undefined || secret === '') throw new Error(NO_RELAY_SECRET_MESSAGE);
   const code = mintRelayCode(resolveNowMs(deps)());
   const current = withCurrentRelay(parts, deps.getTunnelStatus());
+  const hostName = sanitizeRelayHostName(
+    deps.getHostName !== undefined ? deps.getHostName() : safeOsHostname(),
+  );
+  const signed = attachSignatures(secret, current.wssUrl, code, hostName);
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
     current.wssUrl,
     code,
     relayRunId(secret, current.wssUrl),
-    attachSignature(secret, current.wssUrl, code),
+    signed?.sig,
+    hostName !== undefined && signed?.hostSig !== undefined
+      ? { name: hostName, sig: signed.hostSig }
+      : undefined,
   );
 }
 
@@ -1012,7 +1034,11 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  *      the existing badge's state/label in place — it never duplicates the
  *      `<div>` or stacks a second observer.
  *   2. Renders a fixed-position `<div id="__ait_debug_indicator">` at the
- *      top-left, accounting for safe-area insets. Background/text flip
+ *      top-left inside the safe area: the offset is the larger of CSS
+ *      `env(safe-area-inset-*)` and the SDK insets (`window.__sdk`, the source
+ *      `measure_safe_area` reads), re-evaluated on every heartbeat, resize and
+ *      orientation change. The Toss WebView reports `env()` as 0 while the SDK
+ *      reports the real insets. Background/text flip
  *      between the attached (green) and disconnected (grey) visuals.
  *   3. A `pointerdown` listener dismisses (hides) the badge on tap — dismiss
  *      is NON-terminal: a later state transition un-dismisses it, so a
@@ -1133,6 +1159,38 @@ export function buildIndicatorExpression(opts?: {
     `if (h && h.parentNode) { h.parentNode.removeChild(h); }` +
     `} catch (_) {}` +
     `}` +
+    // sdkInset() — the SDK's safe-area insets, read the same way as the
+    // `measure_safe_area` probe (tools.ts): window.__sdk SafeAreaInsets.get() /
+    // getSafeAreaInsets() on a real device, window.__ait.state.safeAreaInsets in
+    // the mock. In the Toss WebView env(safe-area-inset-*) is 0 while the SDK
+    // reports the real values, so the badge takes the larger of the two. Any
+    // failure or a non-number reads as 0 (CSS env() alone then decides).
+    `function sdkInset() {` +
+    `var r = { top: 0, left: 0 };` +
+    `try {` +
+    `var sdk = W.__sdk; var ait = W.__ait; var v = null;` +
+    `if (sdk && sdk.SafeAreaInsets && typeof sdk.SafeAreaInsets.get === 'function') { v = sdk.SafeAreaInsets.get(); }` +
+    `else if (sdk && typeof sdk.getSafeAreaInsets === 'function') { v = sdk.getSafeAreaInsets(); }` +
+    `else if (ait && ait.state && ait.state.safeAreaInsets) { v = ait.state.safeAreaInsets; }` +
+    `if (v && typeof v.top === 'number' && isFinite(v.top) && v.top > 0) { r.top = v.top; }` +
+    `if (v && typeof v.left === 'number' && isFinite(v.left) && v.left > 0) { r.left = v.left; }` +
+    `} catch (_) {}` +
+    `return r;` +
+    `}` +
+    // place(c) — positions the badge inside the safe area. Re-run on every
+    // render, heartbeat tick, resize and orientation change, so a late SDK init
+    // or a rotation moves it. The style is rewritten only when the SDK offset
+    // changed. The CSS env() term stays in the expression as the fallback.
+    `function place(c) {` +
+    `var i = sdkInset();` +
+    `var t = Math.round(i.top) + 8; var l = Math.round(i.left) + 8;` +
+    `if (c.topPx === t && c.leftPx === l) { return; }` +
+    `c.topPx = t; c.leftPx = l;` +
+    `try {` +
+    `c.el.style.setProperty('top', 'max(12px,calc(env(safe-area-inset-top,0px) + 8px),' + t + 'px)');` +
+    `c.el.style.setProperty('left', 'max(12px,calc(env(safe-area-inset-left,0px) + 8px),' + l + 'px)');` +
+    `} catch (_) {}` +
+    `}` +
     // mount(c) — (re-)attach the badge node to <body> if it is not connected.
     // A self-dismissed badge detaches itself; a later 'attached' re-mounts it.
     `function mount(c) { if (!c.el.isConnected && document.body) { document.body.appendChild(c.el); } }` +
@@ -1145,6 +1203,7 @@ export function buildIndicatorExpression(opts?: {
     `if (c.dismissed) { c.el.style.display = 'none'; return; }` +
     `c.el.style.display = 'block';` +
     `c.el.style.opacity = '1';` +
+    `place(c);` +
     `var up = c.state !== 'disconnected';` +
     `c.el.style.background = up ? '#0f7b4d' : '#8a8f98';` +
     `if (up) { dropClientBanner(); }` +
@@ -1214,7 +1273,7 @@ export function buildIndicatorExpression(opts?: {
     `detailEl.style.cssText = 'font-weight:normal;font-size:10px;line-height:1.35;margin-top:3px;white-space:pre-line;opacity:0.95';` +
     `el.appendChild(dotEl); el.appendChild(labelEl); el.appendChild(beatEl); el.appendChild(detailEl);` +
     `document.body.appendChild(el);` +
-    `c = { el: el, dotEl: dotEl, labelEl: labelEl, beatEl: beatEl, detailEl: detailEl, state: 'attached', dismissed: false, removed: false, beats: 0, t1: 0, t2: 0, hb: 0 };` +
+    `c = { el: el, dotEl: dotEl, labelEl: labelEl, beatEl: beatEl, detailEl: detailEl, state: 'attached', dismissed: false, removed: false, beats: 0, t1: 0, t2: 0, hb: 0, topPx: -1, leftPx: -1 };` +
     // Compositor-driven pulse (opacity animation runs off the main thread) — it
     // keeps pulsing even while the JS main thread is wedged, so a frozen
     // ♥<beats> next to a still-pulsing dot reads as a JS wedge at a glance.
@@ -1225,6 +1284,7 @@ export function buildIndicatorExpression(opts?: {
     `c.hb = (typeof setInterval !== 'undefined') ? setInterval(function () {` +
     `if (c.removed || !c.el.isConnected) { if (c.hb) { clearInterval(c.hb); c.hb = 0; } return; }` +
     `c.beats = (c.beats || 0) + 1;` +
+    `place(c);` +
     `if (c.state !== 'disconnected') { dropClientBanner(); }` +
     `if (c.state !== 'disconnected' && !c.dismissed) { renderDetail(c); }` +
     `}, ${INDICATOR_HEARTBEAT_MS}) : 0;` +
@@ -1237,6 +1297,9 @@ export function buildIndicatorExpression(opts?: {
     // the 1 Hz tick so a new pending call or a settle shows without a 1 s wait.
     `W.addEventListener('ait:bridge-call', function () { if (c.state !== 'disconnected' && !c.dismissed && !c.removed) { renderDetail(c); } });` +
     `W.__ait_indicator = c;` +
+    // A rotation or a viewport change can change the insets before the next tick.
+    `W.addEventListener('resize', function () { if (!c.removed) { place(c); } });` +
+    `W.addEventListener('orientationchange', function () { if (!c.removed) { place(c); } });` +
     // Observe relay-socket lifecycle without opening a new connection.
     `if (W.__ait_relay_ws_observed) {` +
     // Preferred: the in-app observer (src/in-app/attach.ts) already wraps

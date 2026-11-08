@@ -25,12 +25,24 @@ describe('page-at-code', () => {
     history.replaceState(null, '', `/?at=${CODE}&relay=${RELAY_ENC}&a=1`);
     hidePageAttachParams();
     expect(window.location.search).toBe('?a=1');
-    expect(readPageAttachParams()).toEqual({ at: CODE, relay: RELAY, sig: null });
+    expect(readPageAttachParams()).toEqual({
+      at: CODE,
+      relay: RELAY,
+      sig: null,
+      ahn: null,
+      ahs: null,
+    });
   });
 
   it('returns nulls with nothing anywhere', () => {
     history.replaceState({ other: 1 }, '', '/?a=1');
-    expect(readPageAttachParams()).toEqual({ at: null, relay: null, sig: null });
+    expect(readPageAttachParams()).toEqual({
+      at: null,
+      relay: null,
+      sig: null,
+      ahn: null,
+      ahs: null,
+    });
   });
 
   it('keeps other parameters byte for byte, and the path and hash', () => {
@@ -45,7 +57,7 @@ describe('page-at-code', () => {
     history.replaceState(null, '', '/?%61t=1&%72elay=wss%3A%2F%2Fa.example%2F&a=1');
     hidePageAttachParams();
     expect(window.location.search).toBe('?a=1');
-    expect(readPageAttachParams()).toEqual({ at: '1', relay: RELAY, sig: null });
+    expect(readPageAttachParams()).toMatchObject({ at: '1', relay: RELAY, sig: null });
   });
 
   it('leaves no query string when only those parameters were there', () => {
@@ -60,7 +72,7 @@ describe('page-at-code', () => {
     history.replaceState(null, '', `/?debug=1&relay=${RELAY_ENC}`);
     hidePageAttachParams();
     expect(window.location.search).toBe('?debug=1');
-    expect(readPageAttachParams()).toEqual({ at: null, relay: RELAY, sig: null });
+    expect(readPageAttachParams()).toMatchObject({ at: null, relay: RELAY, sig: null });
   });
 
   it('keeps the app state keys', () => {
@@ -107,7 +119,7 @@ describe('page-at-code', () => {
     history.replaceState(null, '', `/?debug=1&at=${CODE}&relay=${RELAY_ENC}&sig=${SIG}&a=1`);
     hidePageAttachParams();
     expect(window.location.search).toBe('?debug=1&a=1');
-    expect(readPageAttachParams()).toEqual({ at: CODE, relay: RELAY, sig: SIG });
+    expect(readPageAttachParams()).toMatchObject({ at: CODE, relay: RELAY, sig: SIG });
     expect(pageSearchWithAttachParams().get('sig')).toBe(SIG);
   });
 
@@ -133,5 +145,21 @@ describe('page-at-code', () => {
     } finally {
       history.replaceState = original;
     }
+  });
+
+  it('moves the computer name and its signature off the URL with the rest, and reads them back', () => {
+    history.replaceState(null, '', `/?at=${CODE}&relay=${RELAY_ENC}&ahn=dev-mac&ahs=SIGX&a=1`);
+    hidePageAttachParams();
+    expect(window.location.search).toBe('?a=1');
+    expect(readPageAttachParams()).toMatchObject({ ahn: 'dev-mac', ahs: 'SIGX' });
+  });
+
+  it('a reload of a link without a name still counts as coming from history', async () => {
+    const { pageAttachParamsFromHistory } = await import('../page-at-code.js');
+    history.replaceState(null, '', `/?at=${CODE}&relay=${RELAY_ENC}&sig=k.s&a=1`);
+    hidePageAttachParams();
+    expect(pageAttachParamsFromHistory()).toBe(true);
+    history.replaceState(history.state, '', `/?ahn=x&a=1`);
+    expect(pageAttachParamsFromHistory()).toBe(false);
   });
 });

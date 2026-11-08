@@ -119,7 +119,9 @@ function stripExisting(query: string, key: string): string {
  * @param sig - Optional signature of the relay origin and `at` code (see
  *   `relay-signing.ts`), spliced as `sig=<sig>`. It belongs to one `at` code, so a
  *   caller that mints a new code passes the signature made for that code.
- * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&rid=<runId>]`
+ * @param host - Optional developer computer name and its signature (`ahn=<name>&ahs=<sig>`,
+ *   see `relay-signing.ts`). Clients that predate the name ignore both parameters.
+ * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&ahn=<name>&ahs=<sig>][&rid=<runId>]`
  *   appended.
  * @throws If `wssUrl` is not a `wss:` URL (the gate rejects anything else, so
  *   producing such a link would be a silent dead end), or if `totpCode` is empty.
@@ -130,6 +132,7 @@ export function buildDeepLinkAttachUrl(
   totpCode: string,
   runId?: string,
   sig?: string,
+  host?: { readonly name: string; readonly sig: string },
 ): string {
   let relay: URL;
   try {
@@ -161,6 +164,9 @@ export function buildDeepLinkAttachUrl(
   if (sig !== undefined && sig !== '') {
     appended.push(['sig', sig]);
   }
+  if (host !== undefined && host.name !== '' && host.sig !== '') {
+    appended.push(['ahn', host.name], ['ahs', host.sig]);
+  }
   if (runId !== undefined && runId !== '') {
     appended.push(['rid', runId]);
   }
@@ -169,6 +175,8 @@ export function buildDeepLinkAttachUrl(
   // previous run is removed even when the caller does not provide a fresh one.
   // (`at` is always replaced below.)
   query = stripExisting(query, 'sig');
+  query = stripExisting(query, 'ahn');
+  query = stripExisting(query, 'ahs');
   query = stripExisting(query, 'rid');
 
   for (const [key] of appended) {

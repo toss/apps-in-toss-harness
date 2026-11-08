@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   decodeBase64Url,
   formatRelaySignature,
+  isRelayHostName,
   isRelayPublicKey,
   isRelaySignature,
   parseRelayCertDocument,
+  parseRelayHostSignature,
   parseRelaySignature,
   RELAY_CERT_DOCUMENT_MAX_BYTES,
   RELAY_CERT_DOCUMENT_MAX_CERTS,
@@ -16,9 +18,11 @@ import {
   RELAY_SIGNATURE_BYTES,
   RELAY_SIGNATURE_PARAM,
   relayCertMessage,
+  relayHostMessage,
   relayLinkMessage,
   relayOriginOf,
   relaySessionKeyId,
+  sanitizeRelayHostName,
 } from '../relay-signature.js';
 
 /** A canonical 87-char key starting with 0x04 ('B' = 000001, so 'BA…' = 0x04 0x00 …). */
@@ -193,5 +197,64 @@ describe('parseRelayCertDocument', () => {
 
   it.each(malformed)('rejects %s', (_name, value) => {
     expect(parseRelayCertDocument(value)).toBeNull();
+  });
+});
+
+describe('computer name (ahn / ahs)', () => {
+  it('relayHostMessage is domain-separated from the link message', () => {
+    expect(relayHostMessage('wss://a.trycloudflare.com', 'ab', 'dev-mac')).toBe(
+      'ait-relay-host-v1\nwss://a.trycloudflare.com\nab\ndev-mac',
+    );
+    expect(relayHostMessage('wss://a.trycloudflare.com', 'ab', 'x')).not.toBe(
+      relayLinkMessage('wss://a.trycloudflare.com', 'ab'),
+    );
+  });
+
+  it.each([
+    ['Daves-MacBook-Pro.local', 'Daves-MacBook-Pro'],
+    ['  host.LOCAL  ', 'host'],
+    ['my laptop', 'my-laptop'],
+    ['개발-pc', 'pc'],
+    ['..__a.b_c-d__..', 'a.b_c-d'],
+    ['a.local.local', 'a'],
+    ['x'.repeat(60), 'x'.repeat(40)],
+  ])('sanitizes %j to %j', (raw, expected) => {
+    expect(sanitizeRelayHostName(raw)).toBe(expected);
+  });
+
+  it.each([[''], ['   '], ['.local'], ['한글'], [undefined], [42]])('drops %j', (raw) => {
+    expect(sanitizeRelayHostName(raw)).toBeUndefined();
+  });
+
+  it('whatever it returns is accepted by isRelayHostName', () => {
+    for (const raw of ['a b c', 'z'.repeat(39) + '.local', 'ab_.local']) {
+      const name = sanitizeRelayHostName(raw);
+      expect(name === undefined || isRelayHostName(name)).toBe(true);
+    }
+  });
+
+  it('isRelayHostName rejects what a link must not carry', () => {
+    for (const bad of [
+      '',
+      'a b',
+      'a/b',
+      'x'.repeat(41),
+      'host.local',
+      'h\u00e9',
+      '<img>',
+      42,
+      null,
+    ]) {
+      expect(isRelayHostName(bad)).toBe(false);
+    }
+    expect(isRelayHostName('dev-mac_1.corp')).toBe(true);
+  });
+
+  it('parseRelayHostSignature accepts one canonical 64-byte signature only', () => {
+    expect(parseRelayHostSignature(SIG)).toHaveLength(RELAY_SIGNATURE_BYTES);
+    expect(parseRelayHostSignature(SIG.slice(1))).toBeNull();
+    expect(parseRelayHostSignature(`${SIG.slice(0, -1)}B`)).toBeNull();
+    expect(parseRelayHostSignature(`${SIG.slice(0, -1)}=`)).toBeNull();
+    expect(parseRelayHostSignature(null)).toBeNull();
   });
 });

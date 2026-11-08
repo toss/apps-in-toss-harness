@@ -51,6 +51,7 @@ import {
   type RelayCertDocument,
   type RelayCertJson,
   relayCertMessage,
+  relayHostMessage,
   relayLinkMessage,
   relayOriginOf,
 } from '@apps-in-toss/internal-protocol/relay-signature';
@@ -234,6 +235,51 @@ export function signRelay(
     current.cert.pub,
     signP1363(current.privateKey, relayLinkMessage(origin, atCode)),
   );
+}
+
+/** The signatures of one attach link. */
+export interface AttachSignatures {
+  /** `sig` value (`<keyId>.<linkSig>`). */
+  readonly sig: string;
+  /**
+   * `ahs` value: the same session key's signature over the developer computer's
+   * name, present only when a name was given. A client that predates the name
+   * never reads it.
+   */
+  readonly hostSig?: string;
+}
+
+/**
+ * The `sig` (and, with a `hostName`, the `ahs`) value for an attach link, or
+ * `undefined` when there is nothing to sign (no secret or no code) or the relay
+ * URL cannot be signed. Both signatures come from the same session key. Never
+ * throws, so a link can still be built without them.
+ */
+export function attachSignatures(
+  secretHex: string | undefined,
+  wssUrl: string,
+  atCode: string | undefined,
+  hostName?: string,
+  nowMs: number = Date.now(),
+): AttachSignatures | undefined {
+  if (secretHex === undefined || secretHex === '') return undefined;
+  if (atCode === undefined || atCode === '') return undefined;
+  try {
+    const origin = relayOriginOf(wssUrl);
+    if (origin === null) return undefined;
+    const current = currentSession(secretHex, nowMs);
+    const sig = formatRelaySignature(
+      current.cert.pub,
+      signP1363(current.privateKey, relayLinkMessage(origin, atCode)),
+    );
+    if (hostName === undefined) return { sig };
+    return {
+      sig,
+      hostSig: signP1363(current.privateKey, relayHostMessage(origin, atCode, hostName)),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /**

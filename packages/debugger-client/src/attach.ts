@@ -39,14 +39,17 @@ import {
 } from '@apps-in-toss/internal-protocol/relay-origin-close';
 import {
   decodeBase64Url,
+  isRelayHostName,
   isRelayPublicKey,
   parseRelayCertDocument,
+  parseRelayHostSignature,
   parseRelaySignature,
   RELAY_CERT_DOCUMENT_MAX_BYTES,
   RELAY_CERT_PATH,
   RELAY_PUBLIC_KEY_BYTES,
   type RelayCert,
   relayCertMessage,
+  relayHostMessage,
   relayLinkMessage,
   relayOriginOf,
 } from '@apps-in-toss/internal-protocol/relay-signature';
@@ -824,7 +827,13 @@ export function maybeAttach(
   }
 
   attachInFlight = true;
-  return consentThenVerify(gateResult.relayUrl, atCode, params.sig, options).finally(() => {
+  return consentThenVerify(
+    gateResult.relayUrl,
+    atCode,
+    params.sig,
+    { name: params.ahn, sig: params.ahs },
+    options,
+  ).finally(() => {
     attachInFlight = false;
   });
 }
@@ -842,19 +851,32 @@ async function consentThenVerify(
   relayUrl: string,
   atCode: string,
   sig: string | null,
+  host: { readonly name: string | null; readonly sig: string | null },
   options: MaybeAttachOptions | undefined,
 ): Promise<void> {
   const fromHistory = pageAttachParamsFromHistory();
   const origin = relayOriginOf(relayUrl);
   let asked = false;
+  let prefetchedCert: string | null = null;
   if (!fromHistory && (origin === null || !isRelayOriginConsented(origin))) {
     asked = true;
-    if (!(await askAttachConsent(origin))) {
+    // The computer name in the dialog is shown only when its signature
+    // verifies, which needs the relay's public certificate document. That one
+    // GET (no code, no credentials) is the only request before the answer, and
+    // only for a link that carries a name.
+    let hostName: string | null = null;
+    if (origin !== null && host.name !== null && host.sig !== null) {
+      const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
+      const checked = await verifyHostName(origin, atCode, sig, host.name, host.sig, keys);
+      hostName = checked.name;
+      prefetchedCert = checked.certDocument;
+    }
+    if (!(await askAttachConsent(origin, hostName))) {
       dropPageAttachParams();
       return;
     }
   }
-  await verifyThenInject(relayUrl, atCode, sig, options, fromHistory);
+  await verifyThenInject(relayUrl, atCode, sig, options, fromHistory, prefetchedCert);
   if (asked && attached && origin !== null) rememberRelayOriginConsent(origin);
 }
 
@@ -990,6 +1012,65 @@ async function fetchRelayCertDocument(relayOrigin: string): Promise<string | nul
   }
 }
 
+function parseRootKeys(keys: readonly unknown[]): Uint8Array[] {
+  const rootKeys: Uint8Array[] = [];
+  for (const key of keys) {
+    if (!isRelayPublicKey(key)) continue;
+    const bytes = decodeBase64Url(key);
+    if (bytes !== null && bytes.length === RELAY_PUBLIC_KEY_BYTES && bytes[0] === 0x04) {
+      rootKeys.push(bytes);
+    }
+  }
+  return rootKeys;
+}
+
+/**
+ * Checks the developer computer's name carried by a link (`ahn`) against its
+ * signature (`ahs`): the session key that the key id in `sig` selects, under a
+ * certificate a pinned root key signed and whose window holds the device clock,
+ * must have signed the name together with the relay origin and the `at` code.
+ * Returns the name only when all of that holds, else `null` (the dialog then
+ * shows the relay host as it did before). `certDocument` is the fetched
+ * document, handed on so the attach check does not fetch it again. Never throws.
+ */
+async function verifyHostName(
+  origin: string,
+  atCode: string,
+  sig: string | null,
+  name: string,
+  hostSig: string,
+  keys: readonly unknown[] | undefined,
+): Promise<{ name: string | null; certDocument: string | null }> {
+  const none = { name: null, certDocument: null };
+  try {
+    if (!Array.isArray(keys) || !isRelayHostName(name)) return none;
+    const hostSigBytes = parseRelayHostSignature(hostSig);
+    const link = parseRelaySignature(sig);
+    const subtle = globalThis.crypto?.subtle;
+    const rootKeys = parseRootKeys(keys);
+    if (hostSigBytes === null || link === null || subtle === undefined || atCode === '') {
+      return none;
+    }
+    if (rootKeys.length === 0) return none;
+    const certDocument = await fetchRelayCertDocument(origin);
+    const certs = parseRelayCertDocument(certDocument);
+    if (certs === null) return { name: null, certDocument };
+    const now = Math.floor(Date.now() / 1000);
+    const message = relayHostMessage(origin, atCode, name);
+    for (const cert of certs) {
+      if (cert.keyId !== link.keyId) continue;
+      if (!(await certifiedByRoot(subtle, rootKeys, cert))) continue;
+      if (!(now >= cert.notBefore && now <= cert.notAfter)) continue;
+      if (await verifyWith(subtle, cert.sessionPublicKeyBytes, hostSigBytes, message)) {
+        return { name, certDocument };
+      }
+    }
+    return { name: null, certDocument };
+  } catch {
+    return none;
+  }
+}
+
 /**
  * Verifies the relay signature with WebCrypto. Fails closed on every path.
  *
@@ -1010,16 +1091,10 @@ async function verifyRelaySignature(
   sig: string | null,
   keys: readonly unknown[] | undefined,
   fromHistory: boolean,
+  prefetchedCert: string | null = null,
 ): Promise<SignatureVerdict> {
   if (!Array.isArray(keys) || keys.length === 0) return NO_KEY;
-  const rootKeys: Uint8Array[] = [];
-  for (const key of keys) {
-    if (!isRelayPublicKey(key)) continue;
-    const bytes = decodeBase64Url(key);
-    if (bytes !== null && bytes.length === RELAY_PUBLIC_KEY_BYTES && bytes[0] === 0x04) {
-      rootKeys.push(bytes);
-    }
-  }
+  const rootKeys = parseRootKeys(keys);
   if (rootKeys.length === 0) return NO_KEY;
 
   const subtle = globalThis.crypto?.subtle;
@@ -1029,7 +1104,7 @@ async function verifyRelaySignature(
   if (origin === null || link === null) return BAD_SIGNATURE;
 
   const kept = fromHistory ? keptRelayCert() : null;
-  const certDocument = kept ?? (await fetchRelayCertDocument(origin));
+  const certDocument = kept ?? prefetchedCert ?? (await fetchRelayCertDocument(origin));
   const certs = parseRelayCertDocument(certDocument);
   if (certDocument === null || certs === null) return BAD_SIGNATURE;
 
@@ -1076,9 +1151,17 @@ async function verifyThenInject(
   sig: string | null,
   options: MaybeAttachOptions | undefined,
   fromHistory: boolean,
+  prefetchedCert: string | null = null,
 ): Promise<void> {
   const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
-  const verdict = await verifyRelaySignature(relayUrl, atCode, sig, keys, fromHistory);
+  const verdict = await verifyRelaySignature(
+    relayUrl,
+    atCode,
+    sig,
+    keys,
+    fromHistory,
+    prefetchedCert,
+  );
   if (verdict.kind === 'ok') {
     // Re-check after the await: another path may have attached meanwhile.
     if (!attached) {

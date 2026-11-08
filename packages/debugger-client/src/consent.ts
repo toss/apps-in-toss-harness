@@ -34,11 +34,19 @@ export const CONSENT_CANCEL = '취소';
  * Dialog body. Says plainly what "연결" grants: the developer's computer can
  * control this app remotely and read its data. `relayOrigin` (`wss://<host>`)
  * is shown as its host so the person can compare it with the QR they scanned.
- * Without a usable origin the host part is left out.
+ * `hostName`, the developer computer's name from the link, replaces it when the
+ * caller verified its signature (attach.ts). Without either, the part in
+ * parentheses is left out.
  */
-export function consentBody(relayOrigin: string | null): string {
+export function consentBody(relayOrigin: string | null, hostName: string | null = null): string {
+  // The computer's name, when its signature verified, says more to the person
+  // than the random tunnel host; the relay host is the fallback.
   const host =
-    relayOrigin !== null && ORIGIN_RE.test(relayOrigin) ? relayOrigin.slice('wss://'.length) : '';
+    hostName !== null && hostName !== ''
+      ? hostName
+      : relayOrigin !== null && ORIGIN_RE.test(relayOrigin)
+        ? relayOrigin.slice('wss://'.length)
+        : '';
   const who = host === '' ? '개발자 컴퓨터' : `개발자 컴퓨터(${host})`;
   return `${who}가 이 앱을 원격으로 조작하고 앱 안의 데이터를 볼 수 있게 돼요. ${CONSENT_BODY_SUFFIX}`;
 }
@@ -97,9 +105,13 @@ export function rememberRelayOriginConsent(relayOrigin: string, now: number = Da
  * Shows the dialog and resolves `true` only when "연결" is tapped. Resolves
  * `false` on "취소", Escape, a tap outside the dialog, or when it cannot be
  * shown. Sends nothing anywhere. `relayOrigin` is the relay the person would
- * attach to; its host is shown in the body (as text, never as markup).
+ * attach to; its host is shown in the body (as text, never as markup), or `hostName`
+ * when given.
  */
-export function askAttachConsent(relayOrigin: string | null = null): Promise<boolean> {
+export function askAttachConsent(
+  relayOrigin: string | null = null,
+  hostName: string | null = null,
+): Promise<boolean> {
   if (typeof document === 'undefined') return Promise.resolve(false);
   const parent = document.body ?? document.documentElement;
   if (parent === null || parent === undefined) return Promise.resolve(false);
@@ -174,7 +186,7 @@ export function askAttachConsent(relayOrigin: string | null = null): Promise<boo
       title.textContent = CONSENT_TITLE;
       const body = document.createElement('p');
       body.id = 'body';
-      body.textContent = consentBody(relayOrigin);
+      body.textContent = consentBody(relayOrigin, hostName);
 
       const actions = document.createElement('div');
       actions.className = 'actions';
