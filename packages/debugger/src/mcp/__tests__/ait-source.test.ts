@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { type AitCommandSender, ChiiAitSource } from '../ait-chii-source.js';
+import {
+  type AitCommandSender,
+  ChiiAitSource,
+  OPERATIONAL_ENVIRONMENT_EXPRESSION,
+} from '../ait-chii-source.js';
 import { type FetchLike, HttpAitSource } from '../ait-http-source.js';
 
 /** Records the methods sent and returns canned raw results (no websocket). */
@@ -75,6 +79,50 @@ describe('ChiiAitSource on a real device (page has no AIT.* handler)', () => {
     const env = await new ChiiAitSource(sender).get('AIT.getOperationalEnvironment');
     expect(env).toEqual({ environment: 'toss', sdkVersion: null });
     expect(sender.sent).toEqual(['AIT.getOperationalEnvironment', 'Runtime.evaluate']);
+  });
+
+  describe('OPERATIONAL_ENVIRONMENT_EXPRESSION (page-side unwrap)', () => {
+    async function run(sdkCall: unknown, sdk?: unknown): Promise<unknown> {
+      const win = { __sdkCall: sdkCall, __sdk: sdk };
+      const fn = new Function('window', `return ${OPERATIONAL_ENVIRONMENT_EXPRESSION};`);
+      return JSON.parse((await fn(win)) as string);
+    }
+
+    it('unwraps the {ok:true,value} wrapper', async () => {
+      const call = vi.fn().mockResolvedValue({ ok: true, value: 'toss' });
+      expect(await run(call, { version: '3.8.0' })).toEqual({
+        ok: true,
+        environment: 'toss',
+        sdkVersion: '3.8.0',
+      });
+      // Same call form as call_sdk: name followed by spread (empty) args.
+      expect(call).toHaveBeenCalledWith('getOperationalEnvironment');
+    });
+
+    it('accepts a bare string', async () => {
+      expect(await run(vi.fn().mockResolvedValue('sandbox'))).toEqual({
+        ok: true,
+        environment: 'sandbox',
+        sdkVersion: null,
+      });
+    });
+
+    it('treats {ok:false} as a failure', async () => {
+      expect(await run(vi.fn().mockResolvedValue({ ok: false, error: 'x' }))).toEqual({
+        ok: false,
+      });
+    });
+
+    it('treats a wrapper with a non-string value as a failure', async () => {
+      expect(await run(vi.fn().mockResolvedValue({ ok: true, value: { a: 1 } }))).toEqual({
+        ok: false,
+      });
+    });
+
+    it('treats a throw or a missing bridge as a failure', async () => {
+      expect(await run(vi.fn().mockRejectedValue(new Error('boom')))).toEqual({ ok: false });
+      expect(await run(undefined)).toEqual({ ok: false });
+    });
   });
 
   it('reports a Korean error when the bridge cannot answer', async () => {

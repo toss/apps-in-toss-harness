@@ -10,7 +10,7 @@
  * - #748 disconnected → NON-BLOCKING (`pointer-events:none`) + SELF-DISMISSING
  *   (fades and removes itself after the window), so a run that ends with
  *   `close()` injecting `{ state: 'disconnected' }` no longer leaves a permanent
- *   "Debugger Disconnected" element that intercepts taps on the phone.
+ *   "디버거 연결 끊김" element that intercepts taps on the phone.
  * - reconnect before the self-dismiss cancels it and restores the badge
  *   (transient tunnel blips do not flash-remove it).
  *
@@ -69,14 +69,65 @@ describe('buildIndicatorExpression — badge DOM behavior', () => {
     delete (window as unknown as Record<string, unknown>).__ait_indicator;
   });
 
-  it('renders the attached badge — visible, red, pointer-events:auto', () => {
+  it('renders the attached badge — visible, green, pointer-events:auto', () => {
     evalExpression();
     const el = badge();
     expect(el).not.toBeNull();
-    expect(label()?.textContent).toBe('Debugger Connected');
+    expect(label()?.textContent).toBe('디버거 연결됨');
     expect(el?.style.pointerEvents).toBe('auto');
-    expect(el?.style.background).toBe('rgb(229, 72, 77)'); // #e5484d
+    expect(el?.style.background).toBe('rgb(15, 123, 77)'); // #0f7b4d
     expect(el?.style.display).toBe('block');
+  });
+
+  describe('client status banner de-duplication', () => {
+    const HOST_ID = '__ait_status_' + 'banner';
+    const w = window as unknown as Record<string, unknown>;
+
+    function addClientBanner(status: string): void {
+      const host = document.createElement('div');
+      host.id = HOST_ID;
+      document.body.appendChild(host);
+      w.__ait_debug_status = status;
+    }
+
+    afterEach(() => {
+      document.getElementById(HOST_ID)?.remove();
+      delete w.__ait_debug_status;
+    });
+
+    it('removes the client banner when it shows the connected confirmation', () => {
+      addClientBanner('connected');
+      evalExpression();
+      expect(document.getElementById(HOST_ID)).toBeNull();
+      expect(badge()).not.toBeNull();
+    });
+
+    it('removes a connected banner that appears after injection (heartbeat tick)', () => {
+      evalExpression();
+      addClientBanner('connected');
+      vi.advanceTimersByTime(1100);
+      expect(document.getElementById(HOST_ID)).toBeNull();
+    });
+
+    it.each(['connecting', 'server-unreachable', 'session-ended'])(
+      'keeps the client banner while it shows %s',
+      (status) => {
+        addClientBanner(status);
+        evalExpression();
+        vi.advanceTimersByTime(1100);
+        expect(document.getElementById(HOST_ID)).not.toBeNull();
+      },
+    );
+
+    it('keeps the client banner when the disconnected badge is injected', () => {
+      addClientBanner('connected');
+      evalExpression({ state: 'disconnected' });
+      expect(document.getElementById(HOST_ID)).not.toBeNull();
+    });
+
+    it('does not carry the client banner host id as a contiguous string', () => {
+      expect(buildIndicatorExpression()).not.toContain(HOST_ID);
+    });
   });
 
   it('disconnected badge is NON-BLOCKING (pointer-events:none) with the ko notice', () => {
@@ -111,7 +162,7 @@ describe('buildIndicatorExpression — badge DOM behavior', () => {
     const el = badge();
     expect(el).not.toBeNull();
     expect(el?.style.pointerEvents).toBe('auto');
-    expect(label()?.textContent).toBe('Debugger Connected');
+    expect(label()?.textContent).toBe('디버거 연결됨');
   });
 
   it('a reconnect AFTER a self-dismiss re-mounts the badge (durable controller)', () => {
@@ -279,7 +330,7 @@ describe('buildIndicatorExpression — freeze/spinner triage signals (#749)', ()
     // window.__ait_bridge is undefined (env 2 mock / no bridge).
     expect(() => evalExpression()).not.toThrow();
     const text = badge()?.textContent ?? '';
-    expect(text).toContain('Debugger Connected');
+    expect(text).toContain('디버거 연결됨');
     expect(text).toContain('♥0');
     expect(text).not.toContain('⏳');
     expect(text).not.toContain('last:');
@@ -403,7 +454,7 @@ describe('buildIndicatorRemovalExpression — end-of-run badge removal', () => {
     evalExpression();
 
     expect(badge()).not.toBeNull();
-    expect(label()?.textContent).toBe('Debugger Connected');
+    expect(label()?.textContent).toBe('디버거 연결됨');
   });
 
   it('SECRET-HANDLING: the expression carries no URLs or codes', () => {

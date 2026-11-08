@@ -784,7 +784,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           if (skew !== null) {
             return protocolVersionMismatchError(skew);
           }
-          // Debugger attached — show the on-phone "Debugger Connected" indicator.
+          // Debugger attached — show the on-phone "디버거 연결됨" indicator.
           // The attach wait resolves on the relay's /targets listing; the client
           // WebSocket that carries CDP commands is only opened by enableDomains()
           // (idempotent). Without this the badge's Runtime.evaluate hit
@@ -1666,7 +1666,7 @@ export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
 }
 
 /**
- * best-effort: 폰의 "Debugger Connected" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
+ * best-effort: 폰의 "디버거 연결됨" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
  * `console.debug`를 쓰는 cell.ts 헬퍼 대신 직접 보낸다 — 데몬에서는 stdout이 MCP stdio라
  * 로그 한 줄이 프로토콜을 깨뜨린다. 연결·타깃이 없거나 전송이 실패해도 조용히 끝난다.
  * 반환 Promise는 `Runtime.evaluate` 응답(= relay가 프레임을 폰으로 넘긴 뒤)에 풀리고 절대

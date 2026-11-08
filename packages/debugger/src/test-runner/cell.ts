@@ -327,7 +327,7 @@ function logIndicatorSkipped(kind: 'inject' | 'removal', err: unknown): void {
 }
 
 /**
- * Injects (or updates) the "Debugger Connected"/"Debugger Disconnected"
+ * Injects (or updates) the "디버거 연결됨" / "디버거 연결 끊김"
  * on-phone indicator via `Runtime.evaluate` (#730).
  *
  * Uses the same CDP mechanism as {@link injectGlobals} — a single
@@ -375,7 +375,7 @@ export async function injectDebugIndicator(
 /**
  * Removes the on-phone debug indicator badge via `Runtime.evaluate` (best
  * effort). Called when a `debugger-test` run finishes (pass or fail), before
- * the relay is torn down, so a stale "Debugger Connected" / "disconnected"
+ * the relay is torn down, so a stale "디버거 연결됨" / "disconnected"
  * badge is not left on a page that will never dial a relay again.
  *
  * Same isolation guarantee as {@link injectDebugIndicator}: NEVER throws to its

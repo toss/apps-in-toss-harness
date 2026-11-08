@@ -986,6 +986,9 @@ const INDICATOR_HEARTBEAT_MS = 1000;
  */
 const INDICATOR_PENDING_STALE_MS = 120_000;
 
+/** Default attached-state badge text, worded like the debugger-client banner. */
+export const DEFAULT_CONNECTED_LABEL = '디버거 연결됨';
+
 /**
  * Default disconnected-state badge text. A badge still on screen means the page
  * was NOT reloaded by the last QR scan (Toss only brings an already-open
@@ -996,7 +999,7 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
 
 /**
  * Builds a self-contained IIFE DOM expression that renders a LIVE
- * "Debugger Connected" / disconnected badge on the bottom-left of the phone
+ * "디버거 연결됨" / disconnected badge on the top-left of the phone
  * screen (#730), with a graceful self-dismiss on disconnect (#748).
  *
  * **Pure function** — returns a JS expression string; does NOT inject it.
@@ -1009,8 +1012,8 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  *      the existing badge's state/label in place — it never duplicates the
  *      `<div>` or stacks a second observer.
  *   2. Renders a fixed-position `<div id="__ait_debug_indicator">` at the
- *      bottom-left, accounting for safe-area insets. Background/text flip
- *      between the attached (red) and disconnected (grey) visuals.
+ *      top-left, accounting for safe-area insets. Background/text flip
+ *      between the attached (green) and disconnected (grey) visuals.
  *   3. A `pointerdown` listener dismisses (hides) the badge on tap — dismiss
  *      is NON-terminal: a later state transition un-dismisses it, so a
  *      genuine disconnect after a dismissed tap is still visible.
@@ -1019,7 +1022,7 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  *      never absorb a tap) and SELF-DISMISSING (it fades and detaches itself
  *      after {@link INDICATOR_SELF_DISMISS_MS}). This is why a run that ends
  *      with `close()` injecting `{ state: 'disconnected' }` no longer leaves a
- *      permanent grey "Debugger Disconnected" element on the phone. A reconnect
+ *      permanent grey disconnected-notice element on the phone. A reconnect
  *      (`setState(c, 'attached')`) cancels the pending self-dismiss and
  *      re-mounts the badge if it had already detached — transient tunnel blips
  *      do not flash-remove it, and a genuine re-attach restores it. The
@@ -1061,7 +1064,7 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  * addresses, or TOTP codes whatsoever — DOM label text + a structural
  * pathname match (`/target/`) only.
  *
- * @param opts.label - Attached-state badge text (default: `'Debugger Connected'`).
+ * @param opts.label - Attached-state badge text (default: {@link DEFAULT_CONNECTED_LABEL}).
  * @param opts.disconnectedLabel - Disconnected-state badge text. Default is the
  *   Korean notice {@link DEFAULT_DISCONNECTED_LABEL} (ko-primary in-app string
  *   convention) — shown briefly then self-dismissed. It also tells the user how
@@ -1075,7 +1078,7 @@ export function buildIndicatorExpression(opts?: {
   disconnectedLabel?: string;
   state?: 'attached' | 'disconnected';
 }): string {
-  const label = opts?.label ?? 'Debugger Connected';
+  const label = opts?.label ?? DEFAULT_CONNECTED_LABEL;
   const disconnectedLabel = opts?.disconnectedLabel ?? DEFAULT_DISCONNECTED_LABEL;
   // JSON.stringify ensures the labels/state are safely embedded even if they
   // contain quotes or backslashes.
@@ -1117,6 +1120,19 @@ export function buildIndicatorExpression(opts?: {
     `}` +
     `c.detailEl.textContent = lines.join('\\n');` +
     `}` +
+    // dropClientBanner() — once the daemon badge is up, the debugger-client's own
+    // "connected" confirmation banner is redundant; remove it so only one
+    // indicator remains. Only the connected confirmation is removed: an error or
+    // connecting banner (any other window.__ait_debug_status) is left alone. The
+    // host id is split so the daemon bundle never carries the client marker
+    // string (check:debug-surface-absent), same approach as target-guard.ts.
+    `function dropClientBanner() {` +
+    `try {` +
+    `if (W.__ait_debug_status !== 'connected') { return; }` +
+    `var h = document.getElementById('__ait_status_' + 'banner');` +
+    `if (h && h.parentNode) { h.parentNode.removeChild(h); }` +
+    `} catch (_) {}` +
+    `}` +
     // mount(c) — (re-)attach the badge node to <body> if it is not connected.
     // A self-dismissed badge detaches itself; a later 'attached' re-mounts it.
     `function mount(c) { if (!c.el.isConnected && document.body) { document.body.appendChild(c.el); } }` +
@@ -1130,7 +1146,8 @@ export function buildIndicatorExpression(opts?: {
     `c.el.style.display = 'block';` +
     `c.el.style.opacity = '1';` +
     `var up = c.state !== 'disconnected';` +
-    `c.el.style.background = up ? '#e5484d' : '#8a8f98';` +
+    `c.el.style.background = up ? '#0f7b4d' : '#8a8f98';` +
+    `if (up) { dropClientBanner(); }` +
     // Disconnected badge is non-blocking — it can never absorb a tap (#748).
     `c.el.style.pointerEvents = up ? 'auto' : 'none';` +
     `c.labelEl.textContent = up ? ${safeLabel} : ${safeDisconnectedLabel};` +
@@ -1168,11 +1185,13 @@ export function buildIndicatorExpression(opts?: {
     `var el = document.createElement('div');` +
     `el.id = '__ait_debug_indicator';` +
     `try { el.title = ${safeTriageTitle}; } catch (_) {}` +
-    // Position: fixed, bottom-left with safe-area inset support.
+    // Position: fixed, TOP-left below the safe-area inset. The debugger-client
+    // status banner owns the bottom edge (full width, safe-area aware), so the
+    // badge lives at the opposite edge and the two can never overlap.
     `el.style.cssText = [` +
     `'position:fixed',` +
     `'left:max(12px,calc(env(safe-area-inset-left,0px) + 8px))',` +
-    `'bottom:max(12px,calc(env(safe-area-inset-bottom,0px) + 8px))',` +
+    `'top:max(12px,calc(env(safe-area-inset-top,0px) + 8px))',` +
     `'z-index:2147483647',` +
     `'color:#fff',` +
     `'font:bold 11px/1.2 system-ui,sans-serif',` +
@@ -1206,6 +1225,7 @@ export function buildIndicatorExpression(opts?: {
     `c.hb = (typeof setInterval !== 'undefined') ? setInterval(function () {` +
     `if (c.removed || !c.el.isConnected) { if (c.hb) { clearInterval(c.hb); c.hb = 0; } return; }` +
     `c.beats = (c.beats || 0) + 1;` +
+    `if (c.state !== 'disconnected') { dropClientBanner(); }` +
     `if (c.state !== 'disconnected' && !c.dismissed) { renderDetail(c); }` +
     `}, ${INDICATOR_HEARTBEAT_MS}) : 0;` +
     // stop() — teardown hook called by detachDebugSurface (src/in-app/attach.ts)

@@ -556,7 +556,7 @@ export function createRelayConnectionFactory(
       // FIX (a): inject AFTER enableDomains so the page-level CDP websocket is
       // open and sendCommand() will not hit the ws===null guard.
 
-      // Show the on-phone "Debugger Connected" badge. injectDebugIndicator
+      // Show the on-phone "디버거 연결됨" badge. injectDebugIndicator
       // swallows its own errors (cell.ts try/catch), so a badge failure is
       // non-fatal — test execution proceeds regardless.
       await injectDebugIndicator(booted.connection);

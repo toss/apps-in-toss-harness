@@ -68,11 +68,18 @@ function isUnimplemented(err: unknown): boolean {
  * `call_sdk` uses) can answer it. `sdkVersion` is read from `window.__sdk` when
  * the bundle exposes it, else null.
  */
-const OPERATIONAL_ENVIRONMENT_EXPRESSION =
+export const OPERATIONAL_ENVIRONMENT_EXPRESSION =
   '(async () => {' +
   " if (typeof window.__sdkCall !== 'function') return JSON.stringify({ok:false});" +
   ' try {' +
-  "  const env = await window.__sdkCall('getOperationalEnvironment');" +
+  // Same call form as call_sdk (buildCallSdkExpression): name, then spread args.
+  "  const r = await window.__sdkCall('getOperationalEnvironment', ...[]);" +
+  // The device bridge answers with a wrapper {ok, value}; a bare string is also
+  // accepted. ok:false (or anything else) is a failure.
+  '  let env = null;' +
+  "  if (typeof r === 'string') env = r;" +
+  "  else if (r && typeof r === 'object' && r.ok === true && typeof r.value === 'string') env = r.value;" +
+  '  if (env === null) return JSON.stringify({ok:false});' +
   '  const v = window.__sdk && (window.__sdk.version || window.__sdk.sdkVersion);' +
   "  return JSON.stringify({ok:true,environment:env,sdkVersion:typeof v === 'string' ? v : null});" +
   ' } catch (e) { return JSON.stringify({ok:false}); }' +
