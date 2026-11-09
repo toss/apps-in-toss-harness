@@ -44,6 +44,7 @@ import {
   type StartDebugMode,
 } from '../debug-server.js';
 import { AutoDevtoolsOpener } from '../devtools-opener.js';
+import { resetRelayRootState } from '../relay-root.js';
 import { InMemoryDiagnosticsCollector, type TunnelStatus } from '../tools.js';
 import { testVerifyAuth } from './relay-test-auth.js';
 
@@ -357,6 +358,7 @@ describe('familyKeyForMode (#378)', () => {
 // into the boot path (not just the standalone unit in relay-auth-required.test.ts).
 describe('bootRelayFamily — relay-auth baseline (#250)', () => {
   beforeEach(() => {
+    resetRelayRootState(); // earlier tests in this file activate a relay key
     delete process.env.AIT_DEBUG_TOTP_SECRET;
   });
   afterEach(() => {

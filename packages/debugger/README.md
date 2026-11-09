@@ -51,23 +51,50 @@ MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고
 AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger
 ```
 
-### 공개키 출력 (`debugger relay-key`)
+### relay 키와 공개키 (`debugger relay-key`, `readRelayPublicKeys`)
 
-QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 프로젝트 폴더에서 `npx -p <tgz URL> debugger relay-key`(`--project <경로>` 선택)를 실행하면 `.ait_relay`가 없을 때 만들고, 공개키만 stdout에 한 줄로 출력한다. 이 값을 `startDebugConsole({ relayPublicKeys: ['…'] })`에 넣는다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 이 공개키는 루트 키이고, 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.3.1을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 런타임 최소 버전이 0.3.1을 넘으면 이 경로는 없앨 수 있다. 0.3.2 클라이언트는 `arc`가 없는 링크(0.3.1 이하 디버거)를 연결하지 않고 업데이트를 안내한다. 세션 키는 파일이나 로그에 남지 않는다.
+QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 공개키의 개인키(루트 서명 키)는 **메모리에만** 있다. 파일(`.ait_relay`)에도, 환경 변수에도 두지 않는다.
+
+- **key agent**: 루트 키는 `debugger key-agent`라는 작은 상주 Node 프로세스가 메모리에 들고 있다. 데몬이나 빌드 헬퍼, `relay-key` 명령이 처음 부를 때 알아서 떠서(`detached`, stdio 없음) 따로 설치하거나 켤 것이 없다. launchd·systemd·레지스트리·OS 키체인·네트워크 포트를 쓰지 않고, 사용자 폴더도 읽지 않는다. 통신은 사용자 전용 디렉터리(0700)의 Unix 소켓(macOS·Linux·WSL, `~/.ait-debugger/agent.sock`. Linux는 `$XDG_RUNTIME_DIR/ait-debugger/`가 있으면 그 아래)이나 Windows 이름 있는 파이프(`\\.\pipe\ait-debugger-<사용자 이름 해시>`)로만 한다. 요청마다 agent별 무작위 토큰(같은 사용자 전용 파일)이 필요한데, 이 토큰은 요청 권한만 줄 뿐 키가 아니다. agent는 개인키를 내보내지 않고 공개키와 세션 인증서만 돌려준다. 살아 있는 키가 없는 채로 5분이 지나면 스스로 끝난다.
+- **수명**: 키는 만든(또는 가져온) 때부터 기본 **24시간**, 최대 **72시간**(`AIT_DEBUG_RELAY_KEY_TTL_HOURS`) 뒤 만료된다. 만료되면 agent는 더 서명하지 않는다. 공개키와 만료 시각(`notAfter`)은 번들에 박히고, 클라이언트는 만료 시각을 5분 넘긴 키의 서명을 거부한다. 그래서 만료되거나 agent가 다시 뜬 뒤에는 **디버그 번들을 다시 빌드해 업로드해야** 한다. 데몬은 만료 2시간 전부터 `get_debug_status`의 `relayKey.hint`로 알린다.
+- **agent를 못 쓰는 환경**(샌드박스, 읽기 전용 홈, CI): 데몬이 자기 메모리에 키를 두고 쓰며, 데몬을 재시작하면 키가 새로 만들어지므로 그때마다 번들을 다시 빌드해야 한다고 stderr에 알린다. 빌드 헬퍼와 `relay-key` 명령은 이 경우 에러로 멈춘다(프로세스가 끝나면 사라지는 키는 번들에 박을 수 없다). `AIT_DEBUGGER_KEY_AGENT=off`로 agent를 끌 수 있고, `AIT_DEBUGGER_KEY_AGENT_DIR`로 디렉터리를 바꿀 수 있다.
+
+번들에 넣을 공개키는 빌드 헬퍼로 얻는다. 디버그 빌드 게이트(`AIT_DEBUG_BUILD`) 안에서만 쓴다.
+
+```ts
+// vite.config.ts (webpack·rspack도 같은 방식으로 define에 넣는다)
+import { readRelayPublicKeys } from '@apps-in-toss/debugger/relay-keys';
+
+define: {
+  __AIT_RELAY_KEYS__: JSON.stringify(await readRelayPublicKeys(process.cwd())),
+},
+```
+
+`readRelayPublicKeys(projectRoot)`는 agent를 띄우고, 프로젝트의 키를 가져오거나 만들어 `[{ publicKey, notAfter }]`(`notAfter`는 유닉스 초)를 돌려준다. 공개 데이터만 나오고 개인키·시크릿은 어디에도 출력하지 않는다. 그 값을 `startDebugConsole({ relayPublicKeys: __AIT_RELAY_KEYS__ })`에 넘긴다. 프로젝트는 `git rev-parse --git-common-dir`(없으면 가장 가까운 `package.json` 폴더)의 실경로로 구분하므로 같은 저장소의 worktree는 키를 같이 쓴다.
+
+명령으로도 같은 값을 볼 수 있다.
+
+```sh
+npx -p <tgz URL> debugger relay-key            # 공개키 한 줄을 stdout에, 만료 시각을 stderr에
+npx -p <tgz URL> debugger relay-key --json     # [{ "publicKey", "notAfter" }] 전부
+npx -p <tgz URL> debugger relay-key --rotate   # 이 프로젝트의 키를 버리고 새 키를 만든다
+```
+
+공개키는 루트 키이고 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, agent가 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지, 루트 만료를 넘지 않음)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.3.1을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 런타임 최소 버전이 0.3.1을 넘으면 이 경로는 없앨 수 있다. 0.3.2 클라이언트는 `arc`가 없는 링크(0.3.1 이하 디버거)를 연결하지 않고 업데이트를 안내한다.
 
 #### 키 교체 (`debugger relay-key --rotate`)
 
-`.ait_relay`는 오래 쓰는 시크릿이라, 만든 날짜를 `.ait_relay.meta`에 함께 적는다(`.gitignore`에 같이 추가된다. 이 파일이 없는 예전 `.ait_relay`는 파일 수정 시각을 만든 날짜로 본다). 데몬은 키가 **21일**을 넘으면 stderr와 `get_debug_status`의 `relayKey.hint`로 교체를 권하고, **30일**을 넘으면 relay를 시작하지 않는다(`start_debug`가 교체 방법과 함께 에러를 돌려준다). `AIT_DEBUG_TOTP_SECRET`을 직접 export한 경우에는 그 값이 `.ait_relay`와 같을 때만 나이를 따진다.
+키가 유출됐을 수 있거나 번들을 새 키로 맞추고 싶을 때 쓴다. agent가 메모리의 키를 버리고 새 키를 만들며, 새 공개키 한 줄이 stdout에 나온다. 이어서 다음을 한다.
 
-```sh
-npx -p <tgz URL> debugger relay-key --rotate
-```
+1. 계속 테스트할 번들을 모두 다시 빌드한다(`readRelayPublicKeys`가 새 키를 돌려준다). 이전 키만 가진 번들은 이 데몬에 더 이상 attach되지 않는다.
+2. 데몬이 떠 있으면 `start_debug`를 다시 호출해 새 키를 쓰게 한다.
 
-새 시크릿을 같은 폴더에 임시 파일로 쓴 뒤 이름을 바꿔 `.ait_relay`를 교체하므로(권한 0600) 중간에 실패해도 이전 키가 남는다. stdout에는 새 공개키 한 줄만 나오고 시크릿은 어디에도 출력하지 않는다. 이전 공개키는 stderr에 보여 준다. 이어서 다음을 한다.
+#### 예전 `.ait_relay`와 `AIT_DEBUG_TOTP_SECRET`
 
-1. 새 공개키를 `startDebugConsole({ relayPublicKeys: [...] })`에 넣고, 계속 테스트할 번들을 모두 다시 빌드한다. 이전 키만 가진 번들은 이 데몬에 더 이상 attach되지 않는다.
-2. 이전 공개키는 같은 번들이 아직 이전 키를 쓰는 데몬(교체하지 않은 팀원의 PC, CI)에도 붙어야 하는 동안만 배열에 남긴다. 그런 데몬이 없어지면 지운다.
-3. 데몬을 다시 시작해 새 키를 읽게 한다.
+0.3.1까지는 시크릿을 `.ait_relay`(와 `.ait_relay.meta`)에 두었다. 이제 데몬·빌드 헬퍼·`relay-key` 명령이 프로젝트(와 같은 저장소의 worktree 폴더)에서 이 파일을 찾으면 자동으로 시크릿을 검증하고 agent에 가져온 뒤, agent가 돌려준 공개키가 시크릿에서 유도한 값과 같은 것을 확인하고 **파일을 삭제한다**. 같은 키라서 0.3.1로 빌드한 번들도 키가 만료될 때까지 계속 attach된다. 어느 단계든 실패하면 파일을 그대로 두고 이유만 알린다(agent를 못 쓰는 환경에서는 키가 프로세스 메모리에만 있으므로 파일을 지우지 않는다). 다시 실행해도 같은 결과다(이미 지웠으면 할 일이 없다). `AIT_DEBUG_TOTP_SECRET` 환경 변수도 가져오고, 이 프로세스의 환경에서 지운 뒤 셸 프로필·CI 설정에서 변수를 지우라고 알린다. 값은 어디에도 출력하지 않는다.
+
+- 파일이 git에 추적되고 있었거나 동기화 폴더(iCloud Drive, Dropbox, Google Drive, OneDrive) 안에 있었다면 복사본이 남았을 수 있다고 경고한다. 그때는 `debugger relay-key --rotate`로 새 키를 만들고 번들을 다시 빌드하는 것을 권한다.
+- 파일 삭제(unlink)는 **안전 삭제(secure wipe)가 아니다**. SSD·APFS(copy-on-write, 스냅샷, Time Machine)와 백업에는 옛 값이 남을 수 있다. 값이 이미 다른 곳에 있었을 가능성이 있으면 키를 교체하는 쪽이 확실하다.
 
 ### Test runner (`debugger-test`)
 
@@ -119,7 +146,7 @@ export default definePhoneTestConfig({
 
 로컬 대시보드(`http://127.0.0.1:<port>/`)는 데몬이 뜰 때마다 새로 만든 접근 토큰이 있어야 열린다. `start_attach`가 브라우저로 여는 주소와 출력하는 대시보드·`/inspector` 주소에는 `dashtoken=` 값이 붙어 있고, 처음 열면 토큰을 HttpOnly·SameSite=Strict 쿠키로 바꾸고 토큰 없는 주소로 이동한다. 토큰 없이 포트만으로 접근하면 403이다. 포트를 직접 입력해 열려면 `start_attach`가 알려 준 주소를 그대로 쓴다. 토큰은 `at=` 코드처럼 로그에서 가려진다.
 
-`at=` relay 인증 코드는 데몬 프로세스가 메모리에만 두는 무작위 키와 시계로 5초 단위마다 만들어진다. 이 키는 `.ait_relay`와 무관하고 파일·환경 변수·로그에 남지 않으며, 프로세스가 다시 뜨면 새로 만든다(`.ait_relay`는 서명용 루트 키에만 쓰인다). 키 기반 MAC을 128비트로 잘라 소문자 hex 32자로 적은 값이다. 사람이 입력하는 값이 아니고 `start_attach`가 만드는 딥링크나 QR 안에만 실린다. relay는 다른 모양의 값이면 시크릿을 보기 전에 거부한다. 코드는 만든 시점부터 30~35초 동안만 통한다(현재 5초 단계와 그 앞 6단계). 대시보드는 열려 있는 동안 5초마다 QR을 새로 그리고 `start_attach`도 5초마다 코드가 바뀌었는지 보고 새 QR을 보내므로(단계마다 한 번), 화면에 떠 있는 QR은 스캔 시점에 25초 이상 남아 있다. 스캔 뒤 미니앱이 처음 뜨는 데 20초쯤 걸려도 통한다. 터미널에 찍힌 텍스트 QR은 갱신되지 않으니 바로 스캔한다. 한 번 attach한 폰은 코드가 묶여 있어서, 코드가 만료된 뒤에도 같은 페이지의 새로고침과 화면 잠금 해제 뒤 재연결은 마지막 소켓이 닫힌 후 5분 동안 된다. 코드 하나는 폰 한 대만 쓴다. 페이지는 처음 붙을 때 무작위 기기 id를 만들어 relay 경로에 코드와 함께 싣고, relay는 처음 소켓을 연 기기 id에 코드를 묶는다. 같은 코드를 든 다른 기기의 요청은 틀린 코드처럼 거부되고, 같은 폰의 새로고침과 다른 페이지는 그대로 붙는다.
+`at=` relay 인증 코드는 데몬 프로세스가 메모리에만 두는 무작위 키와 시계로 5초 단위마다 만들어진다. 이 키는 루트 서명 키와 무관하고 파일·환경 변수·로그에 남지 않으며, 프로세스가 다시 뜨면 새로 만든다(루트 키는 key agent가 메모리에서 서명에만 쓴다). 키 기반 MAC을 128비트로 잘라 소문자 hex 32자로 적은 값이다. 사람이 입력하는 값이 아니고 `start_attach`가 만드는 딥링크나 QR 안에만 실린다. relay는 다른 모양의 값이면 시크릿을 보기 전에 거부한다. 코드는 만든 시점부터 30~35초 동안만 통한다(현재 5초 단계와 그 앞 6단계). 대시보드는 열려 있는 동안 5초마다 QR을 새로 그리고 `start_attach`도 5초마다 코드가 바뀌었는지 보고 새 QR을 보내므로(단계마다 한 번), 화면에 떠 있는 QR은 스캔 시점에 25초 이상 남아 있다. 스캔 뒤 미니앱이 처음 뜨는 데 20초쯤 걸려도 통한다. 터미널에 찍힌 텍스트 QR은 갱신되지 않으니 바로 스캔한다. 한 번 attach한 폰은 코드가 묶여 있어서, 코드가 만료된 뒤에도 같은 페이지의 새로고침과 화면 잠금 해제 뒤 재연결은 마지막 소켓이 닫힌 후 5분 동안 된다. 코드 하나는 폰 한 대만 쓴다. 페이지는 처음 붙을 때 무작위 기기 id를 만들어 relay 경로에 코드와 함께 싣고, relay는 처음 소켓을 연 기기 id에 코드를 묶는다. 같은 코드를 든 다른 기기의 요청은 틀린 코드처럼 거부되고, 같은 폰의 새로고침과 다른 페이지는 그대로 붙는다.
 
 relay는 `Origin` 헤더도 확인한다. 터널로 들어온 요청은 앱 이름에 맞는 샌드박스 미니앱 도메인(`https://<앱 이름>.private-apps.tossmini.com`, `https://<앱 이름>.private-web.tossmini.com`)에서 온 경우만 응답하고, 응답에는 `*` 대신 그 origin과 `Vary: Origin`을 싣는다. 출시 도메인(`*.apps.tossmini.com`, `*.web.tossmini.com`)과 그 밖의 origin은 403(WebSocket은 close 4403)이다. 앱 이름을 아직 모르면 두 샌드박스 접미사 아래의 단일 라벨만 받는다. 터널을 거치지 않은 루프백 요청은 localhost origin과 relay 자신의 origin도 받는다. 터널로 들어온 `Origin` 없는 요청은 `target.js`와 핸드셰이크 확인(GET/HEAD)만 통하고 target WebSocket은 거부한다. Origin은 위조할 수 있으므로 인증 코드를 대신하지 않고 추가로 걸리는 조건이다.
 

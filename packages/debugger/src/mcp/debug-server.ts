@@ -150,8 +150,8 @@ import type { RelayClaimEvent } from './relay-arming.js';
 import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
+import { activateRelayRoot, relayAuthSwitch } from './relay-root.js';
 import { relayRunId } from './relay-run-id.js';
-import { loadRelaySecretReadOnly } from './relay-secret-store.js';
 import { attachSignature, relayCertDocument } from './relay-signing.js';
 import { appendRemoteLog } from './remote-log.js';
 import { describeTestFiles, hashTestFiles } from './run-tests-approval.js';
@@ -300,10 +300,11 @@ export interface ConnectionRouter {
    *
    * `projectRoot` (issue #396) is the per-debug-session mini-app project root
    * supplied by `start_debug`. When switching into a relay family the router
-   * loads the relay TOTP secret read-only from `<projectRoot>/.ait_relay` into
-   * `process.env` (via `loadRelaySecretReadOnly`) BEFORE the relay boots, so the
-   * `assertRelayAuthConfigured()` / `buildRelayVerifyAuth()` at the boot site see
-   * it. The daemon never mints — it only reads. Ignored for the local family.
+   * activates the project's relay root key (via `activateRelayRoot`: the key
+   * agent, else this process's memory; legacy `.ait_relay` files are imported and
+   * removed) BEFORE the relay boots, so the `assertRelayAuthConfigured()` /
+   * `buildRelayVerifyAuth()` at the boot site see a live key. Nothing is written
+   * to disk or to `process.env`. Ignored for the local family.
    *
    * Rejects (without swapping) when a swap is already in flight.
    * `relay-live` (env 4) is removed — `confirm` parameter is gone (#665).
@@ -414,14 +415,12 @@ export interface DebugServerDeps {
    * Late-bound variant of {@link totpSecret}: read AT `start_attach` CALL
    * TIME rather than captured once at server construction (issue #396).
    *
-   * Why late-bound: since #396 the relay TOTP secret lives in a project-local
-   * `.ait_relay` file loaded read-only into `process.env.AIT_DEBUG_TOTP_SECRET`
-   * by `switchMode` BEFORE a relay family boots — which is AFTER the daemon
-   * (and thus `createDebugServer`) already started. Capturing the secret at
-   * construction would read an empty value on the all-lazy daemon, so
-   * `start_attach` would emit a QR with no `at=` code and every attach would
-   * be rejected by the relay gate. Reading it at call time makes the loaded
-   * secret visible.
+   * Why late-bound: the relay key is activated by `switchMode` BEFORE a relay
+   * family boots — which is AFTER the daemon (and thus `createDebugServer`)
+   * already started. Capturing the switch at construction would read an empty
+   * value on the all-lazy daemon, so `start_attach` would emit a QR with no
+   * `at=` code and every attach would be rejected by the relay gate. Reading it
+   * at call time sees the activated key.
    *
    * When omitted, `createDebugServer` falls back to the captured {@link totpSecret}
    * (preserving all existing test behavior).
@@ -429,8 +428,8 @@ export interface DebugServerDeps {
    * SECRET-HANDLING: same as {@link totpSecret} — the returned value MUST NOT be
    * logged or included in any output other than the `at=` param inside `attachUrl`.
    *
-   * Production: passed as `() => process.env.AIT_DEBUG_TOTP_SECRET` by the three
-   * run functions.
+   * Production: passed as `() => relayAuthSwitch()` by the run functions (a
+   * non-empty string while a live relay key is active).
    */
   getTotpSecret?: () => string | undefined;
   /**
@@ -1619,8 +1618,8 @@ export function makeSingleConnectionRouter(connection: CdpConnection): Connectio
  * never logged. mintRelayCode() relies on its Date.now() default.
  */
 export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): string | null {
-  const secret = process.env.AIT_DEBUG_TOTP_SECRET;
-  // No relay secret loaded: there is no code-less link to show.
+  const secret = relayAuthSwitch();
+  // No live relay key: there is no code-less link to show.
   if (secret === undefined || secret === '') return null;
   const code = mintRelayCode();
   // 터널이 새로 발급됐으면 start_attach 때 잡아 둔 옛 주소 대신 지금 주소로 링크를 만든다.
@@ -2346,7 +2345,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
       lifecycleRef.current?.noteAttached();
     },
     // Public certificates of this process's session keys (relay-signing.ts).
-    getRelayCertDocument: () => relayCertDocument(process.env.AIT_DEBUG_TOTP_SECRET),
+    getRelayCertDocument: () => relayCertDocument(),
     onOriginReject: (event) => {
       // Rate-limited: a flood of refused requests must not flood the log.
       const now = Date.now();
@@ -2820,7 +2819,7 @@ export class DualConnectionRouter implements ConnectionRouter {
       // single #250 fail-fast. Local switches need no secret, so skip the load.
       // SECRET-HANDLING: loadRelaySecretReadOnly never logs the value or path.
       if (isRelayMode(mode)) {
-        await loadRelaySecretReadOnly({
+        await activateRelayRoot({
           projectRoot,
           onKeyAge: (age) => this.deps.diagnosticsCollector.recordRelayKeyAge?.(age),
         });
@@ -3057,8 +3056,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     if (targets.length === 0) {
       return { ok: false, reason: 'noTarget' };
     }
-    const totpSecret = process.env.AIT_DEBUG_TOTP_SECRET;
-    if (!totpSecret) {
+    if (!relayAuthSwitch()) {
       return { ok: false, reason: 'totpUnavailable' };
     }
     const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () => mintRelayCode(Date.now()));
@@ -3137,7 +3135,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // start_attach) so the project-local .ait_relay secret loaded by
     // switchMode (#396) is visible. It is used only to generate the at= code and
     // is never logged or surfaced in any output.
-    getTotpSecret: () => process.env.AIT_DEBUG_TOTP_SECRET,
+    getTotpSecret: () => relayAuthSwitch(),
     // dashboard 갱신 콜백 — URL 컴포넌트 저장 후 SSE push.
     // 컴포넌트를 저장해 getDashboardState가 fresh TOTP로 URL을 재빌드 (Defect 1).
     onAttachUrlBuilt: (parts) => {

@@ -275,13 +275,13 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'The server automatically opens the QR dashboard in the OS default browser when running on a ' +
       'local GUI machine — headless/remote environments fall back to the text QR in the tool output. ' +
       'If a dashboard tab is already connected, no new tab is opened; the existing tab is refreshed in place.' +
-      '\n\nTOTP auto re-mint: when AIT_DEBUG_TOTP_SECRET is set on the MCP server, the attachUrl carries ' +
+      '\n\nTOTP auto re-mint: when a relay key is active on the MCP server (start_debug activates it), the attachUrl carries ' +
       'a one-time code (at=<code>) valid for 30-35 seconds (the relay gate accepts codes up to 6 TOTP steps old). ' +
       'While waiting, start_attach AUTOMATICALLY re-mints a fresh code before the current one expires ' +
       'and refreshes the dashboard QR in place (no browser re-open). You do NOT need to re-call ' +
       'start_attach every time the code would expire — a single call covers the whole wait window. ' +
       'The response includes a `totp` field with `expiresAt` and a `reminted` count of how many fresh ' +
-      'codes were issued during the wait. Without AIT_DEBUG_TOTP_SECRET, the attachUrl has no expiry. ' +
+      'codes were issued during the wait. Without an active relay key, start_attach refuses to build a link. ' +
       '(That applies to code expiry only — if the call times out, follow the diagnosis in the error text instead of re-calling blindly.)\n\n' +
       'Progress: when the client sends a progressToken, the call emits notifications/progress with the attach stage ' +
       '(QR issued → phone opened the page → script loaded → phone connected → page matched) and a heartbeat every ~15 s. When no dashboard shows the QR (headless, browser open failed), the text QR is also sent as a progress message while the call waits, and again after each re-mint. ' +
@@ -1042,7 +1042,7 @@ export interface BuildAttachUrlResult {
  *
  * @param schemeUrl - The `intoss-private://…?_deploymentId=<uuid>` URL.
  * @param tunnel - Current tunnel status from the running debug server.
- * @param totpSecret - Hex-encoded TOTP secret (from `AIT_DEBUG_TOTP_SECRET`).
+ * @param totpSecret - The relay-auth switch (`relayAuthSwitch()`); non-empty while a relay key is live.
  *   Required: the current code is spliced into the attach URL as `at=<code>`.
  */
 export function buildAttachUrl(

@@ -31,12 +31,13 @@ import {
   SSE_EVICTION_BUDGET,
   SSE_EVICTION_WINDOW_MS,
 } from '../qr-http-server.js';
-import { signRelay } from '../relay-signing.js';
+import { resetRelaySessionKey } from '../relay-signing.js';
 import {
   dashboardCookieForPort,
   IDLE_DASHBOARD_STATE,
   startQrHttpServer,
 } from './dashboard-auth-helper.js';
+import { signRelay } from './relay-test-root.js';
 
 process.env.AIT_DEBUG_HTTP_PORT = '0';
 
@@ -3568,9 +3569,10 @@ describe('startQrHttpServer — attach 링크 검증', () => {
     }
   });
 
-  it('isCurrentAttachUrl: 데몬이 실제로 만든 sig(세션 인증서 형태)도 받아들인다', () => {
+  it('isCurrentAttachUrl: 데몬이 실제로 만든 sig(세션 인증서 형태)도 받아들인다', async () => {
     const base = 'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
-    const sig = signRelay('11'.repeat(32), 'wss://abc-def.trycloudflare.com', 'a'.repeat(32));
+    const sig = await signRelay('11'.repeat(32), 'wss://abc-def.trycloudflare.com', 'a'.repeat(32));
+    resetRelaySessionKey();
     expect(sig).toContain('.');
     const link = `${base}&at=${'a'.repeat(32)}&sig=${sig}`;
     expect(isCurrentAttachUrl(link, `${base}&at=${'b'.repeat(32)}&sig=x`)).toBe(true);

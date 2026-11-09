@@ -16,6 +16,10 @@
       "types": "./dist/mcp/server.d.ts",
       "import": "./dist/mcp/server.js"
     },
+    "./relay-keys": {
+      "types": "./dist/mcp/relay-keys.d.ts",
+      "import": "./dist/mcp/relay-keys.js"
+    },
     "./mcp/cli": {
       "types": "./dist/mcp/cli.d.ts",
       "import": "./dist/mcp/cli.js"

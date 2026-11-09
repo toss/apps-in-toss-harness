@@ -16,6 +16,7 @@
 import { realpathSync } from 'node:fs';
 import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { runKeyAgent } from '../agent/main.js';
 import { runDebugServer } from './debug-server.js';
 import { runRelayKey } from './relay-key.js';
 import { readDevtoolsVersion } from './tools.js';
@@ -32,7 +33,8 @@ debugger — MCP debugging daemon (CDP/Chii relay) for Apps in Toss mini-apps
 
 USAGE
   debugger [options]
-  debugger relay-key [--project <dir>]
+  debugger relay-key [--project <dir>] [--rotate] [--json]
+  debugger key-agent
 
 OPTIONS
   --force, --takeover     Also end leftover daemons of the same MCP client in
@@ -52,11 +54,13 @@ DESCRIPTION
   needed. The --mode/--target flags were removed in 0.3.1.
 
 SUBCOMMANDS
-  relay-key               Print the relay public key for this project (creates
-                          .ait_relay when missing). The key goes into the debug
-                          build so the device can check the relay address in a
-                          QR link. \`--rotate\` replaces the key with a new
-                          one. Run \`debugger relay-key --help\`.
+  relay-key               Print the relay public key for this project. The key
+                          goes into the debug build so the device can check the
+                          relay address in a QR link. It lives in memory only,
+                          in the key agent. \`--rotate\` replaces the key with a
+                          new one. Run \`debugger relay-key --help\`.
+  key-agent               The resident process that holds relay keys in memory.
+                          It starts on demand; you rarely run it yourself.
 
 EXAMPLE
   debugger --force
@@ -151,6 +155,11 @@ export function parseForce(argv: readonly string[]): boolean {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  if (args[0] === 'key-agent') {
+    process.exitCode = await runKeyAgent();
+    return;
+  }
 
   if (args[0] === 'relay-key') {
     process.exitCode = await runRelayKey(args.slice(1));

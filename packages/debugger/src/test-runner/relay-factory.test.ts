@@ -34,10 +34,12 @@ vi.mock('./cell.js', () => ({
   injectGlobals: injectGlobalsMock,
 }));
 
-// relay-secret-store.ts
-const loadRelaySecretReadOnlyMock = vi.fn(() => Promise.resolve());
-vi.mock('../mcp/relay-secret-store.js', () => ({
-  loadRelaySecretReadOnly: loadRelaySecretReadOnlyMock,
+// relay-root.ts — the relay key activation and the "relay key is live" switch
+const activateRelayRootMock = vi.fn(() => Promise.resolve({}));
+const relayAuthSwitchMock = vi.fn((): string | undefined => 'live-key-switch');
+vi.mock('../mcp/relay-root.js', () => ({
+  activateRelayRoot: activateRelayRootMock,
+  relayAuthSwitch: relayAuthSwitchMock,
 }));
 
 // debug-server.ts — bootRelayFamily + buildRelayVerifyAuth
@@ -581,7 +583,7 @@ describe('createRelayConnectionFactory — web-QR server (devtools#708)', () => 
   // devtools#772: getDirectInspectorUrl — activates the /inspector stable
   // route (#530) on the runner dashboard. Mirrors debug-server.ts's assembly:
   // relayDown when no relayHttpUrl, noTarget when listTargets() is empty,
-  // totpUnavailable when AIT_DEBUG_TOTP_SECRET is unset, else ok:true with a
+  // totpUnavailable when no relay key is live, else ok:true with a
   // buildChiiInspectorUrl-assembled URL.
   describe('getDirectInspectorUrl (devtools#772)', () => {
     afterEach(() => {
@@ -624,8 +626,8 @@ describe('createRelayConnectionFactory — web-QR server (devtools#708)', () => 
       expect(getDirectInspectorUrl?.()).toEqual({ ok: false, reason: 'noTarget' });
     });
 
-    it('returns totpUnavailable when AIT_DEBUG_TOTP_SECRET is unset', async () => {
-      vi.stubEnv('AIT_DEBUG_TOTP_SECRET', '');
+    it('returns totpUnavailable when no relay key is live', async () => {
+      relayAuthSwitchMock.mockReturnValue(undefined);
       const attachedConnection = {
         kind: 'relay' as const,
         listTargets: () => [{ id: 'target-1', title: 'mini-app', url: 'https://example.test/' }],
@@ -648,9 +650,8 @@ describe('createRelayConnectionFactory — web-QR server (devtools#708)', () => 
       expect(getDirectInspectorUrl?.()).toEqual({ ok: false, reason: 'totpUnavailable' });
     });
 
-    it('returns ok:true with an assembled URL once relay + target + TOTP secret are present', async () => {
-      // SECRET-HANDLING: synthetic placeholder value, not a real TOTP secret.
-      vi.stubEnv('AIT_DEBUG_TOTP_SECRET', 'synthetic-placeholder-secret');
+    it('returns ok:true with an assembled URL once relay + target + relay key are present', async () => {
+      relayAuthSwitchMock.mockReturnValue('live-key-switch');
       const attachedConnection = {
         kind: 'relay' as const,
         listTargets: () => [{ id: 'target-1', title: 'mini-app', url: 'https://example.test/' }],
@@ -757,7 +758,7 @@ describe('createRelayConnectionFactory — boot-race regression (devtools#714)',
 
     // Drain all pending microtasks until bootRelayFamily has been called and
     // capturedOnWssUrl has been set. open() queues several awaits before
-    // bootRelayFamily (dynamic imports + loadRelaySecretReadOnly); we pump the
+    // bootRelayFamily (dynamic imports + activateRelayRoot); we pump the
     // microtask queue with setImmediate to let those resolve first.
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));

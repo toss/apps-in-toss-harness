@@ -10,7 +10,7 @@ import {
   relayCertMessage,
   relayLinkMessage,
 } from '@apps-in-toss/internal-protocol/relay-signature';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AttachDeps,
   type AttachUrlParts,
@@ -20,8 +20,9 @@ import {
 } from '../attach-orchestrator.js';
 import type { CdpConnection } from '../cdp-connection.js';
 import { rebuildAttachUrl } from '../debug-server.js';
-import { relayCertDocument, relayPublicKey } from '../relay-signing.js';
+import { resetRelaySessionKey } from '../relay-signing.js';
 import type { TunnelStatus } from '../tools.js';
+import { primeRoot, relayCertDocument, relayPublicKey } from './relay-test-root.js';
 
 const SECRET = 'ab'.repeat(20);
 const SCHEME = 'intoss-private://sample-app?_deploymentId=019e3b40-aaaa';
@@ -34,6 +35,15 @@ function depsFor(tunnel: { current: TunnelStatus }): AttachDeps {
     getTotpSecret: () => SECRET,
   } as unknown as AttachDeps;
 }
+
+beforeEach(async () => {
+  resetRelaySessionKey();
+  await primeRoot(SECRET);
+});
+
+afterEach(() => {
+  resetRelaySessionKey();
+});
 
 const parts: AttachUrlParts = { kind: 'scheme', schemeUrl: SCHEME, wssUrl: OLD_WSS };
 
@@ -82,7 +92,6 @@ describe('prepareAttach page matcher after a tunnel reissue', () => {
 
 describe('dashboard attach link after a tunnel reissue', () => {
   it('is rebuilt from the tunnel address now in use', () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
     try {
       const before = decodeURIComponent(
         rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS }) ?? '',
@@ -94,7 +103,6 @@ describe('dashboard attach link after a tunnel reissue', () => {
       expect(after).toContain(`relay=${NEW_WSS}`);
       expect(after).not.toContain(OLD_WSS);
     } finally {
-      delete process.env.AIT_DEBUG_TOTP_SECRET;
     }
   });
 });
@@ -172,12 +180,10 @@ describe('sig follows the at code on every mint path', () => {
   });
 
   it('rebuildAttachUrl (dashboard) signs too', async () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
     try {
       const url = rebuildAttachUrl(parts, { up: true, wssUrl: NEW_WSS });
       expect(await pairIsValid(url ?? '', NEW_WSS)).toBe(true);
     } finally {
-      delete process.env.AIT_DEBUG_TOTP_SECRET;
     }
   });
 
@@ -192,8 +198,8 @@ describe('sig follows the at code on every mint path', () => {
       getTunnelStatus: () => ({ up: true, wssUrl: OLD_WSS }),
       getTotpSecret: () => undefined,
     };
-    expect(() => mintAttachUrl(deps as unknown as AttachDeps, parts)).toThrow(/secret/);
-    delete process.env.AIT_DEBUG_TOTP_SECRET;
+    resetRelaySessionKey(); // no live relay key
+    expect(() => mintAttachUrl(deps as unknown as AttachDeps, parts)).toThrow(/relay key/);
     expect(rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS })).toBeNull();
   });
 });

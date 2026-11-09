@@ -2282,7 +2282,7 @@ describe('start_attach — TOTP auto-splice', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text ?? '';
-    expect(text).toContain('AIT_DEBUG_TOTP_SECRET');
+    expect(text).toContain('relay 키');
     // SECRET-HANDLING: error message must not embed secret value/length/fragments.
     expect(text).not.toMatch(/\b[0-9a-fA-F]{32,}\b/);
   });
@@ -2452,8 +2452,8 @@ describe('onAttachUrlBuilt — AttachUrlParts stored, fresh TOTP re-minted on ge
       const content = result.content as Array<{ type: string; text?: string }>;
       const text = content[0]?.text ?? '';
       // Error message must name the requirement but NEVER the secret value/length.
-      expect(text).toContain('AIT_DEBUG_TOTP_SECRET');
-      expect(text).toContain('TOTP');
+      expect(text).toContain('relay 키');
+      expect(text).toContain('코드 인증');
       // SECRET-HANDLING: must not leak secret value, length, or any derived fragment.
       expect(text).not.toMatch(/\b[0-9a-fA-F]{32,}\b/);
     } finally {

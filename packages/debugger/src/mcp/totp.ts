@@ -29,6 +29,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isRelayAuthCode } from '@apps-in-toss/internal-protocol/relay-auth-code';
 import { relayCodeSecret } from './relay-code-secret.js';
+import { isRelayRootLive } from './relay-signing.js';
 
 /**
  * Seconds in one code step. Tuning knob: together with
@@ -153,11 +154,10 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
  * command emits hex.
  */
 export const RELAY_AUTH_SECRET_MISSING_MESSAGE = [
-  '[ait-debugger] AIT_DEBUG_TOTP_SECRET이 필수입니다. 32자 이상 16진수(hex) 문자열을 설정하세요.',
-  '발급: openssl rand -hex 32',
-  '데몬은 start_debug의 projectRoot 인자로 받은 디렉토리에서 .ait_relay 파일을 읽어 이 시크릿을 채웁니다.',
-  '.ait_relay는 @apps-in-toss/devtools unplugin이 dev 서버 첫 기동 때 만들어 둡니다 — 이미 있다면 projectRoot만 전달하면 됩니다.',
-  '없다면 위 명령으로 발급한 값을 AIT_DEBUG_TOTP_SECRET 환경변수에 직접 설정하세요.',
+  '[ait-debugger] relay 키가 준비되지 않았습니다. relay 환경은 코드 인증이 필수입니다.',
+  '데몬은 start_debug의 projectRoot 인자로 받은 프로젝트의 relay 키를 key agent(메모리)에서 받아옵니다. start_debug를 projectRoot와 함께 다시 호출하세요.',
+  '예전 .ait_relay 파일이나 AIT_DEBUG_TOTP_SECRET(32자 이상 16진수, 예: openssl rand -hex 32)이 남아 있으면 첫 호출 때 자동으로 가져온 뒤 파일을 삭제합니다.',
+  '키는 기본 24시간(최대 72시간) 뒤 만료됩니다. 만료나 key agent 재시작 뒤에는 디버그 번들을 다시 빌드해 업로드하세요.',
   '자세히: docs MCP(apps-in-toss-docs)의 searchDocumentation으로 "relay auth totp" 조회.',
 ].join('\n');
 
@@ -204,7 +204,7 @@ export function isValidRelayAuthSecret(secret: string | undefined): secret is st
  *   for tests so they never mutate the real process environment.
  */
 export function assertRelayAuthConfigured(env: NodeJS.ProcessEnv = process.env): void {
-  if (!isValidRelayAuthSecret(env.AIT_DEBUG_TOTP_SECRET)) {
+  if (!isRelayRootLive() && !isValidRelayAuthSecret(env.AIT_DEBUG_TOTP_SECRET)) {
     throw new Error(RELAY_AUTH_SECRET_MISSING_MESSAGE);
   }
 }
@@ -311,7 +311,7 @@ export function buildRelayVerifyAuth(
   codeSecret: string = relayCodeSecret(),
 ): (req: import('node:http').IncomingMessage) => boolean {
   // The relay secret is the switch; the codes themselves use the process key.
-  if (!env.AIT_DEBUG_TOTP_SECRET) return () => false;
+  if (!env.AIT_DEBUG_TOTP_SECRET && !isRelayRootLive()) return () => false;
   const secret = codeSecret;
 
   return (req) => {

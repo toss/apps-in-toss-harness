@@ -29,7 +29,7 @@ A debug bundle carries relay public keys only. The relay signing key derives fro
 ## Known limitations
 
 - `esbuild` and its platform binary are installed from the npm registry at install time and are not hash-pinned the way cloudflared is.
-- The device trusts the relay public keys baked into the bundle, and there is no device-side expiry. If `.ait_relay` may have leaked, rotate the key with `debugger relay-key --rotate` and rebuild the debug bundles.
+- The relay signing key is never kept on disk or in the environment: it lives only in the memory of the key agent (a resident process) and expires after 24 hours by default (72 at most). The bundle carries the public key and its expiry, and the client rejects signatures under an expired key. If the key may have leaked, rotate it with `debugger relay-key --rotate` and rebuild the debug bundle. A legacy `.ait_relay` is imported and deleted automatically, but deleting is not a secure wipe.
 
 ## What to include
 

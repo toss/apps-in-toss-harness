@@ -455,7 +455,7 @@ export function waitForAttachWithEvents(
 }
 
 const NO_RELAY_SECRET_MESSAGE =
-  'relay auth secret is not loaded — no attach code can be minted (the relay never runs without one)';
+  'relay key is not live — no attach code can be minted (the relay never runs without one)';
 
 function safeOsHostname(): string | undefined {
   try {
@@ -557,8 +557,9 @@ export async function prepareAttach(
       return {
         ok: false,
         error: mcpError(
-          'start_attach(relay): TOTP secret(AIT_DEBUG_TOTP_SECRET)이 설정되지 않았습니다. ' +
-            'relay 환경은 TOTP 인증이 필수입니다 — relay를 secret과 함께 재기동하세요.',
+          'start_attach(relay): relay 키가 없거나 만료됐습니다. ' +
+            'relay 환경은 코드 인증이 필수입니다 — start_debug(mode: relay-staging, projectRoot)를 다시 호출하고 ' +
+            '디버그 번들을 다시 빌드해 업로드하세요(번들은 이전 공개 키를 박고 있습니다).',
         ),
       };
     }
