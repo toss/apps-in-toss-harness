@@ -34,7 +34,7 @@
  *
  * TOTP expiry caveat:
  *   The `at=` TOTP code embedded in the `wss=` parameter is minted fresh at the
- *   moment `open()` is called. The code is valid for 30–35 s (the relay gate
+ *   moment `open()` is called. The code is valid for 120–125 s (the relay gate
  *   accepts RELAY_VERIFY_SKEW_STEPS=3 steps back). If the developer
  *   does not open the URL within that window the WebSocket upgrade will be
  *   rejected with 4401. In practice the browser opens immediately after the OS
@@ -69,7 +69,7 @@ import type { McpEnvironment } from './environment.js';
  * by Chii's own target list page (derived from `chii/public/index.js`).
  *
  * The `at=` TOTP code is minted at call time via `mintTotp()`.  It is valid
- * for 30–35 s (relay gate accepts RELAY_VERIFY_SKEW_STEPS=6 steps back).  The developer must open the returned URL within that window.
+ * for 120–125 s (relay gate accepts RELAY_VERIFY_SKEW_STEPS=24 steps back).  The developer must open the returned URL within that window.
  * If the window expires before the browser connects, the relay will reject the
  * WebSocket upgrade with close code 4401.
  *

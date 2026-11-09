@@ -166,7 +166,7 @@ export interface ChiiCdpConnectionOptions {
   /**
    * Hex-encoded TOTP secret (the SECRET, never a code). Required: each client WS
    * (re)connect and each `/targets` poll mints a fresh `at=` code so it lands
-   * inside the relay's 30-35 s acceptance window.
+   * inside the relay's 120-125 s acceptance window.
    * SECRET-HANDLING: stored privately, never logged; the minted code rides only
    * in the WS URL query.
    */
@@ -514,7 +514,7 @@ export class ChiiCdpConnection implements CdpConnection {
     const clientUrl = `${wsBase}/client/${clientId}?target=${encodeURIComponent(target.id)}&at=${encodeURIComponent(generateTotp(this.totpSecret))}`;
     // Append a freshly-minted TOTP code so the relay's WS upgrade gate
     // (chii-relay.ts verifyAuth) accepts this /client upgrade. Minted per-connect
-    // so reconnects stay inside the 30-35 s acceptance window. generateTotp defaults
+    // so reconnects stay inside the 120-125 s acceptance window. generateTotp defaults
     // `when` to Date.now() — rely on that default; never hand-compute the time.
     // SECRET-HANDLING: never log `code` or `this.totpSecret`; the code rides only
     // in the URL query.

@@ -106,7 +106,7 @@ export const RELAY_STALE_PAGE_MS = 5 * 60 * 1_000; // 5 minutes
  * SEGMENT_MS slices so it can detect an aging code between slices and re-mint a
  * fresh one without the agent re-calling the tool. The slice is
  * {@link RELAY_QR_REFRESH_INTERVAL_MS} (5 s): the relay gate accepts a code for
- * 30 to 35 s (`RELAY_VERIFY_SKEW_STEPS` = 6 past steps of `RELAY_CODE_STEP_SECONDS`
+ * 120 to 125 s (`RELAY_VERIFY_SKEW_STEPS` = 24 past steps of `RELAY_CODE_STEP_SECONDS`
  * = 5 s), and the code changes on every step, so checking every 5 s re-issues
  * the QR once per step, keeps it at most 5 s behind the current step, and a
  * scan always has 25 s or more left.

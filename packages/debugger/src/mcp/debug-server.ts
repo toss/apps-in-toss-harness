@@ -441,7 +441,7 @@ export interface DebugServerDeps {
    *
    * 완성된 URL 문자열이 아니라 컴포넌트를 전달하는 이유: `getDashboardState`가
    * 호출될 때마다 최신 TOTP 코드를 freshly mint해 QR을 갱신하기 위함이다.
-   * 정적 URL에 구워진 코드는 30~35초 후 만료(RELAY_VERIFY_SKEW_STEPS=6 기준) → relay 401 reason:'auth' (Defect 1).
+   * 정적 URL에 구워진 코드는 120~125초 후 만료(RELAY_VERIFY_SKEW_STEPS=24 기준) → relay 401 reason:'auth' (Defect 1).
    * rebuildAttachUrl()이 매 호출 시 mintRelayCode()로 새 코드를 만든다.
    *
    * SECRET-HANDLING: 컴포넌트 안의 tunnel/scheme host와 wssUrl은 NEVER 로그 출력.
@@ -3189,7 +3189,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   }
 
   // TOTP 주기 갱신 타이머 — 이벤트 없이 페이지가 방치될 때 at= 코드가 stale되는 갭 수정 (#445).
-  // TOTP step은 5초이고 코드는 30~35초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
+  // TOTP step은 5초이고 코드는 120~125초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
   // RELAY_QR_REFRESH_INTERVAL_MS(5초) 주기로 push한다.
   // SECRET-HANDLING: 콜백은 단순 trigger만 — TOTP 값·at= 코드는 절대 로그/stdout에 출력 금지.
   const TOTP_REFRESH_INTERVAL_MS = RELAY_QR_REFRESH_INTERVAL_MS;

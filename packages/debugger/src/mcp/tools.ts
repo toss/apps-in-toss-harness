@@ -277,7 +277,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'local GUI machine — headless/remote environments fall back to the text QR in the tool output. ' +
       'If a dashboard tab is already connected, no new tab is opened; the existing tab is refreshed in place.' +
       '\n\nTOTP auto re-mint: when a relay key is active on the MCP server (start_debug activates it), the attachUrl carries ' +
-      'a one-time code (at=<code>) valid for 30-35 seconds (the relay gate accepts codes up to 6 TOTP steps old). ' +
+      'a one-time code (at=<code>) valid for 120-125 seconds (the relay gate accepts codes up to 24 TOTP steps old). ' +
       'While waiting, start_attach AUTOMATICALLY re-mints a fresh code before the current one expires ' +
       'and refreshes the dashboard QR in place (no browser re-open). You do NOT need to re-call ' +
       'start_attach every time the code would expire — a single call covers the whole wait window. ' +
@@ -1028,7 +1028,7 @@ export interface BuildAttachUrlResult {
  *
  * Generates the current TOTP code and splices it as `at=<code>` into the
  * attach URL. The code is valid for
- * 30-35 s (the relay gate uses RELAY_VERIFY_SKEW_STEPS=6, accepting
+ * 120-125 s (the relay gate uses RELAY_VERIFY_SKEW_STEPS=24, accepting
  * the 6 past steps backwards from issuance). The start_attach handler
  * auto re-mints a fresh code before `totp.expiresAt` elapses during its wait (#490).
  *
@@ -1068,8 +1068,8 @@ export function buildAttachUrl(
   const now = Date.now();
   const totpCode = mintRelayCode(now);
   // expiresAt reflects the relay gate's actual acceptance window (#490):
-  // the gate uses RELAY_VERIFY_SKEW_STEPS=6 steps of 5 s, so the code issued
-  // NOW is valid until step (currentStep + 7) starts, i.e. 30-35 s from
+  // the gate uses RELAY_VERIFY_SKEW_STEPS=24 steps of 5 s, so the code issued
+  // NOW is valid until step (currentStep + 7) starts, i.e. 120-125 s from
   // issuance. We report issuanceTime + RELAY_CODE_MIN_AGE_SECONDS (30 s) as a
   // conservative lower bound.
   const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;

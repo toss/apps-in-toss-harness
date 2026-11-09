@@ -30,7 +30,7 @@ import { RELAY_CERT_PARAM } from '@apps-in-toss/internal-protocol/relay-signatur
  *   When a TOTP secret is active, `buildDeepLinkAttachUrl` accepts an optional
  *   `totpCode` argument and splices `at=<code>` alongside `debug` and `relay`.
  *   The code must be computed by the caller at call time — do NOT pre-compute
- *   and cache it, because the 30-35 second window expires quickly. The in-app gate
+ *   and cache it, because the 120-125 second window expires quickly. The in-app gate
  *   (`src/in-app/gate.ts` Layer C) validates this code against the baked secret.
  *
  * Why not `URL`/`URLSearchParams`: `intoss-private:` is a non-special scheme.

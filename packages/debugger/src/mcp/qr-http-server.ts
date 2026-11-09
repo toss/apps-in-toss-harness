@@ -1292,7 +1292,7 @@ export interface QrHttpServerOptions {
    *
    * SSE 구독자가 있는 동안 이 간격마다 `notifyStateChange()`와 동일한 push를 수행한다.
    * `getDashboardState()`가 호출 시점에 `at=` TOTP 코드를 재발급하므로, push 자체가
-   * 열린 탭의 인스펙터 링크를 신선하게 유지한다. 5s 주기 < relay gate 허용창 30~35초
+   * 열린 탭의 인스펙터 링크를 신선하게 유지한다. 5s 주기 < relay gate 허용창 120~125초
    * (TOTP 1 스텝 전까지)이므로 탭이 열려 있는 한 화면의 QR은 5초 넘게 낡지 않는다 (issue #509).
    *
    * 테스트에서 짧은 값(예: 50ms)을 주입해 검증한다. `undefined`이면 기본값 RELAY_QR_REFRESH_INTERVAL_MS.
