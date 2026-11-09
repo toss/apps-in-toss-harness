@@ -127,6 +127,22 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 
 기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 3)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debugger-client`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다. 프로토콜 3은 이름 변경 릴리스다. 프로토콜 2 이하(`@apps-in-toss/debug-console` 0.3.0 이하)를 만나면 미니앱에서 그 패키지를 지우고 `@apps-in-toss/debugger-client` 0.3.1 이상을 설치해 다시 배포하라고 안내한다.
 
+### 실기기에서 에이전트가 하는 일을 확인하기
+
+앱 화면이나 로그의 텍스트가 에이전트를 움직이는 경로를 줄이기 위해, 실기기(relay)에서는 코드를 실행하거나 SDK를 부르는 도구가 폰에서 사용자 확인을 거친다. 확인 창은 폰 화면에 뜨고 30초 안에 허용하지 않으면 `confirmation-timeout`으로 실행하지 않는다. 사람이 직접 탭한 경우만 허용으로 센다. 결과의 `meta.policy`에 어떻게 허용됐는지가 적힌다.
+
+| 도구 | 기본 동작 (실기기) | 사람이 바꾸는 방법 |
+|---|---|---|
+| `call_sdk` | 읽기 전용 getter(`getLocale`, `getNetworkStatus`, `getOperationalEnvironment`, `getPlatformOS`, `getSafeAreaInsets`, `getServerTime`, `getTossAppVersion`, `getPermission`, `getAppsInTossGlobals`, `isMinVersionSupported`)만 바로 실행. 그 밖의 이름은 처음 보는 것까지 폰에서 확인. 영숫자가 아닌 이름과 `constructor` 같은 객체 기본 키는 거부 | `.mcp.json`의 서버 `env`에 `AIT_DEBUG_SDK_ALLOW=setScreenAwakeMode,openURL`처럼 쉼표로 이름을 적는다. 에이전트는 바꿀 수 없다 |
+| `evaluate` | 식에 `__sdk`·`fetch`·`XMLHttpRequest`·`WebSocket`·`localStorage`·`document.cookie`·`eval` 같은 이름이 들어 있으면 폰에서 확인. 확인 창의 "이 세션 동안 허용"을 누르면 그 세션이 끝날 때까지 같은 종류는 묻지 않는다 | `AIT_DEBUG_EVALUATE=free`(묻지 않음) / `confirm-on-sensitive`(기본) / `confirm`(전부 확인) / `off`(`evaluate`·`run_tests` 거부) |
+| `run_tests` | 실행할 파일 목록과 지문(해시)을 폰에서 확인하고, 실행 직전에 다시 해시해 승인 뒤 파일이 바뀌었으면 거부 | `AIT_DEBUG_EVALUATE`와 같음 |
+
+로컬 브라우저(`local-browser`)에서는 `evaluate`·`run_tests`가 기본 `free`이고 `call_sdk`는 목 SDK를 부른다. `evaluate`의 민감 이름 목록은 문자열을 조합하면 피할 수 있으므로 경계가 아니라 속도 방지턱이다. 확인 창과 배지는 페이지 안에서 동작하므로 페이지 코드 자체가 악성이면 막지 못한다. 막으려는 대상은 화면·로그 텍스트에 속은 에이전트다.
+
+`evaluate`·`call_sdk`·`run_tests`가 실행될 때마다 폰의 `window.__ait_remote_log`에 `{ t, kind, summary, ok }`(최근 50개)가 쌓이고 `ait:remote-log` 이벤트가 발생한다. 요약은 80자 이내이고 토큰·카드번호는 가려진다.
+
+`list_console_messages`·`list_exceptions`·`list_network_requests`·`list_pages` 결과에서는 JWT, `Bearer` 토큰, 이름이 토큰류인 쿼리 값, 주민등록번호, 카드번호(Luhn 검증)를 가리고 개수를 `meta.redactions`에 적는다. 끄려면 `AIT_DEBUG_REDACT=off`. DOM·스냅샷·스크린샷·`evaluate` 결과는 가리지 않는다. 우연한 노출을 줄이는 장치이지 의도적인 추출을 막는 장치가 아니다. 모든 도구에는 MCP `annotations`(`readOnlyHint` 등)가 붙고, 스크린샷에도 "페이지에서 온 데이터" 안내가 따라온다. `mcp__ait-devtools__*`를 에이전트 권한 허용 목록에 통째로 넣으면 호스트의 권한 확인도 사라지니 주의한다.
+
 ### 세션 수명과 끊기
 
 - **연결 창**: QR은 `start_attach`가 연 연결 창(대기 시간 + 1분) 안에서만 새 폰을 받는다. 첫 폰이 붙으면 창이 닫히고, 그 뒤에는 이미 붙은 기기의 재연결만 된다. 창이 닫히면 대시보드는 QR 대신 "연결됨 · 새 QR 받기"를 보여 주고, 같은 창에서 다른 기기가 접속을 시도하면 `start_attach` 결과와 대시보드에 기기 지문(해시 앞 8자)·UA 계열·국가 코드만 담은 경고를 남긴다. 연결된 폰이 있는 동안 다른 기기나 `url=`이 없거나 Origin과 다른 접속은 터널에서 거부된다.

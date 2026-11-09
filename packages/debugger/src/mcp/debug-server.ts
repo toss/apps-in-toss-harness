@@ -96,6 +96,7 @@ import { type ChiiRelay, startChiiRelay } from './chii-relay.js';
 import { buildDeepLinkAttachUrl } from './deeplink.js';
 import { AutoDevtoolsOpener, buildChiiInspectorUrl } from './devtools-opener.js';
 import {
+  type EnvelopeExtraMeta,
   isCompatMode,
   isUntrustedDataTool,
   UNTRUSTED_DATA_NOTE,
@@ -115,6 +116,7 @@ import {
   sdkAbsentError,
   tierRejectionError,
 } from './errors.js';
+import { decideEvaluate, resolveEvaluatePolicy } from './evaluate-policy.js';
 import { installExitTriggers } from './exit-triggers.js';
 import { LocalCdpConnection } from './local-connection.js';
 import { launchChromium } from './local-launcher.js';
@@ -124,7 +126,19 @@ import {
   startMinVersionGate,
   updateRequiredMessage,
 } from './min-version-gate.js';
+import {
+  isRedactionEnabled,
+  type RedactionStats,
+  redactDeep,
+  totalRedactions,
+} from './page-redact.js';
 import { startMaxAgeWatchdog } from './parent-watcher.js';
+import {
+  confirmFailureMessage,
+  excerpt,
+  type PhoneConfirmDecision,
+  requestPhoneConfirmation,
+} from './phone-confirm.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
 import {
   type DashboardState,
@@ -139,6 +153,9 @@ import { appNameFromSchemeUrl } from './relay-origin.js';
 import { relayRunId } from './relay-run-id.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
 import { attachSignature, relayCertDocument } from './relay-signing.js';
+import { appendRemoteLog } from './remote-log.js';
+import { describeTestFiles, hashTestFiles } from './run-tests-approval.js';
+import { classifySdkCall, parseSdkAllowlist } from './sdk-policy.js';
 import { createSessionGuard, type SessionGuard } from './session-guard.js';
 import type { SessionLifetimeOptions } from './session-lifetime.js';
 import { listOtherSessions, registerSession, type SessionsSnapshot } from './session-registry.js';
@@ -167,6 +184,7 @@ import {
   listPages,
   measureSafeArea,
   readDevtoolsVersion,
+  TOOL_ANNOTATIONS,
   type TunnelStatus,
   takeScreenshot,
   takeSnapshot,
@@ -475,6 +493,154 @@ export interface DebugServerDeps {
  */
 let runTestsInFlight = false;
 
+/**
+ * "이 세션 동안 허용": the phone session (by its start time) for which the developer
+ * allowed further sensitive `evaluate` calls. A new attach is a new session, so the
+ * allowance ends with the session. Process-wide, like `runTestsInFlight`.
+ */
+let sessionEvaluateAllow: number | null = null;
+
+function currentSessionKey(router: ConnectionRouter): number | null {
+  const guard = router.sessionGuard ?? null;
+  if (guard === null) return 0;
+  return guard.state().startedAt;
+}
+
+/** What `evaluate`/`run_tests` need before they may act: the way it was allowed, or an error. */
+type ActionGate =
+  | { ok: true; policy: NonNullable<EnvelopeExtraMeta['policy']> }
+  | { ok: false; error: McpErrorResult };
+
+async function confirmOnPhone(
+  conn: CdpConnection,
+  tool: string,
+  req: Parameters<typeof requestPhoneConfirmation>[1],
+): Promise<{ decision: PhoneConfirmDecision; error?: McpErrorResult }> {
+  const decision = await requestPhoneConfirmation(conn, req);
+  if (decision === 'allow' || decision === 'allow-session') return { decision };
+  return { decision, error: mcpError(confirmFailureMessage(tool, decision)) };
+}
+
+async function gateEvaluate(
+  router: ConnectionRouter,
+  conn: CdpConnection,
+  expression: string,
+): Promise<ActionGate> {
+  const policy = resolveEvaluatePolicy(
+    process.env.AIT_DEBUG_EVALUATE,
+    conn.kind === 'relay' ? 'relay' : 'local',
+  );
+  const decision = decideEvaluate(policy, expression);
+  if (decision === 'deny') {
+    return {
+      ok: false,
+      error: mcpError(
+        'evaluate: 사용자 설정(AIT_DEBUG_EVALUATE=off)으로 꺼져 있습니다. 이 도구로 코드를 실행할 수 없습니다.',
+      ),
+    };
+  }
+  if (decision === 'allow') {
+    return {
+      ok: true,
+      policy: { decision: 'allow', via: policy === 'free' ? 'policy-free' : 'not-sensitive' },
+    };
+  }
+  const key = currentSessionKey(router);
+  if (policy === 'confirm-on-sensitive' && key !== null && sessionEvaluateAllow === key) {
+    return { ok: true, policy: { decision: 'allow', via: 'session' } };
+  }
+  const answer = await confirmOnPhone(conn, 'evaluate', {
+    title: '에이전트가 폰에서 코드를 실행하려고 해요',
+    lines: [excerpt(expression, 200)],
+    offerSession: policy === 'confirm-on-sensitive' && key !== null,
+  });
+  if (answer.error !== undefined) return { ok: false, error: answer.error };
+  if (answer.decision === 'allow-session' && key !== null) sessionEvaluateAllow = key;
+  return {
+    ok: true,
+    policy: {
+      decision: 'confirmed',
+      via: answer.decision === 'allow-session' ? 'session' : 'phone',
+    },
+  };
+}
+
+async function gateSdkCall(
+  conn: CdpConnection,
+  sdkName: string,
+  sdkArgs: unknown[],
+): Promise<ActionGate> {
+  const verdict = classifySdkCall(sdkName, parseSdkAllowlist(process.env.AIT_DEBUG_SDK_ALLOW));
+  if (verdict.decision === 'deny') {
+    return {
+      ok: false,
+      error: mcpError('call_sdk: name은 영문자로 시작하는 SDK 메서드 이름(영숫자)이어야 합니다.'),
+    };
+  }
+  if (conn.kind !== 'relay') return { ok: true, policy: { decision: 'allow', via: 'local' } };
+  if (verdict.decision === 'allow') {
+    return { ok: true, policy: { decision: 'allow', via: verdict.via } };
+  }
+  let argsText = '';
+  try {
+    argsText = sdkArgs.length === 0 ? '(인자 없음)' : JSON.stringify(sdkArgs);
+  } catch {
+    argsText = '(인자를 표시할 수 없음)';
+  }
+  const answer = await confirmOnPhone(conn, 'call_sdk', {
+    title: '에이전트가 SDK 기능을 호출하려고 해요',
+    lines: [sdkName, excerpt(argsText, 160)],
+  });
+  if (answer.error !== undefined) return { ok: false, error: answer.error };
+  return { ok: true, policy: { decision: 'confirmed', via: 'phone' } };
+}
+
+/** `run_tests` runs bundled files on the phone: on a real phone the developer approves the exact files. */
+export async function gateRunTests(
+  conn: CdpConnection,
+  files: string[],
+  root: string,
+): Promise<ActionGate> {
+  const policy = resolveEvaluatePolicy(
+    process.env.AIT_DEBUG_EVALUATE,
+    conn.kind === 'relay' ? 'relay' : 'local',
+  );
+  if (policy === 'off') {
+    return {
+      ok: false,
+      error: mcpError(
+        'run_tests: 사용자 설정(AIT_DEBUG_EVALUATE=off)으로 꺼져 있습니다. 이 도구로 코드를 실행할 수 없습니다.',
+      ),
+    };
+  }
+  if (policy === 'free') return { ok: true, policy: { decision: 'allow', via: 'policy-free' } };
+  const before = await hashTestFiles(files, root);
+  const answer = await confirmOnPhone(conn, 'run_tests', {
+    title: '에이전트가 폰에서 테스트를 실행하려고 해요',
+    lines: describeTestFiles(before),
+  });
+  if (answer.error !== undefined) return { ok: false, error: answer.error };
+  const after = await hashTestFiles(files, root);
+  if (after.digest !== before.digest) {
+    return {
+      ok: false,
+      error: mcpError(
+        'run_tests: 승인한 뒤 테스트 파일이 바뀌어 실행하지 않았습니다. 다시 요청하세요.',
+      ),
+    };
+  }
+  return { ok: true, policy: { decision: 'confirmed', via: 'phone' } };
+}
+
+/** Masks page-derived values (unless the developer turned it off) and reports the counts. */
+function redactedExtra(data: unknown): { data: unknown; extra?: EnvelopeExtraMeta } {
+  if (!isRedactionEnabled()) return { data };
+  const stats: RedactionStats = {};
+  const masked = redactDeep(data, stats);
+  if (totalRedactions(stats) === 0) return { data: masked };
+  return { data: masked, extra: { redactions: { ...stats } as Record<string, number> } };
+}
+
 // waitForAttachWithEvents moved to `attach-orchestrator.ts` (issue #684 PR1) —
 // it is the orchestrator's wait primitive (used by renderAndMaybeWait's
 // segmented wait). The `start_attach` handler no longer references it directly.
@@ -619,11 +785,13 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     const envFiltered = isUnbooted()
       ? [...DEBUG_TOOL_DEFINITIONS]
       : filterToolsByEnvironment(DEBUG_TOOL_DEFINITIONS, env);
+    const withAnnotations = (tool: (typeof envFiltered)[number]) => ({
+      ...tool,
+      annotations: TOOL_ANNOTATIONS[tool.name],
+    });
     const tools = attached
-      ? envFiltered.map((tool) => ({ ...tool }))
-      : envFiltered
-          .filter((tool) => BOOTSTRAP_TOOL_NAMES.has(tool.name))
-          .map((tool) => ({ ...tool }));
+      ? envFiltered.map(withAnnotations)
+      : envFiltered.filter((tool) => BOOTSTRAP_TOOL_NAMES.has(tool.name)).map(withAnnotations);
     return { tools };
   });
 
@@ -965,9 +1133,15 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         } catch {
           // Ignore refresh errors — still return cached state.
         }
-        const pagesData = listPages(conn, getTunnelStatus());
+        const pagesMasked = redactedExtra(listPages(conn, getTunnelStatus()));
         const attached = conn.listTargets().length > 0;
-        return envelopeResult(pagesData, name, isUnbooted() ? 'none' : env, attached);
+        return envelopeResult(
+          pagesMasked.data,
+          name,
+          isUnbooted() ? 'none' : env,
+          attached,
+          pagesMasked.extra,
+        );
       }
       // 4상태 분류: page 미attach vs crash vs relay disconnect
       return classifyEnableDomainError(err, name, pageGoneContext());
@@ -976,20 +1150,20 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     const pageAttached = (): boolean => conn.listTargets().length > 0;
     try {
       switch (name) {
-        case 'list_console_messages':
-          return envelopeResult(listConsoleMessages(conn), name, env, pageAttached());
+        case 'list_console_messages': {
+          const masked = redactedExtra(listConsoleMessages(conn));
+          return envelopeResult(masked.data, name, env, pageAttached(), masked.extra);
+        }
         case 'list_exceptions': {
           const rawLimit = request.params.arguments?.limit;
           const limit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : 50;
-          return envelopeResult(
-            { exceptions: listExceptions(conn, limit) },
-            name,
-            env,
-            pageAttached(),
-          );
+          const masked = redactedExtra({ exceptions: listExceptions(conn, limit) });
+          return envelopeResult(masked.data, name, env, pageAttached(), masked.extra);
         }
-        case 'list_network_requests':
-          return envelopeResult(listNetworkRequests(conn), name, env, pageAttached());
+        case 'list_network_requests': {
+          const masked = redactedExtra(listNetworkRequests(conn));
+          return envelopeResult(masked.data, name, env, pageAttached(), masked.extra);
+        }
         case 'list_pages': {
           // Refresh from relay so evict→reattach transitions are not served stale.
           try {
@@ -997,13 +1171,14 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           } catch {
             // Ignore refresh errors — still return cached state.
           }
-          const listPagesData = listPages(conn, getTunnelStatus());
+          const listPagesMasked = redactedExtra(listPages(conn, getTunnelStatus()));
           const listPagesAttached = conn.listTargets().length > 0;
           return envelopeResult(
-            listPagesData,
+            listPagesMasked.data,
             name,
             isUnbooted() ? 'none' : env,
             listPagesAttached,
+            listPagesMasked.extra,
           );
         }
         case 'get_dom_document':
@@ -1013,7 +1188,10 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         case 'take_screenshot': {
           const shot = await takeScreenshot(conn);
           return {
-            content: [{ type: 'image' as const, data: shot.data, mimeType: shot.mimeType }],
+            content: [
+              { type: 'image' as const, data: shot.data, mimeType: shot.mimeType },
+              { type: 'text' as const, text: UNTRUSTED_DATA_NOTE },
+            ],
           };
         }
         case 'measure_safe_area': {
@@ -1044,8 +1222,19 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
+          const evalGate = await gateEvaluate(router, conn, expression);
+          if (!evalGate.ok) return evalGate.error;
           // SECRET-HANDLING: do not log expression or result value.
-          return envelopeResult(await evaluate(conn, expression), name, env, pageAttached());
+          let evalOk = false;
+          try {
+            const evalResult = await evaluate(conn, expression);
+            evalOk = true;
+            return envelopeResult(evalResult, name, env, pageAttached(), {
+              policy: evalGate.policy,
+            });
+          } finally {
+            await appendRemoteLog(conn, 'evaluate', expression.slice(0, 60), evalOk);
+          }
         }
         case 'call_sdk': {
           const sdkName = request.params.arguments?.name;
@@ -1064,8 +1253,17 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
+          const sdkGate = await gateSdkCall(conn, sdkName, sdkArgs);
+          if (!sdkGate.ok) return sdkGate.error;
           // SECRET-HANDLING: do not log name, args, or result value.
-          const sdkResult = await callSdk(conn, sdkName, sdkArgs);
+          let sdkResult: Awaited<ReturnType<typeof callSdk>>;
+          try {
+            sdkResult = await callSdk(conn, sdkName, sdkArgs);
+          } catch (err) {
+            await appendRemoteLog(conn, 'call_sdk', sdkName, false);
+            throw err;
+          }
+          await appendRemoteLog(conn, 'call_sdk', sdkName, sdkResult.ok);
           // 상태 4: SDK 부재 — ok:false + 'sdk-absent:' 패턴은 isError로 승격
           if (
             !sdkResult.ok &&
@@ -1077,7 +1275,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             return sdkAbsentError('call_sdk', conn.kind === 'local');
           }
           const callSdkAttached = conn.listTargets().length > 0;
-          return envelopeResult(sdkResult, name, env, callSdkAttached);
+          return envelopeResult(sdkResult, name, env, callSdkAttached, { policy: sdkGate.policy });
         }
         case 'run_tests': {
           const rawFiles = request.params.arguments?.files;
@@ -1191,6 +1389,8 @@ export function createDebugServer(deps: DebugServerDeps): Server {
               if (conn.listTargets().length === 0) {
                 return pageMissingError('run_tests');
               }
+              const autoGate = await gateRunTests(conn, files, resolved.root);
+              if (!autoGate.ok) return autoGate.error;
               logInfo('run_tests.start', { fileCount: files.length, autoAttach: true });
               const report = await runWithConnection(conn, files, {
                 timeoutMs,
@@ -1205,8 +1405,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 failed: report.totals.failed,
                 skipped: report.totals.skipped,
               });
+              await appendRemoteLog(
+                conn,
+                'run_tests',
+                `${files.length} files`,
+                report.totals.failed === 0,
+              );
               const runAttached = conn.listTargets().length > 0;
-              return envelopeResult(toRunTestsResult(report), name, env, runAttached);
+              return envelopeResult(toRunTestsResult(report), name, env, runAttached, {
+                policy: autoGate.policy,
+              });
             } finally {
               runTestsInFlight = false;
             }
@@ -1266,6 +1474,8 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             // no mid-call streaming). Log only counts, never file content/paths
             // as secrets / relay URLs. SECRET-HANDLING: do not log bundle code,
             // expression, or result values.
+            const runGate = await gateRunTests(conn, files, resolved.root);
+            if (!runGate.ok) return runGate.error;
             logInfo('run_tests.start', { fileCount: files.length });
             const report = await runWithConnection(conn, files, {
               timeoutMs,
@@ -1280,8 +1490,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
               failed: report.totals.failed,
               skipped: report.totals.skipped,
             });
+            await appendRemoteLog(
+              conn,
+              'run_tests',
+              `${files.length} files`,
+              report.totals.failed === 0,
+            );
             const runAttached = conn.listTargets().length > 0;
-            return envelopeResult(toRunTestsResult(report), name, env, runAttached);
+            return envelopeResult(toRunTestsResult(report), name, env, runAttached, {
+              policy: runGate.policy,
+            });
           } finally {
             runTestsInFlight = false;
           }
@@ -1465,8 +1683,9 @@ function envelopeResult(
   tool: string,
   env: McpEnvironment | UnbootedEnv,
   attached: boolean,
+  extra?: EnvelopeExtraMeta,
 ) {
-  const wrapped = wrapEnvelope(value, { tool, env, attached });
+  const wrapped = wrapEnvelope(value, { tool, env, attached, extra });
   const content: Array<{ type: 'text'; text: string }> = [
     { type: 'text' as const, text: JSON.stringify(wrapped, null, 2) },
   ];

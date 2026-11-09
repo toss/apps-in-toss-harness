@@ -53,6 +53,8 @@ export interface SessionGuardState {
   claimedBy: string | null;
   /** Phone pages attached right now. */
   attached: number;
+  /** Epoch ms the current session started, or `null` when no session runs. */
+  startedAt: number | null;
   /** Epoch ms the session ends if nothing happens, or `null` when no session runs. */
   expiresAt: number | null;
   /** Which limit is next, or `null`. */
@@ -241,6 +243,7 @@ export function createSessionGuard(options: SessionGuardOptions): SessionGuard {
         armedUntil: arm.armedUntil,
         claimedBy: arm.claimedBy,
         attached: control.attachedTargetCount(),
+        startedAt: life.startedAt,
         expiresAt: life.expiresAt,
         expiresBy: life.reason,
         warning: life.warning,

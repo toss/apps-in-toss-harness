@@ -203,6 +203,17 @@ afterAll(async () => {
 
 // Clear the run-core / discovery / cell spies' captured calls.
 // liveIntent reset removed (#665 — bit no longer exists).
+// These tests drive the tool with a fake relay and no phone to tap: the confirmation
+// policy has its own tests (action-gates.test.ts).
+const savedEvaluatePolicy = process.env.AIT_DEBUG_EVALUATE;
+beforeAll(() => {
+  process.env.AIT_DEBUG_EVALUATE = 'free';
+});
+afterAll(() => {
+  if (savedEvaluatePolicy === undefined) delete process.env.AIT_DEBUG_EVALUATE;
+  else process.env.AIT_DEBUG_EVALUATE = savedEvaluatePolicy;
+});
+
 afterEach(() => {
   runWithConnectionSpy.mockClear();
   discoverTestFilesSpy.mockClear();

@@ -127,6 +127,22 @@ The relay has no `/proxy` route and never fetches anything on behalf of a caller
 
 The device and the daemon must speak the same protocol (`PROTOCOL_VERSION`, currently 3). The relay does not serve a `@apps-in-toss/debugger-client` that speaks another one: the phone shows an "update required" bar where `target.js` would load, and `start_attach` ends with the same message instead of waiting out its timeout. Update the older of the two packages and scan a new QR. Protocol 3 is the rename release: when the daemon meets protocol 2 or lower (`@apps-in-toss/debug-console` 0.3.0 or earlier), it tells you to remove that package from the mini-app, install `@apps-in-toss/debugger-client` 0.3.1 or later and redeploy.
 
+### Confirming what the agent does on a real phone
+
+To reduce the paths where text on a screen or in a log steers the agent, tools that run code or call the SDK on a real phone (relay) ask the developer on the phone first. The dialog appears on the phone; without a tap on 허용 within 30 seconds the call returns `confirmation-timeout` and does not run. Only a tap by a person counts. `meta.policy` in the result says how the call was allowed.
+
+| Tool | Default on a real phone | How the developer changes it |
+|---|---|---|
+| `call_sdk` | Only read-only getters (`getLocale`, `getNetworkStatus`, `getOperationalEnvironment`, `getPlatformOS`, `getSafeAreaInsets`, `getServerTime`, `getTossAppVersion`, `getPermission`, `getAppsInTossGlobals`, `isMinVersionSupported`) run directly. Every other name, including names never seen, is confirmed on the phone. Names that are not plain alphanumeric identifiers, and default object keys such as `constructor`, are refused | Put `AIT_DEBUG_SDK_ALLOW=setScreenAwakeMode,openURL` (comma-separated names) in the server `env` of `.mcp.json`. The agent cannot change it |
+| `evaluate` | An expression that mentions `__sdk`, `fetch`, `XMLHttpRequest`, `WebSocket`, `localStorage`, `document.cookie`, `eval` and similar is confirmed on the phone. "이 세션 동안 허용" in the dialog stops asking for the same kind until that session ends | `AIT_DEBUG_EVALUATE=free` (never ask) / `confirm-on-sensitive` (default) / `confirm` (ask every time) / `off` (refuse `evaluate` and `run_tests`) |
+| `run_tests` | The file list and a digest are confirmed on the phone, and the files are hashed again right before the run; a file that changed after the approval is refused | Same as `AIT_DEBUG_EVALUATE` |
+
+On the local browser (`local-browser`), `evaluate` and `run_tests` default to `free` and `call_sdk` calls the mock SDK. The sensitive-name list of `evaluate` can be avoided by building strings, so it is a speed bump, not a boundary. The dialog and the badge run inside the page, so they do not stop a page whose own code is hostile; they are meant for an agent misled by screen or log text.
+
+Each `evaluate`, `call_sdk` and `run_tests` run appends `{ t, kind, summary, ok }` (last 50) to `window.__ait_remote_log` on the phone and fires an `ait:remote-log` event. The summary is at most 80 characters, with tokens and card numbers masked.
+
+Results of `list_console_messages`, `list_exceptions`, `list_network_requests` and `list_pages` mask JWTs, `Bearer` tokens, values of token-like query parameters, resident registration numbers and card numbers (Luhn-checked), and report the counts in `meta.redactions`. Turn it off with `AIT_DEBUG_REDACT=off`. DOM, snapshots, screenshots and `evaluate` results are not masked. It reduces accidental exposure; it does not stop deliberate extraction. Every tool carries MCP `annotations` (`readOnlyHint` and others), and screenshots come with the "data from the page" note. Adding `mcp__ait-devtools__*` wholesale to the agent's permission allow list also removes the host's permission prompt, so be careful with that.
+
 ### Session lifetime and disconnecting
 
 - **Attach window**: a QR admits a new phone only inside the window `start_attach` opens (wait time plus one minute). Once the first phone attaches the window closes and only a reconnect from that device is accepted. While it is closed the dashboard shows "connected - get a new QR" instead of a QR. If a different device tries the same QR in the window, `start_attach` and the dashboard report it with only a device fingerprint (first 8 hash characters), a UA family and a country code. While a phone is attached, the tunnel refuses another device, and a connection with no `url=` or one that does not match its Origin.
