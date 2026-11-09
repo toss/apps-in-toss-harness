@@ -117,8 +117,14 @@ export const ko = {
   'dashboard.wait.title': '폰으로 QR을 스캔하세요',
   'dashboard.wait.sub': '토스 앱의 카메라로 QR을 읽으면 미니앱이 열리고 자동으로 연결돼요.',
   'dashboard.timer.label': '{sec}초 뒤 새 QR로 바뀌어요',
-  'dashboard.timer.note':
-    'QR은 {every}초마다 새 코드로 바뀌어요. 화면에 보이는 QR을 그대로 스캔하세요.',
+  'dashboard.timer.note': '이 QR은 약 2분 동안 유효해요. 화면은 {every}초마다 새 코드로 바뀌어요.',
+  'dashboard.status.ready': '연결 통로 준비됨',
+  'dashboard.status.attached': '폰 연결됨',
+  'dashboard.qr.loading': 'QR을 불러오는 중이에요',
+  'dashboard.qr.none.title': '지금은 QR이 없어요',
+  'dashboard.qr.none.body':
+    '폰이 연결을 받을 수 있는 상태가 아니에요. 새 QR을 만들면 다시 스캔할 수 있어요.',
+  'dashboard.qr.make': '새 QR 만들기',
   'dashboard.connecting.title': '폰과 연결하는 중이에요',
   'dashboard.connecting.sub': '미니앱을 닫지 말고 잠시만 기다려 주세요.',
   'dashboard.connecting.slow': '1분 넘게 멈춰 있으면 미니앱을 닫고 QR을 다시 스캔해 보세요.',

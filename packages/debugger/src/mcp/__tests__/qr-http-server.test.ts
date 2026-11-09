@@ -2718,7 +2718,8 @@ describe('startQrHttpServer — SSE onerror/phase 클라이언트 동작 시뮬�
             }),
           }),
         );
-        expect(document.getElementById('tunnel-status')?.textContent).toContain('연결됨');
+        // 터널만 살아 있고 폰이 안 붙었으면 중립 문구다 — 초록 "연결됨"은 폰이 붙었을 때만.
+        expect(document.getElementById('tunnel-status')?.textContent).toBe('연결 통로 준비됨');
       } finally {
         cleanup();
       }

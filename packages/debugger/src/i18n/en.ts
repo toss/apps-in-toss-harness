@@ -113,7 +113,14 @@ export const en: Record<StringKey, string> = {
     'Read it with the Toss app camera. The mini-app opens and connects on its own.',
   'dashboard.timer.label': 'New QR in {sec}s',
   'dashboard.timer.note':
-    'The QR changes to a new code every {every} seconds. Scan the one on screen as is.',
+    'This QR stays valid for about 2 minutes. The screen swaps in a fresh code every {every} seconds.',
+  'dashboard.status.ready': 'Path ready',
+  'dashboard.status.attached': 'Phone connected',
+  'dashboard.qr.loading': 'Loading the QR',
+  'dashboard.qr.none.title': 'No QR right now',
+  'dashboard.qr.none.body':
+    'Your phone cannot connect at the moment. Create a new QR to scan again.',
+  'dashboard.qr.make': 'Create a new QR',
   'dashboard.connecting.title': 'Connecting to your phone',
   'dashboard.connecting.sub': 'Keep the mini-app open and wait a moment.',
   'dashboard.connecting.slow':

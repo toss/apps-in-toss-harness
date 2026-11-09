@@ -508,8 +508,20 @@ function buildDashboardHtml(
   const s = resolveLocaleStrings(locale);
   const now = new Date().toISOString();
 
-  const tunnelStatus = state.tunnel.up ? s('dashboard.tunnel.up') : s('dashboard.tunnel.down');
-  const tunnelClass = state.tunnel.up ? 'status-up' : 'status-down';
+  // 헤더 알약: 터널이 살아 있다는 것(연결 통로 준비됨)과 폰이 붙었다는 것(폰 연결됨)을 구분한다.
+  // 초록 "연결됨" 계열은 폰이 실제로 붙었을 때만 쓴다.
+  const phoneAttached =
+    (Array.isArray(state.pages) && state.pages.length > 0) || (state.control?.attached ?? 0) > 0;
+  const tunnelStatus = !state.tunnel.up
+    ? s('dashboard.tunnel.down')
+    : phoneAttached
+      ? s('dashboard.status.attached')
+      : s('dashboard.status.ready');
+  const tunnelClass = !state.tunnel.up
+    ? 'status-down'
+    : phoneAttached
+      ? 'status-up'
+      : 'status-ready';
 
   // attachSection: QR img + 재오픈 안내, 또는 대기 힌트. 터널이 죽으면 비운다(에러 화면이 원인을
   // 설명한다). 링크 문자열은 화면에 그리지 않는다 — QR 안에만 있고, 복사 버튼은 `data-url`로만
@@ -528,10 +540,14 @@ function buildDashboardHtml(
     hasQr = true;
     copyUrl = state.attachUrl;
     attachSection =
+      `<div class="qr-frame" data-ready="1">` +
       `<img class="qr" src="${qrDataUrl}" alt="${escapeHtml(s('dashboard.qr.alt'))}" />` +
+      `<div class="qr-skel" role="status"><i></i><span>${escapeHtml(s('dashboard.qr.loading'))}</span></div>` +
+      `</div>` +
       `<p class="hint reopen-hint">${escapeHtml(s('dashboard.attach.reopenHint'))}</p>`;
   } else {
-    attachSection = `<p class="hint">${escapeHtml(s('dashboard.attach.hint'))}</p>`;
+    // QR이 없으면 칸을 비워 두지 않는다: 크롬의 `.qr-none` 블록(안내 + 새 QR 버튼)이 대신 보인다.
+    attachSection = '';
   }
   const connected =
     (Array.isArray(state.pages) && state.pages.length > 0) || (state.control?.attached ?? 0) > 0;
@@ -614,7 +630,9 @@ function buildDashboardHtml(
   const watchdogTimeoutMs =
     sseRefreshIntervalMs < 5_000 ? sseRefreshIntervalMs * 3 : sseRefreshIntervalMs * 2 + 30_000;
   const sseStrings: SseScriptStrings = {
-    tunnelUp: JSON.stringify(s('dashboard.tunnel.up')),
+    tunnelUp: JSON.stringify(s('dashboard.status.ready')),
+    statusAttached: JSON.stringify(s('dashboard.status.attached')),
+    qrLoading: JSON.stringify(s('dashboard.qr.loading').replace(/[<>&"']/g, ' ')),
     tunnelDown: JSON.stringify(s('dashboard.tunnel.down')),
     pagesEmpty: JSON.stringify(s('dashboard.pages.empty')),
     attachHint: JSON.stringify(s('dashboard.attach.hint')),
@@ -733,7 +751,7 @@ function buildControlSection(
     `function fill(t,v){return String(t).replace(/\\{(\\w+)\\}/g,function(_,k){return v[k]===undefined?'':v[k]})}` +
     `function dev(c){var d=T['ua.'+c.ua]||T['ua.none'];return d+(c.country?' ('+c.country+')':'')}` +
     `function render(c){` +
-    `if(!c){document.getElementById('ait-control').style.display='none';return}` +
+    `if(!c){document.getElementById('ait-control').style.display='none';Array.prototype.forEach.call(document.querySelectorAll('[data-act]'),function(b){b.hidden=true});return}` +
     `document.getElementById('ait-control').style.display='block';` +
     `var text;` +
     `if(c.attached>0){text=fill(c.warning?T.attachedWarn:T.attached,{time:c.expiresAt?hm(c.expiresAt):''})}` +
@@ -744,13 +762,15 @@ function buildControlSection(
     `st.textContent=text;` +
     `cl.textContent='';` +
     `(c.claims||[]).slice(-3).forEach(function(e){var li=document.createElement('li');li.textContent=fill(T['claim.'+e.kind]||T['claim.claim'],{device:dev(e),time:hm(e.at)});if(e.kind==='contested'){li.className='contested'}cl.appendChild(li)});` +
-    `kb.disabled=!(c.attached>0||c.armed);` +
+    `var on=c.attached>0;kb.hidden=!on;nb.hidden=on;` +
+    `Array.prototype.forEach.call(document.querySelectorAll('[data-act]'),function(b){b.hidden=false});` +
     `}` +
     `function act(a){er.textContent='';fetch('/action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Ait-Dash':'1'},body:JSON.stringify({action:a})})` +
     `.then(function(r){return r.json().catch(function(){return{}})})` +
     `.then(function(j){if(j&&j.ok===false){er.textContent=j.reason==='no-scheme'?T.noScheme:T.failed}})` +
     `.catch(function(){er.textContent=T.failed})}` +
     `kb.addEventListener('click',function(){act('kill')});nb.addEventListener('click',function(){act('new-qr')});` +
+    `document.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-act]');if(b&&!b.hidden){act(b.getAttribute('data-act'))}});` +
     `window.addEventListener('ait-dash-state',function(e){var d=e.detail||{};render(d.control===undefined?null:d.control)});` +
     `render(INIT);` +
     `})();</script>`
@@ -907,7 +927,12 @@ function buildViewScript(tableJson: string): string {
 }
 
 interface SseScriptStrings {
+  /** 헤더 알약 — 터널은 살아 있지만 폰은 아직 안 붙은 상태("연결 통로 준비됨"). */
   tunnelUp: string;
+  /** 헤더 알약 — 폰이 붙은 상태("폰 연결됨"). 강한 초록은 이 상태에만 쓴다. */
+  statusAttached: string;
+  /** QR 이미지를 받아 오는 동안 칸 안에 보이는 문구. */
+  qrLoading: string;
   tunnelDown: string;
   pagesEmpty: string;
   attachHint: string;
@@ -1012,6 +1037,8 @@ function buildSseScript(strings: SseScriptStrings): string {
     // SSE — /events 구독해 상태 자동 갱신. 빌드 파이프라인 없는 인라인 스크립트.
     (function () {
       var TUNNEL_UP = ${strings.tunnelUp};
+      var STATUS_ATTACHED = ${strings.statusAttached};
+      var QR_LOADING = ${strings.qrLoading};
       var TUNNEL_DOWN = ${strings.tunnelDown};
       var PAGES_EMPTY = ${strings.pagesEmpty};
       var ATTACH_HINT = ${strings.attachHint};
@@ -1199,6 +1226,74 @@ function buildSseScript(strings: SseScriptStrings): string {
         }
       }, checkIntervalMs);
 
+      // ── QR 이미지 로더 ────────────────────────────────────────────────────
+      // QR 코드는 몇 초마다 새로 만들어진다. 화면의 이미지를 직접 새 URL로 바꾸면 그 요청이
+      // 끝날 때까지(또는 실패하면 계속) 빈 칸이 보인다. 그래서 새 PNG를 fetch로 받아 Image로 디코드까지
+      // 마친 뒤에만 src를 바꾼다(같은 blob URL이라 두 번째 네트워크 요청이 없다). 받기에 실패하면
+      // 화면의 이전 QR을 그대로 두고 잠시 뒤 최신 링크로 다시 시도한다. 터널이 죽었거나 링크가
+      // 없으면 이미지를 지우지 않고 칸의 data-ready만 0으로 돌려 "불러오는 중" 표시를 보인다.
+      var QR_RETRY_MS = 1500;
+      var qrShown = null, qrWant = null, qrBusy = false, qrRetryTimer = null, qrObjUrl = null;
+      function qrMark(ready) {
+        var f = document.querySelector('#attach-section .qr-frame');
+        if (f) f.setAttribute('data-ready', ready ? '1' : '0');
+      }
+      function qrReset() {
+        qrWant = null;
+        qrShown = null;
+        qrMark(false);
+      }
+      function qrRevoke(u) {
+        if (!u) return;
+        try { URL.revokeObjectURL(u); } catch (_) {}
+      }
+      function qrPump() {
+        if (qrBusy || qrWant === null || qrWant === qrShown) return;
+        var img = document.querySelector('#attach-section img.qr');
+        if (!img) return;
+        var want = qrWant;
+        if (typeof fetch !== 'function' || !window.URL || typeof URL.createObjectURL !== 'function') {
+          // 아주 오래된 환경 폴백 — 미리 받기 없이 바로 바꾼다.
+          img.src = '/qr.png?u=' + want;
+          qrShown = want;
+          qrMark(true);
+          return;
+        }
+        qrBusy = true;
+        var done = function (ok, objUrl) {
+          qrBusy = false;
+          if (ok && qrWant !== null) {
+            var prev = qrObjUrl;
+            img.src = objUrl;
+            qrObjUrl = objUrl;
+            qrShown = want;
+            img.setAttribute('data-u', want);
+            qrMark(true);
+            qrRevoke(prev);
+            qrPump(); // 받는 동안 더 새 링크가 왔으면 이어서 받는다.
+            return;
+          }
+          qrRevoke(objUrl);
+          if (!ok && qrWant !== null) {
+            if (qrRetryTimer) clearTimeout(qrRetryTimer);
+            qrRetryTimer = setTimeout(function () { qrRetryTimer = null; qrPump(); }, QR_RETRY_MS);
+          }
+        };
+        fetch('/qr.png?u=' + want, { cache: 'no-store', credentials: 'same-origin' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('qr-http');
+            return r.blob();
+          })
+          .then(function (blob) {
+            var objUrl = URL.createObjectURL(blob);
+            var pre = new Image();
+            pre.onload = function () { done(true, objUrl); };
+            pre.onerror = function () { done(false, objUrl); };
+            pre.src = objUrl;
+          })
+          .catch(function () { done(false, null); });
+      }
+
       // ── SSE 구독 ──────────────────────────────────────────────────────────
       var src = new EventSource('/events?v=2');
       src.onopen = function () {
@@ -1224,8 +1319,11 @@ function buildSseScript(strings: SseScriptStrings): string {
           // 터널 상태 갱신
           var el = document.getElementById('tunnel-status');
           if (el) {
-            el.textContent = s.tunnel && s.tunnel.up ? TUNNEL_UP : TUNNEL_DOWN;
-            el.className = 'status ' + (s.tunnel && s.tunnel.up ? 'status-up' : 'status-down');
+            // 터널이 살아 있다 = "연결 통로 준비됨"(중립). 초록 "폰 연결됨"은 폰이 실제로 붙었을 때만.
+            var tUp = !!(s.tunnel && s.tunnel.up);
+            var phoneOn = (Array.isArray(s.pages) && s.pages.length > 0) || !!(s.control && s.control.attached > 0);
+            el.textContent = !tUp ? TUNNEL_DOWN : phoneOn ? STATUS_ATTACHED : TUNNEL_UP;
+            el.className = 'status ' + (!tUp ? 'status-down' : phoneOn ? 'status-up' : 'status-ready');
           }
           // page 목록 갱신 — pages === null이면 섹션 자체를 숨긴 채 둔다.
           // 정적 렌더가 #pages-section을 아예 안 그렸으므로 여기서도 손대지 않아
@@ -1253,50 +1351,47 @@ function buildSseScript(strings: SseScriptStrings): string {
           var sec = document.getElementById('attach-section');
           if (sec) {
             if (!(s.tunnel && s.tunnel.up)) {
-              sec.innerHTML = ${
-                isDashboard ? `''` : `'<p class=\\"hint error\\">' + ATTACH_TUNNEL_DOWN + '</p>'`
-              };
+              // 터널이 죽었으니 이 QR은 이미 무효다. 스캔되지 않게 숨기되 칸은 비우지 않는다 —
+              // 복구되면 새 이미지를 받아 올 때까지 "불러오는 중" 표시가 칸을 채운다.
+              qrReset();
+              ${
+                isDashboard
+                  ? ''
+                  : `sec.innerHTML = '<p class=\\"hint error\\">' + ATTACH_TUNNEL_DOWN + '</p>';`
+              }
             } else if (s.attachUrl) {
               var encoded = encodeURIComponent(s.attachUrl);
-              // QR이 5초마다 바뀌므로 img를 새로 만들면 디코드 전까지 빈 칸이 보여 화면이 번쩍인다.
-              // 새 PNG를 먼저 받아 두고 다 받은 뒤에 src만 바꾼다. 같은 URL이면 아무것도 하지 않는다.
-              var qrSrc = '/qr.png?u=' + encoded;
-              var swapQr = function (el) {
-                if (el.getAttribute('data-u') === encoded) return;
-                el.setAttribute('data-u', encoded);
-                var pre = new Image();
-                pre.onload = function () { if (el.getAttribute('data-u') === encoded) el.src = qrSrc; };
-                pre.src = qrSrc;
-              };
               var curImg = sec.querySelector('img.qr');
               ${
                 isDashboard
-                  ? `if (curImg) {
-                swapQr(curImg);
-              } else {
-              // 첫 렌더(또는 터널 복구 직후): #attach-section에 img + 재오픈 안내를 넣는다.
-              // 링크 문자열은 화면에 그리지 않는다 — 복사 버튼의 data-url에만 둔다.
+                  ? `if (!sec.querySelector('.qr-frame')) {
+              // 첫 렌더(또는 정적 렌더에 QR이 없었던 경우): 이미지 칸 + 재오픈 안내를 만든다.
+              // 이미지는 비워 두고 "불러오는 중" 표시가 칸을 채운다. 링크 문자열은 화면에 그리지 않는다 —
+              // 복사 버튼의 data-url에만 둔다.
               sec.innerHTML =
-                '<img class="qr" src="/qr.png?u=' + encoded + '" alt="' + QR_ALT + '" />' +
+                '<div class=\\"qr-frame\\" data-ready=\\"0\\"><img class=\\"qr\\" alt=\\"' + QR_ALT + '\\" />' +
+                '<div class=\\"qr-skel\\" role=\\"status\\"><i></i><span>' + QR_LOADING + '</span></div></div>' +
                 '<p class=\\"hint reopen-hint\\">' + REOPEN_HINT + '</p>';
-              var newImg = sec.querySelector('img.qr');
-              if (newImg) newImg.setAttribute('data-u', encoded);
-              }`
-                  : `// /attach: img src만 교체 — url-box는 별도 #url-section에서 관리해 이중 표시 방지(#458).
-              // QR img src 교체: img가 있으면 미리 받은 뒤 src만 갱신, 없으면 img 요소 생성.
-              if (curImg) {
-                swapQr(curImg);
-              } else {
-                sec.innerHTML = '<img class=\\"qr\\" src=\\"/qr.png?u=' + encoded + '\\" alt=\\"attach QR\\" />';
+              qrShown = null;
               }
+              qrWant = encoded;
+              qrPump();`
+                  : `// /attach: img만 갈아 끼운다 — url-box는 별도 #url-section에서 관리해 이중 표시 방지(#458).
+              if (!curImg) {
+                sec.innerHTML = '<img class=\\"qr\\" src=\\"/qr.png?u=' + encoded + '\\" alt=\\"attach QR\\" />';
+                qrShown = null;
+              }
+              qrWant = encoded;
+              qrPump();
               // url-box textContent만 갱신 (innerHTML 교체하지 않아 복사 버튼/핸들러 생존).
               var ub = document.getElementById('url-box');
               if (ub) ub.textContent = s.attachUrl;`
               }
             } else {
+              qrReset();
               ${
                 isDashboard
-                  ? `sec.innerHTML = '<p class=\\"hint\\">' + ATTACH_HINT + '</p>';`
+                  ? ''
                   : `// /attach에서 hint가 필요한 경우는 없으나 방어 처리.
               sec.innerHTML = '<p class=\\"hint\\">' + ATTACH_HINT + '</p>';`
               }
@@ -1423,7 +1518,9 @@ function buildAttachHtml(
   const watchdogTimeoutMs =
     sseRefreshIntervalMs < 5_000 ? sseRefreshIntervalMs * 3 : sseRefreshIntervalMs * 2 + 30_000;
   const sseStrings: SseScriptStrings = {
-    tunnelUp: JSON.stringify(s('dashboard.tunnel.up')),
+    tunnelUp: JSON.stringify(s('dashboard.status.ready')),
+    statusAttached: JSON.stringify(s('dashboard.status.attached')),
+    qrLoading: JSON.stringify(s('dashboard.qr.loading').replace(/[<>&"']/g, ' ')),
     tunnelDown: JSON.stringify(s('dashboard.tunnel.down')),
     pagesEmpty: JSON.stringify(s('dashboard.pages.empty')),
     attachHint: JSON.stringify(s('dashboard.attach.hint')),

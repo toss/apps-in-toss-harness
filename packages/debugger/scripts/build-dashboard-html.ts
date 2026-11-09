@@ -72,7 +72,9 @@ function renderDashboardChrome(locale: Locale): string {
       lang: locale,
       strings: {
         title: s('dashboard.title'),
-        tunnelSection: s('dashboard.tunnel.section'),
+        qrNoneTitle: s('dashboard.qr.none.title'),
+        qrNoneBody: s('dashboard.qr.none.body'),
+        qrMake: s('dashboard.qr.make'),
         updatedPrefix,
         waitTitle: s('dashboard.wait.title'),
         waitSub: s('dashboard.wait.sub'),
