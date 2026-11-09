@@ -241,6 +241,23 @@ describe('disconnectDebugger — works with no daemon', () => {
 });
 
 describe('status chip', () => {
+  /** A badge element with a real on-screen box (jsdom does no layout). */
+  function visibleBadge(): HTMLElement {
+    const badge = document.createElement('div');
+    badge.id = '__ait_debug_indicator';
+    badge.getBoundingClientRect = () =>
+      ({
+        x: 12,
+        y: 67,
+        left: 12,
+        top: 67,
+        right: 152,
+        bottom: 95,
+        width: 140,
+        height: 28,
+      }) as DOMRect;
+    return badge;
+  }
   function chipHost(): HTMLElement | null {
     return document.getElementById('__ait_session_chip');
   }
@@ -297,12 +314,29 @@ describe('status chip', () => {
   it('stays hidden while the daemon badge is on the page, and returns when it is gone', async () => {
     await attachAndConnect();
     vi.advanceTimersByTime(4000);
-    const badge = document.createElement('div');
-    badge.id = '__ait_debug_indicator';
+    const badge = visibleBadge();
     document.body.append(badge);
     vi.advanceTimersByTime(1000);
     expect(chipHost()).toBeNull();
     badge.remove();
+    vi.advanceTimersByTime(1000);
+    expect(chipHost()).not.toBeNull();
+  });
+
+  it('comes back when the daemon badge is still on the page but hidden', async () => {
+    await attachAndConnect();
+    vi.advanceTimersByTime(4000);
+    const badge = visibleBadge();
+    document.body.append(badge);
+    vi.advanceTimersByTime(1000);
+    expect(chipHost()).toBeNull();
+    // The badge's own "숨기기" (or a daemon that keeps an invisible badge) must not
+    // leave the phone without any sign of the session.
+    badge.style.display = 'none';
+    vi.advanceTimersByTime(1000);
+    expect(chipHost()).not.toBeNull();
+    badge.style.display = '';
+    badge.style.opacity = '0';
     vi.advanceTimersByTime(1000);
     expect(chipHost()).not.toBeNull();
   });

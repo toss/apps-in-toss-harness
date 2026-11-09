@@ -193,5 +193,24 @@ export const KIND_LABELS: Record<RemoteLogKind, string> = {
 
 /** Whether the daemon's own badge is on the page right now. */
 export function daemonBadgePresent(): boolean {
-  return typeof document !== 'undefined' && document.getElementById(DAEMON_BADGE_ID) !== null;
+  if (typeof document === 'undefined') return false;
+  const badge = document.getElementById(DAEMON_BADGE_ID);
+  if (badge === null) return false;
+  // The badge only stands in for the chip while a person can actually see it. A
+  // badge that is hidden (its own "숨기기", display:none, zero size, transparent
+  // or off screen) must not keep the chip away: the daemon draws the badge, and
+  // the session must stay visible on the phone whatever the daemon does with it.
+  try {
+    const style = getComputedStyle(badge);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (Number.parseFloat(style.opacity) < 0.5) return false;
+    const rect = badge.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return false;
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= vw || rect.top >= vh) return false;
+  } catch {
+    return false;
+  }
+  return true;
 }
