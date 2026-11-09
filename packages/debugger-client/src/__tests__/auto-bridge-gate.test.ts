@@ -6,7 +6,7 @@
  */
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { attachSignatures, relayPublicKey } from '../../../debugger/src/mcp/relay-signing.js';
+import { attachSignatures, relayPublicKey } from './legacy-relay-signing.js';
 
 const SECRET = '11'.repeat(32);
 const KEY = relayPublicKey(SECRET);

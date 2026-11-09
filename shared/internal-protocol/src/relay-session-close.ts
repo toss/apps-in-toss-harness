@@ -48,3 +48,28 @@ export function isRelaySessionEndReason(value: unknown): value is RelaySessionEn
  * session (the daemon sees it on the relay socket). Not a relay-sent reason.
  */
 export const RELAY_CLIENT_STOP_REASON = 'user-stopped';
+
+/**
+ * First client package version that understands {@link RELAY_SESSION_END_CLOSE_CODE}.
+ * The client reports its version as `v` on the attach handshake; the debugger
+ * sends 4410 only to a client at or above this version and keeps 4401 for the
+ * rest (including 0.3.1 and anything that reported no version).
+ */
+export const RELAY_SESSION_END_MIN_CLIENT_VERSION = '0.3.2';
+
+/** Whether a client that reported `version` on the handshake understands the 4410 close. */
+export function clientSupportsSessionEndClose(version: string | null | undefined): boolean {
+  const parse = (v: string): [number, number, number] | null => {
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
+    return m === null ? null : [Number(m[1]), Number(m[2]), Number(m[3])];
+  };
+  if (typeof version !== 'string') return false;
+  const got = parse(version);
+  const min = parse(RELAY_SESSION_END_MIN_CLIENT_VERSION);
+  if (got === null || min === null) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (got[i] !== min[i]) return (got[i] as number) > (min[i] as number);
+  }
+  // A prerelease of the minimum version is below it.
+  return !/^\d+\.\d+\.\d+-/.test(version);
+}

@@ -9,11 +9,6 @@
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  attachSignatures,
-  relayPublicKey,
-  resetRelaySessionKey,
-} from '../../../debugger/src/mcp/relay-signing.js';
-import {
   CONSENT_MAX_ORIGINS,
   CONSENT_STORAGE_KEY,
   CONSENT_TTL_MS,
@@ -22,6 +17,7 @@ import {
   rememberRelayOriginConsent,
 } from '../consent.js';
 import type { GateResult, RelayPublicKeyPin } from '../index.js';
+import { attachSignatures, relayPublicKey, resetRelaySessionKey } from './legacy-relay-signing.js';
 
 vi.mock('@apps-in-toss/web-framework', () => ({
   setScreenAwakeMode: vi.fn(() => Promise.resolve({ enabled: true })),

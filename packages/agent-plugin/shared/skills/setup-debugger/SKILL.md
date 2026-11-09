@@ -190,6 +190,14 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
   말로: "브라우저에서 미니앱 동작을 확인하고 싶어"
 ```
 
+## 등록 뒤 디버거가 거는 제한
+
+이 skill은 항목에 `env`를 넣지 않는다. 디버거 0.3.2부터 실기기(relay) 세션에는 아래 제한이 기본으로 걸린다. 에이전트가 끄거나 풀 수 없고, 바꾸려면 사용자가 `.mcp.json` 항목의 `env`를 직접 편집한다.
+
+- `stop_attach` 도구로 세션을 끊을 수 있다. 세션은 도구 호출 15분 무응답 또는 부착 60분에 끝나고(끝나기 1분 전 폰의 "계속" 탭으로 연장), 터널은 30분 안 쓰이면 닫힌다.
+- 읽기 전용이 아닌 `call_sdk`와 민감한 `evaluate`는 폰의 확인 창을 거친다(확인 창에 "이 세션 동안 허용"이 있다). 사용자가 정하는 `env` 값: `AIT_DEBUG_SDK_ALLOW`(바로 실행할 SDK 메서드 이름), `AIT_DEBUG_EVALUATE`(`free`·`confirm-on-sensitive`·`confirm`·`off`), `AIT_DEBUG_REDACT`(`off`면 마스킹 끔). 사용자가 요청하지 않으면 넣지 않는다.
+- 폰에는 `debugger-client` 0.3.2의 상태 칩과 vConsole "Remote Debugger" 탭이 뜬다.
+
 ## 다음 단계
 
 배선이 끝나고 세션에서 서버 연결이 확인되면 바로 디버깅으로 넘어간다. seam은
@@ -224,6 +232,7 @@ QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debug
   MCP 등록이 조용히 깨진다.
 - ❌ 머신 절대경로 launcher(`node /Users/…/dist/cli.js` 류) — 머신 종속.
 - ❌ 시크릿/토큰 값을 `.mcp.json`이나 로그에 기록 — 이 서버는 인자·env 시크릿이 필요 없다.
+- ❌ 사용자 요청 없이 `AIT_DEBUG_SDK_ALLOW`·`AIT_DEBUG_EVALUATE=free`·`AIT_DEBUG_REDACT=off` 같은 제한 완화 env를 항목에 넣는 것.
 - ❌ 호스트 판별 없이 두 파일을 다 쓰거나 한쪽을 감으로 고르는 것 (2단계 판별을 따른다).
 - ❌ Cursor 항목에서 `"type": "stdio"` 누락 — 등록이 조용히 무시된다.
 

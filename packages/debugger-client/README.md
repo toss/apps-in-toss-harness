@@ -36,15 +36,30 @@ if (__DEBUG_BUILD__) {
 }
 ```
 
-QR 테스트 호스트에서는 attach URL의 `sig`를 검증하므로 개발자 공개키가 필요하다. 프로젝트 폴더에서 디버거 0.3.2의 `relay-key`(`npx debugger relay-key`, 설치한 bin이면 `debugger relay-key`)를 실행해 `{ publicKey, notAfter }` 항목을 얻고(`.ait_relay`가 없으면 만든다), `startDebugConsole`에 넘긴다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 팀원은 자기 항목을 배열에 추가하고 다시 빌드한다.
+QR 테스트 호스트에서는 attach URL의 `sig`를 검증하므로 개발자 공개키가 필요하다. 공개키는 디버그 번들을 빌드할 때 디버거의 빌드 헬퍼 `readRelayPublicKeys`(`@apps-in-toss/debugger/relay-keys`)로 얻어 번들러 `define`의 `__AIT_RELAY_KEYS__`에 채우고, `startDebugConsole`의 `relayPublicKeys`에 그대로 넘긴다. 헬퍼는 `{ publicKey, notAfter }` 배열(`notAfter`는 Unix 초)을 돌려주며 공개 데이터만 나온다. 개인키는 디버거의 메모리 전용 key agent에만 있고 파일이나 환경 변수에는 없다. 헬퍼 없이 손으로 받으려면 프로젝트 폴더에서 `npx debugger relay-key --json`을 실행한다. 팀원은 자기 항목을 배열에 추가하고 다시 빌드한다.
+
+```ts
+// vite.config.ts — AIT_DEBUG_BUILD=1인 디버그 빌드에서만 키를 채운다 (webpack·rspack도 같은 방식으로 define에 넣는다)
+import { readRelayPublicKeys } from '@apps-in-toss/debugger/relay-keys';
+
+const debugBuild = process.env.AIT_DEBUG_BUILD === '1';
+
+export default {
+  define: {
+    __DEBUG_BUILD__: JSON.stringify(debugBuild),
+    __AIT_RELAY_KEYS__: JSON.stringify(debugBuild ? await readRelayPublicKeys(process.cwd()) : []),
+  },
+};
+```
 
 ```ts
 declare const __DEBUG_BUILD__: boolean;
+declare const __AIT_RELAY_KEYS__: ReadonlyArray<{ publicKey: string; notAfter: number }>;
 
 if (__DEBUG_BUILD__) {
   import('@apps-in-toss/debugger-client').then((m) =>
     m.startDebugConsole({
-      relayPublicKeys: [{ publicKey: '<공개키>', notAfter: 1893456000 }],
+      relayPublicKeys: __AIT_RELAY_KEYS__, // 예: [{ publicKey: '<공개키>', notAfter: 1893456000 }]
       // vConsole을 쓰면 인스턴스를 넘길 수 있다. 생략해도 window.vConsole을 찾는다.
       // vConsole: vConsole,
     }),
@@ -52,7 +67,7 @@ if (__DEBUG_BUILD__) {
 }
 ```
 
-`notAfter`는 이 번들이 그 공개키를 믿는 마지막 시각(Unix 초)이다. 빌드할 때 디버거의 `relay-key`가 정해 주는 값이므로 손으로 고치지 않는다. `notAfter`에 5분을 더한 시각이 지나면 그 키로 한 서명은 인증서가 아직 유효해도 거부한다. 서명 비밀이 새더라도 이후에 빌드한 번들은 영향을 받지 않고, 이미 배포한 번들도 만료 뒤에는 그 키를 믿지 않는다. 막히면 디버그 번들을 다시 빌드한다. 옛 형태(`relayPublicKeys: ['<공개키>']`처럼 문자열만 넣은 배열)는 만료 시각이 없어 받지 않는다. 연결하지 않고 막대와 콘솔에 새 형태로 바꾸라고 알린다.
+`notAfter`는 이 번들이 그 공개키를 믿는 마지막 시각(Unix 초)이다. 빌드할 때 디버거가 정해 주는 값이므로 손으로 고치지 않는다. `notAfter`에 5분을 더한 시각이 지나면 그 키로 한 서명은 인증서가 아직 유효해도 거부한다. 서명 비밀이 새더라도 이후에 빌드한 번들은 영향을 받지 않고, 이미 배포한 번들도 만료 뒤에는 그 키를 믿지 않는다. 막히면 디버그 번들을 다시 빌드한다. 옛 형태(`relayPublicKeys: ['<공개키>']`처럼 문자열만 넣은 배열)는 만료 시각이 없어 받지 않는다. 연결하지 않고 막대와 콘솔에 새 형태로 바꾸라고 알린다.
 
 `__DEBUG_BUILD__`는 consumer의 번들러 `define`에 **수동으로 추가해야 하는** build-time 상수다 (예: `define: { __DEBUG_BUILD__: 'false' }`로 release 빌드) — 이 패키지가 자동으로 배선해주지 않는다. release 빌드에서 이 값이 `false`로 접히면 번들러가 `@apps-in-toss/debugger-client` 그래프 전체를 dead-code-eliminate하므로, release 번들에 이 패키지의 코드가 물리적으로 남지 않는다는 것을 build-time에 보장할 수 있다.
 

@@ -36,15 +36,30 @@ if (__DEBUG_BUILD__) {
 }
 ```
 
-On the QR test hosts the debugger-client verifies the `sig` parameter of the attach URL, so it needs the developer's public key. Run `relay-key` from debugger 0.3.2 (`npx debugger relay-key`, or `debugger relay-key` for an installed bin) in the project folder to print a `{ publicKey, notAfter }` entry (it creates `.ait_relay` if missing), then pass it to `startDebugConsole`. The public key is safe to commit; `.ait_relay` is not. A teammate adds their own entry to the array and rebuilds.
+On the QR test hosts the debugger-client verifies the `sig` parameter of the attach URL, so it needs the developer's public key. Get it at build time from the debugger's build helper `readRelayPublicKeys` (`@apps-in-toss/debugger/relay-keys`), put it in the bundler `define` as `__AIT_RELAY_KEYS__`, and pass it straight to `relayPublicKeys` of `startDebugConsole`. The helper returns an array of `{ publicKey, notAfter }` (`notAfter` in Unix seconds) and only public data comes out. The private key lives only in the debugger's memory-only key agent, not in a file or an environment variable. To fetch it by hand instead, run `npx debugger relay-key --json` in the project folder. A teammate adds their own entry to the array and rebuilds.
+
+```ts
+// vite.config.ts — fill the keys only in the AIT_DEBUG_BUILD=1 debug build (webpack and rspack put it in define the same way)
+import { readRelayPublicKeys } from '@apps-in-toss/debugger/relay-keys';
+
+const debugBuild = process.env.AIT_DEBUG_BUILD === '1';
+
+export default {
+  define: {
+    __DEBUG_BUILD__: JSON.stringify(debugBuild),
+    __AIT_RELAY_KEYS__: JSON.stringify(debugBuild ? await readRelayPublicKeys(process.cwd()) : []),
+  },
+};
+```
 
 ```ts
 declare const __DEBUG_BUILD__: boolean;
+declare const __AIT_RELAY_KEYS__: ReadonlyArray<{ publicKey: string; notAfter: number }>;
 
 if (__DEBUG_BUILD__) {
   import('@apps-in-toss/debugger-client').then((m) =>
     m.startDebugConsole({
-      relayPublicKeys: [{ publicKey: '<public key>', notAfter: 1893456000 }],
+      relayPublicKeys: __AIT_RELAY_KEYS__, // e.g. [{ publicKey: '<public key>', notAfter: 1893456000 }]
       // With vConsole you can pass the instance. If omitted, window.vConsole is looked up.
       // vConsole: vConsole,
     }),
@@ -52,7 +67,7 @@ if (__DEBUG_BUILD__) {
 }
 ```
 
-`notAfter` is the last moment (Unix seconds) this bundle trusts that public key. The debugger's `relay-key` sets it when you build, so do not edit it by hand. Five minutes after `notAfter` a signature under that key is refused even if its certificate is still valid. A leaked signing secret therefore stops mattering for bundles built later, and an already deployed bundle stops trusting the key once it expires. If you are blocked, rebuild the debug bundle. The old form (`relayPublicKeys: ['<public key>']`, an array of plain strings) is refused because it has no expiry: nothing is attached, and the bar and console say to switch to the new form.
+`notAfter` is the last moment (Unix seconds) this bundle trusts that public key. The debugger sets it when you build, so do not edit it by hand. Five minutes after `notAfter` a signature under that key is refused even if its certificate is still valid. A leaked signing secret therefore stops mattering for bundles built later, and an already deployed bundle stops trusting the key once it expires. If you are blocked, rebuild the debug bundle. The old form (`relayPublicKeys: ['<public key>']`, an array of plain strings) is refused because it has no expiry: nothing is attached, and the bar and console say to switch to the new form.
 
 `__DEBUG_BUILD__` is a build-time constant you must add to your bundler's `define` **yourself** (e.g. `define: { __DEBUG_BUILD__: 'false' }` for a release build) — this package does not wire it up for you. When it folds to `false` in a release build, the bundler dead-code-eliminates the entire `@apps-in-toss/debugger-client` graph, so you get a build-time guarantee that none of this package's code physically ships in the release bundle.
 

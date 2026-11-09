@@ -9,12 +9,8 @@
 
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  attachSignatures,
-  relayPublicKey,
-  resetRelaySessionKey,
-} from '../../../debugger/src/mcp/relay-signing.js';
 import type { GateResult } from '../index.js';
+import { attachSignatures, relayPublicKey, resetRelaySessionKey } from './legacy-relay-signing.js';
 
 vi.mock('@apps-in-toss/web-framework', () => ({
   setScreenAwakeMode: vi.fn(() => Promise.resolve({ enabled: true })),

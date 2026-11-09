@@ -144,6 +144,9 @@ if (__DEBUG_BUILD__) {
   공개키와 만료 시각 `{ publicKey, notAfter }`만 번들에 들어간다. 키 없이 `maybeAttach()`만 부르면 QR 테스트
   호스트에서 `blocked-relay-key`로 멈춘다. 구버전 `.ait_relay`나 `AIT_DEBUG_TOTP_SECRET`은 디버거가 처음 실행될 때
   자동으로 가져온 뒤 삭제한다.
+- 연결되면 폰 화면에 상태 칩("끊기" 포함)이 남고, 페이지에 vConsole이 있으면 "Remote Debugger" 탭이 붙는다.
+  사용자가 폰에서 직접 끊을 수 있고, 디버거 쪽 `stop_attach`·세션 수명(15분 무응답·60분)으로 끝나면 이유를 폰에 알린다.
+  디버그 번들은 검수·출시에 올리지 않으므로 이 표시도 프로덕션에는 없다.
 - `startDebugConsole({ relayPublicKeys })`는 아래 `maybeAttach`와 같은 게이트를 쓰고 키를 함께 받는다.
   `/auto`는 전역 `__AIT_DEBUG_RELAY_KEYS__`에서 키를 읽지만 권장하지 않는다.
 - `maybeAttach(gateResult?: GateResult, options?)`는 인자 없이 부르면 내부에서
@@ -203,7 +206,7 @@ Rollup은 자체 define이 없어 `@rollup/plugin-replace`가 필요하다. 프�
 "번들러" 절을 따른다.
 
 1. 릴리즈 빌드(환경 변수 없음): 출력 디렉터리에서
-   `grep -rlE '__ait_status_banner|__ait_debug_status|ait-attach|relayPublicKeys|startDebugConsole' <출력 디렉터리>`가
+   `grep -rlE '__ait_status_banner|__ait_debug_status|ait-attach|relayPublicKeys|startDebugConsole|__ait_session_chip|ait_remote_debugger' <출력 디렉터리>`가
    0건이어야 한다.
 2. `AIT_DEBUG_BUILD=1` 빌드: 같은 grep이 1건 이상 나오면 디버그 경로가 살아 있는 것이다.
 

@@ -107,7 +107,7 @@ bash "<이 skill의 base directory>/scripts/launch-scan.sh" .
 | `cors-any-origin` | `*`와 요청 Origin을 그대로 돌려주는 형태(반사)가 후보로 올라온다. 반사는 허용 목록을 거친 뒤인지 파일을 열어 확인한다. docs 서버 API 문서의 허용 origin을 getPage로 확인해 정확한 origin을 권한다(기준은 `references/server-runtime.md`의 CORS 절) |
 | `client-ai-key` | 키가 번들에 들어가는지 본다. `SECRET`·`PRIVATE`가 든 `VITE_` 류 변수와 `sk-or-v1-` 키도 같은 규칙이다. 키 값은 출력하지 않고, 서버로 옮기도록 권한다. 생성형 AI를 쓰는 앱이므로 생성물 표시 기준(docs 운영 정책)도 보고에 함께 올린다. 화면에서 표시를 확인하지 못했으면 "확인 필요"로 둔다 |
 | `debugger-client-bundle` | 디버그용 `@apps-in-toss/debugger-client`이 배포 번들에 들어갈 수 있다는 뜻이다. `dependencies` 항목이나 `__DEBUG_BUILD__` 게이트 없는 import가 걸리면 파일을 열어 확인하고, 해소할 때까지 출시 진행 판단을 보류한다. 고치는 방법은 `/ait:inject-debugger-client`이 게이트 import로 바꾸고 `devDependencies`로 옮기는 것이다 |
-| `debug-artifact` | **차단.** 올린 빌드 산출물(`dist`·`build`·`out`, `*.ait`)에 디버그 도구 마커(`__ait_status_banner`, `__ait_debug_status`, `ait-attach`, `relayPublicKeys`, `startDebugConsole`)가 있다는 뜻이다. 후보처럼 열어서 판단하는 대상이 아니다. 한 건이라도 있으면 5의 0단계로 검수 요청을 거절한다 |
+| `debug-artifact` | **차단.** 올린 빌드 산출물(`dist`·`build`·`out`, `*.ait`)에 디버그 도구 마커(`__ait_status_banner`, `__ait_debug_status`, `ait-attach`, `relayPublicKeys`, `startDebugConsole`, `__ait_session_chip`, `ait_remote_debugger`)가 있다는 뜻이다. 후보처럼 열어서 판단하는 대상이 아니다. 한 건이라도 있으면 5의 0단계로 검수 요청을 거절한다 |
 
 debugger-client 계열이 보이면 디버그 도구 버전도 본다. 옛 이름(`@apps-in-toss/debug-console`,
 `.mcp.json`의 `ait-devtools` 키)이 보이면 이름이 바뀌기 전 버전이라 최소 버전 미달이다. 정리 안내는

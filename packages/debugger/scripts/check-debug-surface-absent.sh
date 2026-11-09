@@ -64,12 +64,14 @@ cd "$(dirname "$0")/.."
 # accepted; it is a string literal, so it survives minification.
 # `startDebugConsole` is the consumer-side wiring call (a property name, so it
 # survives minification) and `ait-attach` is the attach script's marker; neither
-# may remain in a release bundle.
-PATTERN="__ait_debug_status|__ait_status_banner|deriveTargetScriptUrl|installRelayWsObserver|maybeAttach|__sdkCall|startDebugConsole|ait-attach"
+# may remain in a release bundle. `__ait_session_chip` (the phone-side session chip's
+# DOM host id) and `ait_remote_debugger` (the vConsole "Remote Debugger" tab id) are
+# string literals too and cover the session surface.
+PATTERN="__ait_debug_status|__ait_status_banner|deriveTargetScriptUrl|installRelayWsObserver|maybeAttach|__sdkCall|startDebugConsole|ait-attach|__ait_session_chip|ait_remote_debugger"
 # The `/auto` entry installs the SDK bridge globals too (`__sdk` and `__sdkCall`).
 AUTO_PATTERN="$PATTERN|__sdk"
 # What check 1 greps in the daemon bundles: the banner's DOM host id only.
-DAEMON_PATTERN="__ait_status_banner"
+DAEMON_PATTERN="__ait_status_banner|__ait_session_chip|ait_remote_debugger"
 
 FIXTURE_CONFIG="scripts/debug-absence-fixture/vite.config.ts"
 OUT_DIR="scripts/debug-absence-fixture/dist/assets"

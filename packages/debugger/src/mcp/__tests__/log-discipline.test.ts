@@ -17,7 +17,7 @@ const STDERR_ALLOWED: Record<string, string> = {
   'mcp/stdout-guard.ts': 'redirects stray stdout writes to stderr',
   'mcp/cli.ts': 'CLI entry: startup and fatal messages',
   'mcp/relay-key.ts': 'relay-key command output',
-  'mcp/relay-secret-store.ts': 'announces a newly created key',
+  'mcp/relay-root.ts': 'announces key agent state and a legacy key import',
   'mcp/sdk-signatures.ts': 'one-time warning for an unregistered method',
   'mcp/qr-http-server.ts': 'prints the dashboard address on start',
   'mcp/debug-server.ts': 'startup and shutdown notices',

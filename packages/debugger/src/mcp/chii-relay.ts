@@ -105,6 +105,11 @@ import {
   RELAY_BUSY_REASON,
 } from '@apps-in-toss/internal-protocol/relay-busy-close';
 import {
+  clientSupportsSessionEndClose,
+  RELAY_SESSION_END_CLOSE_CODE,
+  type RelaySessionEndReason,
+} from '@apps-in-toss/internal-protocol/relay-session-close';
+import {
   RELAY_CERT_PATH,
   type RelayCertDocument,
 } from '@apps-in-toss/internal-protocol/relay-signature';
@@ -306,6 +311,14 @@ export type RelayRevokeReason =
   | 'idle-timeout'
   | 'session-expired'
   | 'replaced';
+
+/** The 4410 close reason for each revoke reason that has one (`replaced` keeps 4401). */
+const SESSION_END_REASON_OF: Partial<Record<RelayRevokeReason, RelaySessionEndReason>> = {
+  revoked: 'revoked',
+  'user-stopped': 'user-stopped',
+  'idle-timeout': 'idle-timeout',
+  'session-expired': 'expired',
+};
 
 /** Why a phone's target socket was refused with 4409. */
 export type TargetRejectReason = 'host-busy' | 'host-missing' | 'origin-mismatch' | 'device-busy';
@@ -971,6 +984,22 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     return session.device !== device;
   };
   const sessions = new Map<string, PhoneSession>();
+  // Codes whose phone announced on the handshake that it understands close 4410.
+  // Bounded; an unknown code is treated as an old client (4401).
+  const MAX_SESSION_END_CODES = 64;
+  const sessionEndCodes = new Set<string>();
+  const noteSessionEndSupport = (code: string, version: string): void => {
+    if (!clientSupportsSessionEndClose(version)) {
+      sessionEndCodes.delete(code);
+      return;
+    }
+    sessionEndCodes.delete(code);
+    sessionEndCodes.add(code);
+    if (sessionEndCodes.size > MAX_SESSION_END_CODES) {
+      const oldest = sessionEndCodes.values().next().value;
+      if (oldest !== undefined) sessionEndCodes.delete(oldest);
+    }
+  };
   const targetLive = (target: PhoneTarget): boolean =>
     target.open > 0 || sessionNow() - target.lastCloseAt <= SESSION_GRACE_MS;
   /** Drops targets whose socket is gone and whose grace ran out. */
@@ -1155,6 +1184,8 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     host: string | null;
     device: string | null;
     socket: Duplex;
+    /** The phone's client announced (handshake `v`) that it understands close 4410. */
+    sessionEndClose: boolean;
   }
   const openTargetHosts = new Set<OpenTarget>();
 
@@ -1365,6 +1396,10 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
         const params = new URLSearchParams(query);
         const deviceVersion = sanitizeDeviceVersion(params.get(ATTACH_HANDSHAKE_VERSION_PARAM));
         const deviceProtocol = params.get(ATTACH_HANDSHAKE_PROTOCOL_PARAM) ?? '';
+        {
+          const handshakeCode = readAtParam(req.url ?? '');
+          if (isRelayAuthCode(handshakeCode)) noteSessionEndSupport(handshakeCode, deviceVersion);
+        }
         if (onAttachHandshake !== undefined) {
           try {
             onAttachHandshake({ deviceVersion, deviceProtocol });
@@ -1646,7 +1681,12 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
           closeSocketWith(old.socket, RELAY_AUTH_REJECT_CLOSE_CODE, 'replaced');
         }
       }
-      const entry: OpenTarget = { host: pageHost, device, socket };
+      const entry: OpenTarget = {
+        host: pageHost,
+        device,
+        socket,
+        sessionEndClose: isRelayAuthCode(boundCode) && sessionEndCodes.has(boundCode),
+      };
       openTargetHosts.add(entry);
       if (bound !== undefined) bound.open += 1;
       if (onTargetOpen !== undefined) {
@@ -1770,12 +1810,22 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     recentClaims: () => [...claimLog],
     revokeSessions: (reason) => {
       sessions.clear();
+      sessionEndCodes.clear();
       arming.disarm();
+      // Close 4410 (with the named end reason) goes only to a phone whose client
+      // announced support on the handshake; every other phone gets 4401 as before.
+      const endReason = SESSION_END_REASON_OF[reason];
+      const capable = new Set<Duplex>();
+      for (const entry of openTargetHosts) if (entry.sessionEndClose) capable.add(entry.socket);
       let closed = 0;
       if (capturedChiiWss !== null) {
         for (const client of capturedChiiWss._wss.clients) {
+          const useNamed =
+            endReason !== undefined &&
+            capable.has((client as unknown as { _socket?: Duplex })._socket as Duplex);
           try {
-            client.close(RELAY_AUTH_REJECT_CLOSE_CODE, reason);
+            if (useNamed) client.close(RELAY_SESSION_END_CLOSE_CODE, endReason);
+            else client.close(RELAY_AUTH_REJECT_CLOSE_CODE, reason);
           } catch {
             client.terminate();
           }

@@ -16,12 +16,8 @@
 
 import { generateKeyPairSync, sign, webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  attachSignatures,
-  relayPublicKey,
-  resetRelaySessionKey,
-} from '../../../debugger/src/mcp/relay-signing.js';
 import type { GateResult, RelayPublicKeyPin } from '../index.js';
+import { attachSignatures, relayPublicKey, resetRelaySessionKey } from './legacy-relay-signing.js';
 
 /** `<base>/d/<device id>/target.js`: the script URL carries this phone's device id. */
 function deviceScript(base: string): RegExp {

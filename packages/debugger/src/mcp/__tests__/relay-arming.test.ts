@@ -323,6 +323,41 @@ describe('revokeSessions', () => {
   it('is safe with nothing attached', () => {
     expect(relay.revokeSessions('revoked')).toBe(0);
   });
+
+  it.each([
+    ['revoked', 'revoked'],
+    ['user-stopped', 'user-stopped'],
+    ['idle-timeout', 'idle-timeout'],
+    ['session-expired', 'expired'],
+  ] as const)('sends close 4410 (%s) to a client that announced support', async (reason, named) => {
+    relay.arm(60_000);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    const mine = await dial(CODE_A, PHONE_A, 'p1');
+    expect(mine.closeCode).toBeNull();
+    relay.revokeSessions(reason);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(mine.closeCode).toBe(4410);
+    expect(mine.closeReason).toBe(named);
+  });
+
+  it('keeps close 4401 for a 0.3.1 client and for one that announced nothing', async () => {
+    relay.arm(60_000);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.1`)).toBe(204);
+    const old = await dial(CODE_A, PHONE_A, 'p1');
+    relay.revokeSessions('idle-timeout');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(old.closeCode).toBe(4401);
+    expect(old.closeReason).toBe('idle-timeout');
+  });
+
+  it('keeps close 4401 when the session is replaced, even for a new client', async () => {
+    relay.arm(60_000);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    const mine = await dial(CODE_A, PHONE_A, 'p1');
+    relay.revokeSessions('replaced');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(mine.closeCode).toBe(4401);
+  });
 });
 
 describe('replacing the attached page', () => {
