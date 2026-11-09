@@ -206,7 +206,7 @@ The real tunnel address appears only in the attach URL and `relayUrl` that `star
 | relay auth (TOTP) rejected, close 4401 | The daemon tried a relay started by another debugger process, or a skewed PC clock | Call `start_attach` again; if it repeats, restart the debugger and sync the system clock |
 | Several dashboard tabs and you cannot tell which session is which | Each session has its own dashboard | Read the project name (the project folder name) at the end of the tab title, and check `otherSessions` in `get_debug_status` for the other sessions |
 
-Calling `start_attach` again ends the earlier wait as "superseded" and the new call takes over. Progress notifications are sent only when the client sends a `progressToken`; clients that do not receive them still get the same content in the timeout error and `get_debug_status`. For an in-phone console, use the official Apps in Toss web debug tools (More menu).
+Calling `start_attach` again ends the earlier wait as "superseded" and the new call takes over. With `wait_timeout_seconds: 0` it issues the QR and returns immediately without waiting (the attach window stays open for up to 600 s plus one minute). Confirm the attach with `list_pages` or `get_debug_status` (`attachStages`); calling it again re-issues the QR. Negative or invalid values fall back to the default 60 s wait. Progress notifications are sent only when the client sends a `progressToken`; clients that do not receive them still get the same content in the timeout error and `get_debug_status`. For an in-phone console, use the official Apps in Toss web debug tools (More menu).
 
 ### cloudflared binary not installed
 

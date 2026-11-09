@@ -287,7 +287,7 @@ WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 debugger-client을 바꾸라고 하지 말고 debugger 항목 업그레이드를 제안한다.
 
 TOTP 코드가 만료되면 `start_attach`가 자동으로 재발행해 QR/대시보드를 갱신하므로
-그 경우에 한해 재호출할 필요가 없다. 타임아웃·단계별 진단은 다르다 — 에러 본문의
+그 경우에 한해 재호출할 필요가 없다. 호출을 막지 않으려면 `wait_timeout_seconds: 0`으로 QR만 받고 `list_pages`·`get_debug_status`(`attachStages`)로 attach를 확인한다(재호출은 QR을 새로 발급한다). 타임아웃·단계별 진단은 다르다 — 에러 본문의
 "해야 할 일"을 사용자에게 전하고, 그 조치(미니앱 X로 닫기, 새 QR 스캔 등)를 마친 뒤에
 `start_attach`를 다시 부른다. 재호출하면 이전 대기는 `superseded`로 끝나고 새 호출이
 이어받는다.

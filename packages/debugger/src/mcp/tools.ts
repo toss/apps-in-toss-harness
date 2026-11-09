@@ -271,7 +271,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'When the session is already in the requested mode, the switch is skipped.\n\n' +
       'Requires scheme_url — the intoss-private://…?_deploymentId=<uuid> URL from ' +
       '`ait deploy --scheme-only`. Splices debug=1 + relay URL into the scheme URL.\n\n' +
-      'Waits for a page to attach by default (up to wait_timeout_seconds, default 60 s). ' +
+      'Waits for a page to attach by default (up to wait_timeout_seconds, default 60 s); ' +
+      'pass wait_timeout_seconds: 0 to return right after the QR is issued without waiting. ' +
       'The server automatically opens the QR dashboard in the OS default browser when running on a ' +
       'local GUI machine — headless/remote environments fall back to the text QR in the tool output. ' +
       'If a dashboard tab is already connected, no new tab is opened; the existing tab is refreshed in place.' +
@@ -311,7 +312,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
           type: 'number',
           description:
             'Maximum seconds to wait for a page to attach (default 60, range 1–600). ' +
-            'Values outside the range or invalid inputs (0, negative, NaN) fall back to the default silently. ' +
+            '0 = do not wait: issue the QR (open/refresh the dashboard) and return immediately; the attach window stays open ' +
+            'for up to 600 s, so confirm with list_pages or get_debug_status (attachStages) instead of calling start_attach again ' +
+            '(a re-call re-issues the QR). Negative or invalid inputs (NaN, non-number) fall back to the default silently. ' +
             'During the wait the TOTP code is auto re-minted as needed, so a single call covers the whole window.',
         },
         projectRoot: {

@@ -207,7 +207,8 @@ const DEV_TOOL_DEFINITIONS = [
           type: 'number',
           description:
             'Maximum seconds to wait for a page to attach (default 60, range 1–600). ' +
-            'Invalid inputs fall back to default.',
+            '0 = do not wait: issue the QR and return at once (check with list_pages / get_debug_status ' +
+            'attachStages; calling start_attach again re-issues the QR). Negative or invalid inputs fall back to default.',
         },
       },
       required: [],

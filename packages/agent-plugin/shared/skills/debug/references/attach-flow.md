@@ -12,6 +12,7 @@
    에이전트가 그대로 `scheme_url`로 전달 — 사용자 복사 없음).
    이 한 번의 호출이 relay-staging 환경으로 전환하고, `?debug=1&relay=<wss://…>`을 splice해 attach용 deep-link를 합성하며, **QR PNG를 OS 기본 이미지 뷰어로 자동 열고** ASCII QR도 터미널에 병행 출력한다.
    `start_attach`는 attach까지 폴링하며 대기한다(`wait_timeout_seconds` 기본 60s). TOTP 코드 만료는 자동으로 재발행해 QR/대시보드를 갱신하므로 그 경우에는 재호출할 필요가 없다(타임아웃 진단은 아래 "타임아웃 진단"대로 조치한 뒤 재호출한다).
+   대기하지 않고 QR만 받으려면(호출이 오래 막히면 안 되는 에이전트) `wait_timeout_seconds: 0`을 넘긴다. QR을 내고 바로 돌아오며 연결 창은 최대 600초 열려 있다. 이후 붙었는지는 `list_pages`(페이지가 보이면 attach 완료) 또는 `get_debug_status`의 `attachStages`로 확인한다. `start_attach`를 다시 부르면 QR이 새로 발급되니 확인용으로 쓰지 않는다. 음수·잘못된 값은 0이 아니라 기본 60초 대기로 처리된다.
 
    예시 deep-link 형태 (실제 값은 도구 호출 결과로 받음):
    ```

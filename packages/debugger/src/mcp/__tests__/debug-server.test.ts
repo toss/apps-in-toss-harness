@@ -859,34 +859,6 @@ describe('start_attach — wait_timeout_seconds', () => {
     expect(result.isError).toBe(true);
   });
 
-  it('falls back to default when wait_timeout_seconds is 0 (invalid)', async () => {
-    // 0 is invalid — must fall back to deps.waitForAttachTimeoutMs, not to 1 s or 0 s.
-    const connection = new FakeCdpConnection([]);
-    const client = await makeClient({
-      getTunnelStatus: () => tunnelUp,
-      connection,
-      waitForAttachTimeoutMs: 50, // tiny default so the test completes quickly
-    });
-
-    const result = await client.callTool(
-      {
-        name: 'start_attach',
-        arguments: {
-          scheme_url: 'intoss-private://miniapp?_deploymentId=zero-timeout-test',
-          wait_timeout_seconds: 0,
-        },
-      },
-      undefined,
-      { timeout: 5000 },
-    );
-
-    // Falls back to the 50 ms deps default → isError (no tool error — lenient fallback).
-    expect(result.isError).toBe(true);
-    // No MCP protocol error — the tool itself must not throw.
-    const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
-  });
-
   it('falls back to default when wait_timeout_seconds is negative (invalid)', async () => {
     const connection = new FakeCdpConnection([]);
     const client = await makeClient({

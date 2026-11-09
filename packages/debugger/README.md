@@ -206,7 +206,7 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 | relay 인증(TOTP) 거부, close 4401 | 다른 디버거 프로세스가 띄운 relay에 붙으려 함 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 디버거를 다시 시작하고 시스템 시계 동기화 |
 | 대시보드 탭이 여러 개라 어느 세션인지 모름 | 세션마다 대시보드가 따로 뜬다 | 탭 제목 끝의 프로젝트 이름(프로젝트 폴더 이름)으로 구분하고, `get_debug_status`의 `otherSessions`로 다른 세션을 확인 |
 
-`start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_debug_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
+`start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. `wait_timeout_seconds: 0`을 주면 기다리지 않고 QR만 발급한 뒤 바로 돌아온다(연결 창은 최대 600초 + 1분 열려 있다). 붙었는지는 `list_pages`나 `get_debug_status`의 `attachStages`로 확인하고, 다시 부르면 QR이 새로 발급된다. 음수·잘못된 값은 기본 60초 대기다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_debug_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
 
 ### cloudflared 바이너리가 준비되지 않을 때
 
