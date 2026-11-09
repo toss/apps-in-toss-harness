@@ -127,19 +127,23 @@ bun add -d "https://github.com/toss/apps-in-toss-harness/releases/download/debug
 
 ```ts
 declare const __DEBUG_BUILD__: boolean;
+declare const __AIT_RELAY_KEYS__: ReadonlyArray<{ publicKey: string; notAfter: number }>;
 
 if (__DEBUG_BUILD__) {
   import('@apps-in-toss/debugger-client').then((m) =>
-    m.startDebugConsole({ relayPublicKeys: ['<debugger relay-key 출력>'] }),
+    m.startDebugConsole({ relayPublicKeys: __AIT_RELAY_KEYS__ }),
   );
 }
 ```
 
 - 진입점이 `.js`/`.jsx`면 `declare const` 줄은 빼고 나머지만 넣는다.
-- 공개키는 `npx debugger relay-key`(설치한 bin이면 `debugger relay-key`)를 프로젝트 폴더에서 실행해
-  얻는다(`.ait_relay`가 없으면 만든다). 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지 않는다. 팀원은 자기
-  키를 배열에 추가하고 다시 빌드한다. 키 없이 `maybeAttach()`만 부르면 QR 테스트 호스트에서
-  `blocked-relay-key`로 멈춘다.
+- `__AIT_RELAY_KEYS__`는 번들러 `define`에서 채운다:
+  `__AIT_RELAY_KEYS__: JSON.stringify(debugBuild ? await readRelayPublicKeys(process.cwd()) : [])`
+  (`import { readRelayPublicKeys } from '@apps-in-toss/debugger/relay-keys'`). 키는 디스크가 아니라
+  디버거 키 에이전트 메모리에만 있고 기본 24시간 뒤 만료되므로, 만료되면 디버그 번들을 다시 빌드해 업로드한다.
+  공개키와 만료 시각 `{ publicKey, notAfter }`만 번들에 들어간다. 키 없이 `maybeAttach()`만 부르면 QR 테스트
+  호스트에서 `blocked-relay-key`로 멈춘다. 구버전 `.ait_relay`나 `AIT_DEBUG_TOTP_SECRET`은 디버거가 처음 실행될 때
+  자동으로 가져온 뒤 삭제한다.
 - `startDebugConsole({ relayPublicKeys })`는 아래 `maybeAttach`와 같은 게이트를 쓰고 키를 함께 받는다.
   `/auto`는 전역 `__AIT_DEBUG_RELAY_KEYS__`에서 키를 읽지만 권장하지 않는다.
 - `maybeAttach(gateResult?: GateResult, options?)`는 인자 없이 부르면 내부에서

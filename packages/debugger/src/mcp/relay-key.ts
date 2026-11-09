@@ -3,68 +3,63 @@
  *
  * The key is what a debug build embeds so the device can check that the relay
  * endpoint in a QR link was signed by this project's daemon (see
- * `relay-signing.ts`). It is derived from the project's relay secret; the
- * command creates `.ait_relay` when the project has none yet, the same way the
- * daemon would later read it.
+ * `relay-signing.ts`). The private half lives only in memory, in the key agent
+ * (`debugger key-agent`, started on demand); nothing is written to the project
+ * or to disk. A key lives 24 hours by default (`AIT_DEBUG_RELAY_KEY_TTL_HOURS`,
+ * at most 72); after that, rebuild the debug bundle with the new key.
  *
- * `--rotate` replaces `.ait_relay` with a new secret (atomically, mode 0600) and
- * prints the NEW public key. A bundle trusts the public keys it was built with,
- * so after a rotation every bundle that should attach to this project's daemon
- * has to be rebuilt with the new key. See {@link ROTATE_GUIDANCE}.
+ * `--rotate` drops the project's keys in the agent and prints the NEW public key.
+ * A bundle trusts the public keys it was built with, so every bundle that should
+ * attach afterwards has to be rebuilt. See {@link rotateGuidance}.
  *
- * Output contract: stdout carries the public key and a newline, nothing else.
- * Diagnostics go to stderr.
+ * Output contract: stdout carries the public key and a newline, nothing else
+ * (`--json`: a JSON array of `{ publicKey, notAfter }`). Diagnostics, the expiry
+ * and warnings go to stderr.
  *
- * SECRET-HANDLING: the secret is read into a private copy of the environment and
- * handed to `relayPublicKey`; it is never printed, logged or put in an error.
+ * A legacy `.ait_relay` (or `AIT_DEBUG_TOTP_SECRET`) is imported into the agent and
+ * removed on the way, see `relay-legacy.ts`.
+ *
+ * SECRET-HANDLING: only public keys and expiries are printed.
  */
 
-import * as nodeFs from 'node:fs';
 import { resolve } from 'node:path';
-import { relayKeyHint } from './relay-key-age.js';
-import {
-  ensureRelaySecret,
-  nearestPackageJsonDir,
-  readRelayKeyAge,
-  relaySecretFilePath,
-  rotateRelaySecret,
-} from './relay-secret-store.js';
-import { relayPublicKey } from './relay-signing.js';
+import { AgentError } from '../agent/protocol.js';
+import { prepareProjectKeys } from './relay-root.js';
 
 export const RELAY_KEY_USAGE = `
 debugger relay-key — print the relay public key for this project
 
 USAGE
-  debugger relay-key [--project <dir>] [--rotate]
+  debugger relay-key [--project <dir>] [--rotate] [--json]
 
 OPTIONS
   --project <dir>   Project directory (default: the current directory). The
                     nearest package.json directory at or above it is used.
   --rotate          Replace the relay key with a new one (see below).
+  --json            Print every live key as JSON ([{ "publicKey", "notAfter" }],
+                    notAfter in unix seconds) instead of the newest public key.
 
-Creates .ait_relay in the project when it does not exist. Prints only the public
-key on stdout. The key is safe to commit; .ait_relay is not.
+The relay key is volatile: the private half exists only in the memory of the
+key agent, a small background process started on demand (\`debugger key-agent\`;
+no service, no keychain, no network listener). It expires after 24 hours (set
+AIT_DEBUG_RELAY_KEY_TTL_HOURS, at most 72) and when the agent exits. Prints the
+public key on stdout; the expiry goes to stderr. The key is safe to commit.
 
-The relay key is long-lived. The daemon warns when it is older than 21 days and
-does not start the relay when it is older than 30 days. --rotate writes a new
-secret to .ait_relay (atomically, mode 0600), prints the new public key and
-nothing else on stdout, and never prints the secret. Bundles trust the public
-keys they were built with: put the new key in relayPublicKeys and rebuild every
-bundle you still test. A bundle built only with the old key no longer attaches
-to this daemon. Keep the old public key in the array for as long as a daemon
-that has not rotated yet (a teammate's, a CI job's) must still attach to that
-bundle.
+An old .ait_relay file or AIT_DEBUG_TOTP_SECRET is imported into the agent
+(bundles built with its public key keep attaching until the key expires) and the
+file is deleted. Deleting is not a secure wipe on SSD/APFS.
+
+--rotate drops the project's keys and prints the new public key. Bundles trust the
+public keys they were built with: rebuild every bundle you still test.
 `.trimStart();
 
 /** What `--rotate` tells the developer on stderr once the new key is in place. */
-export function rotateGuidance(previousPublicKey: string | null): string {
+export function rotateGuidance(): string {
   return [
     '[debugger] relay-key: the relay key was replaced. The new public key is on stdout.',
-    '  1. Put it in `relayPublicKeys` of `startDebugConsole` and rebuild every bundle you still test.',
-    previousPublicKey === null
-      ? '  2. There was no usable previous key, so there is no old key to keep.'
-      : `  2. Previous public key (public, safe to keep): ${previousPublicKey}\n     Bundles built only with it no longer attach to this daemon. Keep it in the array only while a daemon that still uses the old key must attach to the same bundle; remove it once none does.`,
-    '  3. Restart the debugger daemon so it loads the new key.',
+    '  1. Rebuild every debug bundle you still test (readRelayPublicKeys() returns the new key).',
+    '  2. Bundles built with the old key no longer attach to this daemon.',
+    '  3. Restart the debugger daemon (or call start_debug again) so it uses the new key.',
     '',
   ].join('\n');
 }
@@ -74,7 +69,8 @@ export interface RelayKeyDeps {
   readonly env?: NodeJS.ProcessEnv;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
-  readonly existsSync?: (path: string) => boolean;
+  /** Test seam for {@link prepareProjectKeys}. */
+  readonly prepare?: typeof prepareProjectKeys;
 }
 
 /** Parses `--project <dir>` / `--project=<dir>`; `undefined` when absent, `null` when malformed. */
@@ -106,7 +102,7 @@ export async function runRelayKey(
     write(RELAY_KEY_USAGE);
     return 0;
   }
-  const known = new Set(['--project', '--rotate']);
+  const known = new Set(['--project', '--rotate', '--json']);
   for (const arg of args) {
     if (arg.startsWith('-') && !known.has(arg.split('=')[0] ?? '')) {
       writeError(`[debugger] relay-key: unknown flag ${arg}\n`);
@@ -120,60 +116,41 @@ export async function runRelayKey(
   }
 
   const rotate = args.includes('--rotate');
-
-  const existsFn = deps.existsSync ?? nodeFs.existsSync;
+  const json = args.includes('--json');
   const start = resolve(project ?? (deps.cwd ?? (() => process.cwd()))());
-  const root = nearestPackageJsonDir(start, existsFn);
-  // A private copy, so the lookup never changes the process environment.
-  const env: NodeJS.ProcessEnv = { ...(deps.env ?? process.env) };
+  const prepare = deps.prepare ?? prepareProjectKeys;
   try {
+    const prepared = await prepare({
+      projectRoot: start,
+      requireAgent: true,
+      ...(deps.env === undefined ? {} : { env: deps.env }),
+      log: writeError,
+    });
+    let keys = prepared.keys;
     if (rotate) {
-      const rotation = await rotateRelaySecret({ projectRoot: root, env, log: writeError });
-      write(`${relayPublicKey(rotation.secret)}\n`);
-      writeError(
-        rotateGuidance(
-          rotation.previousSecret === null ? null : relayPublicKey(rotation.previousSecret),
-        ),
+      keys = await prepared.provider.rotate(prepared.project.id);
+      writeError(rotateGuidance());
+    }
+    if (json) {
+      write(
+        `${JSON.stringify(keys.keys.map((k) => ({ publicKey: k.publicKey, notAfter: k.notAfter })))}\n`,
       );
-      if (rotation.envOverride) {
-        writeError(
-          '[debugger] relay-key: AIT_DEBUG_TOTP_SECRET is set in this environment and takes priority over .ait_relay in the daemon. Unset it, or the rotation does not reach the daemon.\n',
-        );
-      }
-      return 0;
+    } else {
+      write(`${keys.publicKey}\n`);
     }
-    await ensureRelaySecret({ projectRoot: root, env, log: writeError });
-    const secret = env.AIT_DEBUG_TOTP_SECRET;
-    if (secret === undefined || secret === '') {
-      writeError('[debugger] relay-key: no relay secret is available for this project\n');
-      return 1;
-    }
-    write(`${relayPublicKey(secret)}\n`);
-    warnIfKeyIsOld(root, secret, existsFn, writeError);
-    return 0;
-  } catch {
-    // Fixed text on purpose: the underlying error may mention paths or secrets.
     writeError(
-      rotate
-        ? '[debugger] relay-key: could not rotate the relay secret; the previous key is unchanged\n'
-        : '[debugger] relay-key: could not read or create the relay secret\n',
+      `[debugger] relay-key: expires ${new Date(keys.notAfter * 1000).toISOString()} (the key lives in memory only; rebuild the debug bundle after it expires)\n`,
     );
+    return 0;
+  } catch (error) {
+    // Fixed text on purpose: the underlying error may mention paths.
+    if (error instanceof AgentError) {
+      writeError(`[debugger] relay-key: the key agent refused the request (${error.code})\n`);
+    } else if (error instanceof Error && error.name === 'KeyAgentRequiredError') {
+      writeError(`${error.message}\n`);
+    } else {
+      writeError('[debugger] relay-key: could not get the relay key\n');
+    }
     return 1;
-  }
-}
-
-/** Tells the developer on stderr when the key in the project is past the warn age. */
-function warnIfKeyIsOld(
-  root: string,
-  secret: string,
-  existsFn: (path: string) => boolean,
-  writeError: (text: string) => void,
-): void {
-  try {
-    const age = readRelayKeyAge(relaySecretFilePath(root, existsFn), secret, nodeFs);
-    const hint = age === null ? null : relayKeyHint(age);
-    if (hint !== null) writeError(`[debugger] relay-key: ${hint}\n`);
-  } catch {
-    // A hint, not a requirement.
   }
 }

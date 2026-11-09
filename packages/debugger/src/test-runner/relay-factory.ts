@@ -191,7 +191,7 @@ export function createRelayConnectionFactory(
         '../mcp/attach-orchestrator.js'
       );
       const { injectDebugIndicator, injectGlobals } = await import('./cell.js');
-      const { loadRelaySecretReadOnly } = await import('../mcp/relay-secret-store.js');
+      const { activateRelayRoot, relayAuthSwitch } = await import('../mcp/relay-root.js');
       const { bootRelayFamily, startAttachWatcher } = await import('../mcp/debug-server.js');
       const { buildRelayVerifyAuth } = await import('../mcp/totp.js');
       const { AttachTimeline, buildDashboardTimelineState, formatStageLabel } = await import(
@@ -201,11 +201,11 @@ export function createRelayConnectionFactory(
       const { mintRelayCode } = await import('../mcp/totp.js');
       const { appNameFromSchemeUrl } = await import('../mcp/relay-origin.js');
 
-      // Load the project-local .ait_relay secret into AIT_DEBUG_TOTP_SECRET
+      // Get the project's relay root key (key agent, else this process's memory)
       // BEFORE booting the relay so assertRelayAuthConfigured()/buildRelayVerifyAuth()
-      // at the boot site see it. Read-only — never mints. SECRET-HANDLING: the
-      // value is never logged here.
-      await loadRelaySecretReadOnly({ projectRoot });
+      // at the boot site see a live key. Legacy .ait_relay files are imported and
+      // removed. SECRET-HANDLING: only public keys are handled here.
+      await activateRelayRoot({ projectRoot });
 
       // PRIMARY FIX (devtools#714): bootRelayFamily starts the cloudflared tunnel
       // as a background promise and returns immediately with tunnel.up === false.
@@ -273,7 +273,7 @@ export function createRelayConnectionFactory(
       // (before prepareAttach) after optionally starting the web-QR server.
       const attachDeps: AttachDeps = {
         getTunnelStatus: booted.getTunnelStatus ?? (() => ({ up: false, wssUrl: null })),
-        getTotpSecret: () => process.env.AIT_DEBUG_TOTP_SECRET,
+        getTotpSecret: () => relayAuthSwitch(),
         qrHttpServer: undefined, // filled in below if web-QR server started
         onAttachUrlBuilt: undefined, // filled in below
         canOpenBrowser: () => !headless,
@@ -332,8 +332,7 @@ export function createRelayConnectionFactory(
           if (targets.length === 0) {
             return { ok: false, reason: 'noTarget' };
           }
-          const totpSecret = process.env.AIT_DEBUG_TOTP_SECRET;
-          if (!totpSecret) {
+          if (!relayAuthSwitch()) {
             return { ok: false, reason: 'totpUnavailable' };
           }
           const url = buildChiiInspectorUrl(booted.relayHttpUrl, targets[0].id, () =>

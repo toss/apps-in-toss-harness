@@ -17,5 +17,5 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# on-device debug relay secret (never commit)
+# 구버전 디버거가 만든 relay 비밀 파일(현재는 메모리 전용, 자동 이관 후 삭제됨)
 .ait_relay
