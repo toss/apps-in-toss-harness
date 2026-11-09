@@ -80,6 +80,7 @@ beforeEach(() => {
   for (const k of [
     'vConsole',
     'VConsole',
+    '__VCONSOLE_INSTANCE',
     '__ait_session',
     '__ait_remote_log',
     '__ait_debug_status',
@@ -113,6 +114,14 @@ describe('registration', () => {
     expect(vc.plugins).toHaveLength(1);
   });
 
+  it('finds the Toss app debug vConsole at window.__VCONSOLE_INSTANCE', async () => {
+    const vc = new FakeVConsole();
+    setWindow('__VCONSOLE_INSTANCE', vc);
+    const { tab } = await load();
+    tab.installRemoteDebuggerTab();
+    expect(vc.plugins).toHaveLength(1);
+  });
+
   it('finds the instance through window.VConsole.instance', async () => {
     setWindow('VConsole', FakeVConsole);
     const vc = new FakeVConsole();
@@ -135,7 +144,7 @@ describe('registration', () => {
   it('gives up after a bounded time when no vConsole ever appears', async () => {
     const { tab } = await load();
     tab.installRemoteDebuggerTab();
-    vi.advanceTimersByTime(120_000);
+    vi.advanceTimersByTime(700_000);
     expect(vi.getTimerCount()).toBe(0);
   });
 

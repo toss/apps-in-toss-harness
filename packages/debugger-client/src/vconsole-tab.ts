@@ -16,8 +16,9 @@
  * leaves no timer.
  *
  * FINDING vConsole — `startDebugConsole({ vConsole })`, else `window.vConsole`,
- * else `window.VConsole.instance`. A vConsole created after the debug console
- * started is found by a bounded check (once a second, at most a minute).
+ * else `window.__VCONSOLE_INSTANCE` (the Toss app's own debug vConsole), else
+ * `window.VConsole.instance`. A vConsole created after the debug console
+ * started is found by a bounded check (once a second, at most ten minutes).
  *
  * UNTRUSTED TEXT — the daemon writes the session facts and the action log onto
  * the page, so they are display data: every string goes in through
@@ -46,7 +47,7 @@ export const REMOTE_TAB_ID = 'ait_remote_debugger';
 export const REMOTE_TAB_NAME = 'Remote Debugger';
 
 const FIND_INTERVAL_MS = 1000;
-const FIND_MAX_TRIES = 60;
+const FIND_MAX_TRIES = 600;
 const TICK_MS = 1000;
 const MAX_VISIBLE_LOG = 20;
 const ARM_MS = 4000;
@@ -64,6 +65,7 @@ declare global {
   interface Window {
     vConsole?: unknown;
     VConsole?: unknown;
+    __VCONSOLE_INSTANCE?: unknown;
   }
 }
 
@@ -86,6 +88,8 @@ function findVConsole(option: unknown): { instance: VConsoleLike; Plugin: Plugin
   const instance =
     asInstance(option) ??
     asInstance(window.vConsole) ??
+    // The Toss app's own debug vConsole registers itself here, not on window.vConsole.
+    asInstance(window.__VCONSOLE_INSTANCE) ??
     asInstance(ctorGlobal === null ? null : ctorGlobal.instance);
   if (instance === null) return null;
   const fromGlobal = ctorGlobal === null ? undefined : ctorGlobal.VConsolePlugin;

@@ -279,6 +279,21 @@ describe('status chip', () => {
     expect(chipButton().textContent).toBe('끊기');
   });
 
+  it('sits at the top inside the SDK safe area, not at the bottom', async () => {
+    (window as unknown as Record<string, unknown>).__sdk = {
+      getSafeAreaInsets: () => ({ top: 59, left: 0, bottom: 34, right: 0 }),
+    };
+    try {
+      await attachAndConnect();
+      vi.advanceTimersByTime(4000);
+      const style = chipHost()?.style;
+      expect(style?.getPropertyValue('top')).toContain('67px');
+      expect(style?.getPropertyValue('bottom')).toBe('');
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__sdk;
+    }
+  });
+
   it('stays hidden while the daemon badge is on the page, and returns when it is gone', async () => {
     await attachAndConnect();
     vi.advanceTimersByTime(4000);
