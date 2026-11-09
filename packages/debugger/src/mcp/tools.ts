@@ -57,7 +57,7 @@ import { isPhoneControlEvent } from './phone-control.js';
 import { type RelayKeyAge, relayKeyHint } from './relay-key-age.js';
 import { maskRelayUrl, redactRelayText } from './relay-redact.js';
 import { relayRunId } from './relay-run-id.js';
-import { attachSignature } from './relay-signing.js';
+import { signedLinkParams, signingHostName } from './relay-signing.js';
 import { RESTART_CMD } from './restart-hint.js';
 import { lookupSignature, warnPassthrough } from './sdk-signatures.js';
 import { MAX_LISTED_OTHER_SESSIONS, type SessionsSnapshot } from './session-registry.js';
@@ -1070,6 +1070,9 @@ export function buildAttachUrl(
   // issuance. We report issuanceTime + RELAY_CODE_MIN_AGE_SECONDS (30 s) as a
   // conservative lower bound.
   const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;
+  // Same signing as start_attach: sig + arc (+ ahn/ahs). A link without `arc` is
+  // refused by debugger-client 0.3.2.
+  const signed = signedLinkParams(totpSecret, tunnel.wssUrl, totpCode, signingHostName(), now);
 
   return {
     attachUrl: buildDeepLinkAttachUrl(
@@ -1077,7 +1080,9 @@ export function buildAttachUrl(
       tunnel.wssUrl,
       totpCode,
       relayRunId(totpSecret, tunnel.wssUrl),
-      attachSignature(totpSecret, tunnel.wssUrl, totpCode),
+      signed.sig,
+      signed.host,
+      signed.cert,
     ),
     relayUrl: tunnel.wssUrl,
     ...(authorityWarning !== undefined ? { authorityWarning } : {}),

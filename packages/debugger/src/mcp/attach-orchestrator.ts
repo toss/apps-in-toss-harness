@@ -54,7 +54,7 @@ import { logInfo } from './log.js';
 import { PHONE_CONTROL_TAG } from './phone-control.js';
 import type { QrHttpServer } from './qr-http-server.js';
 import { relayRunId } from './relay-run-id.js';
-import { attachSignatures } from './relay-signing.js';
+import { signedLinkParams } from './relay-signing.js';
 import {
   canOpenBrowser as defaultCanOpenBrowser,
   listPages,
@@ -481,17 +481,15 @@ export function mintAttachUrl(deps: AttachDeps, parts: AttachUrlParts): string {
   const hostName = sanitizeRelayHostName(
     deps.getHostName !== undefined ? deps.getHostName() : safeOsHostname(),
   );
-  const signed = attachSignatures(secret, current.wssUrl, code, hostName);
+  const signed = signedLinkParams(secret, current.wssUrl, code, hostName);
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
     current.wssUrl,
     code,
     relayRunId(secret, current.wssUrl),
-    signed?.sig,
-    hostName !== undefined && signed?.hostSig !== undefined
-      ? { name: hostName, sig: signed.hostSig }
-      : undefined,
-    signed?.cert,
+    signed.sig,
+    signed.host,
+    signed.cert,
   );
 }
 

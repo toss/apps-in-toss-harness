@@ -152,7 +152,7 @@ import { relayCodeSecret } from './relay-code-secret.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
 import { activateRelayRoot, relayAuthSwitch } from './relay-root.js';
 import { relayRunId } from './relay-run-id.js';
-import { attachSignature, relayCertDocument } from './relay-signing.js';
+import { relayCertDocument, signedLinkParams, signingHostName } from './relay-signing.js';
 import { appendRemoteLog } from './remote-log.js';
 import { describeTestFiles, hashTestFiles } from './run-tests-approval.js';
 import { classifySdkCall, parseSdkAllowlist } from './sdk-policy.js';
@@ -1624,12 +1624,17 @@ export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): s
   const code = mintRelayCode();
   // 터널이 새로 발급됐으면 start_attach 때 잡아 둔 옛 주소 대신 지금 주소로 링크를 만든다.
   const current = withCurrentRelay(parts, tunnel);
+  // Same signing as start_attach (sig + arc + ahn/ahs): the dashboard QR is the one
+  // phones scan most, and debugger-client 0.3.2 refuses a link without `arc`.
+  const signed = signedLinkParams(secret, current.wssUrl, code, signingHostName());
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
     current.wssUrl,
     code,
     relayRunId(secret, current.wssUrl),
-    attachSignature(secret, current.wssUrl, code),
+    signed.sig,
+    signed.host,
+    signed.cert,
   );
 }
 

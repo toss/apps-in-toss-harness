@@ -290,3 +290,29 @@ describe('relay-key command', () => {
     expect(readdirSync(dir)).toEqual(['package.json']);
   });
 });
+
+describe('every attach-link builder carries the session certificate', () => {
+  it('start_attach, the dashboard QR and buildAttachUrl all put sig and arc in the link', async () => {
+    const { client } = await startAgent();
+    await activateRelayRoot({ projectRoot: dir, ensureAgent: async () => client, log });
+    const secret = relayAuthSwitch();
+    expect(secret).toBeTruthy();
+    const scheme = 'intoss-private://sample?_deploymentId=dep-1';
+    const tunnel = { up: true, wssUrl: WSS };
+    const { rebuildAttachUrl } = await import('../debug-server.js');
+    const { buildAttachUrl } = await import('../tools.js');
+    const { mintAttachUrl } = await import('../attach-orchestrator.js');
+    const links = {
+      dashboard: rebuildAttachUrl({ kind: 'scheme', schemeUrl: scheme, wssUrl: WSS }, tunnel),
+      buildAttachUrl: buildAttachUrl(scheme, tunnel, secret as string).attachUrl,
+      startAttach: mintAttachUrl(
+        { getTotpSecret: () => secret, getTunnelStatus: () => tunnel } as never,
+        { kind: 'scheme', schemeUrl: scheme, wssUrl: WSS },
+      ),
+    };
+    for (const [name, link] of Object.entries(links)) {
+      expect(link, name).toMatch(/[?&]sig=/);
+      expect(link, name).toMatch(/[?&]arc=[A-Za-z0-9_-]{180}(?:&|$)/);
+    }
+  });
+});

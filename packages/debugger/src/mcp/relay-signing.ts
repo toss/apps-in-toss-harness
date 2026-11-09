@@ -34,6 +34,7 @@
  */
 
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
+import { hostname } from 'node:os';
 import {
   formatRelayCertParam,
   formatRelaySignature,
@@ -44,6 +45,7 @@ import {
   relayHostMessage,
   relayLinkMessage,
   relayOriginOf,
+  sanitizeRelayHostName,
 } from '@apps-in-toss/internal-protocol/relay-signature';
 
 /** A session key signs links for this long, then the next refresh makes a new one. */
@@ -268,4 +270,45 @@ export function attachSignature(
   nowMs: number = Date.now(),
 ): string | undefined {
   return attachSignatures(authSwitch, wssUrl, atCode, undefined, nowMs)?.sig;
+}
+
+/** This computer's name for the consent dialog, sanitized; `undefined` when unavailable. */
+export function signingHostName(): string | undefined {
+  try {
+    return sanitizeRelayHostName(hostname());
+  } catch {
+    return undefined;
+  }
+}
+
+/** The signed part of an attach link, in `buildDeepLinkAttachUrl` argument order. */
+export interface SignedLinkParams {
+  readonly sig: string | undefined;
+  readonly host: { readonly name: string; readonly sig: string } | undefined;
+  readonly cert: string | undefined;
+}
+
+/**
+ * Signs an attach link for every link builder (start_attach, the dashboard QR,
+ * `buildAttachUrl`), so all of them carry `sig`, `arc` and, when a host name is
+ * given, `ahn`/`ahs`. A link without `arc` is refused by debugger-client 0.3.2.
+ *
+ * @param hostName - Already sanitized computer name, or `undefined` to omit it.
+ */
+export function signedLinkParams(
+  authSwitch: string | undefined,
+  wssUrl: string,
+  atCode: string | undefined,
+  hostName: string | undefined,
+  nowMs: number = Date.now(),
+): SignedLinkParams {
+  const signed = attachSignatures(authSwitch, wssUrl, atCode, hostName, nowMs);
+  return {
+    sig: signed?.sig,
+    host:
+      hostName !== undefined && signed?.hostSig !== undefined
+        ? { name: hostName, sig: signed.hostSig }
+        : undefined,
+    cert: signed?.cert,
+  };
 }
