@@ -21,7 +21,7 @@ import {
   isRelayOriginConsented,
   rememberRelayOriginConsent,
 } from '../consent.js';
-import type { GateResult } from '../index.js';
+import type { GateResult, RelayPublicKeyPin } from '../index.js';
 
 vi.mock('@apps-in-toss/web-framework', () => ({
   setScreenAwakeMode: vi.fn(() => Promise.resolve({ enabled: true })),
@@ -29,6 +29,9 @@ vi.mock('@apps-in-toss/web-framework', () => ({
 
 const SECRET = '11'.repeat(32);
 const KEY = relayPublicKey(SECRET);
+/** A pinned key as the bundle carries it: the key and a far-off expiry (Unix seconds). */
+const FAR = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
+const KEY_PIN = { publicKey: KEY, notAfter: FAR };
 const AT = '0123456789abcdef0123456789abcdef';
 const RELAY = 'wss://abc-def.trycloudflare.com';
 const OTHER_RELAY = 'wss://other-one.trycloudflare.com';
@@ -72,7 +75,9 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
  * Starts an attach; the pending promise is wrapped so `await` does not wait for it.
  * Verification is real async crypto, so wait (a bounded number of ticks) for the dialog.
  */
-async function start(keys: string[] = [KEY]): Promise<{ pending: Promise<void> | undefined }> {
+async function start(
+  keys: RelayPublicKeyPin[] = [KEY_PIN],
+): Promise<{ pending: Promise<void> | undefined }> {
   const { maybeAttach } = await import('../attach.js');
   const pending = maybeAttach(GATE, { relayPublicKeys: keys });
   for (let i = 0; i < 50 && dialogRoot() === null; i++) await flush();
@@ -262,7 +267,7 @@ describe('consent dialog before a first attach', () => {
     // A reload after declining has nothing to attach with.
     vi.resetModules();
     const { maybeAttach } = await import('../attach.js');
-    const again = maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    const again = maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     await again;
     expect(dialogRoot()).toBeNull();
     expectNothingSent();
@@ -277,7 +282,7 @@ describe('consent dialog before a first attach', () => {
     fetchSpy.mockClear();
     vi.resetModules();
     const { maybeAttach } = await import('../attach.js');
-    const pending = maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    const pending = maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     await flush();
     expect(dialogRoot()).toBeNull();
     await pending;
@@ -286,9 +291,9 @@ describe('consent dialog before a first attach', () => {
 
   it('asks only once for two rapid calls', async () => {
     const { maybeAttach } = await import('../attach.js');
-    const a = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-    const b = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-    await flush();
+    const a = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
+    const b = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
+    for (let i = 0; i < 50 && dialogRoot() === null; i++) await flush();
     expect(b).toBeUndefined();
     expect(document.querySelectorAll('#__ait_debug_consent')).toHaveLength(1);
     button('cancel').click();
@@ -301,7 +306,7 @@ describe('gate refusals', () => {
     'a %s refusal drops at, sig and relay from the URL',
     async (reason) => {
       const { maybeAttach } = await import('../attach.js');
-      const result = maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY] });
+      const result = maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY_PIN] });
       expect(result).toBeUndefined();
       expect(window.location.search).toBe('?debug=1&keep=1');
       expect(window.location.hash).toBe('#h');
@@ -313,7 +318,7 @@ describe('gate refusals', () => {
   it.each(['host', 'opt-in'] as const)('a %s refusal leaves the URL alone', async (reason) => {
     const before = window.location.search;
     const { maybeAttach } = await import('../attach.js');
-    maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY] });
+    maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY_PIN] });
     expect(window.location.search).toBe(before);
   });
 });
@@ -413,7 +418,7 @@ describe('developer computer name in the dialog', () => {
 
   /** Like `start`, but waits for the dialog: verifying the name takes real async crypto. */
   async function startAndWait(
-    keys: string[] = [KEY],
+    keys: RelayPublicKeyPin[] = [KEY_PIN],
   ): Promise<{ pending: Promise<void> | undefined }> {
     const { maybeAttach } = await import('../attach.js');
     const pending = maybeAttach(GATE, { relayPublicKeys: keys });
@@ -477,7 +482,9 @@ describe('developer computer name in the dialog', () => {
 
   it('a link signed under a different root key never reaches the dialog', async () => {
     setNamedPage();
-    const { pending } = await start([relayPublicKey('22'.repeat(32))]);
+    const { pending } = await start([
+      { publicKey: relayPublicKey('22'.repeat(32)), notAfter: FAR },
+    ]);
     await pending;
     expect(dialogRoot()).toBeNull();
     expectNothingSent();

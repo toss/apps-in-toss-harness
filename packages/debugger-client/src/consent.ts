@@ -102,6 +102,20 @@ export function rememberRelayOriginConsent(relayOrigin: string, now: number = Da
 }
 
 /**
+ * Forgets the remembered "연결" for `relayOrigin` (the person ended the session on
+ * the phone, so the next scan of the same relay asks again). Never throws.
+ */
+export function forgetRelayOriginConsent(relayOrigin: string, now: number = Date.now()): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const kept = readEntries(now).filter((entry) => entry.o !== relayOrigin);
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(kept));
+  } catch {
+    // Without storage there is nothing remembered to forget.
+  }
+}
+
+/**
  * Shows the dialog and resolves `true` only when "연결" is tapped. Resolves
  * `false` on "취소", Escape, a tap outside the dialog, or when it cannot be
  * shown. Sends nothing anywhere. `relayOrigin` is the relay the person would

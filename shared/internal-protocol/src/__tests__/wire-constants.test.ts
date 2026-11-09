@@ -23,6 +23,11 @@ import {
   RELAY_AUTH_REJECT_REASON,
 } from '../relay-auth-close.js';
 import { RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON } from '../relay-busy-close.js';
+import {
+  isRelaySessionEndReason,
+  RELAY_SESSION_END_CLOSE_CODE,
+  RELAY_SESSION_END_REASONS,
+} from '../relay-session-close.js';
 
 describe('relay auth lock', () => {
   it('uses a retryable application close code distinct from the terminal rejection', () => {
@@ -87,5 +92,30 @@ describe('bridge observer names', () => {
     for (const name of [BRIDGE_STATE_GLOBAL, RELAY_WS_OBSERVED_FLAG]) {
       expect(name).toMatch(/^[A-Za-z_$][A-Za-z0-9_$]*$/);
     }
+  });
+});
+
+describe('relay session end', () => {
+  it('uses its own application close code, distinct from the other named closes', () => {
+    expect(RELAY_SESSION_END_CLOSE_CODE).toBe(4410);
+    for (const other of [
+      RELAY_AUTH_REJECT_CLOSE_CODE,
+      RELAY_AUTH_LOCKED_CLOSE_CODE,
+      RELAY_BUSY_CLOSE_CODE,
+    ]) {
+      expect(RELAY_SESSION_END_CLOSE_CODE).not.toBe(other);
+    }
+  });
+
+  it('names exactly four reasons', () => {
+    expect([...RELAY_SESSION_END_REASONS]).toEqual([
+      'revoked',
+      'idle-timeout',
+      'user-stopped',
+      'expired',
+    ]);
+    expect(isRelaySessionEndReason('revoked')).toBe(true);
+    expect(isRelaySessionEndReason('totp-rejected')).toBe(false);
+    expect(isRelaySessionEndReason(undefined)).toBe(false);
   });
 });

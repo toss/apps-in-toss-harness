@@ -38,6 +38,7 @@
 
 import { isDebugAllowedHost } from '@apps-in-toss/internal-protocol/debug-host';
 import { pageSearchWithAttachParams } from './page-at-code.js';
+import { disposeSessionChip, refreshSessionChip } from './session-chip.js';
 
 /** Gate block reasons surfaced as `blocked-<reason>` (mirrors `GateResultBlocked.reason`). */
 export type BlockedReason =
@@ -58,6 +59,14 @@ export type BlockedReason =
  *                        signature is missing or does not verify;
  *                        `blocked-debugger-update`: the link carries no certificate (a
  *                        debugger older than 0.3.2), so nothing was attempted
+ *                        `blocked-relay-key-expired`: every pinned key that matches the
+ *                        link is past its `notAfter` (rebuild the debug bundle);
+ *                        `blocked-relay-key-form`: `relayPublicKeys` still has
+ *                        plain strings instead of `{ publicKey, notAfter }`
+ * - `session-revoked` / `session-idle` / `session-stopped` / `session-expired`
+ *                        the debugger closed the session with a named reason
+ *                        (revoked by the developer, idle timeout, ended by the
+ *                        developer, maximum length reached); terminal
  * - `connecting`         target.js injected, relay socket not open yet
  * - `connected`          relay socket open
  * - `session-ended`      relay socket closed (non-4401) and did not recover
@@ -75,6 +84,12 @@ export type DebugStatus =
   | 'connecting'
   | 'connected'
   | 'session-ended'
+  | 'session-revoked'
+  | 'session-idle'
+  | 'session-stopped'
+  | 'session-expired'
+  | 'blocked-relay-key-expired'
+  | 'blocked-relay-key-form'
   | 'code-expired'
   | 'relay-busy'
   | 'relay-locked'
@@ -111,6 +126,27 @@ const MESSAGES: Record<Exclude<DebugStatus, 'blocked-host'>, { tone: Tone; text:
     text: '디버거를 0.3.2 이상으로 업데이트한 뒤 새 QR을 스캔하세요.',
   },
   'blocked-relay-key': { tone: 'error', text: '이 번들에 디버거 키가 없어요.' },
+  'blocked-relay-key-expired': {
+    tone: 'error',
+    text: '이 디버그 번들의 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요.',
+  },
+  'blocked-relay-key-form': {
+    tone: 'error',
+    text: '번들의 디버거 키 형식이 옛날 방식이에요. `debugger relay-key` 출력으로 다시 빌드하세요.',
+  },
+  'session-revoked': {
+    tone: 'error',
+    text: '개발자가 이 연결을 취소했어요. 다시 연결하려면 새 QR을 스캔하세요.',
+  },
+  'session-idle': {
+    tone: 'error',
+    text: '한동안 쓰지 않아 연결이 닫혔어요. 필요하면 새 QR을 스캔하세요.',
+  },
+  'session-stopped': { tone: 'error', text: '개발자가 디버깅을 끝냈어요.' },
+  'session-expired': {
+    tone: 'error',
+    text: '연결 가능 시간이 끝났어요. 필요하면 새 QR을 스캔하세요.',
+  },
   connecting: { tone: 'info', text: '디버거에 연결하는 중이에요…' },
   connected: { tone: 'ok', text: '디버거에 연결됐어요.' },
   'session-ended': { tone: 'error', text: '디버거 연결이 끝났어요. QR을 다시 스캔하세요.' },
@@ -132,11 +168,24 @@ const TONE_COLORS: Record<Tone, { bg: string; fg: string }> = {
 
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Epoch ms of the last accepted status change; `null` before the first. */
+let statusSince: number | null = null;
+
+/** Short Korean line for a status (what the banner would say), or `null` if it has none. */
+export function statusLabel(status: DebugStatus): string | null {
+  return status === 'blocked-host' ? null : MESSAGES[status].text;
+}
+
+/** When the current status was set (epoch ms), or `null`. */
+export function getDebugStatusSince(): number | null {
+  return statusSince;
+}
+
 /**
  * Whether the page URL explicitly asked for a debug session (`debug=1` or a
  * `relay=` param) — the only condition under which the banner appears.
  */
-function isExplicitOptIn(): boolean {
+export function isExplicitOptIn(): boolean {
   if (typeof window === 'undefined') return false;
   try {
     // Total silence outside QR test hosts (production included).
@@ -230,12 +279,16 @@ export function setDebugStatus(status: DebugStatus): void {
   if (status === 'blocked-host') return;
   if (!isExplicitOptIn()) return;
   try {
+    if (window.__ait_debug_status !== status) statusSince = Date.now();
     window.__ait_debug_status = status;
     clearHideTimer();
     renderBanner(status);
     if (status === 'connected') {
       hideTimer = setTimeout(removeBanner, CONNECTED_VISIBLE_MS);
     }
+    // The persistent chip follows the status: shown while connected, gone otherwise.
+    if (status === 'connected') refreshSessionChip();
+    else disposeSessionChip();
   } catch {
     // A DOM edge case must never break the attach path.
   }

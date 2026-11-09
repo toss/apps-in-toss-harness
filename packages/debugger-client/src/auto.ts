@@ -25,7 +25,7 @@
  *
  *   if (__DEBUG_BUILD__) {
  *     import('@apps-in-toss/debugger-client').then((m) =>
- *       m.startDebugConsole({ relayPublicKeys: ['<relay public key>'] }),
+ *       m.startDebugConsole({ relayPublicKeys: [<relay public key>] }),
  *     );
  *   }
  *
@@ -82,6 +82,7 @@ import { isDebugAttached, maybeAttach } from './attach.js';
 import { isDebugAllowedHost } from './gate.js';
 import { pageSearchWithAttachParams } from './page-at-code.js';
 import { installSdkBridge } from './sdk-bridge.js';
+import { installRemoteDebuggerTab } from './vconsole-tab.js';
 
 // ---------------------------------------------------------------------------
 // Self-gate
@@ -181,6 +182,7 @@ if (!shouldActivate()) {
   // only if the bundle defines that global. Defining it, and this whole entry,
   // is not recommended: prefer `startDebugConsole({ relayPublicKeys })` behind
   // the `__DEBUG_BUILD__` guard.
+  installRemoteDebuggerTab();
   const attaching = maybeAttach();
 
   // ---------------------------------------------------------------------------
