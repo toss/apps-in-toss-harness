@@ -271,12 +271,13 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'When the session is already in the requested mode, the switch is skipped.\n\n' +
       'Requires scheme_url — the intoss-private://…?_deploymentId=<uuid> URL from ' +
       '`ait deploy --scheme-only`. Splices debug=1 + relay URL into the scheme URL.\n\n' +
-      'Waits for a page to attach by default (up to wait_timeout_seconds, default 60 s). ' +
+      'Waits for a page to attach by default (up to wait_timeout_seconds, default 60 s); ' +
+      'pass wait_timeout_seconds: 0 to return right after the QR is issued without waiting. ' +
       'The server automatically opens the QR dashboard in the OS default browser when running on a ' +
       'local GUI machine — headless/remote environments fall back to the text QR in the tool output. ' +
       'If a dashboard tab is already connected, no new tab is opened; the existing tab is refreshed in place.' +
       '\n\nTOTP auto re-mint: when a relay key is active on the MCP server (start_debug activates it), the attachUrl carries ' +
-      'a one-time code (at=<code>) valid for 30-35 seconds (the relay gate accepts codes up to 6 TOTP steps old). ' +
+      'a one-time code (at=<code>) valid for 120-125 seconds (the relay gate accepts codes up to 24 TOTP steps old). ' +
       'While waiting, start_attach AUTOMATICALLY re-mints a fresh code before the current one expires ' +
       'and refreshes the dashboard QR in place (no browser re-open). You do NOT need to re-call ' +
       'start_attach every time the code would expire — a single call covers the whole wait window. ' +
@@ -311,7 +312,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
           type: 'number',
           description:
             'Maximum seconds to wait for a page to attach (default 60, range 1–600). ' +
-            'Values outside the range or invalid inputs (0, negative, NaN) fall back to the default silently. ' +
+            '0 = do not wait: issue the QR (open/refresh the dashboard) and return immediately; the attach window stays open ' +
+            'for up to 600 s, so confirm with list_pages or get_debug_status (attachStages) instead of calling start_attach again ' +
+            '(a re-call re-issues the QR). Negative or invalid inputs (NaN, non-number) fall back to the default silently. ' +
             'During the wait the TOTP code is auto re-minted as needed, so a single call covers the whole window.',
         },
         projectRoot: {
@@ -1025,7 +1028,7 @@ export interface BuildAttachUrlResult {
  *
  * Generates the current TOTP code and splices it as `at=<code>` into the
  * attach URL. The code is valid for
- * 30-35 s (the relay gate uses RELAY_VERIFY_SKEW_STEPS=6, accepting
+ * 120-125 s (the relay gate uses RELAY_VERIFY_SKEW_STEPS=24, accepting
  * the 6 past steps backwards from issuance). The start_attach handler
  * auto re-mints a fresh code before `totp.expiresAt` elapses during its wait (#490).
  *
@@ -1065,8 +1068,8 @@ export function buildAttachUrl(
   const now = Date.now();
   const totpCode = mintRelayCode(now);
   // expiresAt reflects the relay gate's actual acceptance window (#490):
-  // the gate uses RELAY_VERIFY_SKEW_STEPS=6 steps of 5 s, so the code issued
-  // NOW is valid until step (currentStep + 7) starts, i.e. 30-35 s from
+  // the gate uses RELAY_VERIFY_SKEW_STEPS=24 steps of 5 s, so the code issued
+  // NOW is valid until step (currentStep + 7) starts, i.e. 120-125 s from
   // issuance. We report issuanceTime + RELAY_CODE_MIN_AGE_SECONDS (30 s) as a
   // conservative lower bound.
   const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;

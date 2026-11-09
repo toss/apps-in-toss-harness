@@ -59,11 +59,59 @@ function onTap(event: Event): void {
   requestDisconnect();
 }
 
+interface InsetSource {
+  SafeAreaInsets?: { get?: () => unknown };
+  getSafeAreaInsets?: () => unknown;
+}
+
+/**
+ * The SDK's safe-area insets (top/left). In the Toss WebView CSS
+ * `env(safe-area-inset-*)` is 0 while the SDK reports the real values, so the
+ * chip takes the larger of the two — the same rule as the daemon's badge. Any
+ * failure reads as 0 and CSS env() alone decides.
+ */
+function sdkInset(): { top: number; left: number } {
+  const r = { top: 0, left: 0 };
+  try {
+    const w = window as unknown as {
+      __sdk?: InsetSource;
+      __ait?: { state?: { safeAreaInsets?: unknown } };
+    };
+    const sdk = w.__sdk;
+    let v: unknown = null;
+    if (sdk && typeof sdk.SafeAreaInsets?.get === 'function') v = sdk.SafeAreaInsets.get();
+    else if (sdk && typeof sdk.getSafeAreaInsets === 'function') v = sdk.getSafeAreaInsets();
+    else if (w.__ait?.state?.safeAreaInsets) v = w.__ait.state.safeAreaInsets;
+    if (typeof v === 'object' && v !== null) {
+      const { top, left } = v as { top?: unknown; left?: unknown };
+      if (typeof top === 'number' && Number.isFinite(top) && top > 0) r.top = top;
+      if (typeof left === 'number' && Number.isFinite(left) && left > 0) r.left = left;
+    }
+  } catch {
+    // fall back to CSS env()
+  }
+  return r;
+}
+
+/** Puts the chip at the top-left inside the safe area (where the daemon badge sits). */
+function place(host: HTMLElement): void {
+  const i = sdkInset();
+  const t = Math.round(i.top) + 8;
+  const l = Math.round(i.left) + 8;
+  const top = `max(12px, calc(env(safe-area-inset-top, 0px) + 8px), ${t}px)`;
+  const left = `max(12px, calc(env(safe-area-inset-left, 0px) + 8px), ${l}px)`;
+  if (host.dataset.top === top && host.dataset.left === left) return;
+  host.dataset.top = top;
+  host.dataset.left = left;
+  host.style.setProperty('top', top);
+  host.style.setProperty('left', left);
+}
+
 function build(parent: Element): void {
   const host = document.createElement('div');
   host.id = CHIP_HOST_ID;
-  host.style.cssText =
-    'all:initial;position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483646;pointer-events:none;';
+  host.style.cssText = 'all:initial;position:fixed;z-index:2147483646;pointer-events:none;';
+  place(host);
   const root = host.attachShadow({ mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `
@@ -115,11 +163,15 @@ function wanted(): boolean {
 export function refreshSessionChip(): void {
   try {
     if (typeof document === 'undefined') return;
-    const present = document.getElementById(CHIP_HOST_ID) !== null;
+    const existing = document.getElementById(CHIP_HOST_ID);
+    const present = existing !== null;
     if (wanted()) {
       if (!present) {
         const parent = document.body ?? document.documentElement;
         if (parent) build(parent);
+      } else {
+        // A late SDK init or a rotation moves the inset; re-place on each tick.
+        place(existing);
       }
     } else if (present || button !== null) {
       removeChip();

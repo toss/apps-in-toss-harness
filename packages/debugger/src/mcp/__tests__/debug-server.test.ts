@@ -859,34 +859,6 @@ describe('start_attach — wait_timeout_seconds', () => {
     expect(result.isError).toBe(true);
   });
 
-  it('falls back to default when wait_timeout_seconds is 0 (invalid)', async () => {
-    // 0 is invalid — must fall back to deps.waitForAttachTimeoutMs, not to 1 s or 0 s.
-    const connection = new FakeCdpConnection([]);
-    const client = await makeClient({
-      getTunnelStatus: () => tunnelUp,
-      connection,
-      waitForAttachTimeoutMs: 50, // tiny default so the test completes quickly
-    });
-
-    const result = await client.callTool(
-      {
-        name: 'start_attach',
-        arguments: {
-          scheme_url: 'intoss-private://miniapp?_deploymentId=zero-timeout-test',
-          wait_timeout_seconds: 0,
-        },
-      },
-      undefined,
-      { timeout: 5000 },
-    );
-
-    // Falls back to the 50 ms deps default → isError (no tool error — lenient fallback).
-    expect(result.isError).toBe(true);
-    // No MCP protocol error — the tool itself must not throw.
-    const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
-  });
-
   it('falls back to default when wait_timeout_seconds is negative (invalid)', async () => {
     const connection = new FakeCdpConnection([]);
     const client = await makeClient({
@@ -2262,8 +2234,8 @@ describe('start_attach — TOTP auto-splice', () => {
     const text = getContent(result)[0]!.text!;
     // The totp block must be in the JSON output.
     expect(text).toContain('"enabled": true');
-    // ttlSeconds reflects the relay gate's RELAY_VERIFY_SKEW_STEPS=6 window: 6×5=30 s
-    expect(text).toContain('"ttlSeconds": 30');
+    // ttlSeconds reflects the relay gate's RELAY_VERIFY_SKEW_STEPS=24 window: 24×5=120 s
+    expect(text).toContain('"ttlSeconds": 120');
     expect(text).toContain('"expiresAt"');
   });
 

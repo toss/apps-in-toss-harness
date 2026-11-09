@@ -82,6 +82,8 @@ import {
   prepareAttach as prepareAttachCore,
   RELAY_STALE_PAGE_MS,
   renderAndMaybeWait as renderAndMaybeWaitCore,
+  START_ATTACH_SEGMENT_MS,
+  waitForAttachWithEvents,
   withCurrentRelay,
 } from './attach-orchestrator.js';
 import { type AttachProgressHandle, startAttachProgress } from './attach-progress.js';
@@ -439,7 +441,7 @@ export interface DebugServerDeps {
    *
    * 완성된 URL 문자열이 아니라 컴포넌트를 전달하는 이유: `getDashboardState`가
    * 호출될 때마다 최신 TOTP 코드를 freshly mint해 QR을 갱신하기 위함이다.
-   * 정적 URL에 구워진 코드는 30~35초 후 만료(RELAY_VERIFY_SKEW_STEPS=6 기준) → relay 401 reason:'auth' (Defect 1).
+   * 정적 URL에 구워진 코드는 120~125초 후 만료(RELAY_VERIFY_SKEW_STEPS=24 기준) → relay 401 reason:'auth' (Defect 1).
    * rebuildAttachUrl()이 매 호출 시 mintRelayCode()로 새 코드를 만든다.
    *
    * SECRET-HANDLING: 컴포넌트 안의 tunnel/scheme host와 wssUrl은 NEVER 로그 출력.
@@ -730,6 +732,53 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // 끊어(`superseded`) 두 대기가 같은 relay를 놓고 겹치지 않게 한다.
   let activeAttachController: AbortController | null = null;
 
+  /**
+   * `wait_timeout_seconds: 0` 호출 뒤에도 폰이 붙으면 기다리는 호출이 하던 마무리(도메인 활성화,
+   * 연결 배지, `matched` 단계 기록)를 이어서 한다. 최대 NO_WAIT_ATTACH_WINDOW_MS 동안만 보고,
+   * 컨트롤러가 abort되면(새 start_attach·stop_attach) 즉시 끝난다. 끝나면 자기 컨트롤러를 비운다.
+   */
+  const runNoWaitAttachFinisher = (opts: {
+    controller: AbortController;
+    conn: CdpConnection;
+    isMatchingPage: (targets: ReturnType<CdpConnection['listTargets']>) => boolean;
+    timeline: AttachTimeline;
+    controls: boolean;
+  }): void => {
+    const { controller, conn, isMatchingPage, timeline: tl, controls } = opts;
+    const deadline = nowMs() + NO_WAIT_ATTACH_WINDOW_MS;
+    void (async () => {
+      try {
+        let attached = false;
+        while (!controller.signal.aborted && !attached) {
+          const remaining = deadline - nowMs();
+          if (remaining <= 0) return;
+          try {
+            await waitForAttachWithEvents(
+              conn,
+              isMatchingPage,
+              Math.min(START_ATTACH_SEGMENT_MS, remaining),
+            );
+            attached = true;
+          } catch {
+            // 세그먼트 타임아웃(또는 일시 에러): 다음 세그먼트에서 다시 본다.
+          }
+        }
+        if (!attached || controller.signal.aborted) return;
+        tl.record('matched', 'ok');
+        try {
+          await conn.enableDomains();
+        } catch {
+          // injectDebugIndicator swallows the resulting send failure on its own.
+        }
+        await injectDebugIndicator(conn, { controls });
+      } catch {
+        // best-effort: 배지가 안 떠도 attach 자체는 유효하다.
+      } finally {
+        if (activeAttachController === controller) activeAttachController = null;
+      }
+    })();
+  };
+
   // ──────────────────────────────────────────────────────────────────────────
   // start_attach orchestration (issue #626 → extracted #684 PR1).
   //
@@ -903,14 +952,18 @@ export function createDebugServer(deps: DebugServerDeps): Server {
 
       // wait defaults to true (#626 — behavior change from the old attach tool's
       // opt-in wait_for_attach). callTimeoutMs clamps wait_timeout_seconds to
-      // 1–600 s; invalid values fall back to the default.
-      const waitForAttach = true;
+      // 1–600 s; negative/NaN/non-number fall back to the default. Exactly 0 means
+      // "do not wait": issue the QR and return at once; a background finisher keeps
+      // watching for the phone for up to 600 s (NO_WAIT_ATTACH_WINDOW_MS).
       const rawWaitTimeout = args?.wait_timeout_seconds;
+      const noWait = typeof rawWaitTimeout === 'number' && rawWaitTimeout === 0;
+      const waitForAttach = !noWait;
       const callTimeoutMs = (() => {
+        if (noWait) return NO_WAIT_ATTACH_WINDOW_MS;
         if (typeof rawWaitTimeout !== 'number' || !Number.isFinite(rawWaitTimeout)) {
           return waitForAttachTimeoutMs;
         }
-        if (rawWaitTimeout <= 0) return waitForAttachTimeoutMs;
+        if (rawWaitTimeout < 0) return waitForAttachTimeoutMs;
         const clamped = Math.max(1, Math.min(600, rawWaitTimeout));
         return Math.round(clamped) * 1000;
       })();
@@ -937,14 +990,17 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           : attachController.signal;
         // progress 알림: 클라이언트가 progressToken을 보낸 경우에만 켠다. 같은 단계 기록을
         // 구독할 뿐이라, 못 보는 클라이언트는 타임아웃 진단·get_debug_status로 같은 정보를 받는다.
-        progress = startAttachProgress({
-          timeline,
-          progressToken: extra?._meta?.progressToken,
-          sendNotification: (notification) => extra.sendNotification(notification),
-          signal: waitSignal,
-          totalSec: Math.round(callTimeoutMs / 1000),
-          nowMs,
-        });
+        // no-wait 호출은 기다리지 않으므로 heartbeat/progress 타이머를 만들지 않는다.
+        progress = noWait
+          ? null
+          : startAttachProgress({
+              timeline,
+              progressToken: extra?._meta?.progressToken,
+              sendNotification: (notification) => extra.sendNotification(notification),
+              signal: waitSignal,
+              totalSec: Math.round(callTimeoutMs / 1000),
+              nowMs,
+            });
         const attachResult = await renderAndMaybeWaitCore(
           attachDeps,
           prep,
@@ -957,6 +1013,22 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             onNotice: (text) => progress?.announce(text),
           },
         );
+        if (noWait) {
+          // 기다리지 않는 호출: 컨트롤러와 마무리(배지 주입)는 백그라운드 finisher가 이어받는다.
+          // finally가 컨트롤러를 지우지 않게 넘기고, 새 start_attach/stop_attach의 abort가
+          // finisher를 끝낸다.
+          if (attachResult.isError) return attachResult;
+          const handedOver = attachController;
+          attachController = null;
+          runNoWaitAttachFinisher({
+            controller: handedOver,
+            conn: attachConn,
+            isMatchingPage: prep.isMatchingPage,
+            timeline,
+            controls: guard !== null,
+          });
+          return appendNoWaitNotice(attachResult);
+        }
         if (!attachResult.isError) {
           // The device reported its build version on the handshake path while
           // attaching. If it disagrees with ours, say so NOW: the attach
@@ -1938,6 +2010,22 @@ export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
 
 /** `start_attach`의 어태치 창이 대기 시간 뒤에도 열려 있는 여유(QR을 다시 볼 시간). */
 const ATTACH_WINDOW_GRACE_MS = 60_000;
+
+/** `wait_timeout_seconds: 0`(기다리지 않음)일 때 어태치 창과 백그라운드 감시의 길이(최대 대기와 같다). */
+const NO_WAIT_ATTACH_WINDOW_MS = 600_000;
+
+/** no-wait 결과 끝에 붙이는 안내: 확인은 list_pages/get_debug_status로, 재호출은 QR을 다시 발급한다. */
+function appendNoWaitNotice(result: McpResult): McpResult {
+  const note =
+    '\n\n기다리지 않고 QR만 발급했습니다 (wait_timeout_seconds: 0). 폰이 붙었는지는 `list_pages` 또는 ' +
+    '`get_debug_status`(attachStages)로 확인하세요 — `start_attach`를 다시 부르면 QR이 새로 발급됩니다.\n' +
+    'QR issued without waiting (wait_timeout_seconds: 0). Check attach with `list_pages` or ' +
+    '`get_debug_status` (attachStages); calling `start_attach` again re-issues the QR.';
+  const content = result.content.map((c, i, arr) =>
+    i === arr.length - 1 && c.type === 'text' ? { ...c, text: c.text + note } : c,
+  );
+  return { ...result, content };
+}
 
 /** 닫아 둔 터널을 "새 QR"이 다시 열 때 기다리는 최대 시간. */
 const ATTACH_TUNNEL_REOPEN_WAIT_MS = 60_000;
@@ -3101,7 +3189,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   }
 
   // TOTP 주기 갱신 타이머 — 이벤트 없이 페이지가 방치될 때 at= 코드가 stale되는 갭 수정 (#445).
-  // TOTP step은 5초이고 코드는 30~35초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
+  // TOTP step은 5초이고 코드는 120~125초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
   // RELAY_QR_REFRESH_INTERVAL_MS(5초) 주기로 push한다.
   // SECRET-HANDLING: 콜백은 단순 trigger만 — TOTP 값·at= 코드는 절대 로그/stdout에 출력 금지.
   const TOTP_REFRESH_INTERVAL_MS = RELAY_QR_REFRESH_INTERVAL_MS;
