@@ -538,3 +538,108 @@ describe('DEFAULT_DISCONNECTED_LABEL', () => {
     expect(DEFAULT_DISCONNECTED_LABEL).toContain('QR을 다시 스캔');
   });
 });
+
+describe('buildIndicatorExpression — controls (끊기 / 숨기기)', () => {
+  let debugSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '';
+    (window as unknown as Record<string, unknown>).__ait_relay_ws_observed = true;
+    delete (window as unknown as Record<string, unknown>).__ait_indicator;
+    debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    debugSpy.mockRestore();
+    delete (window as unknown as Record<string, unknown>).__ait_relay_ws_observed;
+    delete (window as unknown as Record<string, unknown>).__ait_indicator;
+  });
+
+  function tap(el: Element | null): void {
+    el?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  }
+
+  function buttons(): HTMLButtonElement[] {
+    return [...(badge()?.querySelectorAll('button') ?? [])] as HTMLButtonElement[];
+  }
+
+  type ClickListener = (e: { isTrusted: boolean }) => void;
+
+  /**
+   * jsdom cannot mint a trusted event, so the click listeners the page registers on its
+   * buttons are captured while the expression runs and called with a stand-in event.
+   * Order: 끊기, 숨기기.
+   */
+  function evalCapturingClicks(
+    opts: Parameters<typeof buildIndicatorExpression>[0],
+  ): ClickListener[] {
+    const listeners: ClickListener[] = [];
+    const add = vi.spyOn(HTMLButtonElement.prototype, 'addEventListener').mockImplementation(((
+      type: string,
+      listener: ClickListener,
+    ) => {
+      if (type === 'click') listeners.push(listener);
+    }) as never);
+    try {
+      evalExpression(opts);
+    } finally {
+      add.mockRestore();
+    }
+    return listeners;
+  }
+
+  it('without controls a tap hides the badge, as before, and no menu exists', () => {
+    evalExpression();
+    expect(buttons()).toHaveLength(0);
+    tap(badge());
+    expect(badge()?.style.display).toBe('none');
+  });
+
+  it('with controls a tap opens the menu instead of hiding the badge', () => {
+    evalExpression({ controls: true });
+    expect(buttons().map((b) => b.textContent)).toEqual(['끊기', '숨기기']);
+    const menu = buttons()[0]?.parentElement as HTMLElement;
+    expect(menu.style.display).toBe('none');
+    tap(badge());
+    expect(badge()?.style.display).toBe('block');
+    expect(menu.style.display).toBe('flex');
+    tap(badge());
+    expect(menu.style.display).toBe('none');
+  });
+
+  it('숨기기 hides the badge for a real tap only', () => {
+    const [, hide] = evalCapturingClicks({ controls: true });
+    tap(badge());
+    hide?.({ isTrusted: false });
+    expect(badge()?.style.display).toBe('block');
+    hide?.({ isTrusted: true });
+    expect(badge()?.style.display).toBe('none');
+  });
+
+  it('끊기 reports the tap on the page console, once per real tap', () => {
+    const [kill] = evalCapturingClicks({ controls: true });
+    tap(badge());
+    kill?.({ isTrusted: false });
+    expect(debugSpy).not.toHaveBeenCalled();
+    kill?.({ isTrusted: true });
+    expect(debugSpy).toHaveBeenCalledWith('ait:ctl', 'kill');
+  });
+
+  it('a later injection without controls turns the menu off', () => {
+    evalExpression({ controls: true });
+    evalExpression({ controls: false });
+    tap(badge());
+    expect(badge()?.style.display).toBe('none');
+  });
+
+  it('the menu does not appear on a disconnected badge', () => {
+    evalExpression({ controls: true });
+    evalExpression({ controls: true, state: 'disconnected' });
+    tap(badge());
+    const menu = buttons()[0]?.parentElement as HTMLElement;
+    expect(menu.style.display).toBe('none');
+  });
+});

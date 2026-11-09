@@ -78,6 +78,7 @@ import {
   type AttachUrlParts,
   buildIndicatorRemovalExpression,
   isRelayPageFresh,
+  type McpResult,
   prepareAttach as prepareAttachCore,
   RELAY_STALE_PAGE_MS,
   renderAndMaybeWait as renderAndMaybeWaitCore,
@@ -131,12 +132,15 @@ import {
   type QrHttpServerOptions,
   startQrHttpServer,
 } from './qr-http-server.js';
+import type { RelayClaimEvent } from './relay-arming.js';
 import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
 import { relayRunId } from './relay-run-id.js';
 import { loadRelaySecretReadOnly } from './relay-secret-store.js';
 import { attachSignature, relayCertDocument } from './relay-signing.js';
+import { createSessionGuard, type SessionGuard } from './session-guard.js';
+import type { SessionLifetimeOptions } from './session-lifetime.js';
 import { listOtherSessions, registerSession, type SessionsSnapshot } from './session-registry.js';
 import { redirectConsoleToStderr } from './stdout-guard.js';
 import { shouldRejectNewTarget } from './target-busy.js';
@@ -175,6 +179,7 @@ import {
 } from './totp.js';
 import { printAttachBanner } from './tunnel.js';
 import { dnsResolvesTunnelHost } from './tunnel-dns.js';
+import { createTunnelLifecycle, type TunnelLifecycleOptions } from './tunnel-lifecycle.js';
 import { createTunnelRotationPolicy, type TunnelRotationOptions } from './tunnel-rotation.js';
 import { createTunnelSupervisor, type TunnelSupervisor } from './tunnel-supervisor.js';
 
@@ -265,6 +270,11 @@ export interface ConnectionRouter {
    * intent. Omitted/`true` means `active` is a real, explicitly chosen family.
    */
   readonly booted?: boolean;
+  /**
+   * Attach window, session limits and phone controls of the relay family, or `null`
+   * (no relay family booted, or one booted without `guarded`). Omitted: none.
+   */
+  readonly sessionGuard?: SessionGuard | null;
   /**
    * Switches the active connection to the family for `mode`, lazily booting
    * that family's infra if needed, re-arming the attach watcher, and emitting
@@ -626,6 +636,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       };
     }
 
+    // 도구 호출은 세션이 쓰이고 있다는 신호다(유휴 한도 갱신).
+    router.sessionGuard?.touch();
+
     // 원격 최소 버전 게이트: 지원이 끝난 버전이면 get_debug_status 외 전부 막는다(fail-open).
     const gate = (await deps.getMinVersionGate?.()) ?? null;
     if (gate?.status === 'update-required' && name !== 'get_debug_status') {
@@ -740,6 +753,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       try {
         const prep = await prepareAttachCore(attachDeps, attachEnv, args, attachConn);
         if (!prep.ok) return prep.error;
+        // QR을 보여 주기 전에 어태치 창을 연다: 이 창이 열려 있는 동안에만 새 폰이 터널로
+        // 붙을 수 있고, 첫 폰이 붙으면 닫힌다. 창은 대기 시간 + 1분(QR을 다시 볼 여유)이다.
+        const guard = router.sessionGuard ?? null;
+        const armedAt = Date.now();
+        guard?.arm(callTimeoutMs + ATTACH_WINDOW_GRACE_MS);
         // 새 start_attach가 이전 대기를 대체한다: 이전 호출은 "superseded"로 끝나고, 이 호출이
         // QR 발급과 대기를 이어받는다. prepare 검증을 통과한 뒤에 끊어, 잘못된 호출이 멀쩡한
         // 대기를 죽이지 않게 한다.
@@ -795,7 +813,8 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           } catch {
             // injectDebugIndicator swallows the resulting send failure on its own.
           }
-          await injectDebugIndicator(attachConn);
+          await injectDebugIndicator(attachConn, { controls: guard !== null });
+          if (guard !== null) return withClaimNotice(attachResult, guard.state().claims, armedAt);
         }
         return attachResult;
       } catch (err) {
@@ -834,6 +853,35 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         envReason,
       });
       return tierRejectionError(name, requiredEnv, env, envReason);
+    }
+
+    // stop_attach — ends the session on purpose. The attach window closes, the phone page
+    // is disconnected and the relay forgets every session, so the tunnel address serves
+    // nobody until the next start_attach.
+    if (name === 'stop_attach') {
+      const guard = router.sessionGuard ?? null;
+      if (guard === null) {
+        return envelopeResult(
+          { stopped: false, note: '이 세션에는 끊을 relay 세션이 없습니다.' },
+          name,
+          env,
+          false,
+        );
+      }
+      const before = guard.state();
+      activeAttachController?.abort(ATTACH_SUPERSEDED_REASON);
+      guard.end('user-stopped');
+      return envelopeResult(
+        {
+          stopped: true,
+          wasAttached: before.attached > 0,
+          wasArmed: before.armed,
+          note: '연결을 끊었습니다. 폰은 새 QR이 있어야 다시 붙습니다 (start_attach).',
+        },
+        name,
+        env,
+        false,
+      );
     }
 
     // AIT.* tools are served by the AIT source. In production it rides the same
@@ -1665,6 +1713,45 @@ export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
   return timeline;
 }
 
+/** `start_attach`의 어태치 창이 대기 시간 뒤에도 열려 있는 여유(QR을 다시 볼 시간). */
+const ATTACH_WINDOW_GRACE_MS = 60_000;
+
+/** 닫아 둔 터널을 "새 QR"이 다시 열 때 기다리는 최대 시간. */
+const ATTACH_TUNNEL_REOPEN_WAIT_MS = 60_000;
+
+/** 대시보드 "새 QR" 버튼이 여는 어태치 창의 길이. */
+const DASHBOARD_NEW_QR_WINDOW_MS = 5 * 60_000;
+
+/**
+ * 어태치 창이 열린 뒤 다른 기기가 같은 QR을 쓰려 했거나 연결된 폰을 이어받았다면, 그 사실을
+ * 결과 맨 끝에 덧붙인다. 기기 지문·UA 계열·국가 코드뿐이고 URL·코드는 없다.
+ */
+function withClaimNotice(
+  result: McpResult,
+  claims: ReadonlyArray<RelayClaimEvent>,
+  sinceMs: number,
+): McpResult {
+  const lines: string[] = [];
+  for (const c of claims) {
+    if (c.at < sinceMs) continue;
+    if (c.kind === 'contested') {
+      lines.push(
+        `다른 기기(${c.ua}${c.country ? `, ${c.country}` : ''})가 같은 QR로 접속을 시도해 거부했습니다. ` +
+          'QR이 퍼졌을 수 있습니다 — 필요하면 stop_attach로 세션을 끊고 새 QR을 받으세요.',
+      );
+    } else if (c.kind === 'replaced') {
+      lines.push(
+        `연결돼 있던 폰을 다른 기기(${c.ua}${c.country ? `, ${c.country}` : ''})가 이어받았습니다.`,
+      );
+    }
+  }
+  if (lines.length === 0) return result;
+  return {
+    ...result,
+    content: [...result.content, { type: 'text', text: `⚠️  ${lines.join('\n⚠️  ')}` }],
+  };
+}
+
 /**
  * best-effort: 폰의 "디버거 연결됨" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
  * `console.debug`를 쓰는 cell.ts 헬퍼 대신 직접 보낸다 — 데몬에서는 stdout이 MCP stdio라
@@ -1815,6 +1902,11 @@ export interface BootedFamily {
    */
   setActive?: (active: boolean) => void;
   /**
+   * Attach window, session limits and phone controls of this family (relay family
+   * started with `guarded: true` only). See session-guard.ts.
+   */
+  guard?: SessionGuard;
+  /**
    * Local HTTP base URL of the Chii relay (e.g. `http://127.0.0.1:9100` for
    * the intoss relay). Used to build the Chii self-hosted inspector URL
    * (`<relayHttpUrl>/front_end/chii_app.html`). `undefined` for the local-
@@ -1922,6 +2014,33 @@ export interface BootRelayFamilyOptions {
   /** Overrides the relay's code-check backoff. Tests only. */
   authThrottle?: RelayAuthThrottleOptions;
   /**
+   * Turns on the attach window, the session limits and the tunnel life cycle (the
+   * MCP daemon does; the `debugger-test` runner keeps its own one-shot flow). A phone
+   * can then start an attach through the tunnel only while `guard.arm()` has opened
+   * the window, a session ends after 15 idle / 60 total minutes (with a "계속" tap),
+   * and the tunnel is replaced after the last phone left and closed while unused.
+   * Default `false`.
+   */
+  guarded?: boolean;
+  /**
+   * The attach window, a session or the tunnel's idle state changed — the caller
+   * refreshes the dashboard. No payload.
+   */
+  onSessionChange?: () => void;
+  /** A device claimed (or tried to claim) the attach window. Secret-free report. */
+  onClaim?: (event: RelayClaimEvent) => void;
+  /** Overrides for the session limits and the tunnel life cycle. Tests only. */
+  sessionTuning?: {
+    lifetime?: Pick<
+      SessionLifetimeOptions,
+      'idleMs' | 'maxMs' | 'warnMs' | 'now' | 'setTimer' | 'clearTimer'
+    >;
+    tunnel?: Pick<
+      TunnelLifecycleOptions,
+      'detachRotateGraceMs' | 'idleCloseMs' | 'minRotateGapMs' | 'now' | 'setTimer' | 'clearTimer'
+    >;
+  };
+  /**
    * attach 단계 기록기. 주면 relay 훅(스크립트 제공·WS 업그레이드·target 종료·인증 거부·
    * 핸드셰이크)과 터널 up/down 이벤트가 이 기록기에 단계로 남는다. 기록은 비밀 없이 단계
    * 이름·결과만 담는다.
@@ -1976,6 +2095,11 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     logWarn('tunnel.rotation', { reason: 'rotate' });
     await supervisor.rotate();
   };
+  const guarded = options.guarded === true;
+  const guardRef: { current: SessionGuard | null } = { current: null };
+  const lifecycleRef: { current: ReturnType<typeof createTunnelLifecycle> | null } = {
+    current: null,
+  };
 
   let lastOriginRejectLogAt = 0;
   const relay = await startChiiRelay({
@@ -1983,6 +2107,25 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     verifyAuth: options.verifyAuth,
     authThrottle: options.authThrottle,
     getAppName: options.getAppName,
+    requireArming: guarded,
+    onClaim: (event) => {
+      // Secret-free: a fingerprint, a coarse UA family and a country code.
+      logWarn('relay.claim', {
+        msg:
+          `kind=${event.kind} device=${event.device} ua=${event.ua}` +
+          `${event.country === undefined ? '' : ` country=${event.country}`}`,
+      });
+      options.onClaim?.(event);
+      options.onSessionChange?.();
+    },
+    onArmChange: (armed) => {
+      lifecycleRef.current?.noteArmChange(armed);
+      options.onSessionChange?.();
+    },
+    onTargetOpen: () => {
+      guardRef.current?.noteAttached();
+      lifecycleRef.current?.noteAttached();
+    },
     // Public certificates of this process's session keys (relay-signing.ts).
     getRelayCertDocument: () => relayCertDocument(process.env.AIT_DEBUG_TOTP_SECRET),
     onOriginReject: (event) => {
@@ -2014,6 +2157,8 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     onWsUpgrade: stageHooks?.onWsUpgrade,
     onTargetClose: () => {
       stageHooks?.onTargetClose();
+      guardRef.current?.noteDetached();
+      lifecycleRef.current?.noteDetached();
       // A rotation held back while the phone was attached runs now.
       if (rotationPolicy.noteTargetDetached()) void rotateTunnel();
     },
@@ -2022,6 +2167,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     onTargetRejectedBusy: stageHooks?.onTargetRejectedBusy,
   });
   relayRef.current = relay;
+  const sessionRelay = relay;
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
   logInfo('server.start', { port: relay.port });
 
@@ -2042,6 +2188,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
         options.onTunnelChildPid?.(t.childPid);
       }
       options.timeline?.record('tunnel', 'ok');
+      lifecycleRef.current?.noteTunnelUp();
       if (reissued) {
         // The failures came through a URL that no longer answers, whatever
         // replaced it: a rotation or a drop. The new address starts clean.
@@ -2076,15 +2223,58 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
 
   const connection = createRelayConnection(relay.baseUrl, options.timeline);
 
+  if (guarded) {
+    guardRef.current = createSessionGuard({
+      control: {
+        arm: (ms) => sessionRelay.arm(ms),
+        disarm: () => sessionRelay.disarm(),
+        armState: () => sessionRelay.armState(),
+        revokeSessions: (reason) => sessionRelay.revokeSessions(reason),
+        recentClaims: () => sessionRelay.recentClaims(),
+        attachedTargetCount: () => sessionRelay.attachedTargetCount(),
+      },
+      getConnection: () => connection,
+      onChange: options.onSessionChange,
+      onEnd: (reason) => logInfo('session.end', { reason }),
+      lifetime: options.sessionTuning?.lifetime,
+      now: options.sessionTuning?.lifetime?.now,
+      setTimer: options.sessionTuning?.lifetime?.setTimer,
+      clearTimer: options.sessionTuning?.lifetime?.clearTimer,
+    });
+    lifecycleRef.current = createTunnelLifecycle({
+      ...options.sessionTuning?.tunnel,
+      rotate: async () => {
+        await rotateTunnel();
+      },
+      closeIdle: () => {
+        if (tunnelSupervisor.closeIdle()) {
+          logInfo('tunnel.idle-closed', {});
+          options.onSessionChange?.();
+        }
+      },
+      attachedCount: () => sessionRelay.attachedTargetCount(),
+      isArmed: () => sessionRelay.armState().armed,
+    });
+    // The tunnel may have come up before the life cycle existed.
+    if (tunnelSupervisor.status().up) lifecycleRef.current.noteTunnelUp();
+  }
+
   return {
     connection,
+    guard: guardRef.current ?? undefined,
     // Local HTTP base of the Chii relay — used by AutoDevtoolsOpener to build
     // the self-hosted inspector URL. SECRET-HANDLING: not logged.
     relayHttpUrl: relay.baseUrl,
     getTunnelStatus: () => tunnelSupervisor.status(),
-    waitForTunnel: (maxMs) => tunnelSupervisor.waitForUp(maxMs),
+    waitForTunnel: (maxMs) => {
+      // A tunnel closed for being unused opens again when somebody needs it.
+      tunnelSupervisor.reopen();
+      return tunnelSupervisor.waitForUp(maxMs);
+    },
     setActive: (active) => tunnelSupervisor.setRetryEnabled(active),
     stop() {
+      guardRef.current?.stop();
+      lifecycleRef.current?.stop();
       // Stops the retry timer, an attempt in flight and the live tunnel. All
       // synchronous (child process kill) — safe from exit handler.
       tunnelSupervisor.stop();
@@ -2255,6 +2445,15 @@ export class DualConnectionRouter implements ConnectionRouter {
 
   get active(): CdpConnection {
     return this.activeFamily ? this.activeFamily.connection : NULL_CDP_CONNECTION;
+  }
+
+  /** The guard of the active relay family, else of any booted relay family. */
+  get sessionGuard(): SessionGuard | null {
+    if (this.activeFamily?.guard !== undefined) return this.activeFamily.guard;
+    for (const family of this.bootedFamilies()) {
+      if (family.guard !== undefined) return family.guard;
+    }
+    return null;
   }
 
   /**
@@ -2539,6 +2738,9 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
             // state (mirror of onWssUrl's notifyStateChange).
             onTunnelDown: () => qrServer?.notifyStateChange(),
             timeline: attachTimeline,
+            // Attach window, session limits and tunnel life cycle (QR leaks, forgotten sessions).
+            guarded: true,
+            onSessionChange: () => qrServer?.notifyStateChange(),
           }),
     diagnosticsCollector,
     devtoolsOpener,
@@ -2584,12 +2786,34 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // 클릭 시점에 TOTP를 mint하고 302 redirect하므로 stale 문제가 없다.
     // SECRET-HANDLING: /inspector URL에는 relay 시크릿도 접근 토큰도 없다 — 출력 가능.
     const inspectorUrl = qrServer?.inspectorStableUrl ?? null;
+    const guardState = router.sessionGuard?.state() ?? null;
     return {
       tunnel: { up: router.relayTunnelStatus().up, wssUrl: router.relayTunnelStatus().wssUrl },
       pages: targets.map((t) => ({ id: t.id, url: t.url })),
-      attachUrl: lastAttachParts
-        ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
-        : null,
+      // 어태치 창이 닫혀 있으면 QR을 그리지 않는다(쓸 수 없는 QR을 보여 주지 않는다).
+      attachUrl:
+        lastAttachParts && (guardState === null || guardState.armed)
+          ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
+          : null,
+      control:
+        guardState === null
+          ? null
+          : {
+              armed: guardState.armed,
+              armedUntil: guardState.armedUntil,
+              attached: guardState.attached,
+              expiresAt: guardState.expiresAt,
+              warning: guardState.warning,
+              lastEnd: guardState.lastEnd,
+              claims: guardState.claims.map((c) => ({
+                kind: c.kind,
+                at: c.at,
+                device: c.device,
+                ua: c.ua,
+                ...(c.country !== undefined ? { country: c.country } : {}),
+              })),
+              tunnelIdleClosed: router.relayTunnelStatus().idleClosed === true,
+            },
       inspectorUrl,
       // 현재 active connection에서 매 호출마다 파생한 env — /attach 카피·환경 라벨
       // 분기(#468). start_debug family swap을 따라가도록 저장하지 않고 파생한다.
@@ -2633,6 +2857,21 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     qrServer = await startQrHttpServer(getDashboardState, {
       getDirectInspectorUrl,
       projectLabel: session.entry.project,
+      onAction: (action) => {
+        const guard = router.sessionGuard ?? null;
+        if (guard === null) return { ok: false, reason: 'failed' };
+        if (action === 'kill') {
+          guard.end('user-stopped');
+          return { ok: true };
+        }
+        // 새 QR: 앞서 start_attach가 받은 앱 주소로 어태치 창을 다시 연다. 주소가 없으면 못 한다.
+        if (lastAttachParts === null) return { ok: false, reason: 'no-scheme' };
+        guard.arm(DASHBOARD_NEW_QR_WINDOW_MS);
+        void router
+          .waitForRelayTunnel(ATTACH_TUNNEL_REOPEN_WAIT_MS)
+          .then(() => qrServer?.notifyStateChange());
+        return { ok: true };
+      },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

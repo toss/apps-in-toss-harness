@@ -442,6 +442,80 @@ describe('start_attach (prepareAttach)', () => {
   });
 });
 
+describe('closing an unused tunnel', () => {
+  it('closeIdle stops the child and the probe, stays closed and says so', async () => {
+    const t = fakeTunnel();
+    const { supervisor, opener, probe } = make([t]);
+    supervisor.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(supervisor.status().up).toBe(true);
+
+    expect(supervisor.closeIdle()).toBe(true);
+    expect(t.stop).toHaveBeenCalledTimes(1);
+    expect(probe.handles[0]?.stop).toHaveBeenCalledTimes(1);
+    expect(supervisor.status()).toMatchObject({ up: false, state: 'down', idleClosed: true });
+
+    // No retry runs while it is closed on purpose.
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(opener.calls).toHaveLength(1);
+  });
+
+  it('closeIdle without a live tunnel does nothing', async () => {
+    const { supervisor } = make([EXITED()]);
+    supervisor.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(supervisor.closeIdle()).toBe(false);
+    expect(supervisor.status().idleClosed).toBeUndefined();
+  });
+
+  it('reopen opens a new tunnel and clears the idle flag', async () => {
+    const first = fakeTunnel('aaa');
+    const second = fakeTunnel('bbb');
+    const { supervisor, opener, onUp } = make([first, second]);
+    supervisor.start();
+    await vi.advanceTimersByTimeAsync(0);
+    supervisor.closeIdle();
+
+    supervisor.reopen();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opener.calls).toHaveLength(2);
+    expect(supervisor.status()).toMatchObject({ up: true, state: 'up', wssUrl: second.wssUrl });
+    expect(supervisor.status().idleClosed).toBeUndefined();
+    expect(onUp).toHaveBeenCalledTimes(2);
+  });
+
+  it('reopen is a no-op unless the tunnel was closed on purpose', async () => {
+    const { supervisor, opener } = make([fakeTunnel()]);
+    supervisor.start();
+    await vi.advanceTimersByTimeAsync(0);
+    supervisor.reopen();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opener.calls).toHaveLength(1);
+  });
+
+  it('pausing and resuming retries does not reopen a tunnel closed on purpose', async () => {
+    const { supervisor, opener } = make([fakeTunnel(), fakeTunnel()]);
+    supervisor.start();
+    await vi.advanceTimersByTimeAsync(0);
+    supervisor.closeIdle();
+    supervisor.setRetryEnabled(false);
+    supervisor.setRetryEnabled(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opener.calls).toHaveLength(1);
+  });
+
+  it('recommends start_attach while the tunnel is closed for being unused', () => {
+    const idle = {
+      up: false,
+      wssUrl: null,
+      state: 'down',
+      idleClosed: true,
+    } as DiagnosticsTunnelInfo;
+    const action = computeNextRecommendedAction(idle, null, 'relay-dev');
+    expect(action?.tool).toBe('start_attach');
+  });
+});
+
 describe('get_debug_status', () => {
   const baseInput = {
     env: 'relay-dev' as const,

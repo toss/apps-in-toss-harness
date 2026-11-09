@@ -359,7 +359,13 @@ function logIndicatorSkipped(kind: 'inject' | 'removal', err: unknown): void {
  */
 export async function injectDebugIndicator(
   conn: CdpConnection,
-  opts?: { label?: string; disconnectedLabel?: string; state?: 'attached' | 'disconnected' },
+  opts?: {
+    label?: string;
+    disconnectedLabel?: string;
+    state?: 'attached' | 'disconnected';
+    /** Tap on the badge opens a 끊기/숨기기 menu (see {@link buildIndicatorExpression}). */
+    controls?: boolean;
+  },
 ): Promise<void> {
   try {
     await conn.send('Runtime.evaluate', {

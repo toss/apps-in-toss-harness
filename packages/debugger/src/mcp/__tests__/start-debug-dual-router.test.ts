@@ -356,10 +356,16 @@ class UnbootedRouter extends TestRouter {
 describe('unbooted daemon — bootstrap tools and start_attach default', () => {
   const schemeArg = { scheme_url: 'intoss-private://app' };
 
-  it('lists all four bootstrap tools including start_attach', async () => {
+  it('lists all five bootstrap tools including start_attach and stop_attach', async () => {
     const client = await makeClient(new UnbootedRouter(), DUMMY_SECRET);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['get_debug_status', 'list_pages', 'start_attach', 'start_debug']);
+    expect(names).toEqual([
+      'get_debug_status',
+      'list_pages',
+      'start_attach',
+      'start_debug',
+      'stop_attach',
+    ]);
   });
 
   it('hides start_attach again once local-browser was explicitly booted', async () => {

@@ -127,6 +127,14 @@ The relay has no `/proxy` route and never fetches anything on behalf of a caller
 
 The device and the daemon must speak the same protocol (`PROTOCOL_VERSION`, currently 3). The relay does not serve a `@apps-in-toss/debugger-client` that speaks another one: the phone shows an "update required" bar where `target.js` would load, and `start_attach` ends with the same message instead of waiting out its timeout. Update the older of the two packages and scan a new QR. Protocol 3 is the rename release: when the daemon meets protocol 2 or lower (`@apps-in-toss/debug-console` 0.3.0 or earlier), it tells you to remove that package from the mini-app, install `@apps-in-toss/debugger-client` 0.3.1 or later and redeploy.
 
+### Session lifetime and disconnecting
+
+- **Attach window**: a QR admits a new phone only inside the window `start_attach` opens (wait time plus one minute). Once the first phone attaches the window closes and only a reconnect from that device is accepted. While it is closed the dashboard shows "connected - get a new QR" instead of a QR. If a different device tries the same QR in the window, `start_attach` and the dashboard report it with only a device fingerprint (first 8 hash characters), a UA family and a country code. While a phone is attached, the tunnel refuses another device, and a connection with no `url=` or one that does not match its Origin.
+- **Disconnecting**: use the `stop_attach` tool, the dashboard "끊기" button, or "끊기" in the menu that opens when you tap the badge on the phone. It drops every relay session, closes the phone with close code 4401 and closes the window. Call `start_attach` for a new QR to attach again. The phone-side button works only while the daemon is alive.
+- **Automatic expiry**: a session ends after 15 minutes without a tool call (idle) or 60 minutes after attaching. One minute before, the phone shows "디버거 연결이 곧 끝나요 [계속]"; tapping it restarts both limits. A tool call during an idle warning withdraws it.
+- **Tunnel lifetime**: shortly after the last phone leaves the tunnel address is replaced, and after 30 minutes with no phone and no open window the tunnel is closed. The next `start_attach` opens it again (a few seconds longer).
+- **scheme_url**: `start_attach` accepts only `intoss-private://` URLs. A production `intoss://` link never gets a relay.
+
 ## Two distinct CLIs
 
 This ecosystem has two similarly-named but different CLIs — do not conflate them:

@@ -144,9 +144,15 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
     const namesA = toolsA.tools.map((t) => t.name).sort();
     const namesB = toolsB.tools.map((t) => t.name).sort();
     // Before an environment is booted a daemon advertises the four bootstrap
-    // tools (the rest appear after start_debug / start_attach). The blocked mode
+    // tools plus stop_attach (the rest appear after start_debug / start_attach). The blocked mode
     // of 0.3.0 advertised the same four but answered every call with an error.
-    expect(namesA).toEqual(['get_debug_status', 'list_pages', 'start_attach', 'start_debug']);
+    expect(namesA).toEqual([
+      'get_debug_status',
+      'list_pages',
+      'start_attach',
+      'start_debug',
+      'stop_attach',
+    ]);
     expect(namesB).toEqual(namesA);
 
     // Each daemon wrote its own entry, recorded its own client, and nothing else.
@@ -196,6 +202,7 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
         'list_pages',
         'start_attach',
         'start_debug',
+        'stop_attach',
       ]);
     }
 

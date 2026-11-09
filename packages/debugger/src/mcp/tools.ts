@@ -53,6 +53,7 @@ import type { UnbootedEnv } from './envelope.js';
 import type { McpEnvironment } from './environment.js';
 import { isRelayEnv } from './environment.js';
 import { isPidAlive } from './parent-watcher.js';
+import { isPhoneControlEvent } from './phone-control.js';
 import { type RelayKeyAge, relayKeyHint } from './relay-key-age.js';
 import { maskRelayUrl, redactRelayText } from './relay-redact.js';
 import { relayRunId } from './relay-run-id.js';
@@ -129,6 +130,11 @@ export interface TunnelStatus {
   lastErrorKind?: TunnelErrorKind | null;
   /** PID of the live cloudflared child, or `null` when no child runs. A plain integer, not a secret. */
   childPid?: number | null;
+  /**
+   * `true` while the tunnel is closed on purpose after sitting unused (no phone attached,
+   * no attach window open). `start_attach` opens it again. `state` reads `down` then.
+   */
+  idleClosed?: boolean;
 }
 
 /**
@@ -263,6 +269,16 @@ export const DEBUG_TOOL_DEFINITIONS = [
     },
     // Tier B per RFC #277 — the URL synthesis requires a live cloudflared
     // tunnel + relay, which only exists in the `relay` environment.
+    availableIn: 'relay' as ToolAvailability,
+  },
+  {
+    name: 'stop_attach',
+    description:
+      'Ends the debug session on purpose: closes the attach window (the QR stops working), disconnects the attached phone page(s) and drops the relay sessions, so the tunnel address serves nobody. ' +
+      'Use it when the debugging work is finished, or when the user says the QR may have reached someone else. ' +
+      'The phone shows "연결이 끊겼어요" and needs a new QR from start_attach to attach again. ' +
+      'Safe to call when nothing is attached.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'relay' as ToolAvailability,
   },
   {
@@ -673,6 +689,7 @@ export function filterToolsByEnvironment<T extends { name: string; availableIn: 
  */
 export const BOOTSTRAP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'start_attach',
+  'stop_attach',
   'get_debug_status',
   'list_pages',
   // start_debug must be visible from the very first tools/list (before any
@@ -730,6 +747,7 @@ export function normalizeConsoleMessage(event: ConsoleApiCalledEvent): ConsoleMe
 export function listConsoleMessages(connection: CdpConnection): ConsoleMessage[] {
   return connection
     .getBufferedEvents('Runtime.consoleAPICalled')
+    .filter((event) => !isPhoneControlEvent(event))
     .map((event) => normalizeConsoleMessage(event));
 }
 
@@ -1974,6 +1992,8 @@ export interface DiagnosticsTunnelInfo {
   nextRetryAt?: string | null;
   /** Reason class of the last failed attempt, or `null`. */
   lastErrorKind?: TunnelErrorKind | null;
+  /** The tunnel was closed on purpose after sitting unused; `start_attach` opens it again. */
+  idleClosed?: boolean;
 }
 
 /**
@@ -2401,6 +2421,17 @@ export function computeNextRecommendedAction(
     };
   }
 
+  // Rule 0b: the tunnel was closed on purpose after sitting unused. Nothing is broken;
+  // start_attach opens it again.
+  if (!tunnel.up && isRelayEnv(env) && tunnel.idleClosed === true) {
+    return {
+      tool: 'start_attach',
+      reason:
+        '오래 쓰지 않아 cloudflared 터널을 닫아 둔 상태예요 — 서버 재시작은 필요 없어요. ' +
+        'start_attach를 호출하면 터널을 다시 열고 새 QR을 만들어요',
+    };
+  }
+
   // Rule 0: tunnel gone with no retry loop behind it — highest priority, beats crash / empty-pages rules.
   // droppedAt is set when a tunnel that had been up could not be reissued.
   if (tunnel.droppedAt != null && tunnel.state !== 'starting' && tunnel.state !== 'retrying') {
@@ -2658,6 +2689,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     attempts: tunnel.attempts ?? 0,
     nextRetryAt: tunnel.nextRetryAt ?? null,
     lastErrorKind: tunnel.lastErrorKind ?? null,
+    ...(tunnel.idleClosed === true ? { idleClosed: true } : {}),
   };
 
   // list_pages — non-fatal; null on any error.

@@ -71,7 +71,14 @@ export type LogEvent =
   | 'relay.origin.reject'
   // The tunnel was reissued, or a reissue was held back, after repeated locks.
   // `reason` is an enum string; no URL.
-  | 'tunnel.rotation';
+  | 'tunnel.rotation'
+  // A device claimed the attach window, or a second one tried to. Fingerprint, coarse
+  // user-agent family and country code only (msg).
+  | 'relay.claim'
+  // The tunnel was closed on purpose after sitting unused; start_attach opens it again.
+  | 'tunnel.idle-closed'
+  // A debug session ended on purpose or because a limit ran out. `reason` is an enum.
+  | 'session.end';
 
 /**
  * Allowed field keys that may pass through to a log line.

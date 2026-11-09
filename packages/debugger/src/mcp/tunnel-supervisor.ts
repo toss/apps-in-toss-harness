@@ -88,6 +88,16 @@ export interface TunnelSupervisor {
   waitForUp(maxMs: number): Promise<TunnelStatus>;
   /** Replaces the live tunnel (see `startTunnelHealthProbe().rotate`). */
   rotate(): Promise<boolean>;
+  /**
+   * Closes the live tunnel on purpose and stays closed (no retry) until {@link reopen}.
+   * Returns `false` when there was no live tunnel to close.
+   */
+  closeIdle(): boolean;
+  /**
+   * Opens the tunnel again after {@link closeIdle}. A no-op otherwise. The attempt runs
+   * like any other (retries, backoff, `waitForUp`).
+   */
+  reopen(): void;
   /** Pauses (false) or resumes (true) retrying. A live tunnel is left alone. */
   setRetryEnabled(enabled: boolean): void;
   /** Stops everything: timer, in-flight attempt, probe and the live tunnel. */
@@ -121,6 +131,8 @@ export function createTunnelSupervisor(options: TunnelSupervisorOptions): Tunnel
   let retryEnabled = true;
   let started = false;
   let everUp = false;
+  // Closed on purpose by `closeIdle`: no retry runs until `reopen`.
+  let idleClosed = false;
 
   let attempts = 0;
   let nextRetryAt: number | null = null;
@@ -130,7 +142,7 @@ export function createTunnelSupervisor(options: TunnelSupervisorOptions): Tunnel
 
   const state = (): TunnelState => {
     if (tunnel !== null) return 'up';
-    if (stopped || !retryEnabled || !started) return 'down';
+    if (stopped || !retryEnabled || !started || idleClosed) return 'down';
     return attempts === 0 ? 'starting' : 'retrying';
   };
 
@@ -146,6 +158,7 @@ export function createTunnelSupervisor(options: TunnelSupervisorOptions): Tunnel
       nextRetryAt: nextRetryAt === null ? null : new Date(nextRetryAt).toISOString(),
       lastErrorKind,
       childPid: tunnel?.childPid ?? null,
+      ...(idleClosed ? { idleClosed: true } : {}),
     };
   };
 
@@ -272,6 +285,28 @@ export function createTunnelSupervisor(options: TunnelSupervisorOptions): Tunnel
     async rotate() {
       return probe === null ? false : probe.rotate();
     },
+    closeIdle() {
+      if (stopped || tunnel === null) return false;
+      idleClosed = true;
+      clearTimer();
+      probe?.stop();
+      probe = null;
+      try {
+        tunnel.stop();
+      } catch {
+        // The child may already be gone.
+      }
+      tunnel = null;
+      settleWaiters(true);
+      return true;
+    },
+    reopen() {
+      if (!idleClosed || stopped) return;
+      idleClosed = false;
+      attempts = 0;
+      lastErrorKind = null;
+      if (started && retryEnabled && tunnel === null && !inFlight) void attempt();
+    },
     setRetryEnabled(enabled) {
       if (stopped || enabled === retryEnabled) return;
       retryEnabled = enabled;
@@ -280,7 +315,7 @@ export function createTunnelSupervisor(options: TunnelSupervisorOptions): Tunnel
         settleWaiters(true);
         return;
       }
-      if (started && tunnel === null && !inFlight) void attempt();
+      if (started && tunnel === null && !inFlight && !idleClosed) void attempt();
     },
     stop() {
       if (stopped) return;

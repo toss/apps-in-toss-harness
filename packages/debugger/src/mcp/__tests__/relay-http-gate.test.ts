@@ -243,7 +243,7 @@ describe('relay HTTP gate', () => {
     expect(ping.status).toBe(204);
     expect(
       await wsOutcome(
-        `${relay.baseUrl.replace('http', 'ws')}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=x&title=t`,
+        `${relay.baseUrl.replace('http', 'ws')}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t1?url=${encodeURIComponent(`${PHONE_ORIGIN}/p`)}&title=t`,
         PHONE_HEADERS,
       ),
     ).toBe('open');

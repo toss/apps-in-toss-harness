@@ -51,6 +51,7 @@ import {
   tunnelUnavailableError,
 } from './errors.js';
 import { logInfo } from './log.js';
+import { PHONE_CONTROL_TAG } from './phone-control.js';
 import type { QrHttpServer } from './qr-http-server.js';
 import { relayRunId } from './relay-run-id.js';
 import { attachSignatures } from './relay-signing.js';
@@ -147,6 +148,11 @@ export function isRelayPageFresh(
     if (seenMs === null) return true;
     return nowMs - seenMs <= stalePageThresholdMs;
   });
+}
+
+/** Whether a scheme URL is an `intoss-private://` link (the only kind that may carry a relay). */
+export function isPrivateSchemeUrl(schemeUrl: string): boolean {
+  return /^intoss-private:\/\//i.test(schemeUrl);
 }
 
 /**
@@ -526,6 +532,19 @@ export async function prepareAttach(
       error: mcpError(
         'start_attach: scheme_url이 비어 있습니다. ' +
           '`ait deploy --scheme-only`가 출력하는 intoss-private:// URL을 인자로 전달하세요.',
+      ),
+    };
+  }
+
+  // Remote debugging is for the intoss-private (dog-food) build only. A production
+  // `intoss://` link, or any other scheme, never gets a relay spliced into it.
+  if (!isPrivateSchemeUrl(schemeUrl)) {
+    return {
+      ok: false,
+      error: mcpError(
+        'start_attach: scheme_url은 intoss-private:// 로 시작하는 URL만 쓸 수 있습니다. ' +
+          '원격 디버깅은 intoss-private(테스트) 빌드에서만 동작합니다. ' +
+          '`ait deploy --scheme-only`가 출력하는 URL을 그대로 전달하세요.',
       ),
     };
   }
@@ -1104,6 +1123,12 @@ export function buildIndicatorExpression(opts?: {
   label?: string;
   disconnectedLabel?: string;
   state?: 'attached' | 'disconnected';
+  /**
+   * Tap on the badge opens a small menu with 끊기 (end the debug session) and 숨기기 (hide
+   * the badge) instead of hiding it right away. 끊기 reports `console.debug('ait:ctl',
+   * 'kill')`, which the daemon reads (see phone-control.ts). Default `false`.
+   */
+  controls?: boolean;
 }): string {
   const label = opts?.label ?? DEFAULT_CONNECTED_LABEL;
   const disconnectedLabel = opts?.disconnectedLabel ?? DEFAULT_DISCONNECTED_LABEL;
@@ -1112,6 +1137,8 @@ export function buildIndicatorExpression(opts?: {
   const safeLabel = JSON.stringify(label);
   const safeDisconnectedLabel = JSON.stringify(disconnectedLabel);
   const safeState = JSON.stringify(opts?.state ?? 'attached');
+  const safeControls = opts?.controls === true ? 'true' : 'false';
+  const safeCtlTag = JSON.stringify(PHONE_CONTROL_TAG);
   // Freeze/spinner triage legend (#749), ko-primary. Shown as the badge's
   // `title` so the ⏳/♥ mapping is discoverable. Contains no secrets.
   const safeTriageTitle = JSON.stringify(
@@ -1192,6 +1219,30 @@ export function buildIndicatorExpression(opts?: {
     `c.el.style.setProperty('left', 'max(12px,calc(env(safe-area-inset-left,0px) + 8px),' + l + 'px)');` +
     `} catch (_) {}` +
     `}` +
+    // ensureMenu(c) — builds the 끊기/숨기기 menu the first time controls are on. 끊기 reports
+    // the tap through the page console (the daemon reads it, see phone-control.ts); 숨기기 hides
+    // the badge. Only a tap by the user counts (isTrusted).
+    `function ensureMenu(c) {` +
+    `if (c.menuEl) { return; }` +
+    `var menuEl = document.createElement('div');` +
+    `menuEl.style.cssText = 'display:none;gap:6px;margin-top:6px';` +
+    `var killBtn = document.createElement('button'); killBtn.type = 'button'; killBtn.textContent = '끊기';` +
+    `var hideBtn = document.createElement('button'); hideBtn.type = 'button'; hideBtn.textContent = '숨기기';` +
+    `var btnCss = 'min-width:56px;min-height:32px;border:0;border-radius:6px;font:bold 12px system-ui,sans-serif;background:#fff;color:#0f7b4d';` +
+    `killBtn.style.cssText = btnCss.replace('#0f7b4d', '#b3261e'); hideBtn.style.cssText = btnCss;` +
+    `killBtn.addEventListener('click', function (e) {` +
+    `if (!e.isTrusted) { return; }` +
+    `c.menu = false;` +
+    `try { console.debug(${safeCtlTag}, 'kill'); } catch (_) {}` +
+    `render(c);` +
+    `});` +
+    `hideBtn.addEventListener('click', function (e) {` +
+    `if (!e.isTrusted) { return; }` +
+    `c.menu = false; c.dismissed = true; render(c);` +
+    `});` +
+    `menuEl.appendChild(killBtn); menuEl.appendChild(hideBtn);` +
+    `c.el.appendChild(menuEl); c.menuEl = menuEl;` +
+    `}` +
     // mount(c) — (re-)attach the badge node to <body> if it is not connected.
     // A self-dismissed badge detaches itself; a later 'attached' re-mounts it.
     `function mount(c) { if (!c.el.isConnected && document.body) { document.body.appendChild(c.el); } }` +
@@ -1214,6 +1265,8 @@ export function buildIndicatorExpression(opts?: {
     `c.dotEl.style.display = up ? 'inline-block' : 'none';` +
     `c.beatEl.style.display = up ? 'inline' : 'none';` +
     `c.detailEl.style.display = up ? 'block' : 'none';` +
+    `if (c.controls) { ensureMenu(c); }` +
+    `if (c.menuEl) { c.menuEl.style.display = (up && c.controls && c.menu) ? 'flex' : 'none'; }` +
     `if (up) { renderDetail(c); } else { c.beatEl.textContent = ''; c.detailEl.textContent = ''; }` +
     `}` +
     // clearTimers(c) — cancel any pending self-dismiss fade/remove timers.
@@ -1274,7 +1327,7 @@ export function buildIndicatorExpression(opts?: {
     `detailEl.style.cssText = 'font-weight:normal;font-size:10px;line-height:1.35;margin-top:3px;white-space:pre-line;opacity:0.95';` +
     `el.appendChild(dotEl); el.appendChild(labelEl); el.appendChild(beatEl); el.appendChild(detailEl);` +
     `document.body.appendChild(el);` +
-    `c = { el: el, dotEl: dotEl, labelEl: labelEl, beatEl: beatEl, detailEl: detailEl, state: 'attached', dismissed: false, removed: false, beats: 0, t1: 0, t2: 0, hb: 0, topPx: -1, leftPx: -1 };` +
+    `c = { el: el, dotEl: dotEl, labelEl: labelEl, beatEl: beatEl, detailEl: detailEl, menuEl: null, controls: false, menu: false, state: 'attached', dismissed: false, removed: false, beats: 0, t1: 0, t2: 0, hb: 0, topPx: -1, leftPx: -1 };` +
     // Compositor-driven pulse (opacity animation runs off the main thread) — it
     // keeps pulsing even while the JS main thread is wedged, so a frozen
     // ♥<beats> next to a still-pulsing dot reads as a JS wedge at a glance.
@@ -1293,7 +1346,12 @@ export function buildIndicatorExpression(opts?: {
     // so the interval never outlives the debug session.
     `c.stop = function () { clearTimers(c); if (c.hb) { clearInterval(c.hb); c.hb = 0; } };` +
     // One-tap dismiss — hides the badge; NOT terminal, `setState` re-shows it.
-    `el.addEventListener('pointerdown', function () { c.dismissed = true; render(c); }, { passive: true });` +
+    // With controls on, a tap opens the 끊기/숨기기 menu instead (the buttons handle their own taps).
+    `el.addEventListener('pointerdown', function (e) {` +
+    `if (e.target && e.target.tagName === 'BUTTON') { return; }` +
+    `if (c.controls && c.state !== 'disconnected') { c.menu = !c.menu; render(c); return; }` +
+    `c.dismissed = true; render(c);` +
+    `}, { passive: true });` +
     // Re-render promptly on every bridge call start/settle (#749) — additive to
     // the 1 Hz tick so a new pending call or a settle shows without a 1 s wait.
     `W.addEventListener('ait:bridge-call', function () { if (c.state !== 'disconnected' && !c.dismissed && !c.removed) { renderDetail(c); } });` +
@@ -1333,6 +1391,7 @@ export function buildIndicatorExpression(opts?: {
     `}` +
     `}` +
     // Apply THIS injection call's requested state (default 'attached').
+    `c.controls = ${safeControls};` +
     `setState(c, ${safeState});` +
     `})()`
   );

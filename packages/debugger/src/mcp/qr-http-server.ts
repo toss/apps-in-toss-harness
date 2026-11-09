@@ -137,7 +137,39 @@ export interface DashboardState {
    * SECRET-HANDLING: 종류 enum·시작 시각·PID뿐이다.
    */
   session?: { kind: 'daemon' | 'test-runner'; startedAt: string; pid: number };
+  /**
+   * 어태치 창·세션 한도·터널 상태. 있으면 대시보드에 "연결 끊기 / 새 QR" 제어 영역을 그린다.
+   * 없으면(테스트 러너, unplugin 호스트) 제어 영역이 없다.
+   *
+   * SECRET-HANDLING: 시각(epoch ms)·카운트·이유 enum·기기 지문(해시 8자)만 담는다.
+   */
+  control?: DashboardControl | null;
 }
+
+/** {@link DashboardState.control}. 시각은 모두 epoch ms다. */
+export interface DashboardControl {
+  /** 어태치 창이 열려 있다(QR이 처음 연결에 쓰일 수 있다). */
+  armed: boolean;
+  armedUntil: number | null;
+  /** 지금 attach된 폰 페이지 수. */
+  attached: number;
+  /** 세션이 아무 일 없으면 끝나는 시각. 세션이 없으면 null. */
+  expiresAt: number | null;
+  /** 폰에 "계속" 안내가 떠 있다. */
+  warning: boolean;
+  /** 지난 세션이 끝난 이유. 없으면 null. */
+  lastEnd: { reason: string; at: number } | null;
+  /** 최근 claim 보고(오래된 순). */
+  claims: Array<{ kind: string; at: number; device: string; ua: string; country?: string }>;
+  /** 쓰지 않아 터널을 닫아 둔 상태. */
+  tunnelIdleClosed: boolean;
+}
+
+/** 대시보드 제어 버튼이 보내는 동작. */
+export type DashboardAction = 'kill' | 'new-qr';
+
+/** 제어 동작의 결과. `no-scheme`은 아직 start_attach가 앱 주소를 받지 못한 경우다. */
+export type DashboardActionResult = { ok: true } | { ok: false; reason: 'no-scheme' | 'failed' };
 
 /** {@link DashboardState.stages}의 한 줄 — `AttachStageEvent`의 표시용 부분집합. */
 export interface DashboardStage {
@@ -626,7 +658,87 @@ function buildDashboardHtml(
   // This keeps the client script out of the precompiled chrome (it references
   // locale-aware strings resolved per-request) while staying self-contained.
   const sseScript = buildSseScript(sseStrings);
-  return filled.replace('</body>', `${sseScript}\n</body>`);
+  const controlSection = state.control === undefined ? '' : buildControlSection(state.control, s);
+  const withControl =
+    controlSection === '' ? filled : filled.replace('<body>', `<body>\n${controlSection}`);
+  return withControl.replace('</body>', `${sseScript}\n</body>`);
+}
+
+/**
+ * 제어 영역(연결 끊기 · 새 QR · 세션 상태)의 마크업과 스크립트. 상태 문구는 전부 클라이언트가
+ * 그린다: 처음엔 서버가 넣은 스냅샷으로, 이후엔 SSE 프레임(`ait-dash-state`)으로. 생성된 크롬
+ * 템플릿을 건드리지 않고 `<body>` 바로 뒤에 붙는다.
+ *
+ * SECRET-HANDLING: 스냅샷은 시각·카운트·이유 enum·기기 지문뿐이다.
+ */
+function buildControlSection(
+  control: DashboardControl | null,
+  s: ReturnType<typeof resolveLocaleStrings>,
+): string {
+  const keys = [
+    'attached',
+    'attachedWarn',
+    'armed',
+    'idle',
+    'ended.user',
+    'ended.idle',
+    'ended.expired',
+    'ended.replaced',
+    'ended.revoked',
+    'tunnelClosed',
+    'ua.ios',
+    'ua.android',
+    'ua.other',
+    'ua.none',
+    'claim.claim',
+    'claim.contested',
+    'claim.replaced',
+    'noScheme',
+    'failed',
+  ] as const;
+  const table: Record<string, string> = {};
+  for (const k of keys) table[k] = s(`dashboard.control.${k}` as const);
+  // </script> 로 끊기지 않도록 `<`를 이스케이프한다.
+  const json = (v: unknown): string => JSON.stringify(v).replace(/</g, '\\u003c');
+  return (
+    `<section id="ait-control" style="margin:12px 16px;padding:10px 12px;border:1px solid #8886;border-radius:8px">` +
+    `<strong>${escapeHtml(s('dashboard.control.section'))}</strong>` +
+    `<p id="ait-control-status" style="margin:6px 0"></p>` +
+    `<ul id="ait-control-claims" style="margin:6px 0;padding-left:18px"></ul>` +
+    `<p id="ait-control-error" style="margin:6px 0;color:#b3261e"></p>` +
+    `<button id="ait-control-kill" type="button">${escapeHtml(s('dashboard.control.kill'))}</button> ` +
+    `<button id="ait-control-newqr" type="button">${escapeHtml(s('dashboard.control.newQr'))}</button>` +
+    `</section>\n` +
+    `<script>(function(){` +
+    `var T=${json(table)};var INIT=${json(control)};` +
+    `var st=document.getElementById('ait-control-status');var cl=document.getElementById('ait-control-claims');` +
+    `var er=document.getElementById('ait-control-error');var kb=document.getElementById('ait-control-kill');var nb=document.getElementById('ait-control-newqr');` +
+    `function hm(ms){var d=new Date(ms);function p(n){return (n<10?'0':'')+n}return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}` +
+    `function fill(t,v){return String(t).replace(/\\{(\\w+)\\}/g,function(_,k){return v[k]===undefined?'':v[k]})}` +
+    `function dev(c){var d=T['ua.'+c.ua]||T['ua.none'];return d+(c.country?' ('+c.country+')':'')}` +
+    `function render(c){` +
+    `if(!c){document.getElementById('ait-control').style.display='none';return}` +
+    `document.getElementById('ait-control').style.display='block';` +
+    `var text;` +
+    `if(c.attached>0){text=fill(c.warning?T.attachedWarn:T.attached,{time:c.expiresAt?hm(c.expiresAt):''})}` +
+    `else if(c.armed){text=fill(T.armed,{time:c.armedUntil?hm(c.armedUntil):''})}` +
+    `else if(c.tunnelIdleClosed){text=T.tunnelClosed}` +
+    `else if(c.lastEnd){text=T['ended.'+({'user-stopped':'user','idle-timeout':'idle','session-expired':'expired',replaced:'replaced'}[c.lastEnd.reason]||'revoked')]}` +
+    `else{text=T.idle}` +
+    `st.textContent=text;` +
+    `cl.textContent='';` +
+    `(c.claims||[]).slice(-3).forEach(function(e){var li=document.createElement('li');li.textContent=fill(T['claim.'+e.kind]||T['claim.claim'],{device:dev(e),time:hm(e.at)});if(e.kind==='contested'){li.style.color='#b3261e';li.style.fontWeight='bold'}cl.appendChild(li)});` +
+    `kb.disabled=!(c.attached>0||c.armed);` +
+    `}` +
+    `function act(a){er.textContent='';fetch('/action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Ait-Dash':'1'},body:JSON.stringify({action:a})})` +
+    `.then(function(r){return r.json().catch(function(){return{}})})` +
+    `.then(function(j){if(j&&j.ok===false){er.textContent=j.reason==='no-scheme'?T.noScheme:T.failed}})` +
+    `.catch(function(){er.textContent=T.failed})}` +
+    `kb.addEventListener('click',function(){act('kill')});nb.addEventListener('click',function(){act('new-qr')});` +
+    `window.addEventListener('ait-dash-state',function(e){var d=e.detail||{};render(d.control===undefined?null:d.control)});` +
+    `render(INIT);` +
+    `})();</script>`
+  );
 }
 
 interface SseScriptStrings {
@@ -934,6 +1046,8 @@ function buildSseScript(strings: SseScriptStrings): string {
           // 어떤 프레임이든 성공적으로 수신됐다는 건 서버가 살아있다는 뜻 —
           // onerror가 세운 '연결 끊김' 표시를 해제한다 (#730).
           clearConnLost();
+          // 제어 영역 스크립트가 같은 프레임을 받아 갱신한다.
+          try { window.dispatchEvent(new CustomEvent('ait-dash-state', { detail: s })); } catch (_) {}
           // phase gate (#730) — 'complete'/'shutdown'은 terminal 상태이므로
           // 나머지 필드 렌더보다 먼저 처리하고 즉시 반환한다.
           if (s.phase === 'complete') { showTerminalBanner(COMPLETE_TITLE, COMPLETE_BODY); return; }
@@ -1169,6 +1283,11 @@ function buildAttachHtml(
 
 export interface QrHttpServerOptions {
   /**
+   * 대시보드 제어 버튼(`POST /action`)이 부르는 동작. 없으면 그 라우트는 404다.
+   * 쿠키·`X-Ait-Dash` 헤더·Origin 검사를 모두 통과한 요청만 여기까지 온다.
+   */
+  onAction?: (action: DashboardAction) => DashboardActionResult | Promise<DashboardActionResult>;
+  /**
    * SSE 주기 갱신 간격 (ms). 기본값 RELAY_QR_REFRESH_INTERVAL_MS (5초).
    *
    * SSE 구독자가 있는 동안 이 간격마다 `notifyStateChange()`와 동일한 push를 수행한다.
@@ -1342,6 +1461,8 @@ export async function startQrHttpServer(
       manualPrompt: state.manualPrompt ?? null,
       // stages: attach 진행 단계(시각·단계·결과 enum) — 시크릿 없음. 미주입이면 null.
       stages: state.stages ?? null,
+      // control: 어태치 창·세션 한도 — 시각·카운트·이유 enum뿐, 시크릿 없음.
+      control: state.control ?? null,
     });
     // SSE frame: "data: <json>\n\n"
     res.write(`data: ${payload}\n\n`);
@@ -1473,6 +1594,70 @@ export async function startQrHttpServer(
         ...NO_FRAME_HEADERS,
       });
       res.end(withProjectLabel(html, options?.projectLabel));
+      return;
+    }
+
+    // ── POST /action — 대시보드 제어 버튼 ─────────────────────────────────
+    // 쿠키(위에서 확인) + 커스텀 헤더(교차 출처 폼이 못 붙인다) + Origin 검사(위의
+    // isAllowedDashboardRequest)가 모두 통과해야 한다.
+    if (path === '/action') {
+      if (!options?.onAction || req.method !== 'POST') {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Not Found');
+        return;
+      }
+      if (req.headers['x-ait-dash'] !== '1') {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Forbidden');
+        return;
+      }
+      let body = '';
+      let tooLarge = false;
+      await new Promise<void>((resolve) => {
+        req.on('data', (chunk: Buffer) => {
+          if (tooLarge) return;
+          body += chunk.toString('utf8');
+          if (body.length > 256) {
+            tooLarge = true;
+            resolve();
+          }
+        });
+        req.on('end', () => resolve());
+        req.on('error', () => resolve());
+      });
+      if (tooLarge) {
+        res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
+        res.end('Payload Too Large');
+        req.resume();
+        return;
+      }
+      let action: DashboardAction | null = null;
+      try {
+        const parsed: unknown = JSON.parse(body);
+        const value =
+          typeof parsed === 'object' && parsed !== null
+            ? (parsed as { action?: unknown }).action
+            : undefined;
+        if (value === 'kill' || value === 'new-qr') action = value;
+      } catch {
+        // 아래에서 400으로 거절한다.
+      }
+      if (action === null) {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Bad Request');
+        return;
+      }
+      let result: DashboardActionResult;
+      try {
+        result = await options.onAction(action);
+      } catch {
+        result = { ok: false, reason: 'failed' };
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify(result));
       return;
     }
 

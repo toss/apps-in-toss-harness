@@ -36,6 +36,15 @@ import { logInfo } from './log.js';
 import { generateTotp } from './totp.js';
 
 /** Max events retained per domain ring buffer. */
+/** Close reasons the relay sends with 4401 when it ends sessions on purpose (see chii-relay.ts). */
+const REVOKE_REASONS: ReadonlySet<string> = new Set([
+  'revoked',
+  'user-stopped',
+  'idle-timeout',
+  'session-expired',
+  'replaced',
+]);
+
 const DEFAULT_BUFFER_SIZE = 500;
 
 /**
@@ -543,10 +552,12 @@ export class ChiiCdpConnection implements CdpConnection {
     // (accept-then-close) — name it as an auth failure instead of a generic
     // drop. #439's per-connect fresh code mint means this should not happen in
     // practice; defensive alignment with the relay contract.
-    ws.on('close', (code: number) =>
+    ws.on('close', (code: number, reason: Buffer) =>
       this.handleDisconnect(
         code === RELAY_AUTH_REJECT_CLOSE_CODE
-          ? 'relay 인증(TOTP)이 거부돼 연결이 종료됐습니다 (close 4401)'
+          ? REVOKE_REASONS.has(reason.toString())
+            ? 'debug 세션이 종료됐습니다 (끊기·시간 만료). 다시 쓰려면 start_attach로 새 QR을 받으세요.'
+            : 'relay 인증(TOTP)이 거부돼 연결이 종료됐습니다 (close 4401)'
           : 'relay WebSocket 연결이 끊겼습니다',
       ),
     );
