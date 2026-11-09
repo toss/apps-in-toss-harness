@@ -10,24 +10,25 @@ import type { StringKey } from './ko.js';
 export const en: Record<StringKey, string> = {
   'dashboard.lang.ko': '한국어',
   'dashboard.lang.en': 'English',
-  'dashboard.title': 'AIT Debug Dashboard',
+  'dashboard.title': 'AIT Debug',
   'dashboard.updated': 'Last updated: {ts}',
-  'dashboard.tunnel.section': 'Tunnel status',
+  'dashboard.tunnel.section': 'Connection path',
   'dashboard.tunnel.up': 'Connected',
   'dashboard.tunnel.down': 'Disconnected',
   'dashboard.attach.section': 'Attach QR',
-  'dashboard.attach.hint': 'Call the start_attach MCP tool to show the QR here.',
+  'dashboard.attach.hint':
+    'No QR yet. Ask Claude to "connect my phone" and the QR will show up here.',
   'dashboard.attach.tunnelDown':
-    'Relay disconnected — this QR is no longer valid. Restart the relay, then regenerate the QR.',
+    'The connection path to your phone dropped, so this QR no longer works. Ask Claude to connect again and a new QR will be created.',
   'dashboard.attach.reopenHint':
-    'If the mini-app is already open in the Toss app, scanning the QR does not reload it, so it will not attach. Close the mini-app with the X button first, then scan again.',
-  'dashboard.pages.section': 'Connected Pages',
-  'dashboard.pages.empty': 'No attached pages',
-  'dashboard.url.copy': 'Copy',
+    'If the mini-app is already open in the Toss app, scanning the QR does not reload it. Close the mini-app with the X button first, then scan again.',
+  'dashboard.pages.section': 'Connected pages',
+  'dashboard.pages.empty': 'No connected pages',
+  'dashboard.url.copy': 'Copy link',
   'dashboard.url.copied': 'Copied',
   'dashboard.inspector.section': 'Inspector',
   'dashboard.inspector.open': 'Open DevTools',
-  'dashboard.inspector.waiting': 'Attach a page to enable the "Open DevTools" button',
+  'dashboard.inspector.waiting': 'The "Open DevTools" button appears once a page is connected',
   'inspector.error.noTarget': 'No page attached. Attach a device and try again.',
   'inspector.error.relayDown': 'Relay is not active. Start a relay session first.',
   'dashboard.watchdog.title': 'Server has shut down',
@@ -43,8 +44,8 @@ export const en: Record<StringKey, string> = {
   'dashboard.session.shutdownTitle': 'Debug server stopped',
   'dashboard.session.shutdownBody':
     'The MCP server has shut down; this session is no longer live. You can close this tab.',
-  'dashboard.timeline.section': 'Attach progress',
-  'dashboard.timeline.empty': 'No attach attempt yet',
+  'dashboard.timeline.section': 'Connection log',
+  'dashboard.timeline.empty': 'No connection attempt yet',
   'dashboard.timeline.tunnelUp': 'Tunnel connected',
   'dashboard.timeline.tunnelDown': 'Tunnel down',
   'dashboard.timeline.qrIssued': 'QR issued — scan it with the phone',
@@ -58,7 +59,7 @@ export const en: Record<StringKey, string> = {
   'dashboard.timeline.rejectedBusy':
     'Rejected mini-app {rejected} (already attached: {attached}). To switch, close the attached mini-app and scan the QR again',
   'dashboard.timeline.matched': 'Mini-app page matched',
-  'dashboard.timeline.cdpReady': 'CDP ready',
+  'dashboard.timeline.cdpReady': 'Debugger ready',
   'dashboard.session.lineDaemon': 'MCP daemon session · started {time} · PID {pid}',
   'dashboard.session.lineTestRunner': 'Test runner session · started {time} · PID {pid}',
   'dashboard.control.section': 'Session',
@@ -107,4 +108,36 @@ export const en: Record<StringKey, string> = {
     '<strong>Chii injection failure / console is empty</strong> — verify the mini-app bundle has an <code>in-app</code> debug import',
   'attach.intoss.faq.totp':
     '<strong>The code is reported as expired</strong> — scan the latest QR on this dashboard again (the relay rejects the code of an old QR)',
+  'dashboard.wait.title': 'Scan the QR with your phone',
+  'dashboard.wait.sub':
+    'Read it with the Toss app camera. The mini-app opens and connects on its own.',
+  'dashboard.timer.label': 'New QR in {sec}s',
+  'dashboard.timer.note':
+    'The QR changes to a new code every {every} seconds. Scan the one on screen as is.',
+  'dashboard.connecting.title': 'Connecting to your phone',
+  'dashboard.connecting.sub': 'Keep the mini-app open and wait a moment.',
+  'dashboard.connecting.slow':
+    'If this stays stuck for over a minute, close the mini-app and scan the QR again.',
+  'dashboard.step.tunnel': 'Prepare connection path',
+  'dashboard.step.qr': 'Create QR',
+  'dashboard.step.open': 'Open mini-app on phone',
+  'dashboard.step.connect': 'Connect to phone',
+  'dashboard.step.ready': 'Debugger ready',
+  'dashboard.connected.title': 'Your phone is connected',
+  'dashboard.connected.sub': 'You can debug the mini-app running on {device}.',
+  'dashboard.connected.subNoDevice': 'You can debug the mini-app running on your phone.',
+  'dashboard.connected.left': 'The connection ends in {left} if nothing happens.',
+  'dashboard.connected.leftWarn':
+    'The connection ends soon ({left} left). Tap [Continue] on the phone to keep it.',
+  'dashboard.error.title': 'Connection lost',
+  'dashboard.notice.rejected':
+    'The code from the phone did not match. The QR may be old, so scan the one on screen now.',
+  'dashboard.notice.busy':
+    'Another mini-app is already connected, so this connection was refused. Close that app or press [Disconnect], then scan again.',
+  'dashboard.notice.disconnected':
+    'The phone disconnected. Reopen the mini-app or scan the QR again.',
+  'dashboard.details.summary': 'Details',
+  'dashboard.time.minSec': '{m}m {s}s',
+  'dashboard.time.sec': '{s}s',
+  'dashboard.qr.alt': 'QR code to scan with your phone',
 };

@@ -18,24 +18,25 @@
 export const ko = {
   'dashboard.lang.ko': '한국어',
   'dashboard.lang.en': 'English',
-  'dashboard.title': 'AIT 디버그 Dashboard',
+  'dashboard.title': 'AIT 디버그',
   'dashboard.updated': '마지막 갱신: {ts}',
-  'dashboard.tunnel.section': '터널 상태',
+  'dashboard.tunnel.section': '연결 통로',
   'dashboard.tunnel.up': '연결됨',
   'dashboard.tunnel.down': '끊어짐',
   'dashboard.attach.section': 'Attach QR',
-  'dashboard.attach.hint': 'start_attach MCP tool을 호출하면 QR이 여기에 표시됩니다.',
+  'dashboard.attach.hint':
+    '아직 QR이 없어요. Claude에게 "폰에 연결해 줘"라고 요청하면 여기에 QR이 나타나요.',
   'dashboard.attach.tunnelDown':
-    'relay 연결이 끊겼습니다 — 이 QR은 더 이상 유효하지 않습니다. relay를 재시작한 뒤 QR을 다시 생성하세요.',
+    '폰과 이어 주는 연결 통로가 끊겼어요. 이 QR은 더 쓸 수 없어요. Claude에게 다시 연결해 달라고 요청하면 새 QR이 만들어져요.',
   'dashboard.attach.reopenHint':
-    '토스 앱에서 이 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지 않아 attach되지 않아요. 미니앱 상단의 X 버튼으로 먼저 닫은 뒤 다시 스캔하세요.',
-  'dashboard.pages.section': '연결된 Pages',
-  'dashboard.pages.empty': 'attach된 페이지 없음',
-  'dashboard.url.copy': '복사',
-  'dashboard.url.copied': '복사됨',
+    '토스 앱에 이 미니앱이 이미 열려 있으면 QR을 스캔해도 새로고침되지 않아요. 미니앱 상단의 X 버튼으로 먼저 닫은 뒤 다시 스캔하세요.',
+  'dashboard.pages.section': '연결된 페이지',
+  'dashboard.pages.empty': '연결된 페이지가 없어요',
+  'dashboard.url.copy': '링크 복사',
+  'dashboard.url.copied': '복사했어요',
   'dashboard.inspector.section': '인스펙터',
   'dashboard.inspector.open': '디버그 툴 열기',
-  'dashboard.inspector.waiting': '페이지를 attach하면 "디버그 툴 열기" 버튼이 표시됩니다',
+  'dashboard.inspector.waiting': '페이지가 연결되면 "디버그 툴 열기" 버튼이 나타나요',
   'inspector.error.noTarget': '연결된 페이지가 없습니다. 기기를 attach한 후 다시 시도하세요.',
   'inspector.error.relayDown': 'relay가 활성화되지 않았습니다. start_debug로 relay를 기동하세요.',
   'dashboard.watchdog.title': '서버가 종료되었습니다',
@@ -51,8 +52,8 @@ export const ko = {
   'dashboard.session.shutdownTitle': '디버그 서버가 종료되었습니다',
   'dashboard.session.shutdownBody':
     'MCP server가 종료되어 이 세션이 더 이상 유효하지 않습니다. 이 탭을 닫아도 됩니다.',
-  'dashboard.timeline.section': 'attach 진행 단계',
-  'dashboard.timeline.empty': '아직 attach 시도가 없어요',
+  'dashboard.timeline.section': '연결 진행 기록',
+  'dashboard.timeline.empty': '아직 연결 시도가 없어요',
   'dashboard.timeline.tunnelUp': '터널 연결됨',
   'dashboard.timeline.tunnelDown': '터널 끊김',
   'dashboard.timeline.qrIssued': 'QR 발급됨 — 폰으로 스캔하세요',
@@ -66,7 +67,7 @@ export const ko = {
   'dashboard.timeline.rejectedBusy':
     '{rejected} 미니앱의 연결을 거부했어요 (먼저 연결된 미니앱: {attached}). 바꾸려면 먼저 연결된 미니앱을 X로 닫고 QR을 다시 스캔하세요',
   'dashboard.timeline.matched': '미니앱 페이지 매칭됨',
-  'dashboard.timeline.cdpReady': 'CDP 준비 완료',
+  'dashboard.timeline.cdpReady': '디버거 준비 완료',
   'dashboard.session.lineDaemon': 'MCP 데몬 세션 · {time} 시작 · PID {pid}',
   'dashboard.session.lineTestRunner': '테스트 러너 세션 · {time} 시작 · PID {pid}',
   'dashboard.control.section': '세션',
@@ -113,6 +114,35 @@ export const ko = {
     '<strong>Chii 주입 실패 / 콘솔이 비어 있는 경우</strong> — 미니앱 번들에 <code>in-app</code> debug import가 있는지 확인',
   'attach.intoss.faq.totp':
     '<strong>인증 코드가 만료됐다고 나오는 경우</strong> — 이 대시보드의 최신 QR로 다시 스캔 (오래된 QR의 코드는 받아 주지 않음)',
+  'dashboard.wait.title': '폰으로 QR을 스캔하세요',
+  'dashboard.wait.sub': '토스 앱의 카메라로 QR을 읽으면 미니앱이 열리고 자동으로 연결돼요.',
+  'dashboard.timer.label': '{sec}초 뒤 새 QR로 바뀌어요',
+  'dashboard.timer.note':
+    'QR은 {every}초마다 새 코드로 바뀌어요. 화면에 보이는 QR을 그대로 스캔하세요.',
+  'dashboard.connecting.title': '폰과 연결하는 중이에요',
+  'dashboard.connecting.sub': '미니앱을 닫지 말고 잠시만 기다려 주세요.',
+  'dashboard.connecting.slow': '1분 넘게 멈춰 있으면 미니앱을 닫고 QR을 다시 스캔해 보세요.',
+  'dashboard.step.tunnel': '연결 통로 준비',
+  'dashboard.step.qr': 'QR 만들기',
+  'dashboard.step.open': '폰에서 미니앱 열기',
+  'dashboard.step.connect': '폰과 연결',
+  'dashboard.step.ready': '디버거 준비',
+  'dashboard.connected.title': '폰이 연결됐어요',
+  'dashboard.connected.sub': '{device}에서 실행 중인 미니앱을 디버깅할 수 있어요.',
+  'dashboard.connected.subNoDevice': '폰에서 실행 중인 미니앱을 디버깅할 수 있어요.',
+  'dashboard.connected.left': '아무 작업이 없으면 {left} 뒤에 연결이 끊겨요.',
+  'dashboard.connected.leftWarn':
+    '곧 연결이 끊겨요 ({left} 남음). 폰에서 [계속]을 누르면 이어져요.',
+  'dashboard.error.title': '연결이 끊겼어요',
+  'dashboard.notice.rejected':
+    '폰이 보낸 코드가 맞지 않았어요. QR이 오래됐을 수 있으니 지금 화면의 QR을 다시 스캔하세요.',
+  'dashboard.notice.busy':
+    '다른 미니앱이 이미 연결돼 있어서 이번 연결은 거절됐어요. 연결된 앱을 닫거나 [연결 끊기]를 누른 뒤 다시 스캔하세요.',
+  'dashboard.notice.disconnected': '폰 연결이 끊겼어요. 미니앱을 다시 열거나 QR을 다시 스캔하세요.',
+  'dashboard.details.summary': '자세히',
+  'dashboard.time.minSec': '{m}분 {s}초',
+  'dashboard.time.sec': '{s}초',
+  'dashboard.qr.alt': '폰으로 스캔할 QR 코드',
 } as const;
 
 export type StringKey = keyof typeof ko;

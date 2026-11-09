@@ -139,7 +139,7 @@ describe('startQrHttpServer — GET / dashboard HTML', () => {
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('attach된 페이지 없음');
+      expect(html).toContain('연결된 페이지가 없어요');
     } finally {
       await srv.close();
     }
@@ -150,7 +150,10 @@ describe('startQrHttpServer — GET / dashboard HTML', () => {
     const srv = await startQrHttpServer(() => state);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
-      expect(html).toContain('start_attach');
+      // 개발자 용어(MCP tool 이름) 대신 다음 행동을 한 줄로 안내한다.
+      expect(html).toContain('<p class="hint">');
+      expect(html).toContain('Ask Claude');
+      expect(html).not.toContain('start_attach');
     } finally {
       await srv.close();
     }
@@ -186,7 +189,8 @@ describe('startQrHttpServer — GET / dashboard HTML', () => {
       //  죽은 QR 노출 여부는 인라인 base64 data-URL QR로 판별한다.)
       expect(html).not.toContain('src="data:image');
       // 에러 카피가 표시돼야 한다.
-      expect(html).toContain('relay 연결이 끊겼습니다');
+      expect(html).toContain('data-view="error"');
+      expect(html).toContain('연결 통로가 끊겼어요');
     } finally {
       await srv.close();
     }
@@ -312,7 +316,7 @@ describe('startQrHttpServer — 인스펙터 열기 링크 (#503)', () => {
       // pages.length === 0 → 대기 힌트
       expect(html).not.toContain('class="inspector-link"');
       expect(html).toContain('class="inspector-hint"');
-      expect(html).toContain('attach하면');
+      expect(html).toContain('연결되면');
     } finally {
       await srv.close();
     }
@@ -334,7 +338,7 @@ describe('startQrHttpServer — 인스펙터 열기 링크 (#503)', () => {
       expect(html).not.toContain('class="inspector-link"');
       expect(html).toContain('class="inspector-hint"');
       // 갱신된 i18n 텍스트 (#544)
-      expect(html).toContain('attach하면');
+      expect(html).toContain('연결되면');
     } finally {
       await srv.close();
     }
@@ -544,7 +548,7 @@ describe('startQrHttpServer — 연결된 Pages 섹션 토글 (#411)', () => {
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
       // 정적 렌더의 섹션 헤더·컨테이너·목록이 모두 사라진다 — 거짓 빈 목록 미표시.
-      // (참고: "attach된 페이지 없음" 문자열은 SSE 스크립트 안에도 있어 본문
+      // (참고: "연결된 페이지가 없어요" 문자열은 SSE 스크립트 안에도 있어 본문
       //  존재 여부로는 섹션 표시를 판별할 수 없다 → 정적 마커로 판별한다.)
       expect(html).not.toContain('연결된 Pages');
       expect(html).not.toContain('id="pages-section"');
@@ -565,9 +569,9 @@ describe('startQrHttpServer — 연결된 Pages 섹션 토글 (#411)', () => {
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('연결된 Pages');
+      expect(html).toContain('연결된 페이지');
       expect(html).toContain('id="pages-list"');
-      expect(html).toContain('attach된 페이지 없음');
+      expect(html).toContain('연결된 페이지가 없어요');
     } finally {
       await srv.close();
     }
@@ -584,7 +588,7 @@ describe('startQrHttpServer — 연결된 Pages 섹션 토글 (#411)', () => {
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('연결된 Pages');
+      expect(html).toContain('연결된 페이지');
       expect(html).toContain('target-7');
       expect(html).toContain('example.com/live');
     } finally {
@@ -800,8 +804,9 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
       });
       expect(res.status).toBe(200);
       const html = await res.text();
-      // 루트 Dashboard HTML — "Attach QR" 섹션이 있음.
-      expect(html).toContain('Attach QR');
+      // 루트 Dashboard HTML — QR 스캔 안내가 첫 화면이다.
+      expect(html).toContain('data-view="wait"');
+      expect(html).toContain('id="attach-section"');
     } finally {
       await srv.close();
     }
@@ -955,7 +960,7 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
           headers: { 'Accept-Language': 'en-US' },
         })
       ).text();
-      expect(html).toContain('AIT 디버그 Dashboard');
+      expect(html).toContain('AIT 디버그');
     } finally {
       await srv.close();
     }
@@ -969,7 +974,7 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
           headers: { 'Accept-Language': 'ko-KR' },
         })
       ).text();
-      expect(html).toContain('AIT Debug Dashboard');
+      expect(html).toContain('AIT Debug');
     } finally {
       await srv.close();
     }
@@ -981,7 +986,7 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
     const srv = await startQrHttpServer(() => defaultState);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
-      expect(html).toContain('AIT 디버그 Dashboard');
+      expect(html).toContain('AIT 디버그');
     } finally {
       await srv.close();
     }
@@ -1089,9 +1094,11 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('class="url-row"');
-      expect(html).toContain('class="copy-btn"');
+      // 링크 문자열은 화면에 그리지 않는다 — 복사 버튼의 data-url에만 있다.
+      expect(html).not.toContain('class="url-row"');
+      expect(html).not.toContain('id="url-box"');
       expect(html).toContain('id="copy-btn"');
+      expect(html).toContain(`data-url="${attachUrlDummy.replaceAll('&', '&#38;')}"`);
     } finally {
       await srv.close();
     }
@@ -1108,7 +1115,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('>복사<');
+      expect(html).toContain('>링크 복사<');
     } finally {
       await srv.close();
     }
@@ -1127,7 +1134,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
           headers: { 'Accept-Language': 'en' },
         })
       ).text();
-      expect(html).toContain('>Copy<');
+      expect(html).toContain('>Copy link<');
     } finally {
       await srv.close();
     }
@@ -1159,7 +1166,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
     }));
     try {
       const koHtml = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
-      expect(koHtml).toContain('복사됨');
+      expect(koHtml).toContain('복사했어요');
 
       const enHtml = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=en`)).text();
       expect(enHtml).toContain('Copied');
@@ -1572,7 +1579,7 @@ describe('startQrHttpServer — /attach 페이지 inspector 버튼 (#544)', () =
       // 버튼 없이 대기 힌트
       expect(html).not.toContain('class="inspector-link"');
       expect(html).toContain('class="inspector-hint"');
-      expect(html).toContain('attach하면');
+      expect(html).toContain('연결되면');
     } finally {
       await srv.close();
     }
