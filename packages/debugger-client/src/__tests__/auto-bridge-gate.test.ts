@@ -10,6 +10,9 @@ import { attachSignatures, relayPublicKey } from '../../../debugger/src/mcp/rela
 
 const SECRET = '11'.repeat(32);
 const KEY = relayPublicKey(SECRET);
+/** A pinned key as the bundle carries it: the key and a far-off expiry (Unix seconds). */
+const FAR = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
+const KEY_PIN = { publicKey: KEY, notAfter: FAR };
 const AT = '0123456789abcdef0123456789abcdef';
 const RELAY = 'wss://abc-def.trycloudflare.com';
 
@@ -70,7 +73,7 @@ describe('/auto — SDK bridge needs an accepted attach', () => {
 
   it('a relay address without a valid signature installs nothing', async () => {
     setPage(`debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${UNSIGNED_V2}`);
-    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
+    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY_PIN];
     await import('../auto.js');
     await settle();
     expect(window.__sdk).toBeUndefined();
@@ -82,7 +85,7 @@ describe('/auto — SDK bridge needs an accepted attach', () => {
     setPage(
       `debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&arc=${signed?.cert}`,
     );
-    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
+    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY_PIN];
     await import('../auto.js');
     await vi.waitFor(() => expect(typeof window.__sdkCall).toBe('function'));
     expect(Object.keys(window.__sdk ?? {}).length).toBeGreaterThan(0);

@@ -65,7 +65,9 @@ export async function installSdkBridge(): Promise<void> {
 
   // Enumerate all exports onto a plain writable object. A namespace import
   // is frozen/read-only, so callers need a plain enumerable surface.
-  const bridge: Record<string, unknown> = {};
+  // No prototype: `constructor`, `toString`, `__proto__` and the rest of
+  // `Object.prototype` are not callable through `__sdkCall` by name.
+  const bridge: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(sdk)) {
     bridge[key] = sdk[key];
   }
@@ -74,9 +76,10 @@ export async function installSdkBridge(): Promise<void> {
   // window.__sdkCall('apiName', arg1, arg2) returns { ok: true, value } or
   // { ok: false, error } — safe for any CDP Runtime.evaluate result consumer.
   window.__sdkCall = async (name: string, ...args: unknown[]) => {
-    const fn = bridge[name];
+    // Own properties only: a name that exists only on a prototype is not an SDK API.
+    const fn = typeof name === 'string' && Object.hasOwn(bridge, name) ? bridge[name] : undefined;
     if (typeof fn !== 'function') {
-      return { ok: false, error: `__sdk.${name} is not a function` };
+      return { ok: false, error: `__sdk.${String(name)} is not a function` };
     }
     try {
       const value = await (fn as (...a: unknown[]) => unknown)(...args);

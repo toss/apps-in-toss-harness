@@ -21,7 +21,7 @@ import {
   relayPublicKey,
   resetRelaySessionKey,
 } from '../../../debugger/src/mcp/relay-signing.js';
-import type { GateResult } from '../index.js';
+import type { GateResult, RelayPublicKeyPin } from '../index.js';
 
 /** `<base>/d/<device id>/target.js`: the script URL carries this phone's device id. */
 function deviceScript(base: string): RegExp {
@@ -37,7 +37,11 @@ vi.mock('@apps-in-toss/web-framework', () => ({
 const SECRET = '11'.repeat(32);
 const OTHER_SECRET = '22'.repeat(32);
 const KEY = relayPublicKey(SECRET);
+/** A pinned key as the bundle carries it: the key and a far-off expiry (Unix seconds). */
+const FAR = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
+const KEY_PIN = { publicKey: KEY, notAfter: FAR };
 const OTHER_KEY = relayPublicKey(OTHER_SECRET);
+const OTHER_PIN = { publicKey: OTHER_KEY, notAfter: FAR };
 const AT = '0123456789abcdef0123456789abcdef';
 const AT_B = 'fedcba9876543210fedcba9876543210';
 const RELAY = 'wss://abc-def.trycloudflare.com';
@@ -147,7 +151,7 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   it('verifies a daemon signature, then attaches once', async () => {
     setPage(signLink(SECRET, RELAY, AT));
     const { maybeAttach } = await import('../attach.js');
-    const pending = maybeAttach(GATE, { relayPublicKeys: [KEY] });
+    const pending = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
     expect(pending).toBeInstanceOf(Promise);
     // Nothing happened yet: verification has not finished.
     expectNoRelayActivity();
@@ -171,13 +175,15 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   it('accepts any one of several keys', async () => {
     setPage(signLink(SECRET, RELAY, AT));
     const { maybeAttach } = await import('../attach.js');
-    await maybeAttach(GATE, { relayPublicKeys: [OTHER_KEY, 'not-a-key', KEY] });
+    await maybeAttach(GATE, {
+      relayPublicKeys: [OTHER_PIN, { publicKey: 'not-a-key', notAfter: FAR }, KEY_PIN],
+    });
     expect(scriptAppends()).toBe(1);
   });
 
   it('falls back to globalThis.__AIT_DEBUG_RELAY_KEYS__', async () => {
     setPage(signLink(SECRET, RELAY, AT));
-    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
+    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY_PIN];
     const { maybeAttach } = await import('../attach.js');
     await maybeAttach(GATE);
     expect(scriptAppends()).toBe(1);
@@ -186,18 +192,18 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   it('startDebugConsole runs the real gate and attaches', async () => {
     setPage(signLink(SECRET, RELAY, AT));
     const { startDebugConsole } = await import('../index.js');
-    await startDebugConsole({ relayPublicKeys: [KEY] });
+    await startDebugConsole({ relayPublicKeys: [KEY_PIN] });
     expect(scriptAppends()).toBe(1);
   });
 
   it('two rapid calls inject once', async () => {
     setPage(signLink(SECRET, RELAY, AT));
     const { maybeAttach } = await import('../attach.js');
-    const first = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-    const second = maybeAttach(GATE, { relayPublicKeys: [KEY] });
+    const first = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
+    const second = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
     expect(second).toBeUndefined();
     await first;
-    await maybeAttach(GATE, { relayPublicKeys: [KEY] });
+    await maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
     expect(scriptAppends()).toBe(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1); // the version handshake
   });
@@ -205,7 +211,7 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   it('re-verifies after a reload, from the history entry', async () => {
     setPage(signLink(SECRET, RELAY, AT));
     const first = await import('../attach.js');
-    await first.maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    await first.maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     // The first attach moved relay, at and sig out of the URL.
     expect(window.location.search).toBe('?debug=1');
     expect(scriptAppends()).toBe(1);
@@ -213,7 +219,7 @@ describe('maybeAttach — relay signature on a QR test page', () => {
     document.head.innerHTML = '';
     vi.resetModules();
     const reloaded = await import('../attach.js');
-    const pending = reloaded.maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    const pending = reloaded.maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     expect(pending).toBeInstanceOf(Promise);
     await pending;
     expect(document.head.querySelector('script')?.src).toMatch(
@@ -224,13 +230,13 @@ describe('maybeAttach — relay signature on a QR test page', () => {
   it('a reload with the wrong key set does not attach', async () => {
     setPage(signLink(SECRET, RELAY, AT));
     const first = await import('../attach.js');
-    await first.maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    await first.maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
 
     document.head.innerHTML = '';
     fetchSpy.mockClear();
     vi.resetModules();
     const reloaded = await import('../attach.js');
-    await reloaded.maybeAttach(undefined, { relayPublicKeys: [OTHER_KEY] });
+    await reloaded.maybeAttach(undefined, { relayPublicKeys: [OTHER_PIN] });
     expect(document.head.querySelector('script')).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(window.__ait_debug_status).toBe('blocked-relay-signature');
@@ -241,7 +247,7 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
   type Case = {
     name: string;
     sig: () => string | null;
-    keys: readonly string[] | undefined;
+    keys: readonly RelayPublicKeyPin[] | undefined;
     status: 'blocked-relay-key' | 'blocked-relay-signature';
     prepare?: () => void;
     at?: string;
@@ -255,36 +261,39 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
     {
       name: 'only malformed keys',
       sig: good,
-      keys: ['abc', '!'.repeat(87)],
+      keys: [
+        { publicKey: 'abc', notAfter: FAR },
+        { publicKey: '!'.repeat(87), notAfter: FAR },
+      ],
       status: 'blocked-relay-key',
     },
     {
       name: 'a well-formed length but not a P-256 point',
       sig: good,
       // Canonical base64url, 0x04 prefix, 65 bytes, but not on the curve.
-      keys: [`${'B'.repeat(86)}A`],
+      keys: [{ publicKey: `${'B'.repeat(86)}A`, notAfter: FAR }],
       status: 'blocked-relay-signature',
     },
-    { name: 'wrong key', sig: good, keys: [OTHER_KEY], status: 'blocked-relay-signature' },
+    { name: 'wrong key', sig: good, keys: [OTHER_PIN], status: 'blocked-relay-signature' },
     {
       name: 'tampered signature',
       sig: () => {
         const s = good();
         return `${s.slice(0, 10)}${s[10] === 'A' ? 'B' : 'A'}${s.slice(11)}`;
       },
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
     },
     {
       name: 'signature made for another relay host',
       sig: () => signLink(SECRET, RELAY_B, AT),
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
     },
     {
       name: 'signature made for another at code',
       sig: () => signLink(SECRET, RELAY, AT_B),
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
     },
     {
@@ -293,26 +302,26 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
         good();
         return null;
       },
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
     },
     {
       name: 'truncated signature',
       sig: () => good().slice(0, 40),
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
     },
     {
       name: 'crypto.subtle missing',
       sig: good,
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
       prepare: () => vi.stubGlobal('crypto', {}),
     },
     {
       name: 'crypto missing entirely',
       sig: good,
-      keys: [KEY],
+      keys: [KEY_PIN],
       status: 'blocked-relay-signature',
       prepare: () => vi.stubGlobal('crypto', undefined),
     },
@@ -337,12 +346,12 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
   it('a failed attempt does not block a later rescan', async () => {
     setPage(good());
     const { maybeAttach } = await import('../attach.js');
-    await maybeAttach(GATE, { relayPublicKeys: [OTHER_KEY] });
+    await maybeAttach(GATE, { relayPublicKeys: [OTHER_PIN] });
     expectNoRelayActivity();
     expectAttachValuesDropped();
     // The rescanned QR brings fresh values.
     setPage(good());
-    await maybeAttach(GATE, { relayPublicKeys: [KEY] });
+    await maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
     expect(scriptAppends()).toBe(1);
   });
 });
@@ -367,7 +376,7 @@ describe('maybeAttach — session certificate matrix', () => {
   const HOUR = 3_600_000;
   const MINUTE = 60_000;
 
-  async function attempt(keys: readonly string[] = [KEY]): Promise<void> {
+  async function attempt(keys: readonly RelayPublicKeyPin[] = [KEY_PIN]): Promise<void> {
     const { maybeAttach } = await import('../attach.js');
     await maybeAttach(undefined, { relayPublicKeys: keys });
   }
@@ -557,7 +566,7 @@ describe('maybeAttach — session certificate matrix', () => {
       dsaEncoding: 'ieee-p1363',
     }).toString('base64url');
     setPage(v1);
-    await attempt([pinned]);
+    await attempt([{ publicKey: pinned, notAfter: FAR }]);
     expectBlocked();
   });
 });
@@ -565,13 +574,13 @@ describe('maybeAttach — session certificate matrix', () => {
 describe('maybeAttach — the certificate comes from the link only', () => {
   async function attempt(): Promise<void> {
     const { maybeAttach } = await import('../attach.js');
-    await maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    await maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
   }
 
   it('a link without arc (a debugger older than 0.3.2) asks for an update and sends nothing', async () => {
     setPage(signLink(SECRET, RELAY, AT), AT, null);
     const { maybeAttach } = await import('../attach.js');
-    const pending = maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    const pending = maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     expectNoRelayActivity();
     await pending;
     expectNoRelayActivity();

@@ -26,9 +26,15 @@ import { isDebugAttached, type MaybeAttachOptions, maybeAttach } from './attach.
 import { evaluateDebugGate, type GateResult } from './gate.js';
 import { pageSearchWithAttachParams } from './page-at-code.js';
 import { installSdkBridge } from './sdk-bridge.js';
+import { installRemoteDebuggerTab } from './vconsole-tab.js';
 
-export type { MaybeAttachOptions } from './attach.js';
-export { deriveTargetScriptUrl, detachDebugSurface, maybeAttach } from './attach.js';
+export type { MaybeAttachOptions, RelayPublicKeyPin } from './attach.js';
+export {
+  deriveTargetScriptUrl,
+  detachDebugSurface,
+  disconnectDebugger,
+  maybeAttach,
+} from './attach.js';
 export {
   BRIDGE_CALL_EVENT,
   type BridgeLastCall,
@@ -68,7 +74,7 @@ export function checkDebugGate(): GateResult {
  * ```ts
  * if (__DEBUG_BUILD__) {
  *   import('@apps-in-toss/debugger-client').then((m) =>
- *     m.startDebugConsole({ relayPublicKeys: ['<output of `debugger relay-key`>'] }),
+ *     m.startDebugConsole({ relayPublicKeys: [<output of `debugger relay-key`>] }),
  *   );
  * }
  * ```
@@ -76,9 +82,12 @@ export function checkDebugGate(): GateResult {
  * `relayPublicKeys` are the public keys of the projects whose debugger may
  * serve this bundle. On a QR test page the relay address in the URL is trusted
  * only when its signature verifies against one of them. Public values: safe to
- * commit. See {@link maybeAttach}.
+ * commit. See {@link maybeAttach}. On a QR test page that asked for a debug
+ * session, a "Remote Debugger" tab is also added to the page's vConsole when one
+ * is found (`options.vConsole`, `window.vConsole`, or one created shortly after).
  */
 export function startDebugConsole(options?: MaybeAttachOptions): Promise<void> | undefined {
+  installRemoteDebuggerTab({ vConsole: options?.vConsole });
   const attaching = maybeAttach(checkDebugGate(), options);
   // The SDK bridge (`window.__sdk` / `window.__sdkCall`, used by the debugger's
   // `call_sdk`) goes in only once the attach was accepted: never on a blocked
