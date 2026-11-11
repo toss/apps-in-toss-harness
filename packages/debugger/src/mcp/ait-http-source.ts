@@ -12,7 +12,7 @@
  *   - `AIT.getSdkCallHistory`         → empty (the dev endpoint does not record
  *                                       an SDK call trace — honest, not faked).
  *
- * An AI agent thus sees the same `AIT.getMockState` tool whether attached to a
+ * An AI agent thus sees the same `get_mock_state` tool whether attached to a
  * phone (debug) or a dev browser (dev). Tests inject a fake `fetch`.
  */
 

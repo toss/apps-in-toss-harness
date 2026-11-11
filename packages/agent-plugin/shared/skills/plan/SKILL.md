@@ -173,7 +173,7 @@ type 매핑이 의심스러우면 사용자에게 그 점을 명시한다.
 ### 4. 참고 사례 조회 (docs MCP)
 
 실현성·검수 리스크·화면 거동을 공식 문서로 대조한다. 도구는 docs MCP
-(`apps-in-toss-docs`)의 4종뿐이다 — `searchDocumentation`·`getPage`·
+(`ait-docs`)의 4종뿐이다 — `searchDocumentation`·`getPage`·
 `askQuestion`·`sendFeedback`. 단계별 질의어와 결과를 PRD에 반영하는 규칙은
 **Read <이 skill의 base directory>/references/reference-lookup.md**.
 

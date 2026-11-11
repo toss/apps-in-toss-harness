@@ -55,7 +55,11 @@ function dial(url: string, settleMs = 300): Promise<Outcome> {
 describe('relay busy rejection (first mini-app wins)', () => {
   let relay: ChiiRelay;
   const upgrades: RelayWsUpgradeEvent[] = [];
-  const busy: Array<{ pageHost: string | null; attachedHosts: ReadonlyArray<string | null> }> = [];
+  const busy: Array<{
+    pageHost: string | null;
+    attachedHosts: ReadonlyArray<string | null>;
+    reason?: string;
+  }> = [];
   let policyThrows = false;
 
   beforeAll(async () => {
@@ -96,6 +100,7 @@ describe('relay busy rejection (first mini-app wins)', () => {
       {
         pageHost: 'bar.private-apps.tossmini.com',
         attachedHosts: ['foo.private-apps.tossmini.com'],
+        reason: 'host-busy',
       },
     ]);
     expect(upgrades).toEqual([{ kind: 'target', accepted: false }]);

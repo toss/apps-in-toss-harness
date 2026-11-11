@@ -9,6 +9,7 @@ import { type ChiiRelay, startChiiRelay } from '../chii-relay.js';
 import { shouldRejectNewTarget } from '../target-busy.js';
 import {
   buildGuardedTargetScript,
+  buildUpdateRequiredScript,
   busyWarningText,
   readChiiTargetScript,
 } from '../target-guard.js';
@@ -207,5 +208,36 @@ describe('relay serves the guarded target.js only while a mini-app is attached',
       `http://127.0.0.1:${relay.port}/v3/at/00000000000000000000000000000000/target.js`,
     );
     expect(res.status).toBe(401);
+  });
+});
+
+describe('buildUpdateRequiredScript', () => {
+  it('removes the old client status banner left on the page and keeps the notice', () => {
+    const dom = new JSDOM(
+      '<!doctype html><body><div id="__ait_status_banner">연결하는 중이에요…</div><div id="__ait_debug_status"></div></body>',
+      { url: 'https://foo.private-apps.tossmini.com/p', runScripts: 'outside-only' },
+    );
+    const w = dom.window;
+    w.console.warn = () => undefined;
+    w.eval(buildUpdateRequiredScript(2, 3));
+    expect(w.document.getElementById('__ait_status_banner')).toBeNull();
+    expect(w.document.getElementById('__ait_debug_status')).toBeNull();
+    expect(w.__ait_debug_status).toBe('update-required');
+    expect(w.document.body.children).toHaveLength(1);
+  });
+
+  it('removes a banner the old client draws after the notice', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+      url: 'https://foo.private-apps.tossmini.com/p',
+      runScripts: 'outside-only',
+    });
+    const w = dom.window;
+    w.console.warn = () => undefined;
+    w.eval(buildUpdateRequiredScript(2, 3));
+    const late = w.document.createElement('div');
+    late.id = '__ait_status_banner';
+    w.document.body.appendChild(late);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.document.getElementById('__ait_status_banner')).toBeNull();
   });
 });

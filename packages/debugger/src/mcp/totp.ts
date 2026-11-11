@@ -29,6 +29,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isRelayAuthCode } from '@apps-in-toss/internal-protocol/relay-auth-code';
 import { relayCodeSecret } from './relay-code-secret.js';
+import { isRelayRootLive } from './relay-signing.js';
 
 /**
  * Seconds in one code step. Tuning knob: together with
@@ -153,12 +154,11 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
  * command emits hex.
  */
 export const RELAY_AUTH_SECRET_MISSING_MESSAGE = [
-  '[ait-debugger] AIT_DEBUG_TOTP_SECRET이 필수입니다. 32자 이상 16진수(hex) 문자열을 설정하세요.',
-  '발급: openssl rand -hex 32',
-  '데몬은 start_debug의 projectRoot 인자로 받은 디렉토리에서 .ait_relay 파일을 읽어 이 시크릿을 채웁니다.',
-  '.ait_relay는 @apps-in-toss/devtools unplugin이 dev 서버 첫 기동 때 만들어 둡니다 — 이미 있다면 projectRoot만 전달하면 됩니다.',
-  '없다면 위 명령으로 발급한 값을 AIT_DEBUG_TOTP_SECRET 환경변수에 직접 설정하세요.',
-  '자세히: docs MCP(apps-in-toss-docs)의 searchDocumentation으로 "relay auth totp" 조회.',
+  '[ait-debugger] relay 키가 준비되지 않았습니다. relay 환경은 코드 인증이 필수입니다.',
+  '데몬은 switch_environment의 projectRoot 인자로 받은 프로젝트의 relay 키를 key agent(메모리)에서 받아옵니다. switch_environment를 projectRoot와 함께 다시 호출하세요.',
+  '예전 .ait_relay 파일이나 AIT_DEBUG_TOTP_SECRET(32자 이상 16진수, 예: openssl rand -hex 32)이 남아 있으면 첫 호출 때 자동으로 가져온 뒤 파일을 삭제합니다.',
+  '키는 기본 24시간(최대 72시간) 뒤 만료됩니다. 만료나 key agent 재시작 뒤에는 디버그 번들을 다시 빌드해 업로드하세요.',
+  '자세히: docs MCP(ait-docs)의 searchDocumentation으로 "relay auth totp" 조회.',
 ].join('\n');
 
 /**
@@ -204,7 +204,7 @@ export function isValidRelayAuthSecret(secret: string | undefined): secret is st
  *   for tests so they never mutate the real process environment.
  */
 export function assertRelayAuthConfigured(env: NodeJS.ProcessEnv = process.env): void {
-  if (!isValidRelayAuthSecret(env.AIT_DEBUG_TOTP_SECRET)) {
+  if (!isRelayRootLive() && !isValidRelayAuthSecret(env.AIT_DEBUG_TOTP_SECRET)) {
     throw new Error(RELAY_AUTH_SECRET_MISSING_MESSAGE);
   }
 }
@@ -218,13 +218,20 @@ export function relayCodeStep(when: number = Date.now()): number {
  * Gate-specific past skew for the relay WebSocket upgrade TOTP check. Tuning
  * knob, together with {@link RELAY_CODE_STEP_SECONDS}.
  *
- * Rationale (why 6: a code is good for 30 to 35 seconds, no longer):
- *   - Each step is {@link RELAY_CODE_STEP_SECONDS} (5 s), so 6 past steps =
- *     30-35 s of backwards acceptance. A code is valid from the moment it is
- *     minted until seven step boundaries later, so it is guaranteed usable for
- *     at least 30 s after it was minted and never for more than 35 s. A cold
- *     start of the mini-app after a scan has been measured at about 20 s on a
- *     device, which the 30 s floor covers.
+ * Rationale (why 24: a code is good for 120 to 125 seconds, no longer):
+ *   - Each step is {@link RELAY_CODE_STEP_SECONDS} (5 s), so 24 past steps =
+ *     120-125 s of backwards acceptance. A code is valid from the moment it is
+ *     minted until 25 step boundaries later, so it is guaranteed usable for
+ *     at least 120 s after it was minted and never for more than 125 s.
+ *   - The window must cover the cold start of the mini-app after a scan (about
+ *     20 s measured on a device) AND the person reading the consent dialog:
+ *     debugger-client 0.3.2 sends nothing to the relay before "연결" is tapped,
+ *     so the consent time counts against the code. 30 s proved too short on a
+ *     real device; 120 s leaves room to read the dialog.
+ *   - A longer window is acceptable because the link is signed (`sig` + `arc`),
+ *     the person approves the connection on the phone, and the attach window
+ *     is claimed by the first device, so a second device with the same code is
+ *     refused.
  *   - The code is checked when the phone requests `target.js` and again at the
  *     WebSocket upgrade, both a few seconds apart and after the app has
  *     cold-loaded. Time that counts against the window is therefore the
@@ -232,9 +239,9 @@ export function relayCodeStep(when: number = Date.now()): number {
  *     the desktop: the dashboard re-pushes the QR every
  *     {@link RELAY_QR_REFRESH_INTERVAL_MS} (5 s) and `start_attach` re-mints
  *     at the same pace (one new code per step), so a QR on screen is at most
- *     5 s old and still has at least 25 s left when it is scanned.
+ *     5 s old and still has at least 115 s left when it is scanned.
  *   - A static terminal QR (headless path) cannot be refreshed, so it has the
- *     30-35 s from the moment it printed; the tool result says to scan it
+ *     120-125 s from the moment it printed; the tool result says to scan it
  *     right away. `start_attach` sends a new text QR whenever the code changes.
  *   - Once a phone has attached, its code is bound to that session (see
  *     `chii-relay.ts`): a reload or a reconnect after lock/unlock keeps working
@@ -248,7 +255,7 @@ export function relayCodeStep(when: number = Date.now()): number {
  * `verifyTotp`'s own default (skew=1) is a generic default and is not used by
  * the relay gate, which always passes this value.
  */
-export const RELAY_VERIFY_SKEW_STEPS = 6;
+export const RELAY_VERIFY_SKEW_STEPS = 24;
 
 /** Longest a freshly minted code stays accepted (it is minted at the very start of a step). */
 export const RELAY_CODE_MAX_AGE_SECONDS = (RELAY_VERIFY_SKEW_STEPS + 1) * TIME_STEP;
@@ -311,7 +318,7 @@ export function buildRelayVerifyAuth(
   codeSecret: string = relayCodeSecret(),
 ): (req: import('node:http').IncomingMessage) => boolean {
   // The relay secret is the switch; the codes themselves use the process key.
-  if (!env.AIT_DEBUG_TOTP_SECRET) return () => false;
+  if (!env.AIT_DEBUG_TOTP_SECRET && !isRelayRootLive()) return () => false;
   const secret = codeSecret;
 
   return (req) => {

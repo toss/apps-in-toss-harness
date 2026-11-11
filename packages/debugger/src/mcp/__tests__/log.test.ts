@@ -199,7 +199,7 @@ describe('logWarn()', () => {
 
 describe('logError()', () => {
   it('emits level=error', () => {
-    logError('tool.error', { tool: 'list_pages', errorKind: 'disconnect' });
+    logError('tool.error', { tool: 'get_page', errorKind: 'disconnect' });
     expect(lastLine().level).toBe('error');
   });
 

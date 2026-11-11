@@ -316,6 +316,31 @@ export async function injectGlobals(
   }
 }
 
+/** The one page global the `run_tests` cell lives under. Nothing else is ever assigned. */
+export const CELL_GLOBAL = '__AIT_CELL__';
+
+/**
+ * Stores a cell (test axes such as sdkLine/platform) under the single fixed global
+ * `globalThis.__AIT_CELL__`. Unlike {@link injectGlobals}, the caller's keys never become
+ * page globals, so an agent-supplied cell cannot overwrite `location`, `fetch` or any
+ * other page property. The value goes in as `JSON.parse` of a string literal, so even a
+ * `__proto__` key stays plain data.
+ */
+export async function injectCell(
+  conn: CdpConnection,
+  cell: Record<string, unknown>,
+): Promise<void> {
+  const expr = `(() => { globalThis.${CELL_GLOBAL} = JSON.parse(${JSON.stringify(JSON.stringify(cell))}); return true; })()`;
+  const result = await conn.send('Runtime.evaluate', { expression: expr, returnByValue: true });
+  if (result.exceptionDetails) {
+    const msg =
+      result.exceptionDetails.exception?.description ??
+      result.exceptionDetails.text ??
+      'unknown error';
+    throw new Error(`injectCell: Runtime.evaluate threw: ${msg}`);
+  }
+}
+
 /**
  * 배지 주입/제거 실패를 stderr에 한 줄로 남긴다. `console.debug`는 stdout으로 가는데, 데몬에서는
  * stdout이 MCP JSON-RPC 채널이라 스택 트레이스가 섞이면 프로토콜이 깨진다. 에러 객체 대신
@@ -327,7 +352,7 @@ function logIndicatorSkipped(kind: 'inject' | 'removal', err: unknown): void {
 }
 
 /**
- * Injects (or updates) the "Debugger Connected"/"Debugger Disconnected"
+ * Injects (or updates) the "디버거 연결됨" / "디버거 연결 끊김"
  * on-phone indicator via `Runtime.evaluate` (#730).
  *
  * Uses the same CDP mechanism as {@link injectGlobals} — a single
@@ -359,7 +384,13 @@ function logIndicatorSkipped(kind: 'inject' | 'removal', err: unknown): void {
  */
 export async function injectDebugIndicator(
   conn: CdpConnection,
-  opts?: { label?: string; disconnectedLabel?: string; state?: 'attached' | 'disconnected' },
+  opts?: {
+    label?: string;
+    disconnectedLabel?: string;
+    state?: 'attached' | 'disconnected';
+    /** Tap on the badge opens a 끊기/숨기기 menu (see {@link buildIndicatorExpression}). */
+    controls?: boolean;
+  },
 ): Promise<void> {
   try {
     await conn.send('Runtime.evaluate', {
@@ -375,7 +406,7 @@ export async function injectDebugIndicator(
 /**
  * Removes the on-phone debug indicator badge via `Runtime.evaluate` (best
  * effort). Called when a `debugger-test` run finishes (pass or fail), before
- * the relay is torn down, so a stale "Debugger Connected" / "disconnected"
+ * the relay is torn down, so a stale "디버거 연결됨" / "disconnected"
  * badge is not left on a page that will never dial a relay again.
  *
  * Same isolation guarantee as {@link injectDebugIndicator}: NEVER throws to its

@@ -2,15 +2,15 @@
  * Tests for createDevServer (issue #305 — dev/debug tool-surface unification).
  *
  * Verifies that:
- *   - `list_pages` shim returns the Vite dev URL with devMode: true.
- *   - `get_debug_status` probes the state endpoint and returns mode metadata.
+ *   - `get_page` shim returns the Vite dev URL with devMode: true.
+ *   - `get_status` probes the state endpoint and returns mode metadata.
  *   - `measure_safe_area` reads safeAreaInsets from mock state.
  *   - `call_sdk("getOperationalEnvironment")` returns a mock-backed result.
  *   - `call_sdk` for unsupported methods returns ok:false with an informative error.
- *   - CDP-only tools (evaluate, take_screenshot, etc.) return tier-filter errors
+ *   - CDP-only tools (run_script, take_screenshot, etc.) return tier-filter errors
  *     instead of "Unknown tool".
  *   - AIT.* tools continue to work.
- *   - issue #322: list_pages / get_debug_status / measure_safe_area / call_sdk
+ *   - issue #322: get_page / get_status / measure_safe_area / call_sdk
  *     responses are wrapped in ToolEnvelope {ok, data, meta} when compat mode off.
  *   - issue #322: AIT_MCP_COMPAT=chrome-devtools bypasses the envelope.
  *   - issue #323: start_attach appears in tools/list and returns a tier-filter
@@ -88,13 +88,13 @@ function parseContent(result: Awaited<ReturnType<Client['callTool']>>): unknown 
 // ---- Tool list -------------------------------------------------------------
 
 describe('createDevServer — tools/list', () => {
-  it('exposes list_pages, get_debug_status, measure_safe_area, call_sdk', async () => {
+  it('exposes get_page, get_status, measure_safe_area, call_sdk', async () => {
     const { client, cleanup } = await setupDevClient();
     try {
       const { tools } = await client.listTools();
       const names = tools.map((t) => t.name);
-      expect(names).toContain('list_pages');
-      expect(names).toContain('get_debug_status');
+      expect(names).toContain('get_page');
+      expect(names).toContain('get_status');
       expect(names).toContain('measure_safe_area');
       expect(names).toContain('call_sdk');
     } finally {
@@ -102,15 +102,15 @@ describe('createDevServer — tools/list', () => {
     }
   });
 
-  it('exposes CDP-only tier-filter stubs (evaluate, take_screenshot, etc.)', async () => {
+  it('exposes CDP-only tier-filter stubs (run_script, take_screenshot, etc.)', async () => {
     const { client, cleanup } = await setupDevClient();
     try {
       const { tools } = await client.listTools();
       const names = tools.map((t) => t.name);
-      expect(names).toContain('evaluate');
+      expect(names).toContain('run_script');
       expect(names).toContain('take_screenshot');
-      expect(names).toContain('get_dom_document');
-      expect(names).toContain('take_snapshot');
+      expect(names).toContain('get_dom');
+      expect(names).toContain('get_dom_snapshot');
       expect(names).toContain('list_console_messages');
       expect(names).toContain('list_network_requests');
       expect(names).toContain('list_exceptions');
@@ -124,9 +124,9 @@ describe('createDevServer — tools/list', () => {
     try {
       const { tools } = await client.listTools();
       const names = tools.map((t) => t.name);
-      expect(names).toContain('AIT.getMockState');
-      expect(names).toContain('AIT.getOperationalEnvironment');
-      expect(names).toContain('AIT.getSdkCallHistory');
+      expect(names).toContain('get_mock_state');
+      expect(names).toContain('get_sdk_environment');
+      expect(names).toContain('list_sdk_calls');
     } finally {
       await cleanup();
     }
@@ -145,9 +145,9 @@ describe('createDevServer — tools/list', () => {
   });
 });
 
-// ---- list_pages shim -------------------------------------------------------
+// ---- get_page shim -------------------------------------------------------
 
-describe('list_pages shim', () => {
+describe('get_page shim', () => {
   beforeEach(() => {
     delete process.env.AIT_MCP_COMPAT;
   });
@@ -159,13 +159,13 @@ describe('list_pages shim', () => {
   it('result is wrapped in ToolEnvelope {ok, data, meta} when compat off', async () => {
     const { client, cleanup } = await setupDevClient();
     try {
-      const result = await client.callTool({ name: 'list_pages', arguments: {} });
+      const result = await client.callTool({ name: 'get_page', arguments: {} });
       expect(result.isError).toBeFalsy();
       const raw = parseContent(result) as Record<string, unknown>;
       expect(raw.ok).toBe(true);
       expect(raw.data).toBeDefined();
       const meta = raw.meta as Record<string, unknown>;
-      expect(meta.tool).toBe('list_pages');
+      expect(meta.tool).toBe('get_page');
       expect(meta.env).toBe('mock');
       expect(meta.attached).toBe(true);
       expect(meta.contentType).toBe('json');
@@ -179,10 +179,10 @@ describe('list_pages shim', () => {
     process.env.AIT_MCP_COMPAT = 'chrome-devtools';
     const { client, cleanup } = await setupDevClient();
     try {
-      const result = await client.callTool({ name: 'list_pages', arguments: {} });
+      const result = await client.callTool({ name: 'get_page', arguments: {} });
       expect(result.isError).toBeFalsy();
       const raw = parseContent(result) as Record<string, unknown>;
-      // Raw list_pages payload: pages, tunnel, devMode — NOT ok/meta.
+      // Raw get_page payload: pages, tunnel, devMode — NOT ok/meta.
       expect(raw.pages).toBeDefined();
       expect(raw.devMode).toBe(true);
       expect('ok' in raw).toBe(false);
@@ -195,7 +195,7 @@ describe('list_pages shim', () => {
   it('data.devMode is true with the Vite dev URL as a single-entry page', async () => {
     const { client, cleanup } = await setupDevClient();
     try {
-      const result = await client.callTool({ name: 'list_pages', arguments: {} });
+      const result = await client.callTool({ name: 'get_page', arguments: {} });
       expect(result.isError).toBeFalsy();
       const envelope = parseContent(result) as Record<string, unknown>;
       const data = envelope.data as Record<string, unknown>;
@@ -211,9 +211,9 @@ describe('list_pages shim', () => {
   });
 });
 
-// ---- get_debug_status -------------------------------------------------------
+// ---- get_status -------------------------------------------------------
 
-describe('get_debug_status', () => {
+describe('get_status', () => {
   beforeEach(() => {
     delete process.env.AIT_MCP_COMPAT;
   });
@@ -225,12 +225,12 @@ describe('get_debug_status', () => {
   it('result is wrapped in ToolEnvelope when compat off', async () => {
     const { client, cleanup } = await setupDevClient();
     try {
-      const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+      const result = await client.callTool({ name: 'get_status', arguments: {} });
       const raw = parseContent(result) as Record<string, unknown>;
       expect(raw.ok).toBe(true);
       expect(raw.data).toBeDefined();
       const meta = raw.meta as Record<string, unknown>;
-      expect(meta.tool).toBe('get_debug_status');
+      expect(meta.tool).toBe('get_status');
       expect(meta.env).toBe('mock');
       expect(meta.contentType).toBe('json');
     } finally {
@@ -243,7 +243,7 @@ describe('get_debug_status', () => {
     process.env.AIT_MCP_COMPAT = 'chrome-devtools';
     const { client, cleanup } = await setupDevClient();
     try {
-      const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+      const result = await client.callTool({ name: 'get_status', arguments: {} });
       const raw = parseContent(result) as Record<string, unknown>;
       expect(raw.mode).toBe('dev');
       expect('ok' in raw).toBe(false);
@@ -257,7 +257,7 @@ describe('get_debug_status', () => {
     // Since there is no real server, we expect reachable: false.
     const { client, cleanup } = await setupDevClient();
     try {
-      const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+      const result = await client.callTool({ name: 'get_status', arguments: {} });
       const raw = parseContent(result) as Record<string, unknown>;
       // When envelope is on, data is nested; compat off (default).
       const data = (raw.data ?? raw) as Record<string, unknown>;
@@ -462,10 +462,10 @@ describe('call_sdk shim', () => {
 
 describe('CDP-only tools return tier-filter error (not Unknown tool)', () => {
   const CDP_ONLY = [
-    'evaluate',
+    'run_script',
     'take_screenshot',
-    'get_dom_document',
-    'take_snapshot',
+    'get_dom',
+    'get_dom_snapshot',
     'list_console_messages',
     'list_network_requests',
     'list_exceptions',
@@ -532,11 +532,11 @@ describe('start_attach — Tier B recovery guidance (issue #323)', () => {
 // ---- AIT.* tools still work ------------------------------------------------
 
 describe('AIT.* tools — HTTP mock-state backed', () => {
-  it('AIT.getMockState returns mock state', async () => {
+  it('get_mock_state returns mock state', async () => {
     const source = new FakeAitSource({ environment: 'dev' });
     const { client, cleanup } = await setupDevClient(source);
     try {
-      const result = await client.callTool({ name: 'AIT.getMockState', arguments: {} });
+      const result = await client.callTool({ name: 'get_mock_state', arguments: {} });
       expect(result.isError).toBeFalsy();
       const text = (result.content as Array<{ type: string; text: string }>)[0]?.text ?? '{}';
       const parsed = JSON.parse(text);

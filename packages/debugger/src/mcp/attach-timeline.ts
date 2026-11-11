@@ -2,7 +2,7 @@
  * attach 단계(stage) 기록기 — attach 시도마다 "어디까지 됐는가"를 한 곳에 남긴다.
  *
  * 이 기록 하나를 네 표면이 공유한다: `start_attach` progress 알림, 타임아웃 진단,
- * `get_debug_status`, 대시보드 타임라인. 표면마다 따로 상태를 추측하면 서로 다른 말을
+ * `get_status`, 대시보드 타임라인. 표면마다 따로 상태를 추측하면 서로 다른 말을
  * 하게 되므로, 기록(`AttachTimeline.record`)과 분류(`diagnoseAttach`)는 여기 하나뿐이다.
  *
  * 단계(순서대로): tunnel → qr-issued → device-handshake → auth → target-connected /
@@ -16,7 +16,9 @@
  * 동적 import로 불러도 chii/cloudflared/React를 끌어오지 않는다.
  */
 
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachHandshakeEvent, RelayAuthRejectEvent } from './chii-relay.js';
+import { protocolSkewParts } from './protocol-version.js';
 import type { DashboardState } from './qr-http-server.js';
 import { hostLabel } from './target-busy.js';
 
@@ -260,6 +262,7 @@ export type AttachDiagnosisKind =
   | 'page-not-opened'
   | 'qr-expired'
   | 'script-not-loaded'
+  | 'protocol-skew'
   | 'wrong-page'
   | 'session-dropped'
   | 'rejected-busy'
@@ -286,6 +289,11 @@ export interface DiagnoseContext {
    * 남기 때문이다.
    */
   matchesCurrentPage?: boolean;
+  /**
+   * 데몬이 마지막으로 본 device↔host 프로토콜 skew(없으면 `null`). 이번 시도에서 기기 핸드셰이크가
+   * 있었고 아직 붙지 못했다면 `script-not-loaded` 대신 `protocol-skew`로 진단한다.
+   */
+  protocolSkew?: ProtocolVersionCheck | null;
 }
 
 const MAX_OBSERVED_PAGES = 3;
@@ -334,7 +342,7 @@ function lastEvent(
 
 /**
  * 타임라인을 읽어 "마지막으로 도달한 단계"를 원인과 행동으로 바꾼다. 타임아웃 에러와
- * `get_debug_status`가 같은 함수를 쓰므로 두 표면이 어긋나지 않는다.
+ * `get_status`가 같은 함수를 쓰므로 두 표면이 어긋나지 않는다.
  */
 export function diagnoseAttach(
   snapshot: AttachTimelineSnapshot,
@@ -352,7 +360,7 @@ export function diagnoseAttach(
       kind: 'tunnel-down',
       lastStage: 'tunnel',
       summary: 'cloudflared 터널이 끊겨 있어요.',
-      actions: ['MCP 서버를 재시작하거나 잠시 후 get_debug_status로 터널 상태를 다시 확인하세요.'],
+      actions: ['MCP 서버를 재시작하거나 잠시 후 get_status로 터널 상태를 다시 확인하세요.'],
     };
   }
 
@@ -437,13 +445,23 @@ export function diagnoseAttach(
   }
 
   if (lastEvent(events, (e) => e.stage === 'device-handshake') !== undefined) {
+    const skew = ctx.protocolSkew ?? null;
+    if (skew !== null) {
+      const { detail, action } = protocolSkewParts(skew);
+      return {
+        kind: 'protocol-skew',
+        lastStage,
+        summary: `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ${detail}`,
+        actions: [action, 'start_attach를 다시 호출해 새 QR을 스캔하세요.'],
+      };
+    }
     return {
       kind: 'script-not-loaded',
       lastStage,
       summary:
         '폰이 페이지를 열었지만 디버거 연결(target.js 로드 또는 WebSocket)이 끝나지 않았어요.',
       actions: [
-        '폰 화면의 디버거 막대가 짧은 안내만 보여 주면, 원인은 데몬의 get_debug_status와 대시보드에서 확인하세요.',
+        '폰 화면의 디버거 막대가 짧은 안내만 보여 주면, 원인은 데몬의 get_status와 대시보드에서 확인하세요.',
         '네트워크가 relay로 가는 WebSocket을 막고 있을 수 있어요 — Wi-Fi를 바꿔 보세요.',
         'start_attach를 다시 호출해 새 QR을 스캔하세요.',
       ],

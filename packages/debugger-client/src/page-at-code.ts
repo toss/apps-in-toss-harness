@@ -29,13 +29,21 @@ import {
 const HISTORY_STATE_KEY = '__ait_debug_attach';
 
 /** URL parameters that move to the history entry. */
-const MOVED_PARAMS = ['at', 'relay', 'sig'] as const;
+const MOVED_PARAMS = ['at', 'relay', 'sig', 'ahn', 'ahs', 'arc'] as const;
 type MovedParam = (typeof MOVED_PARAMS)[number];
+
+/** The parameters every attach link carries; `ahn` / `ahs` (computer name) are optional. */
+const REQUIRED_PARAMS = ['at', 'relay', 'sig'] as const;
 
 export interface PageAttachParams {
   readonly at: string | null;
   readonly relay: string | null;
   readonly sig: string | null;
+  /** Developer computer name (`ahn`) and its signature (`ahs`); absent on links from older debuggers. */
+  readonly ahn: string | null;
+  readonly ahs: string | null;
+  /** Session certificate (`arc`, 180 characters); absent on links from debuggers older than 0.3.2. */
+  readonly arc: string | null;
 }
 
 function isPlainState(state: unknown): state is Record<string, unknown> {
@@ -54,14 +62,19 @@ function keptValue(name: MovedParam): string | null {
   }
 }
 
-/** `at`, `relay` and `sig` from the page URL, else from the current history entry. */
+/** `at`, `relay`, `sig`, `ahn`, `ahs` and `arc` from the page URL, else from the current history entry. */
 export function readPageAttachParams(): PageAttachParams {
-  if (typeof window === 'undefined') return { at: null, relay: null, sig: null };
+  if (typeof window === 'undefined') {
+    return { at: null, relay: null, sig: null, ahn: null, ahs: null, arc: null };
+  }
   const fromUrl = new URLSearchParams(window.location.search);
   return {
     at: fromUrl.get('at') ?? keptValue('at'),
     relay: fromUrl.get('relay') ?? keptValue('relay'),
     sig: fromUrl.get('sig') ?? keptValue('sig'),
+    ahn: fromUrl.get('ahn') ?? keptValue('ahn'),
+    ahs: fromUrl.get('ahs') ?? keptValue('ahs'),
+    arc: fromUrl.get('arc') ?? keptValue('arc'),
   };
 }
 
@@ -80,51 +93,10 @@ export function pageAttachParamsFromHistory(): boolean {
   if (typeof window === 'undefined') return false;
   const fromUrl = new URLSearchParams(window.location.search);
   if (MOVED_PARAMS.some((name) => fromUrl.has(name))) return false;
-  return MOVED_PARAMS.every((name) => {
+  return REQUIRED_PARAMS.every((name) => {
     const value = keptValue(name);
     return value !== null && value !== '';
   });
-}
-
-/** History-entry key, next to `at`/`relay`/`sig`, of the certificate that verified them. */
-const KEPT_CERT = 'cert';
-
-/**
- * The certificate document (JSON text) that verified this page's attach, kept
- * on the history entry by {@link keepVerifiedRelayCert}, or `null`.
- */
-export function keptRelayCert(): string | null {
-  try {
-    const state: unknown = window.history.state;
-    const kept = isPlainState(state) ? state[HISTORY_STATE_KEY] : undefined;
-    if (!isPlainState(kept)) return null;
-    const value = kept[KEPT_CERT];
-    return typeof value === 'string' ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Keeps the certificate document that just verified the attach on the current
- * history entry, next to the values {@link hidePageAttachParams} moved there,
- * so a same-page reload can verify again without asking the relay. Public data.
- * Never throws.
- */
-export function keepVerifiedRelayCert(certDocument: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const state: unknown = window.history.state;
-    if (!isPlainState(state)) return;
-    const kept = state[HISTORY_STATE_KEY];
-    if (!isPlainState(kept)) return;
-    window.history.replaceState(
-      { ...state, [HISTORY_STATE_KEY]: { ...kept, [KEPT_CERT]: certDocument } },
-      '',
-    );
-  } catch {
-    // Only the reload case loses; it then fetches the certificate again.
-  }
 }
 
 /** The `at` code from the page URL, else from the current history entry. */
@@ -152,7 +124,7 @@ function isMovedPair(pair: string): boolean {
 }
 
 /**
- * Removes `at`, `relay` and `sig` from the page URL and keeps them on the history
+ * Removes `at`, `relay`, `sig`, `ahn`, `ahs` and `arc` from the page URL and keeps them on the history
  * entry. Only those parameters are touched, so every other one keeps its exact
  * encoding, and the path and hash stay as they were. Never throws: a page that
  * refuses `replaceState` still attaches, with the values left in its URL.
@@ -248,7 +220,7 @@ export function relayDeviceId(): string {
 }
 
 /**
- * Removes `at`, `relay` and `sig` from the page URL and the attach values from
+ * Removes `at`, `relay`, `sig`, `ahn`, `ahs` and `arc` from the page URL and the attach values from
  * the history entry, keeping nothing: the person declined the attach, so a
  * reload must not offer it again. Other parameters keep their exact encoding.
  * Never throws.

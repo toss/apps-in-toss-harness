@@ -99,7 +99,7 @@ describe('tool-registry — pure helpers', () => {
     expect(getToolAvailability('start_attach')).toBe('relay');
     expect(getToolAvailability('measure_safe_area')).toBe('both');
     expect(getToolAvailability('list_console_messages')).toBe('both');
-    expect(getToolAvailability('AIT.getMockState')).toBe('both');
+    expect(getToolAvailability('get_mock_state')).toBe('both');
     expect(getToolAvailability('unknown_tool')).toBeUndefined();
   });
 
@@ -121,7 +121,7 @@ describe('tool-registry — pure helpers', () => {
     const mockNames = mockTools.map((t) => t.name);
     expect(mockNames).not.toContain('start_attach');
     expect(mockNames).toContain('measure_safe_area');
-    expect(mockNames).toContain('AIT.getMockState');
+    expect(mockNames).toContain('get_mock_state');
   });
 
   it('filterToolsByEnvironment keeps Tier B in relay-dev', () => {
@@ -157,12 +157,12 @@ describe('tools/list — env filtering integration', () => {
   // relay-live (#665) and relay-mobile (#103) removed — no tools/list tests
   // for them.
 
-  it('relay-dev env unattached still exposes bootstrap tools (list_pages, start_attach)', async () => {
+  it('relay-dev env unattached still exposes bootstrap tools (get_page, start_attach)', async () => {
     const client = await makeClient('relay-dev', /*attached*/ false);
     const list = await client.listTools();
     const names = list.tools.map((t) => t.name);
     expect(names).toContain('start_attach');
-    expect(names).toContain('list_pages');
+    expect(names).toContain('get_page');
     // Non-bootstrap tools are hidden pre-attach.
     expect(names).not.toContain('measure_safe_area');
   });
@@ -173,8 +173,8 @@ describe('tools/list — env filtering integration', () => {
     const list = await client.listTools();
     const names = list.tools.map((t) => t.name);
     expect(names).not.toContain('start_attach');
-    // list_pages (bootstrap + Tier C) is still listed.
-    expect(names).toContain('list_pages');
+    // get_page (bootstrap + Tier C) is still listed.
+    expect(names).toContain('get_page');
   });
 });
 
@@ -229,9 +229,9 @@ describe('tools/list — env derived from connection.kind (issue #348)', () => {
     // Tier B `start_attach` listed because kind=relay → relay-dev env,
     // even before any target attaches (the M2-5 property, now kind-derived).
     expect(names).toContain('start_attach');
-    expect(names).toContain('list_pages');
-    expect(names).toContain('get_debug_status');
-    expect(names).toContain('start_debug');
+    expect(names).toContain('get_page');
+    expect(names).toContain('get_status');
+    expect(names).toContain('switch_environment');
     // Attach-dependent tools are still hidden pre-attach (orthogonal to env).
     expect(names).not.toContain('measure_safe_area');
   });
@@ -241,8 +241,8 @@ describe('tools/list — env derived from connection.kind (issue #348)', () => {
     const list = await client.listTools();
     const names = list.tools.map((t) => t.name);
     expect(names).not.toContain('start_attach');
-    expect(names).toContain('list_pages');
-    expect(names).toContain('start_debug');
+    expect(names).toContain('get_page');
+    expect(names).toContain('switch_environment');
   });
 
   it('relay-kind attached exposes start_attach + attach-dependent tools', async () => {
@@ -288,7 +288,7 @@ describe('tools/call — env mismatch rejection', () => {
 
   it('relay-dev passes side-effect tools without any confirm gate (#665)', async () => {
     // relay-dev is a dev-intent env — the LIVE guard is removed (#665).
-    // evaluate/call_sdk must NOT require confirm: true on any relay env. Use a
+    // run_script/call_sdk must NOT require confirm: true on any relay env. Use a
     // private-apps dog-food URL — the positive-allowlist allows it.
     const targets: CdpTarget[] = [
       { id: 't1', title: 'app', url: 'https://app.private-apps.tossmini.com/app' },
@@ -306,7 +306,7 @@ describe('tools/call — env mismatch rejection', () => {
     const client = new Client({ name: 'tier-test', version: '0.0.0' });
     await client.connect(clientTransport);
     const result = await client.callTool({
-      name: 'evaluate',
+      name: 'run_script',
       arguments: { expression: '1 + 1' },
     });
     // It errors (FakeCdpConnection has no canned Runtime.evaluate result), but

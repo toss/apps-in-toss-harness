@@ -184,7 +184,7 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 확인한 뒤 올린다(`../feature/references/stack-pitfalls.md`의 "번들러" 절).
 
 릴리즈 빌드는 올리기 전에 디버그 마커도 확인한다. 출력 디렉터리(와 `.ait`)에서
-`grep -rlE '__ait_status_banner|__ait_debug_status|ait-attach|relayPublicKeys|startDebugConsole' <출력 디렉터리>`가
+`grep -rlE '__ait_status_banner|__ait_debug_status|ait-attach|relayPublicKeys|startDebugConsole|__ait_session_chip|ait_remote_debugger' <출력 디렉터리>`가
 0건이어야 한다. 걸리면 올리지 말고 원인(`__DEBUG_BUILD__` 게이트·define, 남은 환경 변수)을 먼저
 잡는다. 디버그 빌드는 이 마커가 있는 것이 정상이다.
 

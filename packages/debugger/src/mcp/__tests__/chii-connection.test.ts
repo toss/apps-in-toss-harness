@@ -124,7 +124,7 @@ describe('ChiiCdpConnection — per-command timeout', () => {
 
       await expect(cmdPromise).rejects.toThrow(/CDP 명령이 타임아웃됐습니다/);
       await expect(cmdPromise).rejects.toThrow(/Runtime\.evaluate/);
-      await expect(cmdPromise).rejects.toThrow(/list_pages/);
+      await expect(cmdPromise).rejects.toThrow(/get_page/);
     } finally {
       conn.close();
       await relay.close();
@@ -359,7 +359,7 @@ describe('ChiiCdpConnection — WebSocket close rejects pending', () => {
 
       const p = conn.sendCommand('Runtime.evaluate', { expression: '1' });
       await expect(p).rejects.toThrow(/relay에 연결되어 있지 않습니다/);
-      await expect(p).rejects.toThrow(/list_pages/);
+      await expect(p).rejects.toThrow(/get_page/);
     } finally {
       conn.close();
       await relay.close();
@@ -526,7 +526,7 @@ describe('isRelayDisconnectMessage (devtools#731)', () => {
   it('matches the fail-fast sendCommand rejection ("relay에 연결되어 있지 않습니다 (...)")', () => {
     expect(
       isRelayDisconnectMessage(
-        'relay에 연결되어 있지 않습니다 (Runtime.evaluate). list_pages로 attach 상태를 확인하고 enableDomains()로 재연결하세요.',
+        'relay에 연결되어 있지 않습니다 (Runtime.evaluate). get_page로 attach 상태를 확인하고 enableDomains()로 재연결하세요.',
       ),
     ).toBe(true);
   });

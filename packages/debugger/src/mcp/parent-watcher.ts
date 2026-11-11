@@ -112,6 +112,25 @@ export function startParentWatcher(
 // startMaxAgeWatchdog — FIX 4: daemon lifetime cap
 // ---------------------------------------------------------------------------
 
+/** 데몬의 기본 최대 수명(ms). 6시간. */
+export const DEFAULT_DAEMON_MAX_AGE_MS = 6 * 60 * 60 * 1_000;
+
+/** `AIT_DEBUG_NO_MAX_AGE=1`로 워치독을 껐을 때 쿠키 수명 상한으로 쓰는 값(7일). */
+const UNBOUNDED_DAEMON_COOKIE_CAP_MS = 7 * 24 * 60 * 60 * 1_000;
+
+/**
+ * 환경 변수로 정해지는 데몬의 최대 수명(ms)을 돌려준다. 워치독 설정과 같은 규칙이다
+ * (`AIT_DEBUG_MAX_AGE_MS` 덮어쓰기, 기본 6시간). 워치독을 끈 경우(`AIT_DEBUG_NO_MAX_AGE=1`)는
+ * 수명이 정해져 있지 않아 7일을 상한으로 쓴다. 대시보드 쿠키의 Max-Age 계산용이다.
+ */
+export function resolveDaemonMaxAgeMs(env: NodeJS.ProcessEnv = process.env): number {
+  if (env.AIT_DEBUG_NO_MAX_AGE === '1') return UNBOUNDED_DAEMON_COOKIE_CAP_MS;
+  const override = env.AIT_DEBUG_MAX_AGE_MS
+    ? Number.parseInt(env.AIT_DEBUG_MAX_AGE_MS, 10) || undefined
+    : undefined;
+  return override !== undefined && override > 0 ? override : DEFAULT_DAEMON_MAX_AGE_MS;
+}
+
 /**
  * Starts a periodic watchdog that calls `onExpired` once after `maxAgeMs`
  * milliseconds have elapsed since the watchdog was created.
@@ -139,7 +158,7 @@ export function startMaxAgeWatchdog(
   } = {},
 ): { stop(): void } {
   const {
-    maxAgeMs = 6 * 60 * 60 * 1_000, // 6 hours
+    maxAgeMs = DEFAULT_DAEMON_MAX_AGE_MS,
     intervalMs = 60_000,
     now = () => Date.now(),
   } = opts;

@@ -18,6 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TunnelStatus } from '../tools.js';
 import { buildAttachUrl, canOpenBrowser, openQrInBrowser } from '../tools.js';
+import { fakeChild } from './fake-spawn.js';
 
 process.env.AIT_DEBUG_HTTP_PORT = '0';
 
@@ -203,15 +204,16 @@ describe('startQrHttpServer', () => {
 });
 
 // ---------------------------------------------------------------------------
-// openQrInBrowser — spawnSync mock으로 fallback chain 검증
+// openQrInBrowser — spawn mock으로 fallback chain 검증
 // ---------------------------------------------------------------------------
 
 // node:child_process를 mock해 실제 브라우저를 열지 않도록.
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
+  const { fakeChild } = await import('./fake-spawn.js');
   return {
     ...original,
-    spawnSync: vi.fn().mockReturnValue({ status: 0, stderr: '', error: null }),
+    spawn: vi.fn().mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null })),
   };
 });
 
@@ -229,8 +231,10 @@ describe('openQrInBrowser', () => {
 
   it('returns opened:true when first candidate succeeds (darwin)', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({ status: 0, stderr: '', error: null }),
+    );
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -241,17 +245,19 @@ describe('openQrInBrowser', () => {
     expect(result.httpUrl).toBe('http://127.0.0.1:12345/attach?u=foo');
     expect(result.pngUrl).toBe('http://127.0.0.1:12345/qr.png?u=foo');
     // 1차 후보만 호출됨
-    expect(spawnSync).toHaveBeenCalledOnce();
-    const [cmd] = (spawnSync as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    expect(spawn).toHaveBeenCalledOnce();
+    const [cmd] = (spawn as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
     expect(cmd).toBe('open');
   });
 
   it('tries next candidate when first fails with ENOENT (darwin)', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce({ error: new Error('ENOENT'), stderr: '', status: null })
-      .mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() =>
+        fakeChild({ error: new Error('ENOENT'), stderr: '', status: null }),
+      )
+      .mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null }));
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -259,19 +265,21 @@ describe('openQrInBrowser', () => {
     );
 
     expect(result.opened).toBe(true);
-    expect(spawnSync).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it('treats exit 0 + LSOpenURLsWithRole stderr as failure, tries next (darwin)', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce({
-        status: 0,
-        stderr: 'LSOpenURLsWithRole() failed with error -10814',
-        error: null,
-      })
-      .mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() =>
+        fakeChild({
+          status: 0,
+          stderr: 'LSOpenURLsWithRole() failed with error -10814',
+          error: null,
+        }),
+      )
+      .mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null }));
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -279,17 +287,72 @@ describe('openQrInBrowser', () => {
     );
 
     expect(result.opened).toBe(true);
-    expect(spawnSync).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  // 회귀: 첫 후보(`open`)가 제한 시간 안에 끝나지 않으면(브라우저 콜드 스타트 등) 실패로
+  // 세지 않고 열린 것으로 본다. 예전에는 다른 브라우저로 같은 URL을 다시 열었다.
+  it('treats a slow first candidate as opened — no second candidate, no retry (darwin)', async () => {
+    setPlatform('darwin');
+    const { spawn } = await import('node:child_process');
+    const slow = fakeChild({ hang: true });
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() => slow);
+
+    const result = await openQrInBrowser(
+      'http://127.0.0.1:12345/attach?u=foo',
+      'http://127.0.0.1:12345/qr.png?u=foo',
+      undefined,
+      20,
+    );
+
+    expect(result.opened).toBe(true);
+    expect(result.retried).toBeUndefined();
+    expect(spawn).toHaveBeenCalledOnce();
+    // 죽이지 않고 놓아 준다.
+    expect(slow.kill).not.toHaveBeenCalled();
+    expect(slow.unref).toHaveBeenCalledOnce();
+    expect(slow.stderr.destroyed).toBe(true);
+  });
+
+  it('falls through to the next candidate on ENOENT, without waiting for the timeout', async () => {
+    setPlatform('darwin');
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() => fakeChild({ error: new Error('spawn open ENOENT') }))
+      .mockImplementation(() => fakeChild({ status: 0 }));
+
+    const result = await openQrInBrowser('http://127.0.0.1:1/', 'http://127.0.0.1:1/qr.png');
+
+    expect(result.opened).toBe(true);
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls through to the next candidate on a non-zero exit code', async () => {
+    setPlatform('darwin');
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() => fakeChild({ status: 1, stderr: 'boom' }))
+      .mockImplementation(() => fakeChild({ status: 0 }));
+
+    const result = await openQrInBrowser('http://127.0.0.1:1/', 'http://127.0.0.1:1/qr.png');
+
+    expect(result.opened).toBe(true);
+    expect(spawn).toHaveBeenCalledTimes(2);
+    const calls = (spawn as ReturnType<typeof vi.fn>).mock.calls as Array<[string, ...unknown[]]>;
+    expect(calls[1]?.[0]).toBe('open');
+    expect((calls[1]?.[1] as string[] | undefined)?.[0]).toBe('-a');
   });
 
   it('returns opened:false with stderrSummary when all candidates fail', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
-      status: 1,
-      stderr: 'LSOpenURLsWithRole() failed',
-      error: null,
-    });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({
+        status: 1,
+        stderr: 'LSOpenURLsWithRole() failed',
+        error: null,
+      }),
+    );
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -305,10 +368,12 @@ describe('openQrInBrowser', () => {
 
   it('uses win32 fallback chain (cmd then rundll32)', async () => {
     setPlatform('win32');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce({ error: new Error('ENOENT'), stderr: '', status: null })
-      .mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() =>
+        fakeChild({ error: new Error('ENOENT'), stderr: '', status: null }),
+      )
+      .mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null }));
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -316,19 +381,19 @@ describe('openQrInBrowser', () => {
     );
 
     expect(result.opened).toBe(true);
-    const calls = (spawnSync as ReturnType<typeof vi.fn>).mock.calls as Array<
-      [string, ...unknown[]]
-    >;
+    const calls = (spawn as ReturnType<typeof vi.fn>).mock.calls as Array<[string, ...unknown[]]>;
     expect(calls[0]?.[0]).toBe('cmd');
     expect(calls[1]?.[0]).toBe('rundll32');
   });
 
   it('uses linux fallback chain (xdg-open then sensible-browser)', async () => {
     setPlatform('linux');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce({ error: new Error('ENOENT'), stderr: '', status: null })
-      .mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() =>
+        fakeChild({ error: new Error('ENOENT'), stderr: '', status: null }),
+      )
+      .mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null }));
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -336,26 +401,24 @@ describe('openQrInBrowser', () => {
     );
 
     expect(result.opened).toBe(true);
-    const calls = (spawnSync as ReturnType<typeof vi.fn>).mock.calls as Array<
-      [string, ...unknown[]]
-    >;
+    const calls = (spawn as ReturnType<typeof vi.fn>).mock.calls as Array<[string, ...unknown[]]>;
     expect(calls[0]?.[0]).toBe('xdg-open');
     expect(calls[1]?.[0]).toBe('sensible-browser');
   });
 
   it('returns opened:true with retried:true when first attempt fails but retry succeeds', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
+    const { spawn } = await import('node:child_process');
     // 1차 시도: 첫 번째 후보 ENOENT, 두 번째도 실패 → 1차 chain 전체 실패.
     // 2차 retry: 첫 번째 후보 성공.
     let callCount = 0;
-    (spawnSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       callCount++;
       // 1차 chain 후보 수는 darwin에서 4개 — 4번까지 실패, 5번째(retry 첫 후보)에 성공.
       if (callCount <= 4) {
-        return { error: new Error('ENOENT'), stderr: '', status: null };
+        return fakeChild({ error: new Error('ENOENT'), stderr: '', status: null });
       }
-      return { status: 0, stderr: '', error: null };
+      return fakeChild({ status: 0, stderr: '', error: null });
     });
 
     const result = await openQrInBrowser(
@@ -369,13 +432,15 @@ describe('openQrInBrowser', () => {
 
   it('returns opened:false when both attempts fail', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
+    const { spawn } = await import('node:child_process');
     // 모든 시도 실패 (1차 + retry 모두).
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
-      error: new Error('ENOENT'),
-      stderr: '',
-      status: null,
-    });
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({
+        error: new Error('ENOENT'),
+        stderr: '',
+        status: null,
+      }),
+    );
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -388,13 +453,15 @@ describe('openQrInBrowser', () => {
 
   it('SECRET: at= TOTP code in stderr is redacted in stderrSummary', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
+    const { spawn } = await import('node:child_process');
     // mock spawn stderr에 at= 코드 포함 — redact 확인.
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
-      status: 1,
-      stderr: 'at=ABC123 failed to open',
-      error: null,
-    });
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({
+        status: 1,
+        stderr: 'at=ABC123 failed to open',
+        error: null,
+      }),
+    );
 
     const result = await openQrInBrowser(
       'http://127.0.0.1:12345/attach?u=foo',
@@ -412,8 +479,10 @@ describe('openQrInBrowser', () => {
   // openQrInBrowser 자체는 인자를 에코하므로, 루트 URL을 넘겼을 때 결과가 시크릿 없는 루트임을 검증.
   it('#595: httpUrl이 루트 `/`이면 결과에 ?u= / at= 포함되지 않음', async () => {
     setPlatform('darwin');
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({ status: 0, stderr: '', error: null }),
+    );
 
     const rootUrl = 'http://127.0.0.1:12345/';
     const pngUrl = 'http://127.0.0.1:12345/qr.png?u=intoss-private%3A%2F%2Fapp';

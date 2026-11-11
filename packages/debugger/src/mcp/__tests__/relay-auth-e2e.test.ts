@@ -145,7 +145,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
       code: RELAY_AUTH_REJECT_CLOSE_CODE,
       reason: RELAY_AUTH_REJECT_REASON,
     });
-    expect(rejects).toEqual([{ kind: 'ws-upgrade' }]);
+    expect(rejects).toEqual([{ kind: 'ws-upgrade', reason: expect.any(String) }]);
 
     // Auth-bypass guard (#478): accept-then-close keeps the socket alive, so
     // the dispatcher must keep chii away from it — the rejected target id must
@@ -164,7 +164,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
       code: RELAY_AUTH_REJECT_CLOSE_CODE,
       reason: RELAY_AUTH_REJECT_REASON,
     });
-    expect(rejects).toEqual([{ kind: 'ws-upgrade' }]);
+    expect(rejects).toEqual([{ kind: 'ws-upgrade', reason: expect.any(String) }]);
   });
 
   it('serves target.js for a valid path-prefix script fetch', async () => {
@@ -190,7 +190,7 @@ describe('relay TOTP gate e2e (real chii + real sockets)', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe(PHONE_ORIGIN);
     expect(res.headers.get('vary')).toBe('Origin');
     expect(await res.json()).toEqual({ error: RELAY_AUTH_REJECT_REASON });
-    expect(rejects).toEqual([{ kind: 'http-request' }]);
+    expect(rejects).toEqual([{ kind: 'http-request', reason: expect.any(String) }]);
   });
 
   it('keeps the daemon query transport working unchanged', async () => {
@@ -245,7 +245,7 @@ describe('relay TOTP gate e2e — /targets route gate (#474)', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe(PHONE_ORIGIN);
     expect(await res.json()).toEqual({ error: RELAY_AUTH_REJECT_REASON });
     // The secret-free observability callback must fire exactly once.
-    expect(rejects).toEqual([{ kind: 'http-request' }]);
+    expect(rejects).toEqual([{ kind: 'http-request', reason: expect.any(String) }]);
   });
 
   it('AC-2: /targets?at=<valid code> → 200 JSON (gate passes)', async () => {
@@ -281,7 +281,7 @@ describe('relay TOTP gate e2e — /targets route gate (#474)', () => {
 
     expect(res.status).toBe(401);
     expect(res.headers.get('access-control-allow-origin')).toBe(PHONE_ORIGIN);
-    expect(rejects).toEqual([{ kind: 'http-request' }]);
+    expect(rejects).toEqual([{ kind: 'http-request', reason: expect.any(String) }]);
   });
 });
 
@@ -381,10 +381,11 @@ describe('relay TOTP gate e2e — SECRET-HANDLING', () => {
     const httpBody = await httpRes.text();
     await relay.close();
 
-    // Reject events carry ONLY the kind — the shape itself is the contract.
+    // Reject events carry ONLY the kind and a fixed reason enum — the shape itself is the contract.
     expect(rejects).toHaveLength(2);
     for (const event of rejects) {
-      expect(Object.keys(event)).toEqual(['kind']);
+      expect(Object.keys(event)).toEqual(['kind', 'reason']);
+      expect(event.reason).toMatch(/^[a-z-]+$/);
     }
 
     // Everything observable stays free of the code, the secret, and the URL.

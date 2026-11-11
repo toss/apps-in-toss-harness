@@ -77,6 +77,23 @@ function blockResult(
   return { attach: false, reason };
 }
 
+/**
+ * Attaches on a loopback page so this package really asked for the screen to
+ * stay awake (teardown only gives back what it took), then forgets that call.
+ */
+async function armScreenAwake(
+  attach: { maybeAttach: (gate?: GateResult) => unknown },
+  setScreenAwakeMode: ReturnType<typeof vi.fn>,
+  relayUrl?: string,
+): Promise<void> {
+  document.head.innerHTML = '';
+  history.replaceState(null, '', '/?at=123456');
+  attach.maybeAttach(passResult(relayUrl));
+  await vi.waitFor(() => expect(setScreenAwakeMode).toHaveBeenCalledWith({ enabled: true }));
+  setScreenAwakeMode.mockClear();
+  history.replaceState(null, '', '/');
+}
+
 // ---------------------------------------------------------------------------
 // deriveTargetScriptUrl
 // ---------------------------------------------------------------------------
@@ -859,6 +876,7 @@ describe('script.onerror fetch probe', () => {
 describe('detachDebugSurface (#748)', () => {
   let detachDebugSurface: () => void;
   let setScreenAwakeMode: ReturnType<typeof vi.fn>;
+  let attachModule: typeof import('../attach.js');
 
   beforeEach(async () => {
     vi.resetModules();
@@ -867,7 +885,8 @@ describe('detachDebugSurface (#748)', () => {
     setScreenAwakeMode = framework.setScreenAwakeMode as ReturnType<typeof vi.fn>;
     setScreenAwakeMode.mockClear();
     setScreenAwakeMode.mockResolvedValue({ enabled: false });
-    ({ detachDebugSurface } = await import('../attach.js'));
+    attachModule = await import('../attach.js');
+    ({ detachDebugSurface } = attachModule);
   });
 
   /** Inserts a stand-in indicator badge so its removal can be asserted. */
@@ -886,7 +905,14 @@ describe('detachDebugSurface (#748)', () => {
     expect(document.getElementById('__ait_debug_indicator')).toBeNull();
   });
 
+  it('does not touch screen sleep when this package never turned it on', async () => {
+    detachDebugSurface();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(setScreenAwakeMode).not.toHaveBeenCalled();
+  });
+
   it('restores screen sleep — setScreenAwakeMode({ enabled: false })', async () => {
+    await armScreenAwake(attachModule, setScreenAwakeMode);
     detachDebugSurface();
     // The SDK is reached through a runtime probe now, not a static import, so a
     // cold teardown (no prior attach to warm the probe) dispatches the release
@@ -912,6 +938,7 @@ describe('detachDebugSurface (#748)', () => {
   });
 
   it('is idempotent — a second call does not disable awake again', async () => {
+    await armScreenAwake(attachModule, setScreenAwakeMode);
     detachDebugSurface();
     detachDebugSurface();
     await vi.waitFor(() => expect(setScreenAwakeMode).toHaveBeenCalledTimes(1));
@@ -1001,6 +1028,7 @@ describe('graceful detach on relay WS close (#748)', () => {
   let installRelayWsObserver: (relayUrl: string) => void;
   let setScreenAwakeMode: ReturnType<typeof vi.fn>;
   let originalWebSocket: typeof WebSocket | undefined;
+  let attachModule: typeof import('../attach.js');
 
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -1019,7 +1047,8 @@ describe('graceful detach on relay WS close (#748)', () => {
     setScreenAwakeMode = framework.setScreenAwakeMode as ReturnType<typeof vi.fn>;
     setScreenAwakeMode.mockClear();
     setScreenAwakeMode.mockResolvedValue({ enabled: false });
-    ({ installRelayWsObserver } = await import('../attach.js'));
+    attachModule = await import('../attach.js');
+    ({ installRelayWsObserver } = attachModule);
   });
 
   afterEach(() => {
@@ -1042,6 +1071,9 @@ describe('graceful detach on relay WS close (#748)', () => {
   }
 
   it('tears down after the grace window on a non-4401 relay close', async () => {
+    vi.useRealTimers();
+    await armScreenAwake(attachModule, setScreenAwakeMode, RELAY_URL);
+    vi.useFakeTimers();
     addBadge();
     installRelayWsObserver(RELAY_URL);
     const ws = new window.WebSocket('wss://relay.example.com/target/abc');
@@ -1075,6 +1107,9 @@ describe('graceful detach on relay WS close (#748)', () => {
   });
 
   it('tears down immediately on a 4401 relay close (terminal — no grace)', async () => {
+    vi.useRealTimers();
+    await armScreenAwake(attachModule, setScreenAwakeMode, RELAY_URL);
+    vi.useFakeTimers();
     addBadge();
     installRelayWsObserver(RELAY_URL);
     const ws = new window.WebSocket('wss://relay.example.com/at/123456/target/abc');
@@ -1098,6 +1133,9 @@ describe('graceful detach on relay WS close (#748)', () => {
   });
 
   it('runs teardown on pagehide (beforeunload-safe path)', async () => {
+    vi.useRealTimers();
+    await armScreenAwake(attachModule, setScreenAwakeMode, RELAY_URL);
+    vi.useFakeTimers();
     addBadge();
     installRelayWsObserver(RELAY_URL);
     window.dispatchEvent(new Event('pagehide'));

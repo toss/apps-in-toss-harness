@@ -91,12 +91,15 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
 
 2단계에서 정한 파일이 이미 있으면 `Read`로 읽는다:
 
-- 옛 키 `mcpServers."ait-devtools"`가 있거나(0.3.0 이하 이름) 프로젝트 `package.json`에
+- 옛 키 `mcpServers."ait-devtools"`가 있고 그 항목이 `@apps-in-toss/debugger`를 가리키거나(0.3.0 이하 이름) 프로젝트 `package.json`에
   `@apps-in-toss/debug-console`이 있으면 — **미설치가 아니라 업그레이드가 필요한 상태**다.
   이 점검을 가장 먼저 한다. 새 키 `ait-debugger`가 이미 4단계와 같게 있어도(키만 옮기고
   패키지는 옛 것인 부분 업데이트) "이미 배선됨"으로 끝내지 않는다.
   새 항목을 따로 추가하지 말고(같은 서버가 두 번 뜬다) **Read <이 skill의 base directory>/references/upgrade-check.md**
   의 0절과 2-B절 절차대로 두 이름을 한꺼번에 새 이름으로 옮긴다. 한쪽만 옮기면 서로 연결되지 않는다.
+- `ait-devtools` 항목이 있어도 `@apps-in-toss/debugger`를 가리키지 않으면 이 패키지의 것이 아니다.
+  옮기거나 지우지 말고 그대로 두며, 같은 이름의 다른 서버가 있어 건드리지 않았다고 사용자에게 알린다.
+  디버거 배선은 4단계로 따로 이어 간다.
 - 옛 이름이 하나도 남아 있지 않은 상태에서 `mcpServers."ait-debugger"`가 **4단계와 동일한 항목**으로 이미 있으면 —
   변경 없이 "이미 배선됨"으로 보고하고 5단계로 간다. 단 그 버전이
   `references/min-versions.json`의 최소 버전보다 낮으면 이 skill의 URL이 아직 최소 버전
@@ -121,7 +124,7 @@ ls -d .cursor .mcp.json .cursor/mcp.json 2>/dev/null
   "mcpServers": {
     "ait-debugger": {
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz", "debugger"]
     }
   }
 }
@@ -135,7 +138,7 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
     "ait-debugger": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz", "debugger"]
+      "args": ["-y", "-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz", "debugger"]
     }
   }
 }
@@ -157,7 +160,7 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
   로컬 `eval/e2e/driver.test.ts`(repo 미포함 — maintainer-local)가 검사한다(위
   json 블록의 키를 실제로 읽어 `STATIC_DISALLOWED_TOOLS`와 대조) — 개명하면 그
   로컬 검사가 실패한다.
-- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.3.1/apps-in-toss-debugger-0.3.1.tgz debugger`
+- `npx -y -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz debugger`
   형태를 유지한다 — `-p` 없이 bare로 쓰면
   패키지가 bin을 2개(`debugger`·`debugger-test`) 게시해 npm이 실행파일을 추론하지
   못한다. 머신 절대경로 launcher는 박지 않는다(다른 머신 clone에서 깨진다).
@@ -189,6 +192,14 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 동작하지 않습니다(Codex와 같은 제약). 브라우저 환경(환경 1) 디버깅은 그대로 씁니다.
   말로: "브라우저에서 미니앱 동작을 확인하고 싶어"
 ```
+
+## 등록 뒤 디버거가 거는 제한
+
+이 skill은 항목에 `env`를 넣지 않는다. 디버거 0.4.0부터 실기기(relay) 세션에는 아래 제한이 기본으로 걸린다. 에이전트가 끄거나 풀 수 없고, 바꾸려면 사용자가 `.mcp.json` 항목의 `env`를 직접 편집한다.
+
+- `stop_attach` 도구로 세션을 끊을 수 있다. 세션은 도구 호출 15분 무응답 또는 부착 60분에 끝나고(끝나기 1분 전 폰에 안내), 터널은 30분 안 쓰이면 닫힌다.
+- 실기기에서 `run_script`는 기본으로 매번, `call_sdk`는 읽기 전용 getter·진동(`generateHapticFeedback`)을 뺀 호출이 폰의 확인 창을 거친다(확인 창에 "1시간 동안 묻지 않기"가 있고, 결제 호출은 이 허용이 적용되지 않고 매번 묻는다). 사용자가 정하는 `env` 값: `AIT_DEBUG_SDK_ALLOW`(바로 실행할 SDK 메서드 이름, 결제 이름은 무시), `AIT_DEBUG_EVALUATE`(`confirm`(기본)·`confirm-on-sensitive`(약한 선택 사항)·`free`·`off`), `AIT_DEBUG_REDACT`(`off`면 마스킹 끔). 사용자가 요청하지 않으면 넣지 않는다.
+- 폰에는 `debugger-client` 0.3.2의 상태 칩과 vConsole "Remote Debugging" 탭이 뜬다.
 
 ## 다음 단계
 
@@ -224,6 +235,7 @@ QR) attach를 진행한다. attach 표면이 아직 없으면 `/ait:inject-debug
   MCP 등록이 조용히 깨진다.
 - ❌ 머신 절대경로 launcher(`node /Users/…/dist/cli.js` 류) — 머신 종속.
 - ❌ 시크릿/토큰 값을 `.mcp.json`이나 로그에 기록 — 이 서버는 인자·env 시크릿이 필요 없다.
+- ❌ 사용자 요청 없이 `AIT_DEBUG_SDK_ALLOW`·`AIT_DEBUG_EVALUATE=free`·`AIT_DEBUG_REDACT=off` 같은 제한 완화 env를 항목에 넣는 것.
 - ❌ 호스트 판별 없이 두 파일을 다 쓰거나 한쪽을 감으로 고르는 것 (2단계 판별을 따른다).
 - ❌ Cursor 항목에서 `"type": "stdio"` 누락 — 등록이 조용히 무시된다.
 

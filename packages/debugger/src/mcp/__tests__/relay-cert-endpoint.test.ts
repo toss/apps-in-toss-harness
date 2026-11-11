@@ -12,13 +12,9 @@ import {
 } from '@apps-in-toss/internal-protocol/relay-signature';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type ChiiRelay, type StartChiiRelayOptions, startChiiRelay } from '../chii-relay.js';
-import {
-  relayCertDocument,
-  resetRelaySessionKey,
-  SESSION_KEY_ROTATE_MS,
-  signRelay,
-} from '../relay-signing.js';
+import { resetRelaySessionKey, SESSION_KEY_ROTATE_MS } from '../relay-signing.js';
 import { buildRelayVerifyAuth, generateTotp } from '../totp.js';
+import { relayCertDocument, signRelay } from './relay-test-root.js';
 
 const SECRET = 'ab'.repeat(32);
 const code = (): string => generateTotp(SECRET);
@@ -85,7 +81,7 @@ describe('GET /relay-cert', () => {
 
   it('serves the strict document to an allowed origin through the tunnel, with no code', async () => {
     await boot();
-    const sig = signRelay(SECRET, RELAY, code());
+    const sig = await signRelay(SECRET, RELAY, code());
     const res = await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_APPS });
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/json');
@@ -105,7 +101,7 @@ describe('GET /relay-cert', () => {
 
   it('serves the private-web host too, and HEAD with no body', async () => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     const web = await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_WEB });
     expect(web.status).toBe(200);
     const head = await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_APPS }, 'HEAD');
@@ -115,8 +111,8 @@ describe('GET /relay-cert', () => {
 
   it('keeps the previous certificate next to the current one across a rotation', async () => {
     const t0 = Date.now() - SESSION_KEY_ROTATE_MS - 1_000;
-    const older = signRelay(SECRET, RELAY, code(), t0);
-    const newer = signRelay(SECRET, RELAY, code());
+    const older = await signRelay(SECRET, RELAY, code(), t0);
+    const newer = await signRelay(SECRET, RELAY, code());
     await boot();
     const res = await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_APPS });
     const ids = (parseRelayCertDocument(res.body) ?? []).map((c) => c.keyId);
@@ -131,7 +127,7 @@ describe('GET /relay-cert', () => {
     'null',
   ])('refuses origin %s through the tunnel, with no CORS header', async (origin) => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     const res = await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: origin });
     expect(res.status).toBe(403);
     expect(JSON.parse(res.body)).toEqual({ error: 'origin-not-allowed' });
@@ -141,7 +137,7 @@ describe('GET /relay-cert', () => {
 
   it('refuses a tunnel request without an Origin', async () => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     const res = await raw(base(), RELAY_CERT_PATH, TUNNEL);
     expect(res.status).toBe(403);
     expect(rejects).toEqual([{ kind: 'http-request', reason: 'no-origin' }]);
@@ -149,7 +145,7 @@ describe('GET /relay-cert', () => {
 
   it('narrows to the exact app name when the daemon knows it', async () => {
     await boot({ getAppName: () => 'demo' });
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     expect((await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_APPS })).status).toBe(
       200,
     );
@@ -165,13 +161,13 @@ describe('GET /relay-cert', () => {
 
   it('answers loopback without an Origin (the daemon itself)', async () => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     expect((await raw(base(), RELAY_CERT_PATH)).status).toBe(200);
   });
 
   it('allows only GET and HEAD', async () => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     for (const method of ['POST', 'PUT', 'DELETE']) {
       const res = await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_APPS }, method);
       expect(res.status).toBe(405);
@@ -186,7 +182,7 @@ describe('GET /relay-cert', () => {
     );
     await relay?.close();
     await boot({ getRelayCertDocument: undefined });
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     expect((await raw(base(), RELAY_CERT_PATH, { ...TUNNEL, Origin: PRIVATE_APPS })).status).toBe(
       404,
     );
@@ -205,7 +201,7 @@ describe('GET /relay-cert', () => {
 
   it('never counts toward the code lock, whatever it carries', async () => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     // maxFailures is 3. Two real failures first, then many certificate requests.
     for (let i = 0; i < 2; i++) {
       const bad = await raw(base(), `/v3/at/${'0'.repeat(32)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
@@ -235,7 +231,7 @@ describe('GET /relay-cert', () => {
 
   it('is not served under the code prefix', async () => {
     await boot();
-    signRelay(SECRET, RELAY, code());
+    await signRelay(SECRET, RELAY, code());
     const wrong = await raw(
       base(),
       `/v3/at/${'0'.repeat(32)}${RELAY_CERT_PATH}/d/Zm9vYmFyYmF6cXV4MTIzNA`,

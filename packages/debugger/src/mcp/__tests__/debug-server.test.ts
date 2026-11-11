@@ -29,6 +29,7 @@ import { startParentWatcher } from '../parent-watcher.js';
 import { relayRunId } from '../relay-run-id.js';
 import type { TunnelStatus } from '../tools.js';
 import { BOOTSTRAP_TOOL_NAMES, DEBUG_TOOL_DEFINITIONS } from '../tools.js';
+import { fakeChild } from './fake-spawn.js';
 
 /** Fake of QrHttpServer.tokenizeUrl: appends a recognisable dashboard token. */
 const FAKE_DASH_TOKEN = 'd'.repeat(64);
@@ -59,9 +60,10 @@ vi.mock('node:fs', async (importOriginal) => {
 // Stub node:child_process so tests never open a real browser.
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
+  const { fakeChild } = await import('./fake-spawn.js');
   return {
     ...original,
-    spawnSync: vi.fn().mockReturnValue({ status: 0, stderr: '', error: null }),
+    spawn: vi.fn().mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null })),
   };
 });
 
@@ -138,6 +140,8 @@ interface MakeClientOptions {
   getProtocolVersionSkew?: () =>
     | import('@apps-in-toss/internal-protocol/attach-handshake').ProtocolVersionCheck
     | null;
+  /** Whether the attached phone's client draws its own status chip (no daemon badge then). */
+  phoneHasStatusChip?: () => boolean;
 }
 
 /**
@@ -156,6 +160,7 @@ async function makeClient({
   env = 'relay-dev',
   totpSecret = DUMMY_SECRET_FOR_TESTS,
   getProtocolVersionSkew,
+  phoneHasStatusChip,
 }: MakeClientOptions): Promise<Client> {
   const server = createDebugServer({
     connection: connection ?? new FakeCdpConnection(),
@@ -164,6 +169,7 @@ async function makeClient({
     waitForAttachTimeoutMs,
     qrHttpServer,
     getProtocolVersionSkew,
+    phoneHasStatusChip,
     getEnvironment: () => env,
     getEnvironmentReason: () => `test-pinned-${env}`,
     // null = caller explicitly wants no secret (for fail-closed tests).
@@ -439,6 +445,47 @@ describe('start_attach — protocol version skew', () => {
   });
 });
 
+describe('start_attach — on-phone indicator', () => {
+  const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
+  const schemeUrl = 'intoss-private://miniapp?_deploymentId=badge-test';
+
+  class RecordingConnection extends FakeCdpConnection {
+    readonly expressions: string[] = [];
+    override send<M extends CdpCommandName>(
+      method: M,
+      params?: CdpCommandMap[M]['params'],
+    ): Promise<CdpCommandMap[M]['result']> {
+      const expression = (params as { expression?: unknown } | undefined)?.expression;
+      if (method === 'Runtime.evaluate' && typeof expression === 'string') {
+        this.expressions.push(expression);
+      }
+      return Promise.resolve({} as CdpCommandMap[M]['result']);
+    }
+  }
+
+  const call = async (hasChip: boolean | undefined): Promise<string[]> => {
+    const connection = new RecordingConnection([
+      { id: 'attached-target', title: 'Attached', url: schemeUrl },
+    ]);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection,
+      ...(hasChip === undefined ? {} : { phoneHasStatusChip: () => hasChip }),
+    });
+    await client.callTool({ name: 'start_attach', arguments: { scheme_url: schemeUrl } });
+    return connection.expressions;
+  };
+
+  it('draws the daemon badge for a client without the status chip', async () => {
+    expect((await call(false)).some((e) => e.includes('__ait_debug_indicator'))).toBe(true);
+    expect((await call(undefined)).some((e) => e.includes('__ait_debug_indicator'))).toBe(true);
+  });
+
+  it('draws no daemon badge when the phone client draws its own chip', async () => {
+    expect((await call(true)).some((e) => e.includes('__ait_debug_indicator'))).toBe(false);
+  });
+});
+
 describe('start_attach — wait_for_attach', () => {
   const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
   // URL includes the deploymentId so the isMatchingPage filter passes.
@@ -574,7 +621,7 @@ describe('start_attach — wait_for_attach', () => {
     expect(result.isError).toBe(true);
   });
 
-  it('returns isError with list_pages hint after timeout when no page attaches', async () => {
+  it('returns isError with get_page hint after timeout when no page attaches', async () => {
     // Use a tiny timeout (50ms) so the test finishes quickly without fake timers
     // (fake timers conflict with MCP SDK's own request timeout mechanism).
     const connection = new FakeCdpConnection([]); // never gets a target
@@ -598,7 +645,7 @@ describe('start_attach — wait_for_attach', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
+    expect(text).toContain('get_page');
   });
 
   it('timeout error tells the agent an already-open mini-app is not reloaded by a scan — close it with X first', async () => {
@@ -655,7 +702,7 @@ describe('start_attach — wait_for_attach', () => {
   it('calls enableDomains only once, after the wait resolves (for the badge), not while polling', async () => {
     // The wait itself is a buffered listTargets read — it must not negotiate CDP
     // domains. enableDomains() runs exactly once after the attach succeeded, so
-    // the client WS exists when the "Debugger Connected" badge is injected.
+    // the client WS exists when the "디버거 연결됨" badge is injected.
     // Target URL must match the deploymentId so polling resolves immediately.
     const spyTarget: CdpTarget = {
       id: 'target-spy',
@@ -765,7 +812,7 @@ describe('start_attach — wait_for_attach', () => {
     // Must list the observed stale URL so the agent can diagnose the mismatch.
     expect(text).toContain('old-session-fake-id');
     // Standard retry hint must still be present.
-    expect(text).toContain('list_pages');
+    expect(text).toContain('get_page');
   });
 
   it('falls back to presence-only matching when scheme_url has no _deploymentId', async () => {
@@ -829,7 +876,7 @@ describe('start_attach — wait_timeout_seconds', () => {
     // Must timeout (isError) — if it waited the full 60 s default the test would time out.
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
+    expect(text).toContain('get_page');
   });
 
   it('uses the default 60 s timeout when wait_timeout_seconds is not specified', async () => {
@@ -859,34 +906,6 @@ describe('start_attach — wait_timeout_seconds', () => {
     expect(result.isError).toBe(true);
   });
 
-  it('falls back to default when wait_timeout_seconds is 0 (invalid)', async () => {
-    // 0 is invalid — must fall back to deps.waitForAttachTimeoutMs, not to 1 s or 0 s.
-    const connection = new FakeCdpConnection([]);
-    const client = await makeClient({
-      getTunnelStatus: () => tunnelUp,
-      connection,
-      waitForAttachTimeoutMs: 50, // tiny default so the test completes quickly
-    });
-
-    const result = await client.callTool(
-      {
-        name: 'start_attach',
-        arguments: {
-          scheme_url: 'intoss-private://miniapp?_deploymentId=zero-timeout-test',
-          wait_timeout_seconds: 0,
-        },
-      },
-      undefined,
-      { timeout: 5000 },
-    );
-
-    // Falls back to the 50 ms deps default → isError (no tool error — lenient fallback).
-    expect(result.isError).toBe(true);
-    // No MCP protocol error — the tool itself must not throw.
-    const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
-  });
-
   it('falls back to default when wait_timeout_seconds is negative (invalid)', async () => {
     const connection = new FakeCdpConnection([]);
     const client = await makeClient({
@@ -909,7 +928,7 @@ describe('start_attach — wait_timeout_seconds', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
+    expect(text).toContain('get_page');
   });
 
   it('falls back to default when wait_timeout_seconds is a non-number string (invalid)', async () => {
@@ -934,7 +953,7 @@ describe('start_attach — wait_timeout_seconds', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text!;
-    expect(text).toContain('list_pages');
+    expect(text).toContain('get_page');
   });
 
   it('resolves immediately (with QR) when a matching page is already attached', async () => {
@@ -1882,7 +1901,7 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       tokenizeUrl: fakeTokenize,
-      hasActiveClients: () => false,
+      hasVisibleClient: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
 
@@ -1909,16 +1928,18 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
   });
 
   it('when browser open fails: openResult.succeeded=false + pngUrl + failureReason in response', async () => {
-    // canOpenBrowser를 true로 override + spawnSync 실패
+    // canOpenBrowser를 true로 override + spawn 실패
     const toolsMod = await import('../tools.js');
     (toolsMod.canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
 
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
-      error: new Error('ENOENT'),
-      stderr: '',
-      status: null,
-    });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({
+        error: new Error('ENOENT'),
+        stderr: '',
+        status: null,
+      }),
+    );
 
     const fakeQrServer = {
       port: 19998,
@@ -1926,7 +1947,7 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19998/attach?u=${encodeURIComponent(url)}`,
       tokenizeUrl: fakeTokenize,
-      hasActiveClients: () => false,
+      hasVisibleClient: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
 
@@ -2061,9 +2082,11 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     const { canOpenBrowser } = await import('../tools.js');
     (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
 
-    // spawnSync를 명시적으로 성공으로 세팅 — 이전 테스트에서 오염되지 않도록.
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({ status: 0, stderr: '', error: null });
+    // spawn을 명시적으로 성공으로 세팅 — 이전 테스트에서 오염되지 않도록.
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({ status: 0, stderr: '', error: null }),
+    );
 
     const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
       port: 19999,
@@ -2072,7 +2095,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
       tokenizeUrl: fakeTokenize,
-      hasActiveClients: () => false,
+      hasVisibleClient: () => false,
       close: async () => {},
     };
 
@@ -2102,10 +2125,10 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     const { canOpenBrowser } = await import('../tools.js');
     (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
 
-    const { spawnSync } = await import('node:child_process');
-    const spawnMock = spawnSync as ReturnType<typeof vi.fn>;
+    const { spawn } = await import('node:child_process');
+    const spawnMock = spawn as ReturnType<typeof vi.fn>;
     spawnMock.mockReset();
-    spawnMock.mockReturnValue({ status: 0, stderr: '', error: null });
+    spawnMock.mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null }));
 
     const notify = vi.fn();
     const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
@@ -2115,7 +2138,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: () => 'http://127.0.0.1:19999/',
       notifyStateChange: notify,
       tokenizeUrl: fakeTokenize,
-      hasActiveClients: () => true,
+      hasVisibleClient: () => true,
       close: async () => {},
     };
 
@@ -2140,6 +2163,51 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     expect(text).not.toContain('debug=1');
   });
 
+  it('when SSE clients exist but none is visible (hasVisibleClient false), a fresh tokenized tab is opened', async () => {
+    const { canOpenBrowser } = await import('../tools.js');
+    (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+
+    const { spawn } = await import('node:child_process');
+    const spawnMock = spawn as ReturnType<typeof vi.fn>;
+    spawnMock.mockReset();
+    spawnMock.mockImplementation(() => fakeChild({ status: 0, stderr: '', error: null }));
+
+    const notify = vi.fn();
+    const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
+      port: 19999,
+      inspectorStableUrl: 'http://127.0.0.1:19999/inspector',
+      buildPngUrl: (url: string) => `http://127.0.0.1:19999/qr.png?u=${encodeURIComponent(url)}`,
+      buildAttachPageUrl: () => 'http://127.0.0.1:19999/',
+      notifyStateChange: notify,
+      tokenizeUrl: fakeTokenize,
+      hasVisibleClient: () => false,
+      close: async () => {},
+    };
+
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      qrHttpServer: fakeQrServer,
+      connection: attachedConn('intoss-private://aitc-sdk-example?_deploymentId=uuid'),
+    });
+
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: {
+        scheme_url: 'intoss-private://aitc-sdk-example?_deploymentId=uuid',
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(spawnMock).toHaveBeenCalled();
+    const text = getContent(result)[0]!.text!;
+    expect(text).not.toContain('reusedExistingTab');
+    // The tokenized URL goes to the browser launcher only, never into the result text.
+    const launched = JSON.stringify(spawnMock.mock.calls);
+    expect(launched).toContain(FAKE_DASH_TOKEN);
+    expect(text).not.toContain(FAKE_DASH_TOKEN);
+    expect(text).toContain('브라우저에서 QR을 열었습니다');
+  });
+
   it('tool result tells the user to close an already-open mini-app (X button) before scanning', async () => {
     const client = await makeClient({
       getTunnelStatus: () => tunnelUp,
@@ -2158,11 +2226,13 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     const { canOpenBrowser } = await import('../tools.js');
     (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
 
-    // Make spawnSync return an error for all candidates.
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
-      error: new Error('spawn ENOENT'),
-    });
+    // Make spawn return an error for all candidates.
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({
+        error: new Error('spawn ENOENT'),
+      }),
+    );
 
     const fakeQrServer: import('../qr-http-server.js').QrHttpServer = {
       port: 19999,
@@ -2171,7 +2241,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
       tokenizeUrl: fakeTokenize,
-      hasActiveClients: () => false,
+      hasVisibleClient: () => false,
       close: async () => {},
     };
 
@@ -2212,8 +2282,10 @@ describe('start_attach — TOTP auto-splice', () => {
   it('includes at=<32-hex-code> in the attach link when totpSecret is set', async () => {
     const toolsMod = await import('../tools.js');
     (toolsMod.canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
-    const { spawnSync } = await import('node:child_process');
-    (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({ status: 0, stderr: '', error: null });
+    const { spawn } = await import('node:child_process');
+    (spawn as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      fakeChild({ status: 0, stderr: '', error: null }),
+    );
     const minted: string[] = [];
     const fakeQrServer = {
       port: 19997,
@@ -2223,7 +2295,7 @@ describe('start_attach — TOTP auto-splice', () => {
         return `http://127.0.0.1:19997/attach?u=${encodeURIComponent(url)}`;
       },
       tokenizeUrl: fakeTokenize,
-      hasActiveClients: () => false,
+      hasVisibleClient: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
     const client = await makeClient({
@@ -2262,8 +2334,8 @@ describe('start_attach — TOTP auto-splice', () => {
     const text = getContent(result)[0]!.text!;
     // The totp block must be in the JSON output.
     expect(text).toContain('"enabled": true');
-    // ttlSeconds reflects the relay gate's RELAY_VERIFY_SKEW_STEPS=6 window: 6×5=30 s
-    expect(text).toContain('"ttlSeconds": 30');
+    // ttlSeconds reflects the relay gate's RELAY_VERIFY_SKEW_STEPS=24 window: 24×5=120 s
+    expect(text).toContain('"ttlSeconds": 120');
     expect(text).toContain('"expiresAt"');
   });
 
@@ -2282,7 +2354,7 @@ describe('start_attach — TOTP auto-splice', () => {
 
     expect(result.isError).toBe(true);
     const text = getContent(result)[0]!.text ?? '';
-    expect(text).toContain('AIT_DEBUG_TOTP_SECRET');
+    expect(text).toContain('relay 키');
     // SECRET-HANDLING: error message must not embed secret value/length/fragments.
     expect(text).not.toMatch(/\b[0-9a-fA-F]{32,}\b/);
   });
@@ -2452,8 +2524,8 @@ describe('onAttachUrlBuilt — AttachUrlParts stored, fresh TOTP re-minted on ge
       const content = result.content as Array<{ type: string; text?: string }>;
       const text = content[0]?.text ?? '';
       // Error message must name the requirement but NEVER the secret value/length.
-      expect(text).toContain('AIT_DEBUG_TOTP_SECRET');
-      expect(text).toContain('TOTP');
+      expect(text).toContain('relay 키');
+      expect(text).toContain('코드 인증');
       // SECRET-HANDLING: must not leak secret value, length, or any derived fragment.
       expect(text).not.toMatch(/\b[0-9a-fA-F]{32,}\b/);
     } finally {
@@ -2480,17 +2552,19 @@ describe('start_attach — dashboard token and attach secrets in results', () =>
     buildAttachPageUrl: () => 'http://127.0.0.1:19997/',
     notifyStateChange: () => {},
     tokenizeUrl: fakeTokenize,
-    hasActiveClients: () => false,
+    hasVisibleClient: () => false,
     close: async () => {},
   });
 
   async function run(spawnImpl: unknown) {
     const toolsMod = await import('../tools.js');
     (toolsMod.canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
-    const { spawnSync } = await import('node:child_process');
-    const spawnMock = spawnSync as ReturnType<typeof vi.fn>;
+    const { spawn } = await import('node:child_process');
+    const spawnMock = spawn as ReturnType<typeof vi.fn>;
     spawnMock.mockReset();
-    spawnMock.mockReturnValue(spawnImpl);
+    spawnMock.mockImplementation(() =>
+      fakeChild(spawnImpl as import('./fake-spawn.js').FakeChildSpec),
+    );
     const client = await makeClient({
       getTunnelStatus: () => tunnelUp,
       qrHttpServer: contractQrServer(),

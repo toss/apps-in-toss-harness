@@ -5,11 +5,12 @@
 import { webcrypto } from 'node:crypto';
 import {
   parseRelayCertDocument,
+  parseRelayCertParam,
   parseRelaySignature,
   relayCertMessage,
   relayLinkMessage,
 } from '@apps-in-toss/internal-protocol/relay-signature';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AttachDeps,
   type AttachUrlParts,
@@ -19,8 +20,9 @@ import {
 } from '../attach-orchestrator.js';
 import type { CdpConnection } from '../cdp-connection.js';
 import { rebuildAttachUrl } from '../debug-server.js';
-import { relayCertDocument, relayPublicKey } from '../relay-signing.js';
+import { resetRelaySessionKey } from '../relay-signing.js';
 import type { TunnelStatus } from '../tools.js';
+import { primeRoot, relayCertDocument, relayPublicKey } from './relay-test-root.js';
 
 const SECRET = 'ab'.repeat(20);
 const SCHEME = 'intoss-private://sample-app?_deploymentId=019e3b40-aaaa';
@@ -33,6 +35,15 @@ function depsFor(tunnel: { current: TunnelStatus }): AttachDeps {
     getTotpSecret: () => SECRET,
   } as unknown as AttachDeps;
 }
+
+beforeEach(async () => {
+  resetRelaySessionKey();
+  await primeRoot(SECRET);
+});
+
+afterEach(() => {
+  resetRelaySessionKey();
+});
 
 const parts: AttachUrlParts = { kind: 'scheme', schemeUrl: SCHEME, wssUrl: OLD_WSS };
 
@@ -81,7 +92,6 @@ describe('prepareAttach page matcher after a tunnel reissue', () => {
 
 describe('dashboard attach link after a tunnel reissue', () => {
   it('is rebuilt from the tunnel address now in use', () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
     try {
       const before = decodeURIComponent(
         rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS }) ?? '',
@@ -93,7 +103,6 @@ describe('dashboard attach link after a tunnel reissue', () => {
       expect(after).toContain(`relay=${NEW_WSS}`);
       expect(after).not.toContain(OLD_WSS);
     } finally {
-      delete process.env.AIT_DEBUG_TOTP_SECRET;
     }
   });
 });
@@ -171,12 +180,10 @@ describe('sig follows the at code on every mint path', () => {
   });
 
   it('rebuildAttachUrl (dashboard) signs too', async () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
     try {
       const url = rebuildAttachUrl(parts, { up: true, wssUrl: NEW_WSS });
       expect(await pairIsValid(url ?? '', NEW_WSS)).toBe(true);
     } finally {
-      delete process.env.AIT_DEBUG_TOTP_SECRET;
     }
   });
 
@@ -191,8 +198,52 @@ describe('sig follows the at code on every mint path', () => {
       getTunnelStatus: () => ({ up: true, wssUrl: OLD_WSS }),
       getTotpSecret: () => undefined,
     };
-    expect(() => mintAttachUrl(deps as unknown as AttachDeps, parts)).toThrow(/secret/);
-    delete process.env.AIT_DEBUG_TOTP_SECRET;
+    resetRelaySessionKey(); // no live relay key
+    expect(() => mintAttachUrl(deps as unknown as AttachDeps, parts)).toThrow(/relay key/);
     expect(rebuildAttachUrl(parts, { up: true, wssUrl: OLD_WSS })).toBeNull();
+  });
+});
+
+describe('mintAttachUrl computer name', () => {
+  const tunnel = { current: { up: true, wssUrl: OLD_WSS } as TunnelStatus };
+  const query = (url: string) => new URLSearchParams(url.slice(url.indexOf('?') + 1));
+
+  it('carries the sanitized name and its signature', () => {
+    const q = query(
+      mintAttachUrl({ ...depsFor(tunnel), getHostName: () => 'Daves-MacBook-Pro.local' }, parts),
+    );
+    expect(q.get('ahn')).toBe('Daves-MacBook-Pro');
+    expect(q.get('ahs')).toMatch(/^[A-Za-z0-9_-]{86}$/);
+    expect(q.get('sig')).toMatch(/^[A-Za-z0-9_-]{8}\.[A-Za-z0-9_-]{86}$/);
+  });
+
+  it('leaves the name out when nothing usable is left', () => {
+    const q = query(mintAttachUrl({ ...depsFor(tunnel), getHostName: () => '한글.local' }, parts));
+    expect(q.has('ahn')).toBe(false);
+    expect(q.has('ahs')).toBe(false);
+    expect(q.get('sig')).not.toBeNull();
+  });
+});
+
+describe('mintAttachUrl certificate', () => {
+  const tunnel = { current: { up: true, wssUrl: OLD_WSS } as TunnelStatus };
+  const query = (url: string) => new URLSearchParams(url.slice(url.indexOf('?') + 1));
+
+  it('carries the certificate of the session key that signed the link (arc, 180 characters), with or without a name', () => {
+    for (const getHostName of [() => 'dev-mac', () => undefined]) {
+      const q = query(mintAttachUrl({ ...depsFor(tunnel), getHostName }, parts));
+      expect(q.getAll('arc')).toHaveLength(1);
+      expect(q.get('arc')).toMatch(/^[A-Za-z0-9_-]{180}$/);
+      expect(parseRelayCertParam(q.get('arc'))?.keyId).toBe(
+        parseRelaySignature(q.get('sig'))?.keyId,
+      );
+    }
+  });
+
+  it('the certificate is served at /relay-cert too, for debugger-client 0.3.1', () => {
+    const q = query(mintAttachUrl(depsFor(tunnel), parts));
+    const arc = parseRelayCertParam(q.get('arc'));
+    const listed = parseRelayCertDocument(JSON.stringify(relayCertDocument(SECRET))) ?? [];
+    expect(listed.some((c) => c.certSignature === arc?.certSignature)).toBe(true);
   });
 });

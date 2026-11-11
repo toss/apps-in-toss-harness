@@ -96,6 +96,14 @@ export default defineConfig([
   },
   {
     ...common,
+    // Build-time helper (`@apps-in-toss/debugger/relay-keys`): node-only, public
+    // data only. Its own entry keeps the heavy daemon graph out of a bundler
+    // config that imports it; it carries the agent client and launcher, which
+    // spawn mcp/cli.js key-agent by path at runtime.
+    entry: { 'mcp/relay-keys': 'src/mcp/relay-keys.ts' },
+  },
+  {
+    ...common,
     // test-runner Node-side public API + helpers, mirroring devtools'
     // tsdown.config.ts entry group. `runtime`/`bridge-stub`/`method-pace` are
     // resolved at runtime via an absolute filesystem path (getRuntimePath /

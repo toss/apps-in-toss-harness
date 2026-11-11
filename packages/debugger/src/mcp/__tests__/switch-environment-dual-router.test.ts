@@ -1,8 +1,8 @@
 /**
- * `start_debug` dual-connection router tests (issue #348, renamed #382, #665).
+ * `switch_environment` dual-connection router tests (issue #348, renamed #382, #665).
  *
  * Verifies the DUAL-CONNECTION-COEXIST design:
- *   - `start_debug` is a bootstrap tool — visible before any attach, in every env.
+ *   - `switch_environment` is a bootstrap tool — visible before any attach, in every env.
  *   - Switching mode flips the active connection underneath the SAME MCP
  *     `Server` (no re-handshake): tools read through `router.active` per call.
  *   - The mode-switch report reflects the now-active env.
@@ -182,14 +182,14 @@ describe('isRelayMode', () => {
   });
 });
 
-// ---- start_debug visibility (bootstrap) ------------------------------------
+// ---- switch_environment visibility (bootstrap) ------------------------------------
 
-describe('start_debug — bootstrap visibility (before attach)', () => {
+describe('switch_environment — bootstrap visibility (before attach)', () => {
   it('is listed pre-attach in a relay session', async () => {
     const router = new TestRouter('relay', /*relayAttached*/ false);
     const client = await makeClient(router);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).toContain('start_debug');
+    expect(names).toContain('switch_environment');
     // Relay kind → start_attach (Tier B) also visible pre-attach.
     expect(names).toContain('start_attach');
   });
@@ -198,22 +198,22 @@ describe('start_debug — bootstrap visibility (before attach)', () => {
     const router = new TestRouter('local');
     const client = await makeClient(router);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).toContain('start_debug');
-    // Tier B start_attach stays hidden in mock — start_debug is Tier C.
+    expect(names).toContain('switch_environment');
+    // Tier B start_attach stays hidden in mock — switch_environment is Tier C.
     expect(names).not.toContain('start_attach');
   });
 });
 
 // ---- mode switching + report -----------------------------------------------
 
-describe('start_debug — mode switch report + seamless active-pointer flip', () => {
+describe('switch_environment — mode switch report + seamless active-pointer flip', () => {
   it('relay → local switch flips the active connection and reports mock', async () => {
     const router = new TestRouter('relay');
     const client = await makeClient(router);
 
     expect(router.active.kind).toBe('relay');
     const result = await client.callTool({
-      name: 'start_debug',
+      name: 'switch_environment',
       arguments: { mode: 'local-browser' },
     });
     const report = parseReport(result);
@@ -231,7 +231,7 @@ describe('start_debug — mode switch report + seamless active-pointer flip', ()
     const router = new TestRouter('local');
     const client = await makeClient(router);
     const report = parseReport(
-      await client.callTool({ name: 'start_debug', arguments: { mode: 'relay-staging' } }),
+      await client.callTool({ name: 'switch_environment', arguments: { mode: 'relay-staging' } }),
     );
     // Output env layer is 'relay-dev' from deriveEnvironment.
     expect(report.environment).toBe('relay-dev');
@@ -243,7 +243,7 @@ describe('start_debug — mode switch report + seamless active-pointer flip', ()
     const router = new TestRouter('relay');
     const client = await makeClient(router);
     const rejected = await client.callTool({
-      name: 'start_debug',
+      name: 'switch_environment',
       arguments: { mode: 'relay-live' },
     });
     expect(rejected.isError).toBe(true);
@@ -253,7 +253,10 @@ describe('start_debug — mode switch report + seamless active-pointer flip', ()
   it('an unknown mode is rejected with a clear error', async () => {
     const router = new TestRouter('relay');
     const client = await makeClient(router);
-    const result = await client.callTool({ name: 'start_debug', arguments: { mode: 'bogus' } });
+    const result = await client.callTool({
+      name: 'switch_environment',
+      arguments: { mode: 'bogus' },
+    });
     expect(result.isError).toBe(true);
     expect(getText(result)).toContain('mode');
   });
@@ -262,11 +265,11 @@ describe('start_debug — mode switch report + seamless active-pointer flip', ()
     const router = new TestRouter('relay');
     const client = await makeClient(router);
     // First call on relay.
-    await client.callTool({ name: 'start_debug', arguments: { mode: 'relay-staging' } });
+    await client.callTool({ name: 'switch_environment', arguments: { mode: 'relay-staging' } });
     // Switch to local, then immediately use a read tool — same session, no reconnect.
-    await client.callTool({ name: 'start_debug', arguments: { mode: 'local-browser' } });
+    await client.callTool({ name: 'switch_environment', arguments: { mode: 'local-browser' } });
     const list = await client.listTools();
-    expect(list.tools.map((t) => t.name)).toContain('list_pages');
+    expect(list.tools.map((t) => t.name)).toContain('get_page');
     expect(router.active.kind).toBe('local');
   });
 });
@@ -356,16 +359,22 @@ class UnbootedRouter extends TestRouter {
 describe('unbooted daemon — bootstrap tools and start_attach default', () => {
   const schemeArg = { scheme_url: 'intoss-private://app' };
 
-  it('lists all four bootstrap tools including start_attach', async () => {
+  it('lists all five bootstrap tools including start_attach and stop_attach', async () => {
     const client = await makeClient(new UnbootedRouter(), DUMMY_SECRET);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['get_debug_status', 'list_pages', 'start_attach', 'start_debug']);
+    expect(names).toEqual([
+      'get_page',
+      'get_status',
+      'start_attach',
+      'stop_attach',
+      'switch_environment',
+    ]);
   });
 
   it('hides start_attach again once local-browser was explicitly booted', async () => {
     const router = new UnbootedRouter();
     const client = await makeClient(router, DUMMY_SECRET);
-    await client.callTool({ name: 'start_debug', arguments: { mode: 'local-browser' } });
+    await client.callTool({ name: 'switch_environment', arguments: { mode: 'local-browser' } });
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).not.toContain('start_attach');
   });
@@ -393,17 +402,17 @@ describe('unbooted daemon — bootstrap tools and start_attach default', () => {
   it('start_attach without mode stays an env error after an explicit local boot', async () => {
     const router = new UnbootedRouter();
     const client = await makeClient(router, DUMMY_SECRET);
-    await client.callTool({ name: 'start_debug', arguments: { mode: 'local-browser' } });
+    await client.callTool({ name: 'switch_environment', arguments: { mode: 'local-browser' } });
     const result = await client.callTool({ name: 'start_attach', arguments: { ...schemeArg } });
     expect(result.isError).toBe(true);
     expect(router.switchedModes).toEqual(['local-browser']);
   });
 
-  it('get_debug_status reports env none and points to start_attach before any boot', async () => {
+  it('get_status reports env none and points to start_attach before any boot', async () => {
     const router = new UnbootedRouter();
     const client = await makeClient(router, DUMMY_SECRET);
     const envelope = JSON.parse(
-      getText(await client.callTool({ name: 'get_debug_status', arguments: {} })),
+      getText(await client.callTool({ name: 'get_status', arguments: {} })),
     );
     expect(envelope.meta.env).toBe('none');
     expect(envelope.data.environment.kind).toBe('none');
@@ -411,24 +420,24 @@ describe('unbooted daemon — bootstrap tools and start_attach default', () => {
     expect(envelope.data.environment.reason).toMatch(/^unbooted/);
     expect(envelope.data.pages).toBeNull();
     expect(envelope.data.nextRecommendedAction.tool).toBe('start_attach');
-    expect(envelope.data.nextRecommendedAction.reason).toContain('start_debug');
+    expect(envelope.data.nextRecommendedAction.reason).toContain('switch_environment');
     expect(router.switchedModes).toEqual([]);
   });
 
-  it('list_pages meta.env is none before any boot', async () => {
+  it('get_page meta.env is none before any boot', async () => {
     const client = await makeClient(new UnbootedRouter(), DUMMY_SECRET);
     const envelope = JSON.parse(
-      getText(await client.callTool({ name: 'list_pages', arguments: {} })),
+      getText(await client.callTool({ name: 'get_page', arguments: {} })),
     );
     expect(envelope.meta.env).toBe('none');
   });
 
-  it('get_debug_status reports the real env once a family is booted', async () => {
+  it('get_status reports the real env once a family is booted', async () => {
     const router = new UnbootedRouter();
     const client = await makeClient(router, DUMMY_SECRET);
-    await client.callTool({ name: 'start_debug', arguments: { mode: 'relay-staging' } });
+    await client.callTool({ name: 'switch_environment', arguments: { mode: 'relay-staging' } });
     const envelope = JSON.parse(
-      getText(await client.callTool({ name: 'get_debug_status', arguments: {} })),
+      getText(await client.callTool({ name: 'get_status', arguments: {} })),
     );
     expect(envelope.meta.env).toBe('relay-dev');
     expect(envelope.data.environment.kind).toBe('relay-dev');
@@ -442,12 +451,12 @@ describe('unbooted daemon — bootstrap tools and start_attach default', () => {
 // (isDebugAllowedHost) and in the connectionHostsAllowed integration.
 
 describe('positive-allowlist: relay-staging on allowed host passes side-effect tools', () => {
-  it('evaluate/call_sdk succeed on private-apps relay (allowed host)', async () => {
+  it('run_script/call_sdk succeed on private-apps relay (allowed host)', async () => {
     const router = new TestRouter('relay');
     const client = await makeClient(router);
-    await client.callTool({ name: 'start_debug', arguments: { mode: 'relay-staging' } });
+    await client.callTool({ name: 'switch_environment', arguments: { mode: 'relay-staging' } });
     const result = await client.callTool({
-      name: 'evaluate',
+      name: 'run_script',
       arguments: { expression: '1 + 1' },
     });
     // Should not return host-allowlist error

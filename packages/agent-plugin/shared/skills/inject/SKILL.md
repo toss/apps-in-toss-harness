@@ -64,18 +64,21 @@ tarball URL — npm 미발행), 진입점에 빌드 타임 게이트 import를 �
 
 ```ts
 declare const __DEBUG_BUILD__: boolean;
+declare const __AIT_RELAY_KEYS__: ReadonlyArray<{ publicKey: string; notAfter: number }>;
 
 if (__DEBUG_BUILD__) {
   import('@apps-in-toss/debugger-client').then((m) =>
-    m.startDebugConsole({ relayPublicKeys: ['<debugger relay-key 출력>'] }),
+    m.startDebugConsole({ relayPublicKeys: __AIT_RELAY_KEYS__ }),
   );
 }
 ```
 
-`<debugger relay-key 출력>`은 프로젝트 폴더에서 `npx debugger relay-key`(설치한 bin이면 `debugger relay-key`)를
-실행해 얻는 공개키다. 값은 stdout에 한 줄로만 나온다. 공개키는 커밋해도 되지만 `.ait_relay`는 커밋하지
-않는다. 팀원은 자기 키를 배열에 추가하고 다시 빌드한다. QR 테스트 호스트에서는 이 키로 attach URL의
-서명을 확인하므로 키가 없으면 연결되지 않는다(`blocked-relay-key`).
+`__AIT_RELAY_KEYS__`는 번들러 `define`이 디버그 빌드에서만 채운다.
+`define: { __AIT_RELAY_KEYS__: JSON.stringify(debugBuild ? await readRelayPublicKeys(process.cwd()) : []) }`
+처럼 `@apps-in-toss/debugger/relay-keys`의 `readRelayPublicKeys`를 쓴다. 이 함수는 키 에이전트(메모리 전용)에서
+공개키와 만료 시각만 받아 오고, 디스크에 비밀을 만들지 않는다. 키는 기본 24시간 유효하므로 만료되면 디버그 번들을
+다시 빌드해 업로드한다. 공개키는 커밋하지 않아도 된다. QR 테스트 호스트에서는 이 키로 attach URL의 서명을
+확인하므로 키가 없으면 연결되지 않는다(`blocked-relay-key`).
 
 `__DEBUG_BUILD__`는 번들러 `define`이 환경 변수 `AIT_DEBUG_BUILD`에서 읽어 정한다. 기본(release)
 빌드는 `false`로 접혀 번들러가 패키지 그래프를 통째로 지우므로 배포 번들에 attach 코드가
@@ -87,7 +90,7 @@ if (__DEBUG_BUILD__) {
 프로젝트에 이미 `/auto` import가 있으면 사용자에게 알린 뒤 게이트 import로 바꾼다.
 
 프로젝트에 0.3.0 이하의 옛 이름 `@apps-in-toss/debug-console`이 있으면 "이미 설치됨"으로 끝내지
-않는다. 이름이 `@apps-in-toss/debugger-client`로 바뀌었고 debugger와 함께 0.3.1 이상이어야 연결되므로,
+않는다. 이름이 `@apps-in-toss/debugger-client`로 바뀌었고 debugger 0.4.0 이상과 함께 0.3.2 이상이어야 연결되므로,
 `setup-debugger/references/upgrade-check.md`의 마이그레이션 경로(0절·2-B절)로 안내한다.
 
 이 패키지는 예전 `@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP

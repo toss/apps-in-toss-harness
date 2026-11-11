@@ -123,21 +123,27 @@ describe('protocolVersionMismatchError', () => {
     expect(olderText).toContain('0.3.0');
   });
 
+  it('does not repeat the word 패키지 in the pre-rename mismatch text', () => {
+    expect(olderText.match(/패키지/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(olderText).toContain('옛 @apps-in-toss/debug-console (0.3.0)');
+    expect(olderText).not.toContain('들어 있는 패키지');
+  });
+
   it('says that an update is required and that the device was not connected', () => {
     expect(olderText).toContain('업데이트가 필요합니다');
     expect(olderText).toContain('연결하지 않았습니다');
   });
 
-  it('tells a pre-rename device to switch to the renamed package at 0.3.1 or later', () => {
+  it('tells a pre-rename device to switch to the renamed package at debugger 0.4.0 / debugger-client 0.3.2 or later', () => {
     expect(olderText).toContain('이름이 바뀌었습니다');
     expect(olderText).toContain('@apps-in-toss/debug-console을 지우고');
-    expect(olderText).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
-    expect(olderText).toContain('@apps-in-toss/debugger 0.3.1 이상');
+    expect(olderText).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(olderText).toContain('@apps-in-toss/debugger 0.4.0 이상');
   });
 
   it('treats a device without a protocol number as the older side', () => {
     const text = unnumbered.content[0]?.text ?? '';
-    expect(text).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
+    expect(text).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
     expect(text).toContain('옛 버전');
   });
 
@@ -147,7 +153,7 @@ describe('protocolVersionMismatchError', () => {
         match: false,
         deviceProtocol: 3,
         hostProtocol: 4,
-        deviceVersion: '0.3.1',
+        deviceVersion: '0.3.2',
       }).content[0]?.text ?? '';
     expect(text).toContain('기기의 @apps-in-toss/debugger-client');
     expect(text).not.toContain('debug-console');
@@ -164,15 +170,17 @@ describe('protocolVersionMismatchError', () => {
   });
 
   it('tells the operator to update the daemon when the device is newer', () => {
-    expect(newerText).toContain('@apps-in-toss/debugger를 0.3.1 이상');
+    expect(newerText).toContain('@apps-in-toss/debugger를 0.4.0 이상');
     expect(newerText).toContain('@apps-in-toss/debugger-client');
     expect(newerText).not.toContain('지우고');
   });
 
-  it('only ever names the 0.3.1 floor besides the device label', () => {
+  it('only ever names the first-release floors besides the device label', () => {
     // The packages are versioned independently; a version borrowed from the other
-    // package does not exist. The floor is the rename release both packages share.
-    expect(new Set(olderText.match(/\d+\.\d+\.\d+/g))).toEqual(new Set(['0.3.0', '0.3.1']));
+    // package does not exist. Each floor is that package's own first release of the rename.
+    expect(new Set(olderText.match(/\d+\.\d+\.\d+/g))).toEqual(
+      new Set(['0.3.0', '0.3.2', '0.4.0']),
+    );
     expect(olderText).not.toMatch(/맞춰/);
   });
 
@@ -289,7 +297,7 @@ describe('relay refuses a device on another protocol', () => {
     expect(res.headers.get('content-type')).toContain('javascript');
     expect(res.headers.get('cache-control')).toBe('no-store');
     const body = await res.text();
-    expect(body).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
+    expect(body).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
     expect(body).toContain('debug-console');
     // It is the notice, not chii.
     expect(body).not.toContain('ChiiServerUrl');
@@ -316,7 +324,7 @@ describe('relay refuses a device on another protocol', () => {
     expect(body).toContain(
       '@apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고',
     );
-    expect(body).toContain('@apps-in-toss/debugger-client 0.3.1 이상');
+    expect(body).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
     expect(body).toContain("window.__ait_debug_status='update-required'");
     expect(body).not.toContain('ChiiServerUrl');
     expect(body).not.toContain(CODE);
@@ -343,7 +351,7 @@ describe('relay refuses a device on another protocol', () => {
     const res = await fetch(`${base}/v${PROTOCOL_VERSION + 1}/at/${CODE}/target.js`);
     const body = await res.text();
     expect(body).toContain('디버거');
-    expect(body).toContain('0.3.1 이상');
+    expect(body).toContain('0.4.0 이상');
     expect(body).toContain('올려');
     expect(events).toEqual([{ deviceVersion: '', deviceProtocol: String(PROTOCOL_VERSION + 1) }]);
   });

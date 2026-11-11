@@ -1,8 +1,8 @@
 /**
- * relay 관측 루프 로컬 PC 검증 — full attach → list_pages → measure_safe_area
+ * relay 관측 루프 로컬 PC 검증 — full attach → get_page → measure_safe_area
  *
  * WHAT THIS TEST PROVES:
- *   relay MCP-attach 관측 루프(attach → list_pages → measure_safe_area) 전체가
+ *   relay MCP-attach 관측 루프(attach → get_page → measure_safe_area) 전체가
  *   로컬 PC에서 실기기 없이 동작한다. 이 테스트는 실제 `createFakeRelay`(노드 ws
  *   서버 + HTTP /targets 엔드포인트)에 연결된 `ChiiCdpConnection`을 구성하고,
  *   `measureSafeArea`가 relay의 `Runtime.evaluate` 응답을 파싱해 `SafeAreaMeasurement`를
@@ -171,7 +171,7 @@ async function createAutoRespondingRelay(): Promise<FakeAutoRelay> {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('relay local-PC full loop — attach → list_pages → measure_safe_area', () => {
+describe('relay local-PC full loop — attach → get_page → measure_safe_area', () => {
   it('full chain: ChiiCdpConnection attaches, lists target, and measureSafeArea returns SafeAreaMeasurement', async () => {
     const relay = await createAutoRespondingRelay();
     const conn = new ChiiCdpConnection({
@@ -192,8 +192,8 @@ describe('relay local-PC full loop — attach → list_pages → measure_safe_ar
       // relay silently discards them.
       await conn.enableDomains();
 
-      // --- Step 2: list_pages ---
-      // After enableDomains(), listTargets() (= list_pages) must return the
+      // --- Step 2: get_page ---
+      // After enableDomains(), listTargets() (= get_page) must return the
       // registered target. This is the synchronous cached view.
       const targets = conn.listTargets();
       expect(targets).toHaveLength(1);

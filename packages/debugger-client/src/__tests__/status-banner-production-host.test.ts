@@ -46,7 +46,7 @@ describe('production host silence', () => {
   it('startDebugConsole leaves no banner, status, bridge or console output', async () => {
     const spies = CONSOLE_METHODS.map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
     const { startDebugConsole } = await import('../index.js');
-    await startDebugConsole({ relayPublicKeys: ['x'] });
+    await startDebugConsole({ relayPublicKeys: [{ publicKey: 'x', notAfter: 1 }] });
     await Promise.resolve();
     expect(document.getElementById('__ait_status_banner')).toBeNull();
     expect(window.__ait_debug_status).toBeUndefined();

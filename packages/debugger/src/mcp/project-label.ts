@@ -3,7 +3,7 @@
  *
  * Several sessions can run at once, each with its own daemon, relay and
  * dashboard. The label is what tells them apart (dashboard tab title,
- * `get_debug_status`). It is the basename of the project root and nothing else:
+ * `get_status`). It is the basename of the project root and nothing else:
  * never the full path, never a relay host.
  *
  * Node-only, no heavy imports (the test runner pulls this in too).

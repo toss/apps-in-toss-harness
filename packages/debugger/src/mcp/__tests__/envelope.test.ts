@@ -6,7 +6,7 @@
  *   - wrapEnvelope: returns raw data when AIT_MCP_COMPAT=chrome-devtools
  *   - isCompatMode: reads AIT_MCP_COMPAT env var
  *   - toEnvelopeEnv: maps McpEnvironment → EnvelopeEnv
- *   - MCP tool results for `list_pages`, `get_debug_status`, `measure_safe_area`,
+ *   - MCP tool results for `get_page`, `get_status`, `measure_safe_area`,
  *     `call_sdk` include ok/data/meta fields
  *   - compat mode restores raw 0.1.x payload for those tools
  */
@@ -124,18 +124,21 @@ describe('wrapEnvelope', () => {
   });
 
   it('marks data that came from the attached page', () => {
-    const fromPage = wrapEnvelope({}, { tool: 'evaluate', env: 'mock', attached: true });
-    const fromDaemon = wrapEnvelope({}, { tool: 'start_debug', env: 'mock', attached: true });
+    const fromPage = wrapEnvelope({}, { tool: 'run_script', env: 'mock', attached: true });
+    const fromDaemon = wrapEnvelope(
+      {},
+      { tool: 'switch_environment', env: 'mock', attached: true },
+    );
     expect(fromPage).toMatchObject({ meta: { untrustedData: true } });
     expect(fromDaemon).not.toHaveProperty('meta.untrustedData');
   });
 
   it('marks by default: only the explicit daemon-authored allowlist is unmarked', () => {
     for (const tool of [
-      'AIT.getSdkCallHistory',
-      'AIT.getMockState',
-      'AIT.getOperationalEnvironment',
-      'get_debug_status',
+      'list_sdk_calls',
+      'get_mock_state',
+      'get_sdk_environment',
+      'get_status',
       'measure_safe_area',
       'run_tests',
       'start_attach',
@@ -156,18 +159,18 @@ describe('wrapEnvelope', () => {
 
   it('wraps data in ToolEnvelope when compat mode is off', () => {
     const data = { foo: 'bar' };
-    const result = wrapEnvelope(data, { tool: 'list_pages', env: 'mock', attached: false });
+    const result = wrapEnvelope(data, { tool: 'get_page', env: 'mock', attached: false });
     expect(result).toMatchObject({
       ok: true,
       data: { foo: 'bar' },
-      meta: { tool: 'list_pages', env: 'mock', attached: false, contentType: 'json' },
+      meta: { tool: 'get_page', env: 'mock', attached: false, contentType: 'json' },
     });
   });
 
   it('returns raw data when AIT_MCP_COMPAT=chrome-devtools', () => {
     process.env.AIT_MCP_COMPAT = 'chrome-devtools';
     const data = { foo: 'bar' };
-    const result = wrapEnvelope(data, { tool: 'list_pages', env: 'mock', attached: false });
+    const result = wrapEnvelope(data, { tool: 'get_page', env: 'mock', attached: false });
     expect(result).toBe(data); // exact same reference — no wrapper
   });
 
@@ -232,36 +235,36 @@ describe('envelope on MCP tools (default mode)', () => {
     delete process.env.AIT_MCP_COMPAT;
   });
 
-  it('list_pages result is wrapped in ToolEnvelope', async () => {
+  it('get_page result is wrapped in ToolEnvelope', async () => {
     const client = await makeClient({ env: 'mock' });
-    const result = await client.callTool({ name: 'list_pages', arguments: {} });
+    const result = await client.callTool({ name: 'get_page', arguments: {} });
     expect(result.isError).toBeFalsy();
     const raw = parseRaw(result) as Record<string, unknown>;
     expect(raw.ok).toBe(true);
     expect(raw.data).toBeDefined();
     const meta = raw.meta as Record<string, unknown>;
-    expect(meta.tool).toBe('list_pages');
+    expect(meta.tool).toBe('get_page');
     expect(meta.env).toBe('mock');
     expect(typeof meta.attached).toBe('boolean');
     expect(meta.contentType).toBe('json');
   });
 
-  it('get_debug_status result is wrapped in ToolEnvelope', async () => {
+  it('get_status result is wrapped in ToolEnvelope', async () => {
     const client = await makeClient({ env: 'mock' });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const raw = parseRaw(result) as Record<string, unknown>;
     expect(raw.ok).toBe(true);
     expect(raw.data).toBeDefined();
     const meta = raw.meta as Record<string, unknown>;
-    expect(meta.tool).toBe('get_debug_status');
+    expect(meta.tool).toBe('get_status');
     expect(meta.contentType).toBe('json');
   });
 
   it('meta.attached reflects whether a page is attached', async () => {
     // No target attached
     const noTarget = await makeClient({ env: 'mock' });
-    const noTargetResult = await noTarget.callTool({ name: 'list_pages', arguments: {} });
+    const noTargetResult = await noTarget.callTool({ name: 'get_page', arguments: {} });
     const noTargetRaw = parseRaw(noTargetResult) as Record<string, unknown>;
     const noTargetMeta = noTargetRaw.meta as Record<string, unknown>;
     expect(noTargetMeta.attached).toBe(false);
@@ -269,7 +272,7 @@ describe('envelope on MCP tools (default mode)', () => {
     // With target attached
     const conn = new FakeCdpConnection([{ id: 't1', title: 'App', url: 'https://example.com' }]);
     const withTarget = await makeClient({ env: 'mock', connection: conn });
-    const withTargetResult = await withTarget.callTool({ name: 'list_pages', arguments: {} });
+    const withTargetResult = await withTarget.callTool({ name: 'get_page', arguments: {} });
     const withTargetRaw = parseRaw(withTargetResult) as Record<string, unknown>;
     const withTargetMeta = withTargetRaw.meta as Record<string, unknown>;
     expect(withTargetMeta.attached).toBe(true);
@@ -277,7 +280,7 @@ describe('envelope on MCP tools (default mode)', () => {
 
   it('meta.env reflects the resolved McpEnvironment', async () => {
     const relayClient = await makeClient({ env: 'relay-dev' });
-    const result = await relayClient.callTool({ name: 'list_pages', arguments: {} });
+    const result = await relayClient.callTool({ name: 'get_page', arguments: {} });
     const raw = parseRaw(result) as Record<string, unknown>;
     const meta = raw.meta as Record<string, unknown>;
     expect(meta.env).toBe('relay-dev');
@@ -295,12 +298,12 @@ describe('envelope compat mode (AIT_MCP_COMPAT=chrome-devtools)', () => {
     delete process.env.AIT_MCP_COMPAT;
   });
 
-  it('list_pages returns raw payload without envelope wrapper', async () => {
+  it('get_page returns raw payload without envelope wrapper', async () => {
     const client = await makeClient({ env: 'mock' });
-    const result = await client.callTool({ name: 'list_pages', arguments: {} });
+    const result = await client.callTool({ name: 'get_page', arguments: {} });
     expect(result.isError).toBeFalsy();
     const raw = parseRaw(result) as Record<string, unknown>;
-    // Raw list_pages has `pages`, `tunnel`, `singleAttachModel` — NOT `ok`/`meta`.
+    // Raw get_page has `pages`, `tunnel`, `singleAttachModel` — NOT `ok`/`meta`.
     expect(raw.pages).toBeDefined();
     expect(raw.tunnel).toBeDefined();
     expect(raw.singleAttachModel).toBe(true);
@@ -308,12 +311,12 @@ describe('envelope compat mode (AIT_MCP_COMPAT=chrome-devtools)', () => {
     expect('meta' in raw).toBe(false);
   });
 
-  it('get_debug_status returns raw payload without envelope wrapper', async () => {
+  it('get_status returns raw payload without envelope wrapper', async () => {
     const client = await makeClient({ env: 'mock' });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const raw = parseRaw(result) as Record<string, unknown>;
-    // Raw get_debug_status has `environment`, `tunnel`, etc. — NOT `ok`/`meta`.
+    // Raw get_status has `environment`, `tunnel`, etc. — NOT `ok`/`meta`.
     expect(raw.environment).toBeDefined();
     expect('ok' in raw).toBe(false);
     expect('meta' in raw).toBe(false);
@@ -410,9 +413,9 @@ describe('untrusted-data marker', () => {
     'list_console_messages',
     'list_exceptions',
     'list_network_requests',
-    'AIT.getSdkCallHistory',
-    'AIT.getMockState',
-    'AIT.getOperationalEnvironment',
+    'list_sdk_calls',
+    'get_mock_state',
+    'get_sdk_environment',
   ];
   const attachedConn = (): FakeCdpConnection =>
     new FakeCdpConnection([{ id: 't1', title: 'App', url: 'http://localhost:5173/' }]);

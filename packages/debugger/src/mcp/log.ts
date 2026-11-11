@@ -69,9 +69,21 @@ export type LogEvent =
   // A request or upgrade refused because of its browser origin. Surface and
   // reason enum only.
   | 'relay.origin.reject'
+  // A relay request refused by the code check. `msg` carries the surface, the reject
+  // reason enum and the attached page count; no URL, code or host.
+  | 'relay.auth.reject'
   // The tunnel was reissued, or a reissue was held back, after repeated locks.
   // `reason` is an enum string; no URL.
-  | 'tunnel.rotation';
+  | 'tunnel.rotation'
+  // A device claimed the attach window, or a second one tried to. Fingerprint, coarse
+  // user-agent family and country code only (msg).
+  | 'relay.claim'
+  // The tunnel was closed on purpose after sitting unused; start_attach opens it again.
+  | 'tunnel.idle-closed'
+  // A debug session ended on purpose or because a limit ran out. `reason` is an enum.
+  | 'session.end'
+  // A new-QR notice was sent to the attached phone. `windowSec` is the window length.
+  | 'session.rescan-notice';
 
 /**
  * Allowed field keys that may pass through to a log line.
@@ -91,6 +103,8 @@ const ALLOWED_KEYS = new Set([
   'deploymentId',
   'errorKind',
   'reason',
+  // session.rescan-notice — length of the attach window, in seconds.
+  'windowSec',
   'prevTargetId',
   // page.rejected-busy — first DNS label of the page host only.
   'rejectedApp',

@@ -842,6 +842,8 @@ describe('launch-scan.sh', () => {
         'ait-attach',
         'relayPublicKeys',
         'startDebugConsole',
+        '__ait_session_chip',
+        'ait_remote_debugger',
       ]) {
         const bad = mkFixture({ 'dist/assets/index.js': L('var x=1;', `var a="${marker}";`) });
         const out = scan(bad);

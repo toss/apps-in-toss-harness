@@ -898,6 +898,13 @@ describe('relay signature shape (Layer C4)', () => {
     expect(gate(rawParams(`${BASE}&sig=${SIG}`), HOST).attach).toBe(true);
   });
 
+  it('extra computer-name parameters (ahn / ahs) do not change the gate decision', () => {
+    // Clients that predate the name must keep attaching with links that carry it.
+    expect(
+      gate(rawParams(`${BASE}&sig=${SIG}&ahn=dev-mac&ahs=${'A'.repeat(86)}`), HOST).attach,
+    ).toBe(true);
+  });
+
   it('a bad at code is reported before the signature', () => {
     const result = gate(rawParams('debug=1&relay=wss%3A%2F%2Fabc.trycloudflare.com&at=zz'), HOST);
     expect(result.attach).toBe(false);

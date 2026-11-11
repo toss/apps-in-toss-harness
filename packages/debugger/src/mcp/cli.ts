@@ -3,12 +3,12 @@
  *
  * Boots the MCP stdio debugging daemon (CDP/Chii relay + cloudflared quick
  * tunnel for a real Toss WebView, or a local Chromium). Nothing boots at
- * startup: the in-session `start_debug(mode)` tool picks the local browser or
+ * startup: the in-session `switch_environment(mode)` tool picks the local browser or
  * the relay, and can flip between them with no restart.
  *
- * The 0.3.1 line removed the `--mode`/`--target` startup flags: every start
+ * The 0.4.0 line removed the `--mode`/`--target` startup flags: every start
  * is the same daemon, so the flags selected nothing the session cannot switch
- * to itself. Passing them is an error with a pointer to `start_debug`.
+ * to itself. Passing them is an error with a pointer to `switch_environment`.
  *
  * Node-only — a stdio MCP process.
  */
@@ -16,6 +16,7 @@
 import { realpathSync } from 'node:fs';
 import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { runKeyAgent } from '../agent/main.js';
 import { runDebugServer } from './debug-server.js';
 import { runRelayKey } from './relay-key.js';
 import { readDevtoolsVersion } from './tools.js';
@@ -32,7 +33,8 @@ debugger — MCP debugging daemon (CDP/Chii relay) for Apps in Toss mini-apps
 
 USAGE
   debugger [options]
-  debugger relay-key [--project <dir>]
+  debugger relay-key [--project <dir>] [--rotate] [--json]
+  debugger key-agent
 
 OPTIONS
   --force, --takeover     Also end leftover daemons of the same MCP client in
@@ -48,15 +50,17 @@ DESCRIPTION
   interactively at a terminal. Each MCP client session runs its own daemon
   with its own relay, tunnel, dashboard and ports, so several sessions can run
   at once. Nothing boots at startup: switch between the local browser and a
-  real device in-session with the start_debug / start_attach tools, no restart
-  needed. The --mode/--target flags were removed in 0.3.1.
+  real device in-session with the switch_environment / start_attach tools, no restart
+  needed. The --mode/--target flags were removed in 0.4.0.
 
 SUBCOMMANDS
-  relay-key               Print the relay public key for this project (creates
-                          .ait_relay when missing). The key goes into the debug
-                          build so the device can check the relay address in a
-                          QR link. \`--rotate\` replaces the key with a new
-                          one. Run \`debugger relay-key --help\`.
+  relay-key               Print the relay public key for this project. The key
+                          goes into the debug build so the device can check the
+                          relay address in a QR link. It lives in memory only,
+                          in the key agent. \`--rotate\` replaces the key with a
+                          new one. Run \`debugger relay-key --help\`.
+  key-agent               The resident process that holds relay keys in memory.
+                          It starts on demand; you rarely run it yourself.
 
 EXAMPLE
   debugger --force
@@ -102,7 +106,7 @@ export function findUnknownFlags(argv: readonly string[]): string[] {
   return unknown;
 }
 
-/** Flags removed in 0.3.1 (bare name, without any `=value`). */
+/** Flags removed in 0.4.0 (bare name, without any `=value`). */
 const REMOVED_FLAGS = new Set(['--mode', '--target']);
 
 /**
@@ -114,9 +118,9 @@ export function unknownFlagHint(unknown: readonly string[]): string {
   const lines: string[] = [];
   if (removed.length > 0) {
     lines.push(
-      `${removed.join(', ')} was removed in 0.3.1. The daemon has a single start mode; ` +
+      `${removed.join(', ')} was removed in 0.4.0. The daemon has a single start mode; ` +
         'switch between the local browser and a real device in-session with the ' +
-        '`start_debug` tool (mode: local-browser | relay-staging).',
+        '`switch_environment` tool (mode: local-browser | relay-staging).',
     );
   }
   lines.push(
@@ -151,6 +155,11 @@ export function parseForce(argv: readonly string[]): boolean {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  if (args[0] === 'key-agent') {
+    process.exitCode = await runKeyAgent();
+    return;
+  }
 
   if (args[0] === 'relay-key') {
     process.exitCode = await runRelayKey(args.slice(1));

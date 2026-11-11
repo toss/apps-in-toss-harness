@@ -184,16 +184,16 @@ describe('tool gating', () => {
     return client;
   }
 
-  it('blocks tools but get_debug_status reports updateRequired', async () => {
+  it('blocks tools but get_status reports updateRequired', async () => {
     const client = await connect({ status: 'update-required', current: '0.3.1', minimum: '9.9.9' });
-    for (const name of ['start_attach', 'start_debug', 'list_pages', 'evaluate']) {
+    for (const name of ['start_attach', 'switch_environment', 'get_page', 'run_script']) {
       const r = await client.callTool({ name, arguments: {} });
       expect(r.isError).toBe(true);
       const text = (r.content as Array<{ text: string }>)[0]!.text;
       expect(text).toBe(updateRequiredMessage('0.3.1', '9.9.9'));
       expect(text).toContain('/ait:setup-debugger');
     }
-    const status = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const status = await client.callTool({ name: 'get_status', arguments: {} });
     expect(status.isError).toBeFalsy();
     const raw = JSON.parse((status.content as Array<{ text: string }>)[0]!.text);
     const data = raw.data ?? raw;
@@ -204,7 +204,7 @@ describe('tool gating', () => {
   it('does not block when ok or unknown', async () => {
     for (const gate of [{ status: 'ok' }, { status: 'unknown' }] as MinVersionGateState[]) {
       const client = await connect(gate);
-      const r = await client.callTool({ name: 'list_pages', arguments: {} });
+      const r = await client.callTool({ name: 'get_page', arguments: {} });
       const text = (r.content as Array<{ text: string }>)[0]!.text;
       expect(text).not.toContain('지원이 끝났어요');
     }

@@ -2,7 +2,7 @@
  * `DualConnectionRouter` direction-symmetry tests (issues #356, #378, #396).
  *
  * #354 introduced the dual-connection router but wired it only into the
- * relay-launched `runDebugServer`, so a cross-family `start_debug` starting
+ * relay-launched `runDebugServer`, so a cross-family `switch_environment` starting
  * from the local browser (local → relay) was rejected as "restart required".
  * #356 generalized the
  * router to be **direction-neutral**: any family could be the eager (startup)
@@ -11,7 +11,7 @@
  * `local-browser | relay-intoss` (the third key, `relay-sandbox`, went away with
  * 환경 2 in #103). #396 makes the router **all-lazy**:
  * NO family boots at startup; every
- * family boots on its first `start_debug` via `bootLazyFor(key)`. So before the
+ * family boots on its first `switch_environment` via `bootLazyFor(key)`. So before the
  * first switch `router.active` is the NULL sentinel and `bootedFamilies()` is
  * empty. (This routes every relay boot through `switchMode` → the project-local
  * `.ait_relay` secret load runs first.)
@@ -44,6 +44,7 @@ import {
   type StartDebugMode,
 } from '../debug-server.js';
 import { AutoDevtoolsOpener } from '../devtools-opener.js';
+import { resetRelayRootState } from '../relay-root.js';
 import { InMemoryDiagnosticsCollector, type TunnelStatus } from '../tools.js';
 import { testVerifyAuth } from './relay-test-auth.js';
 
@@ -90,7 +91,7 @@ function makeFamily(
 /**
  * Builds an all-lazy router (#396): NO family boots at construction. The router
  * holds a `local` family and a single intoss-relay family, BOTH resolved lazily
- * by `bootLazyFor(key)` on the first `start_debug` for that key. Since 환경 2
+ * by `bootLazyFor(key)` on the first `switch_environment` for that key. Since 환경 2
  * was removed (#103) `relay-intoss` is the only relay key, so any `relay-*` key
  * resolves the same warm `relay` family.
  *
@@ -230,7 +231,7 @@ describe('DualConnectionRouter — all-lazy boot (#396)', () => {
   it('the NULL sentinel rejects any CDP command with a boot-first hint', async () => {
     const { router } = makeRouter('local');
     await expect(router.active.send('DOM.getDocument')).rejects.toThrow(
-      /no family booted yet — call start_debug first/,
+      /no family booted yet — call switch_environment first/,
     );
   });
 
@@ -357,6 +358,7 @@ describe('familyKeyForMode (#378)', () => {
 // into the boot path (not just the standalone unit in relay-auth-required.test.ts).
 describe('bootRelayFamily — relay-auth baseline (#250)', () => {
   beforeEach(() => {
+    resetRelayRootState(); // earlier tests in this file activate a relay key
     delete process.env.AIT_DEBUG_TOTP_SECRET;
   });
   afterEach(() => {

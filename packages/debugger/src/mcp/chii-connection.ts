@@ -28,12 +28,23 @@ import type {
   CdpEventMap,
   CdpEventName,
   CdpTarget,
+  CdpTransientEventMap,
+  CdpTransientEventName,
 } from './cdp-connection.js';
 import { sanitizeRemoteText } from './errors.js';
 import { logInfo } from './log.js';
 import { generateTotp } from './totp.js';
 
 /** Max events retained per domain ring buffer. */
+/** Close reasons the relay sends with 4401 when it ends sessions on purpose (see chii-relay.ts). */
+const REVOKE_REASONS: ReadonlySet<string> = new Set([
+  'revoked',
+  'user-stopped',
+  'idle-timeout',
+  'session-expired',
+  'replaced',
+]);
+
 const DEFAULT_BUFFER_SIZE = 500;
 
 /**
@@ -155,7 +166,7 @@ export interface ChiiCdpConnectionOptions {
   /**
    * Hex-encoded TOTP secret (the SECRET, never a code). Required: each client WS
    * (re)connect and each `/targets` poll mints a fresh `at=` code so it lands
-   * inside the relay's 30-35 s acceptance window.
+   * inside the relay's 120-125 s acceptance window.
    * SECRET-HANDLING: stored privately, never logged; the minted code rides only
    * in the WS URL query.
    */
@@ -503,7 +514,7 @@ export class ChiiCdpConnection implements CdpConnection {
     const clientUrl = `${wsBase}/client/${clientId}?target=${encodeURIComponent(target.id)}&at=${encodeURIComponent(generateTotp(this.totpSecret))}`;
     // Append a freshly-minted TOTP code so the relay's WS upgrade gate
     // (chii-relay.ts verifyAuth) accepts this /client upgrade. Minted per-connect
-    // so reconnects stay inside the 30-35 s acceptance window. generateTotp defaults
+    // so reconnects stay inside the 120-125 s acceptance window. generateTotp defaults
     // `when` to Date.now() — rely on that default; never hand-compute the time.
     // SECRET-HANDLING: never log `code` or `this.totpSecret`; the code rides only
     // in the URL query.
@@ -541,10 +552,12 @@ export class ChiiCdpConnection implements CdpConnection {
     // (accept-then-close) — name it as an auth failure instead of a generic
     // drop. #439's per-connect fresh code mint means this should not happen in
     // practice; defensive alignment with the relay contract.
-    ws.on('close', (code: number) =>
+    ws.on('close', (code: number, reason: Buffer) =>
       this.handleDisconnect(
         code === RELAY_AUTH_REJECT_CLOSE_CODE
-          ? 'relay 인증(TOTP)이 거부돼 연결이 종료됐습니다 (close 4401)'
+          ? REVOKE_REASONS.has(reason.toString())
+            ? 'debug 세션이 종료됐습니다 (끊기·시간 만료). 다시 쓰려면 start_attach로 새 QR을 받으세요.'
+            : 'relay 인증(TOTP)이 거부돼 연결이 종료됐습니다 (close 4401)'
           : 'relay WebSocket 연결이 끊겼습니다',
       ),
     );
@@ -597,7 +610,7 @@ export class ChiiCdpConnection implements CdpConnection {
    * `AIT.*` methods, forwarded over the same Chii channel) build on this.
    *
    * Rejects immediately if the connection is disconnected (fail-fast — no
-   * auto-reconnect). Caller should re-run `list_pages` or `enableDomains` to
+   * auto-reconnect). Caller should re-run `get_page` or `enableDomains` to
    * reattach.
    *
    * Times out after `opts.timeoutMs` when given, else `commandTimeoutMs`
@@ -619,7 +632,7 @@ export class ChiiCdpConnection implements CdpConnection {
     if (this.connectionState === 'disconnected') {
       return Promise.reject(
         new Error(
-          `relay에 연결되어 있지 않습니다 (${method}). list_pages로 attach 상태를 확인하고 enableDomains()로 재연결하세요.`,
+          `relay에 연결되어 있지 않습니다 (${method}). get_page로 attach 상태를 확인하고 enableDomains()로 재연결하세요.`,
         ),
       );
     }
@@ -641,7 +654,7 @@ export class ChiiCdpConnection implements CdpConnection {
           new Error(
             `CDP 명령이 타임아웃됐습니다 (${method}, ${timeoutMs}ms). ` +
               '폰 측 토스 앱이 백그라운드로 내려갔거나 미니앱이 unload됐을 수 있습니다. ' +
-              'list_pages로 attach 상태를 확인하세요.',
+              'get_page로 attach 상태를 확인하세요.',
           ),
         );
       }, timeoutMs);
@@ -670,7 +683,7 @@ export class ChiiCdpConnection implements CdpConnection {
     this.ws = null;
     this.stopHeartbeat();
     const err = new Error(
-      `${reason}. list_pages로 attach 상태를 확인하고 enableDomains()로 재연결하세요.`,
+      `${reason}. get_page로 attach 상태를 확인하고 enableDomains()로 재연결하세요.`,
     );
     for (const waiter of this.pending.values()) {
       waiter.reject(err);
@@ -693,7 +706,7 @@ export class ChiiCdpConnection implements CdpConnection {
 
     const err = new Error(
       `[ait-debugger] replaced-by-new-attach — 이전 page 세션이 새 attach로 교체됐습니다 (targetId=${targetId}). ` +
-        'list_pages로 현재 attach 상태를 확인하세요.',
+        'get_page로 현재 attach 상태를 확인하세요.',
     );
     for (const waiter of this.pending.values()) {
       waiter.reject(err);
@@ -753,7 +766,7 @@ export class ChiiCdpConnection implements CdpConnection {
           : 'target detach (Target.detachedFromTarget)';
     const err = new Error(
       `[ait-debugger] ${label} 감지됨 — relay에서 제거됐습니다. ` +
-        '새 attach가 필요합니다 (list_pages로 확인 → enableDomains()로 재연결).',
+        '새 attach가 필요합니다 (get_page로 확인 → enableDomains()로 재연결).',
     );
     for (const waiter of this.pending.values()) {
       waiter.reject(err);
@@ -893,6 +906,12 @@ export class ChiiCdpConnection implements CdpConnection {
       return;
     }
 
+    // --- Transient streaming events (live subscribers only, never buffered) ---
+    if (message.method === 'Page.screencastFrame') {
+      this.emitter.emit(message.method, message.params);
+      return;
+    }
+
     // --- Phase 1 event stream (buffered ring-buffer) ---
     if (!this.buffers.has(message.method as CdpEventName)) return;
     const event = message.method as CdpEventName;
@@ -912,6 +931,14 @@ export class ChiiCdpConnection implements CdpConnection {
   }
 
   on<E extends CdpEventName>(event: E, listener: (payload: CdpEventMap[E]) => void): () => void {
+    this.emitter.on(event, listener as (payload: unknown) => void);
+    return () => this.emitter.off(event, listener as (payload: unknown) => void);
+  }
+
+  onTransient<E extends CdpTransientEventName>(
+    event: E,
+    listener: (payload: CdpTransientEventMap[E]) => void,
+  ): () => void {
     this.emitter.on(event, listener as (payload: unknown) => void);
     return () => this.emitter.off(event, listener as (payload: unknown) => void);
   }

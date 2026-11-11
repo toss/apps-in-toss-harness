@@ -9,9 +9,14 @@
  * string replacement of __PLACEHOLDER__ tokens.
  *
  * Token map (dashboard chrome):
+ *   __VIEW__               first screen: "wait" | "connected" | "error" (client refines)
+ *   __HAS_QR__             "1" when a QR is drawn, else "0"
+ *   __COPY_URL__           HTML-escaped attach link for the copy button (data-url, never shown)
+ *   __TIMER_NOTE__         QR rotation note
+ *   __CONTROL_SECTION__    session controls <section>, or empty string
  *   __TUNNEL_CLASS__       CSS class: "status-up" | "status-down"
  *   __TUNNEL_STATUS__      localised tunnel status label
- *   __ATTACH_SECTION__     QR img+url-box HTML, or hint text
+ *   __ATTACH_SECTION__     QR img + reopen hint, or hint text
  *   __INSPECTOR_SECTION__  inspector link <a> or waiting hint <span> (#503)
  *   __PAGES_SECTION__      pages <section> block, or empty string
  *   __TIMELINE_SECTION__   attach stage timeline <section>, or empty string
@@ -36,70 +41,240 @@ import type { Locale } from '../i18n/index.js';
 
 export const dashboardChromeHtmlKo =
 `<!DOCTYPE html>
-<html lang="ko"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>AIT 디버그 Dashboard</title><style>
+<html lang="ko"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="color-scheme" content="light dark"/><title>AIT 디버그</title><style>
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --text: #191f28;
+  --muted: #5b6573;
+  --faint: #8a93a0;
+  --line: #e3e6ea;
+  --primary: #1b64da;
+  --primary-hover: #1553b8;
+  --on-primary: #ffffff;
+  --ok: #0b7a3b;
+  --ok-bg: #e2f5e9;
+  --bad: #b3261e;
+  --bad-bg: #fdeceb;
+  --warn: #7a4f00;
+  --warn-bg: #fff3d1;
+  --chip-bg: #eceef2;
+  --focus: #1b64da;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  --sp-1: 8px;
+  --sp-2: 16px;
+  --sp-3: 24px;
+  --sp-4: 32px;
+  --radius: 20px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101216;
+    --surface: #181b21;
+    --surface-2: #1e222a;
+    --text: #eef1f5;
+    --muted: #a3adba;
+    --faint: #78818e;
+    --line: #2a2f38;
+    --primary: #7db2ff;
+    --primary-hover: #a3c8ff;
+    --on-primary: #0a1424;
+    --ok: #5fd68b;
+    --ok-bg: #12301f;
+    --bad: #ff9a92;
+    --bad-bg: #3a1a18;
+    --warn: #ffd06b;
+    --warn-bg: #3a2c0a;
+    --chip-bg: #242932;
+    --focus: #a3c8ff;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  }
+}
 *, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0d1117; color: #c9d1d9;
-  display: flex; flex-direction: column; align-items: center;
-  min-height: 100vh; margin: 0; padding: 2rem 1rem;
-  gap: 1.5rem;
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 16px; line-height: 1.5;
+  padding: var(--sp-3) var(--sp-2) var(--sp-4);
+  overflow-x: hidden;
 }
-h1 { font-size: 1.25rem; font-weight: 600; color: #e6edf3; margin: 0; text-align: center; }
-.updated { font-size: 0.75rem; opacity: 0.4; font-family: monospace; margin: 0; }
-section { width: 100%; max-width: 520px; }
-h2 { font-size: 1rem; font-weight: 600; color: #e6edf3; margin: 0 0 0.5rem; }
-.status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
-.status-up { background: #238636; color: #fff; }
-.status-down { background: #6e7681; color: #fff; }
+.shell { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+main.shell { max-width: none; margin: 0; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
+h1 { font-size: 17px; line-height: 24px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+h2 { font-size: 26px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 var(--sp-1); text-align: center; }
+h3 { font-size: 13px; line-height: 20px; font-weight: 600; margin: 0 0 var(--sp-1); color: var(--muted); }
+p { margin: 0; }
+.top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); padding: 0 4px var(--sp-1); }
+.top h1 { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.top h1::before {
+  content: ""; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 4px; background: var(--primary);
+  box-shadow: 4px 4px 0 -1px var(--primary-hover); opacity: 0.9; margin-right: 4px;
+}
+.status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 13px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status-ready { background: var(--chip-bg); color: var(--muted); }
+.status-up { background: var(--ok-bg); color: var(--ok); }
+.status-down { background: var(--bad-bg); color: var(--bad); }
+.lang-switcher { display: flex; gap: 2px; font-size: 13px; }
+.lang-switcher a { color: var(--faint); text-decoration: none; padding: 4px 8px; border-radius: 8px; }
+.lang-switcher a:hover { color: var(--text); }
+.lang-switcher a.active { color: var(--text); font-weight: 700; background: var(--chip-bg); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3); box-shadow: var(--shadow); }
+.hero { padding: var(--sp-4) var(--sp-3); }
+.lead { text-align: center; color: var(--muted); font-size: 15px; line-height: 24px; max-width: 380px; margin: 0 auto var(--sp-3); }
+.pane { display: none; }
+[data-view="wait"] [data-pane="wait"],
+[data-view="connecting"] [data-pane="connecting"],
+[data-view="connected"] [data-pane="connected"],
+[data-view="error"] [data-pane="error"] { display: block; }
+.notice { margin: 0 auto var(--sp-2); max-width: 380px; padding: 12px var(--sp-2); border-radius: 12px; background: var(--warn-bg); color: var(--warn); font-size: 14px; line-height: 22px; }
+.notice[hidden] { display: none; }
+#attach-section { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+[data-qr="0"] #attach-section { display: none; }
+.qr-frame {
+  position: relative; width: min(100%, 288px); aspect-ratio: 1 / 1; margin: 0 auto;
+  background: #fff; border-radius: 20px; padding: 16px;
+  box-shadow: 0 0 0 1px var(--line), 0 16px 32px -16px rgba(16, 24, 40, 0.25);
+}
 img.qr {
-  width: min(80vw, 300px); height: auto;
-  image-rendering: pixelated;
-  background: #fff; padding: 0.75rem; border-radius: 10px;
-  display: block; margin: 0.5rem auto;
+  display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.18s ease;
+  image-rendering: pixelated; image-rendering: crisp-edges;
 }
-.url-row {
-  display: flex; align-items: stretch; gap: 0; margin: 0.5rem 0 0;
-  border-radius: 6px; border: 1px solid #30363d; overflow: hidden;
+.qr-frame[data-ready="1"] img.qr { opacity: 1; }
+.qr-skel {
+  position: absolute; inset: 0; border-radius: 20px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; color: #5b6573; font-size: 14px;
+  background: linear-gradient(100deg, #f3f4f6 30%, #fafafb 50%, #f3f4f6 70%) 0 0 / 200% 100%;
+  animation: shimmer 1.4s linear infinite;
 }
-.url-box {
-  font-family: monospace; font-size: 0.7rem;
-  word-break: break-all; opacity: 0.45;
-  background: #161b22; padding: 0.6rem 0.85rem;
-  flex: 1; cursor: pointer; border: none; border-radius: 0;
+.qr-frame[data-ready="1"] .qr-skel { display: none; }
+.qr-skel i { width: 24px; height: 24px; border-radius: 50%; border: 3px solid #d5d9df; border-top-color: #1b64da; animation: spin 0.9s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.hint { font-size: 14px; line-height: 22px; color: var(--muted); text-align: center; max-width: 380px; }
+.reopen-hint { font-size: 13px; color: var(--faint); }
+.timer { display: none; flex-direction: column; align-items: center; gap: 6px; margin-top: var(--sp-3); }
+[data-qr="1"] .timer { display: flex; }
+.timer-bar { width: min(100%, 288px); height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.timer-bar i { display: block; height: 100%; width: 100%; background: var(--primary); transform-origin: left center; }
+.timer-text { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 20px; }
+.note { font-size: 13px; line-height: 20px; color: var(--faint); text-align: center; max-width: 380px; margin: var(--sp-1) auto 0; }
+[data-qr="0"] .note-qr { display: none; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-1); margin-top: var(--sp-3); }
+.btn {
+  appearance: none; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  min-height: 44px; padding: 0 var(--sp-3); border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+  transition: background 0.12s;
 }
-.url-box:hover { opacity: 0.65; }
-.copy-btn {
-  flex-shrink: 0; padding: 0.4rem 0.7rem;
-  background: #21262d; border: none; border-left: 1px solid #30363d;
-  color: #58a6ff; font-size: 0.7rem; cursor: pointer; white-space: nowrap;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn[hidden] { display: none; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-danger { color: var(--bad); }
+#copy-btn { display: none; }
+[data-qr="1"] #copy-btn { display: inline-flex; }
+.qr-none { display: none; text-align: center; padding: var(--sp-2) 0; }
+[data-qr="0"] .qr-none { display: block; }
+/* No QR: the "scan the QR" heading would contradict the empty state below it. */
+[data-qr="0"] > h2, [data-qr="0"] > .lead { display: none; }
+.qr-none .badge, .state-badge {
+  width: 64px; height: 64px; margin: 0 auto var(--sp-2); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700;
+  background: var(--chip-bg); color: var(--muted);
 }
-.copy-btn:hover { background: #30363d; }
-.hint { font-size: 0.85rem; opacity: 0.5; margin: 0.25rem 0 0; }
-.hint.error { color: #f85149; opacity: 1; font-weight: 600; }
+.qr-none .qr-none-title { font-size: 18px; line-height: 26px; font-weight: 700; margin-bottom: 4px; }
+.qr-none .actions { margin-top: var(--sp-3); }
+.state-badge.ok { background: var(--ok-bg); color: var(--ok); }
+.state-badge.bad { background: var(--bad-bg); color: var(--bad); }
+.steps { list-style: none; margin: var(--sp-3) auto 0; padding: var(--sp-2) var(--sp-3); max-width: 340px; display: flex; flex-direction: column; gap: 14px; background: var(--surface-2); border-radius: 16px; }
+.steps li { display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--faint); }
+.steps .dot {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--line); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; font-weight: 700;
+}
+.steps li.done { color: var(--text); }
+.steps li.done .dot { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.steps li.done .dot::after { content: "\\2713"; }
+.steps li.current { color: var(--text); font-weight: 600; }
+.steps li.current .dot { border-color: var(--primary); border-top-color: transparent; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .steps li.current .dot { animation: none; border-top-color: var(--primary); }
+  .qr-skel, .qr-skel i { animation: none; }
+  img.qr { transition: none; }
+}
+.cta { display: flex; justify-content: center; margin-top: var(--sp-3); }
 .inspector-link {
-  display: inline-block; margin-top: 0.5rem;
-  padding: 0.45rem 1rem; border-radius: 6px;
-  background: #1f6feb; color: #fff; font-size: 0.85rem; font-weight: 600;
-  text-decoration: none; text-align: center;
+  display: inline-flex; align-items: center; justify-content: center; min-height: 48px; min-width: 200px;
+  padding: 0 var(--sp-3); border-radius: 12px; font-size: 16px; font-weight: 700; text-decoration: none;
+  background: var(--primary); color: var(--on-primary);
 }
-.inspector-link:hover { background: #388bfd; }
-.inspector-hint { display: inline-block; margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.45; }
-ul { margin: 0; padding-left: 1.25rem; }
-li { margin-bottom: 0.35rem; font-size: 0.85rem; line-height: 1.5; }
-li.empty { opacity: 0.4; list-style: none; padding-left: 0; }
-.page-id { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
+.inspector-link:hover { background: var(--primary-hover); }
+.inspector-hint { font-size: 14px; color: var(--muted); text-align: center; }
+.facts { display: flex; flex-direction: column; gap: 4px; text-align: center; color: var(--muted); font-size: 15px; }
+.facts .warn { color: var(--warn); font-weight: 600; }
+.pages { margin-top: var(--sp-3); border-top: 1px solid var(--line); padding-top: var(--sp-2); }
+.pages ul, .details-body ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pages li { font-size: 14px; line-height: 22px; display: flex; gap: var(--sp-1); align-items: baseline; }
+li.empty { color: var(--muted); }
+.page-id { font-family: var(--mono); font-size: 12px; color: var(--muted); flex: 0 0 auto; }
 .page-url { word-break: break-all; }
-hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
-.session-line { font-size: 0.75rem; opacity: 0.55; margin: 0; }
+.ctl { display: block; padding: var(--sp-2) var(--sp-3); box-shadow: none; background: var(--surface-2); }
+.ctl .ctl-head { font-size: 12px; font-weight: 600; color: var(--faint); letter-spacing: 0.04em; text-transform: uppercase; }
+.ctl p { font-size: 14px; line-height: 22px; margin: 2px 0; color: var(--text); }
+.ctl ul { list-style: none; margin: 4px 0; padding: 0; font-size: 13px; line-height: 20px; color: var(--muted); }
+.ctl li.contested { color: var(--bad); font-weight: 600; }
+.ctl .err { color: var(--bad); min-height: 0; }
+.ctl .err:empty { display: none; }
+.ctl .actions { justify-content: flex-start; margin-top: var(--sp-1); }
+.ctl .btn { min-height: 40px; font-size: 14px; padding: 0 var(--sp-2); }
+details.details { padding: 0; box-shadow: none; background: transparent; }
+details.details > summary {
+  cursor: pointer; padding: 12px var(--sp-2); font-size: 14px; font-weight: 600; color: var(--muted); list-style: none;
+  display: flex; align-items: center; gap: var(--sp-1); min-height: 44px;
+}
+details.details > summary::-webkit-details-marker { display: none; }
+details.details > summary::before { content: "\\25B8"; color: var(--faint); transition: transform 0.15s; }
+details.details[open] > summary::before { transform: rotate(90deg); }
+details.details[open] { background: var(--surface); }
+.details-body { padding: 0 var(--sp-2) var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); }
+.session-line { font-size: 13px; color: var(--muted); }
 .session-line:empty { display: none; }
-li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
-li.stage-bad { color: #f85149; }
-.lang-switcher { display: flex; gap: 0.5rem; font-size: 0.75rem; }
-.lang-switcher a { color: #58a6ff; text-decoration: none; opacity: 0.6; }
-.lang-switcher a.active { font-weight: 700; text-decoration: underline; opacity: 1; }
-</style></head><body><h1>AIT 디버그 Dashboard</h1>__LANG_SWITCHER__<p class="updated" id="updated">마지막 갱신: __NOW__</p><p class="session-line" id="session-line">__SESSION_LINE__</p><section><h2>터널 상태</h2><span class="status __TUNNEL_CLASS__" id="tunnel-status">__TUNNEL_STATUS__</span></section><hr/><section><h2>Attach QR</h2><div id="attach-section">__ATTACH_SECTION__</div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section>__TIMELINE_SECTION____PAGES_SECTION__</body></html>`;
+.updated { font-size: 12px; color: var(--faint); font-family: var(--mono); }
+#timeline-list li { font-size: 13px; line-height: 20px; }
+li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 6px; }
+li.stage-bad { color: var(--bad); }
+/* connected + QR 보기: wait 창(QR·남은 시간·새 QR 만들기)을 연결 화면 아래에 펼친다. */
+.peek-warn { display: none; }
+.peek-bar { margin-top: var(--sp-3); }
+.peek-bar .peek-close, [data-peek="1"] .peek-bar .peek-open { display: none; }
+[data-peek="1"] .peek-bar .peek-close { display: inline; }
+[data-view="connected"][data-peek="1"] [data-pane="wait"] { display: block; margin-top: var(--sp-3); }
+[data-view="connected"][data-peek="1"] [data-pane="wait"] > h2,
+[data-view="connected"][data-peek="1"] [data-pane="wait"] > .lead,
+[data-view="connected"][data-peek="1"] [data-pane="wait"] > .notice:not(.peek-warn) { display: none; }
+[data-view="connected"][data-peek="1"] .peek-warn { display: block; }
+#stage[data-view="error"] ~ #ait-control #ait-control-newqr,
+#stage[data-view="wait"]:has([data-qr="0"]) ~ #ait-control #ait-control-newqr { display: none; }
+.lang-switcher { margin-left: auto; }
+@media (max-width: 480px) {
+  .top h1 { order: 1; }
+  .lang-switcher { order: 2; }
+  .status { order: 3; }
+  body { padding: var(--sp-2) 12px var(--sp-3); }
+  .hero { padding: var(--sp-3) var(--sp-2); }
+  h2 { font-size: 22px; line-height: 30px; }
+  .qr-frame { padding: 12px; }
+}
+</style></head><body><div class="shell"><header class="top"><h1>AIT 디버그</h1><span class="status __TUNNEL_CLASS__" id="tunnel-status" role="status">__TUNNEL_STATUS__</span>__LANG_SWITCHER__</header><main class="shell"><section class="card hero" id="stage" data-view="__VIEW__" data-peek="0" aria-live="polite"><div class="pane" data-pane="wait" data-qr="__HAS_QR__"><p class="notice peek-warn" id="peek-warn" role="note">이 QR로 새로 연결하면 지금 연결된 폰의 연결이 끊겨요.</p><h2>폰으로 QR을 스캔하세요</h2><p class="lead">토스 앱의 카메라로 QR을 읽으면 미니앱이 열리고 자동으로 연결돼요.</p><div class="notice" id="notice" role="alert" hidden=""></div><div id="attach-section">__ATTACH_SECTION__</div><div class="qr-none"><div class="badge" aria-hidden="true">?</div><p class="qr-none-title">지금은 QR이 없어요</p><p class="hint">폰이 연결을 받을 수 있는 상태가 아니에요. 새 QR을 만들면 다시 스캔할 수 있어요.</p><div class="actions"><button class="btn btn-primary" type="button" data-act="new-qr" hidden="">새 QR 만들기</button></div></div><div class="timer" aria-hidden="true"><div class="timer-bar"><i id="qr-timer-bar"></i></div><span class="timer-text" id="qr-timer-text"></span></div><p class="note note-qr">__TIMER_NOTE__</p><div class="actions"><button class="btn copy-btn" id="copy-btn" type="button" data-url="__COPY_URL__">링크 복사</button></div></div><div class="pane" data-pane="connecting"><h2>폰과 연결하는 중이에요</h2><p class="lead">미니앱을 닫지 말고 잠시만 기다려 주세요.</p><ol class="steps" id="steps"><li data-step="tunnel"><span class="dot" aria-hidden="true"></span><span>연결 통로 준비</span></li><li data-step="qr"><span class="dot" aria-hidden="true"></span><span>QR 만들기</span></li><li data-step="open"><span class="dot" aria-hidden="true"></span><span>폰에서 미니앱 열기</span></li><li data-step="connect"><span class="dot" aria-hidden="true"></span><span>폰과 연결</span></li><li data-step="ready"><span class="dot" aria-hidden="true"></span><span>디버거 준비</span></li></ol><p class="note">1분 넘게 멈춰 있으면 미니앱을 닫고 QR을 다시 스캔해 보세요.</p></div><div class="pane" data-pane="connected"><div class="state-badge ok" aria-hidden="true">✓</div><h2>폰이 연결됐어요</h2><div class="facts"><p id="conn-sub"></p><p id="conn-left"></p></div><div class="cta">__INSPECTOR_SECTION__</div>__PAGES_SECTION__<div class="actions peek-bar"><button class="btn" id="qr-peek-toggle" type="button" aria-expanded="false" aria-controls="stage"><span class="peek-open">QR 보기</span><span class="peek-close">QR 닫기</span></button></div></div><div class="pane" data-pane="error"><div class="state-badge bad" aria-hidden="true">!</div><h2>연결이 끊겼어요</h2><p class="lead">폰과 이어 주는 연결 통로가 끊겼어요. 이 QR은 더 쓸 수 없어요. Claude에게 다시 연결해 달라고 요청하면 새 QR이 만들어져요.</p><div class="actions"><button class="btn" type="button" data-act="new-qr" hidden="">새 QR 만들기</button></div></div></section>__CONTROL_SECTION__<details class="card details" id="diag"><summary>자세히</summary><div class="details-body"><p class="session-line" id="session-line">__SESSION_LINE__</p>__TIMELINE_SECTION__<p class="updated" id="updated">마지막 갱신: __NOW__</p></div></details></main></div></body></html>`;
 
 export const attachChromeHtmlKo =
 `<!DOCTYPE html>
@@ -161,76 +336,246 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0.5rem 0;
 }
 .inspector-link:hover { background: #388bfd; }
 .inspector-hint { display: inline-block; margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.45; }
-</style></head><body><h1>AIT 디버그 세션 — QR 스캔</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>스캔 절차</h2><ol><li>토스 앱을 실행하세요. 이 미니앱이 이미 열려 있다면 스캔해도 새로고침되지 않으니, X 버튼으로 먼저 닫으세요.</li><li>폰 카메라 앱으로 QR 코드를 스캔하세요.</li><li>팝업이 뜨면 <strong>"토스로 열기"</strong>를 탭하세요.</li><li>미니앱이 열리고 디버그 세션이 자동으로 attach됩니다.</li><li><strong>테스트가 끝날 때까지 토스 앱을 화면 앞에 유지하세요</strong> — 백그라운드로 전환하면 디버그 세션이 끊어집니다.</li></ol></section><hr/><section><h2>진단 체크리스트</h2><ul><li><strong>토스 앱이 안 열리는 경우</strong> — 앱 버전 확인, 카메라 앱으로 스캔 (토스 앱 내 QR 리더 X)</li><li><strong>미니앱이 PREPARE 상태에서 멈추는 경우</strong> — deep-link에 <code>_deploymentId</code> 파라미터가 있는지 확인</li><li><strong>Chii 주입 실패 / 콘솔이 비어 있는 경우</strong> — 미니앱 번들에 <code>in-app</code> debug import가 있는지 확인</li><li><strong>인증 코드가 만료됐다고 나오는 경우</strong> — 이 대시보드의 최신 QR로 다시 스캔 (오래된 QR의 코드는 받아 주지 않음)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="복사">복사</button></div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section></body></html>`;
+</style></head><body><h1>AIT 디버그 세션 — QR 스캔</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>스캔 절차</h2><ol><li>토스 앱을 실행하세요. 이 미니앱이 이미 열려 있다면 스캔해도 새로고침되지 않으니, X 버튼으로 먼저 닫으세요.</li><li>폰 카메라 앱으로 QR 코드를 스캔하세요.</li><li>팝업이 뜨면 <strong>"토스로 열기"</strong>를 탭하세요.</li><li>미니앱이 열리고 디버그 세션이 자동으로 attach됩니다.</li><li><strong>테스트가 끝날 때까지 토스 앱을 화면 앞에 유지하세요</strong> — 백그라운드로 전환하면 디버그 세션이 끊어집니다.</li></ol></section><hr/><section><h2>진단 체크리스트</h2><ul><li><strong>토스 앱이 안 열리는 경우</strong> — 앱 버전 확인, 카메라 앱으로 스캔 (토스 앱 내 QR 리더 X)</li><li><strong>미니앱이 PREPARE 상태에서 멈추는 경우</strong> — deep-link에 <code>_deploymentId</code> 파라미터가 있는지 확인</li><li><strong>Chii 주입 실패 / 콘솔이 비어 있는 경우</strong> — 미니앱 번들에 <code>in-app</code> debug import가 있는지 확인</li><li><strong>인증 코드가 만료됐다고 나오는 경우</strong> — 이 대시보드의 최신 QR로 다시 스캔 (오래된 QR의 코드는 받아 주지 않음)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="링크 복사">링크 복사</button></div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section></body></html>`;
 
 // ── locale: en ──────────────────────────────────────────────────────
 
 export const dashboardChromeHtmlEn =
 `<!DOCTYPE html>
-<html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>AIT Debug Dashboard</title><style>
+<html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="color-scheme" content="light dark"/><title>AIT Debug</title><style>
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --text: #191f28;
+  --muted: #5b6573;
+  --faint: #8a93a0;
+  --line: #e3e6ea;
+  --primary: #1b64da;
+  --primary-hover: #1553b8;
+  --on-primary: #ffffff;
+  --ok: #0b7a3b;
+  --ok-bg: #e2f5e9;
+  --bad: #b3261e;
+  --bad-bg: #fdeceb;
+  --warn: #7a4f00;
+  --warn-bg: #fff3d1;
+  --chip-bg: #eceef2;
+  --focus: #1b64da;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  --sp-1: 8px;
+  --sp-2: 16px;
+  --sp-3: 24px;
+  --sp-4: 32px;
+  --radius: 20px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101216;
+    --surface: #181b21;
+    --surface-2: #1e222a;
+    --text: #eef1f5;
+    --muted: #a3adba;
+    --faint: #78818e;
+    --line: #2a2f38;
+    --primary: #7db2ff;
+    --primary-hover: #a3c8ff;
+    --on-primary: #0a1424;
+    --ok: #5fd68b;
+    --ok-bg: #12301f;
+    --bad: #ff9a92;
+    --bad-bg: #3a1a18;
+    --warn: #ffd06b;
+    --warn-bg: #3a2c0a;
+    --chip-bg: #242932;
+    --focus: #a3c8ff;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  }
+}
 *, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0d1117; color: #c9d1d9;
-  display: flex; flex-direction: column; align-items: center;
-  min-height: 100vh; margin: 0; padding: 2rem 1rem;
-  gap: 1.5rem;
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 16px; line-height: 1.5;
+  padding: var(--sp-3) var(--sp-2) var(--sp-4);
+  overflow-x: hidden;
 }
-h1 { font-size: 1.25rem; font-weight: 600; color: #e6edf3; margin: 0; text-align: center; }
-.updated { font-size: 0.75rem; opacity: 0.4; font-family: monospace; margin: 0; }
-section { width: 100%; max-width: 520px; }
-h2 { font-size: 1rem; font-weight: 600; color: #e6edf3; margin: 0 0 0.5rem; }
-.status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
-.status-up { background: #238636; color: #fff; }
-.status-down { background: #6e7681; color: #fff; }
+.shell { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+main.shell { max-width: none; margin: 0; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
+h1 { font-size: 17px; line-height: 24px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+h2 { font-size: 26px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 var(--sp-1); text-align: center; }
+h3 { font-size: 13px; line-height: 20px; font-weight: 600; margin: 0 0 var(--sp-1); color: var(--muted); }
+p { margin: 0; }
+.top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); padding: 0 4px var(--sp-1); }
+.top h1 { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.top h1::before {
+  content: ""; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 4px; background: var(--primary);
+  box-shadow: 4px 4px 0 -1px var(--primary-hover); opacity: 0.9; margin-right: 4px;
+}
+.status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 13px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status-ready { background: var(--chip-bg); color: var(--muted); }
+.status-up { background: var(--ok-bg); color: var(--ok); }
+.status-down { background: var(--bad-bg); color: var(--bad); }
+.lang-switcher { display: flex; gap: 2px; font-size: 13px; }
+.lang-switcher a { color: var(--faint); text-decoration: none; padding: 4px 8px; border-radius: 8px; }
+.lang-switcher a:hover { color: var(--text); }
+.lang-switcher a.active { color: var(--text); font-weight: 700; background: var(--chip-bg); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3); box-shadow: var(--shadow); }
+.hero { padding: var(--sp-4) var(--sp-3); }
+.lead { text-align: center; color: var(--muted); font-size: 15px; line-height: 24px; max-width: 380px; margin: 0 auto var(--sp-3); }
+.pane { display: none; }
+[data-view="wait"] [data-pane="wait"],
+[data-view="connecting"] [data-pane="connecting"],
+[data-view="connected"] [data-pane="connected"],
+[data-view="error"] [data-pane="error"] { display: block; }
+.notice { margin: 0 auto var(--sp-2); max-width: 380px; padding: 12px var(--sp-2); border-radius: 12px; background: var(--warn-bg); color: var(--warn); font-size: 14px; line-height: 22px; }
+.notice[hidden] { display: none; }
+#attach-section { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+[data-qr="0"] #attach-section { display: none; }
+.qr-frame {
+  position: relative; width: min(100%, 288px); aspect-ratio: 1 / 1; margin: 0 auto;
+  background: #fff; border-radius: 20px; padding: 16px;
+  box-shadow: 0 0 0 1px var(--line), 0 16px 32px -16px rgba(16, 24, 40, 0.25);
+}
 img.qr {
-  width: min(80vw, 300px); height: auto;
-  image-rendering: pixelated;
-  background: #fff; padding: 0.75rem; border-radius: 10px;
-  display: block; margin: 0.5rem auto;
+  display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.18s ease;
+  image-rendering: pixelated; image-rendering: crisp-edges;
 }
-.url-row {
-  display: flex; align-items: stretch; gap: 0; margin: 0.5rem 0 0;
-  border-radius: 6px; border: 1px solid #30363d; overflow: hidden;
+.qr-frame[data-ready="1"] img.qr { opacity: 1; }
+.qr-skel {
+  position: absolute; inset: 0; border-radius: 20px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; color: #5b6573; font-size: 14px;
+  background: linear-gradient(100deg, #f3f4f6 30%, #fafafb 50%, #f3f4f6 70%) 0 0 / 200% 100%;
+  animation: shimmer 1.4s linear infinite;
 }
-.url-box {
-  font-family: monospace; font-size: 0.7rem;
-  word-break: break-all; opacity: 0.45;
-  background: #161b22; padding: 0.6rem 0.85rem;
-  flex: 1; cursor: pointer; border: none; border-radius: 0;
+.qr-frame[data-ready="1"] .qr-skel { display: none; }
+.qr-skel i { width: 24px; height: 24px; border-radius: 50%; border: 3px solid #d5d9df; border-top-color: #1b64da; animation: spin 0.9s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.hint { font-size: 14px; line-height: 22px; color: var(--muted); text-align: center; max-width: 380px; }
+.reopen-hint { font-size: 13px; color: var(--faint); }
+.timer { display: none; flex-direction: column; align-items: center; gap: 6px; margin-top: var(--sp-3); }
+[data-qr="1"] .timer { display: flex; }
+.timer-bar { width: min(100%, 288px); height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.timer-bar i { display: block; height: 100%; width: 100%; background: var(--primary); transform-origin: left center; }
+.timer-text { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 20px; }
+.note { font-size: 13px; line-height: 20px; color: var(--faint); text-align: center; max-width: 380px; margin: var(--sp-1) auto 0; }
+[data-qr="0"] .note-qr { display: none; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-1); margin-top: var(--sp-3); }
+.btn {
+  appearance: none; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  min-height: 44px; padding: 0 var(--sp-3); border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+  transition: background 0.12s;
 }
-.url-box:hover { opacity: 0.65; }
-.copy-btn {
-  flex-shrink: 0; padding: 0.4rem 0.7rem;
-  background: #21262d; border: none; border-left: 1px solid #30363d;
-  color: #58a6ff; font-size: 0.7rem; cursor: pointer; white-space: nowrap;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn[hidden] { display: none; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-danger { color: var(--bad); }
+#copy-btn { display: none; }
+[data-qr="1"] #copy-btn { display: inline-flex; }
+.qr-none { display: none; text-align: center; padding: var(--sp-2) 0; }
+[data-qr="0"] .qr-none { display: block; }
+/* No QR: the "scan the QR" heading would contradict the empty state below it. */
+[data-qr="0"] > h2, [data-qr="0"] > .lead { display: none; }
+.qr-none .badge, .state-badge {
+  width: 64px; height: 64px; margin: 0 auto var(--sp-2); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700;
+  background: var(--chip-bg); color: var(--muted);
 }
-.copy-btn:hover { background: #30363d; }
-.hint { font-size: 0.85rem; opacity: 0.5; margin: 0.25rem 0 0; }
-.hint.error { color: #f85149; opacity: 1; font-weight: 600; }
+.qr-none .qr-none-title { font-size: 18px; line-height: 26px; font-weight: 700; margin-bottom: 4px; }
+.qr-none .actions { margin-top: var(--sp-3); }
+.state-badge.ok { background: var(--ok-bg); color: var(--ok); }
+.state-badge.bad { background: var(--bad-bg); color: var(--bad); }
+.steps { list-style: none; margin: var(--sp-3) auto 0; padding: var(--sp-2) var(--sp-3); max-width: 340px; display: flex; flex-direction: column; gap: 14px; background: var(--surface-2); border-radius: 16px; }
+.steps li { display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--faint); }
+.steps .dot {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--line); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; font-weight: 700;
+}
+.steps li.done { color: var(--text); }
+.steps li.done .dot { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.steps li.done .dot::after { content: "\\2713"; }
+.steps li.current { color: var(--text); font-weight: 600; }
+.steps li.current .dot { border-color: var(--primary); border-top-color: transparent; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .steps li.current .dot { animation: none; border-top-color: var(--primary); }
+  .qr-skel, .qr-skel i { animation: none; }
+  img.qr { transition: none; }
+}
+.cta { display: flex; justify-content: center; margin-top: var(--sp-3); }
 .inspector-link {
-  display: inline-block; margin-top: 0.5rem;
-  padding: 0.45rem 1rem; border-radius: 6px;
-  background: #1f6feb; color: #fff; font-size: 0.85rem; font-weight: 600;
-  text-decoration: none; text-align: center;
+  display: inline-flex; align-items: center; justify-content: center; min-height: 48px; min-width: 200px;
+  padding: 0 var(--sp-3); border-radius: 12px; font-size: 16px; font-weight: 700; text-decoration: none;
+  background: var(--primary); color: var(--on-primary);
 }
-.inspector-link:hover { background: #388bfd; }
-.inspector-hint { display: inline-block; margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.45; }
-ul { margin: 0; padding-left: 1.25rem; }
-li { margin-bottom: 0.35rem; font-size: 0.85rem; line-height: 1.5; }
-li.empty { opacity: 0.4; list-style: none; padding-left: 0; }
-.page-id { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
+.inspector-link:hover { background: var(--primary-hover); }
+.inspector-hint { font-size: 14px; color: var(--muted); text-align: center; }
+.facts { display: flex; flex-direction: column; gap: 4px; text-align: center; color: var(--muted); font-size: 15px; }
+.facts .warn { color: var(--warn); font-weight: 600; }
+.pages { margin-top: var(--sp-3); border-top: 1px solid var(--line); padding-top: var(--sp-2); }
+.pages ul, .details-body ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pages li { font-size: 14px; line-height: 22px; display: flex; gap: var(--sp-1); align-items: baseline; }
+li.empty { color: var(--muted); }
+.page-id { font-family: var(--mono); font-size: 12px; color: var(--muted); flex: 0 0 auto; }
 .page-url { word-break: break-all; }
-hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0; }
-.session-line { font-size: 0.75rem; opacity: 0.55; margin: 0; }
+.ctl { display: block; padding: var(--sp-2) var(--sp-3); box-shadow: none; background: var(--surface-2); }
+.ctl .ctl-head { font-size: 12px; font-weight: 600; color: var(--faint); letter-spacing: 0.04em; text-transform: uppercase; }
+.ctl p { font-size: 14px; line-height: 22px; margin: 2px 0; color: var(--text); }
+.ctl ul { list-style: none; margin: 4px 0; padding: 0; font-size: 13px; line-height: 20px; color: var(--muted); }
+.ctl li.contested { color: var(--bad); font-weight: 600; }
+.ctl .err { color: var(--bad); min-height: 0; }
+.ctl .err:empty { display: none; }
+.ctl .actions { justify-content: flex-start; margin-top: var(--sp-1); }
+.ctl .btn { min-height: 40px; font-size: 14px; padding: 0 var(--sp-2); }
+details.details { padding: 0; box-shadow: none; background: transparent; }
+details.details > summary {
+  cursor: pointer; padding: 12px var(--sp-2); font-size: 14px; font-weight: 600; color: var(--muted); list-style: none;
+  display: flex; align-items: center; gap: var(--sp-1); min-height: 44px;
+}
+details.details > summary::-webkit-details-marker { display: none; }
+details.details > summary::before { content: "\\25B8"; color: var(--faint); transition: transform 0.15s; }
+details.details[open] > summary::before { transform: rotate(90deg); }
+details.details[open] { background: var(--surface); }
+.details-body { padding: 0 var(--sp-2) var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); }
+.session-line { font-size: 13px; color: var(--muted); }
 .session-line:empty { display: none; }
-li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: monospace; font-size: 0.75rem; opacity: 0.5; margin-right: 0.4rem; }
-li.stage-bad { color: #f85149; }
-.lang-switcher { display: flex; gap: 0.5rem; font-size: 0.75rem; }
-.lang-switcher a { color: #58a6ff; text-decoration: none; opacity: 0.6; }
-.lang-switcher a.active { font-weight: 700; text-decoration: underline; opacity: 1; }
-</style></head><body><h1>AIT Debug Dashboard</h1>__LANG_SWITCHER__<p class="updated" id="updated">Last updated: __NOW__</p><p class="session-line" id="session-line">__SESSION_LINE__</p><section><h2>Tunnel status</h2><span class="status __TUNNEL_CLASS__" id="tunnel-status">__TUNNEL_STATUS__</span></section><hr/><section><h2>Attach QR</h2><div id="attach-section">__ATTACH_SECTION__</div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section>__TIMELINE_SECTION____PAGES_SECTION__</body></html>`;
+.updated { font-size: 12px; color: var(--faint); font-family: var(--mono); }
+#timeline-list li { font-size: 13px; line-height: 20px; }
+li.stage-ok .stage-time, li.stage-bad .stage-time { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 6px; }
+li.stage-bad { color: var(--bad); }
+/* connected + QR 보기: wait 창(QR·남은 시간·새 QR 만들기)을 연결 화면 아래에 펼친다. */
+.peek-warn { display: none; }
+.peek-bar { margin-top: var(--sp-3); }
+.peek-bar .peek-close, [data-peek="1"] .peek-bar .peek-open { display: none; }
+[data-peek="1"] .peek-bar .peek-close { display: inline; }
+[data-view="connected"][data-peek="1"] [data-pane="wait"] { display: block; margin-top: var(--sp-3); }
+[data-view="connected"][data-peek="1"] [data-pane="wait"] > h2,
+[data-view="connected"][data-peek="1"] [data-pane="wait"] > .lead,
+[data-view="connected"][data-peek="1"] [data-pane="wait"] > .notice:not(.peek-warn) { display: none; }
+[data-view="connected"][data-peek="1"] .peek-warn { display: block; }
+#stage[data-view="error"] ~ #ait-control #ait-control-newqr,
+#stage[data-view="wait"]:has([data-qr="0"]) ~ #ait-control #ait-control-newqr { display: none; }
+.lang-switcher { margin-left: auto; }
+@media (max-width: 480px) {
+  .top h1 { order: 1; }
+  .lang-switcher { order: 2; }
+  .status { order: 3; }
+  body { padding: var(--sp-2) 12px var(--sp-3); }
+  .hero { padding: var(--sp-3) var(--sp-2); }
+  h2 { font-size: 22px; line-height: 30px; }
+  .qr-frame { padding: 12px; }
+}
+</style></head><body><div class="shell"><header class="top"><h1>AIT Debug</h1><span class="status __TUNNEL_CLASS__" id="tunnel-status" role="status">__TUNNEL_STATUS__</span>__LANG_SWITCHER__</header><main class="shell"><section class="card hero" id="stage" data-view="__VIEW__" data-peek="0" aria-live="polite"><div class="pane" data-pane="wait" data-qr="__HAS_QR__"><p class="notice peek-warn" id="peek-warn" role="note">Connecting with this QR will disconnect the phone that is connected now.</p><h2>Scan the QR with your phone</h2><p class="lead">Read it with the Toss app camera. The mini-app opens and connects on its own.</p><div class="notice" id="notice" role="alert" hidden=""></div><div id="attach-section">__ATTACH_SECTION__</div><div class="qr-none"><div class="badge" aria-hidden="true">?</div><p class="qr-none-title">No QR right now</p><p class="hint">Your phone cannot connect at the moment. Create a new QR to scan again.</p><div class="actions"><button class="btn btn-primary" type="button" data-act="new-qr" hidden="">Create a new QR</button></div></div><div class="timer" aria-hidden="true"><div class="timer-bar"><i id="qr-timer-bar"></i></div><span class="timer-text" id="qr-timer-text"></span></div><p class="note note-qr">__TIMER_NOTE__</p><div class="actions"><button class="btn copy-btn" id="copy-btn" type="button" data-url="__COPY_URL__">Copy link</button></div></div><div class="pane" data-pane="connecting"><h2>Connecting to your phone</h2><p class="lead">Keep the mini-app open and wait a moment.</p><ol class="steps" id="steps"><li data-step="tunnel"><span class="dot" aria-hidden="true"></span><span>Prepare connection path</span></li><li data-step="qr"><span class="dot" aria-hidden="true"></span><span>Create QR</span></li><li data-step="open"><span class="dot" aria-hidden="true"></span><span>Open mini-app on phone</span></li><li data-step="connect"><span class="dot" aria-hidden="true"></span><span>Connect to phone</span></li><li data-step="ready"><span class="dot" aria-hidden="true"></span><span>Debugger ready</span></li></ol><p class="note">If this stays stuck for over a minute, close the mini-app and scan the QR again.</p></div><div class="pane" data-pane="connected"><div class="state-badge ok" aria-hidden="true">✓</div><h2>Your phone is connected</h2><div class="facts"><p id="conn-sub"></p><p id="conn-left"></p></div><div class="cta">__INSPECTOR_SECTION__</div>__PAGES_SECTION__<div class="actions peek-bar"><button class="btn" id="qr-peek-toggle" type="button" aria-expanded="false" aria-controls="stage"><span class="peek-open">Show QR</span><span class="peek-close">Hide QR</span></button></div></div><div class="pane" data-pane="error"><div class="state-badge bad" aria-hidden="true">!</div><h2>Connection lost</h2><p class="lead">The connection path to your phone dropped, so this QR no longer works. Ask Claude to connect again and a new QR will be created.</p><div class="actions"><button class="btn" type="button" data-act="new-qr" hidden="">Create a new QR</button></div></div></section>__CONTROL_SECTION__<details class="card details" id="diag"><summary>Details</summary><div class="details-body"><p class="session-line" id="session-line">__SESSION_LINE__</p>__TIMELINE_SECTION__<p class="updated" id="updated">Last updated: __NOW__</p></div></details></main></div></body></html>`;
 
 export const attachChromeHtmlEn =
 `<!DOCTYPE html>
@@ -292,7 +637,7 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0.5rem 0;
 }
 .inspector-link:hover { background: #388bfd; }
 .inspector-hint { display: inline-block; margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.45; }
-</style></head><body><h1>AIT Debug Session — QR Scan</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>How to scan</h2><ol><li>Open the Toss app. If this mini-app is already open, scanning will not reload it, so close it with the X button first.</li><li>Scan the QR code with your phone camera app.</li><li>Tap <strong>"Open in Toss"</strong> when the popup appears.</li><li>The mini-app opens and the debug session attaches automatically.</li><li><strong>Keep the Toss app in the foreground until the test run finishes</strong> — backgrounding it will drop the debug session.</li></ol></section><hr/><section><h2>Troubleshooting checklist</h2><ul><li><strong>Toss app does not open</strong> — check app version; scan with the system camera app (not the Toss in-app QR reader)</li><li><strong>Mini-app stuck in PREPARE state</strong> — verify the deep-link has a <code>_deploymentId</code> parameter</li><li><strong>Chii injection failure / console is empty</strong> — verify the mini-app bundle has an <code>in-app</code> debug import</li><li><strong>The code is reported as expired</strong> — scan the latest QR on this dashboard again (the relay rejects the code of an old QR)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="Copy">Copy</button></div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section></body></html>`;
+</style></head><body><h1>AIT Debug Session — QR Scan</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>How to scan</h2><ol><li>Open the Toss app. If this mini-app is already open, scanning will not reload it, so close it with the X button first.</li><li>Scan the QR code with your phone camera app.</li><li>Tap <strong>"Open in Toss"</strong> when the popup appears.</li><li>The mini-app opens and the debug session attaches automatically.</li><li><strong>Keep the Toss app in the foreground until the test run finishes</strong> — backgrounding it will drop the debug session.</li></ol></section><hr/><section><h2>Troubleshooting checklist</h2><ul><li><strong>Toss app does not open</strong> — check app version; scan with the system camera app (not the Toss in-app QR reader)</li><li><strong>Mini-app stuck in PREPARE state</strong> — verify the deep-link has a <code>_deploymentId</code> parameter</li><li><strong>Chii injection failure / console is empty</strong> — verify the mini-app bundle has an <code>in-app</code> debug import</li><li><strong>The code is reported as expired</strong> — scan the latest QR on this dashboard again (the relay rejects the code of an old QR)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="Copy link">Copy link</button></div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section></body></html>`;
 
 /** Map from Locale to the precompiled dashboard chrome string. */
 export const dashboardChromeByLocale: Record<Locale, string> = {

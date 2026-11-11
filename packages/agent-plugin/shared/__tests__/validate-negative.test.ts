@@ -3826,7 +3826,7 @@ function baseClaudePluginWithMcp(overrides: Record<string, unknown> = {}): Recor
     name: 'ait',
     version: '0.1.0', // package.json 과 일치 (A5 격리)
     mcpServers: {
-      'apps-in-toss-docs': {
+      'ait-docs': {
         type: 'http',
         url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp',
       },
@@ -3846,7 +3846,7 @@ function baseCursorPluginWithMcp(overrides: Record<string, unknown> = {}): Recor
     version: '0.1.0',
     skills: './shared/skills/',
     mcpServers: {
-      'apps-in-toss-docs': {
+      'ait-docs': {
         url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp',
       },
       'ait-console': {
@@ -3940,7 +3940,7 @@ describe('A11 negative tests', () => {
       JSON.stringify(
         baseCursorPluginWithMcp({
           mcpServers: {
-            'apps-in-toss-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
+            'ait-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
           },
         }),
       ),
@@ -3960,7 +3960,7 @@ describe('A11 negative tests', () => {
       JSON.stringify(
         baseCursorPluginWithMcp({
           mcpServers: {
-            'apps-in-toss-docs': { url: 'https://example.invalid/different-docs-mcp' },
+            'ait-docs': { url: 'https://example.invalid/different-docs-mcp' },
             'ait-console': {
               url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
               auth: { CLIENT_ID: 'mcp-gateway' },
@@ -3985,7 +3985,7 @@ describe('A11 negative tests', () => {
       JSON.stringify(
         baseCursorPluginWithMcp({
           mcpServers: {
-            'apps-in-toss-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
+            'ait-docs': { url: 'https://developers-apps-in-toss.toss.im/~gitbook/mcp' },
             'ait-console': {
               url: 'https://mcp.toss.im/adapters/apps-in-toss-console/mcp',
               auth: { CLIENT_ID: 'some-other-client' },
