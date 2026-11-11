@@ -17,7 +17,7 @@
 - debug skill 도구 표에 실기기 `take_screenshot`의 한계(canvas·WebGL은 비어 보일 수 있음)와 `list_sdk_calls`·`get_mock_state`가 로컬 mock 전용이라는 점을 적었다.
 - `setup-debugger`·`debug`·`inject` skill이 안내하는 설치 URL을 debugger와 debugger-client 0.4.0으로 올렸다.
 - 디버거 폰 허용 창이 바뀐 데 맞춰 debug·setup-debugger skill 문서를 고쳤다. "이 세션 동안 허용"이 "1시간 동안 묻지 않기"로 바뀌었고, `run_script`·`run_tests`용과 `call_sdk`용으로 나뉘어 적용되며 결제 `call_sdk`는 계속 매번 묻는다고 적었다.
-- 디버거의 폰 확인 정책 변경에 맞춰 debug·setup-debugger skill 문서를 고쳤다. 실기기에서 `run_script`는 기본으로 식마다 확인하고(`confirm-on-sensitive`는 약한 선택 사항), `call_sdk`는 읽기 전용 getter·진동은 바로 실행, 그 밖의 호출은 확인, 결제는 "이 세션 동안 허용"과 상관없이 매번 확인한다고 적었다.
+- 디버거의 폰 확인 정책 변경에 맞춰 debug·setup-debugger skill 문서를 고쳤다. 실기기에서 `run_script`는 기본으로 식마다 확인하고(`confirm-on-sensitive`는 약한 선택 사항), `call_sdk`는 읽기 전용 getter·진동은 바로 실행, 그 밖의 호출은 확인, 결제는 "1시간 동안 묻지 않기"와 상관없이 매번 확인한다고 적었다.
 - 보안 강화에 맞춰 inject·setup-debugger·debug skill 문서를 고쳤다. 디버거 relay 키가 메모리 전용 키 에이전트로 바뀌어 `.ait_relay` 안내를 없애고, 번들러 define에서 `readRelayPublicKeys`로 공개키와 만료 시각을 받는 방식으로 적었다. debug skill에는 `stop_attach`(bootstrap 5종), 세션 수명(15분 무응답·60분, 폰 "계속"으로 연장)과 터널 30분 유휴 종료, 폰 확인 창(읽기 전용이 아닌 `call_sdk`, 민감한 `run_script`의 "이 세션 동안 허용", `run_tests`), 폰의 상태 칩과 vConsole "Remote Debugger" 탭을 적었다. 출시 전 스캔과 빌드 산출물 점검의 디버그 마커에 `__ait_session_chip`, `ait_remote_debugger`를 더했다.
 
 ## 0.3.1
