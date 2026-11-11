@@ -92,6 +92,6 @@ Deploy Key·TOTP 등 자격증명 값은 어떤 파일·로그·커밋에도 넣
 
 ## public 상태
 
-repo는 2026-08-26 재생성 시점부터 public이고 maintainer가 유지를 결정했다(2026-08-27). release environment에는 required reviewers가 지정돼 있다. npm trusted publishing은 해당 없다(npm-less 유통).
+repo는 2026-08-26 재생성 시점부터 public이고 maintainer가 유지를 결정했다(2026-08-27). release environment에는 required reviewers가 지정돼 있고 self-review는 막혀 있다(실측 2026-11-11, REST `environments/release`). npm trusted publishing은 해당 없다(npm-less 유통).
 
 **2차 재생성은 하지 않는다**(2026-10-14 maintainer 결정 — 2026-08-27의 실행 결정을 철회). `docs/`는 2026-08-27에 트리에서 빠졌고(루트 `.gitignore`의 `/docs/`) 그 전 커밋 9개에만 남는다. 그 이력을 스캔한 결과 사내 호스트·miniAppId·워크스페이스 번호·로컬 경로·시크릿 같은 값은 0건이었다(2026-10-14). 반면 Immutable Releases는 repo를 지우고 같은 이름으로 다시 만들어도 기존 릴리즈 태그 이름을 재사용하지 못하게 하므로, 재생성하면 배포된 모든 설치 URL이 영구히 끊긴다. 새 커밋이 공개되는 것이므로 사내 식별자를 커밋하지 않는 규칙(위 노출 산출물 절)은 계속 지킨다.
