@@ -509,32 +509,55 @@ let runTestsInFlight = false;
 export const CONFIRM_GRANT_MS = 60 * 60 * 1000;
 
 /**
- * "1시간 동안 묻지 않기": one grant for every phone confirmation except the always-ask
- * tier (payments and points in `call_sdk`). It covers `run_script`, `run_tests` and
- * `call_sdk` of the confirm tier together, because the developer asked to stop being
- * asked for an hour, not tool by tool. It ends after an hour or when the attach session
- * does, whichever is first (the key is the session start plus the attached target ids,
- * and the target hooks clear it). Process-wide, like `runTestsInFlight`.
+ * "1시간 동안 묻지 않기": two independent grants, one per kind of dialog.
  *
- * `run_script` runs arbitrary code, and a payment inside such code cannot be told apart
- * from the outside; the dialog note says so.
+ *   - `code`: `run_script` and `run_tests`. A tap in one of those dialogs covers both.
+ *     It does not cover `call_sdk`. Code can call anything on the page, a payment
+ *     included, and that cannot be told apart from the outside; the dialog note says so.
+ *   - `sdk`: `call_sdk` of the confirm tier only. It does not cover `run_script` or
+ *     `run_tests`. The always-ask tier (payments and points) never offers or honors a grant.
+ *
+ * Each ends after an hour or when the attach session does, whichever is first (the key is
+ * the session start plus the attached target ids, and the target hooks clear both).
+ * Process-wide, like `runTestsInFlight`.
  */
-let confirmGrant: { key: string; expiresAt: number } | null = null;
+type GrantKind = 'code' | 'sdk';
+type Grant = { key: string; expiresAt: number };
+const confirmGrants: Record<GrantKind, Grant | null> = { code: null, sdk: null };
 
-/** Test hook (and session end): forget the grant. */
-export function resetConfirmGrant(): void {
-  confirmGrant = null;
+/**
+ * Grant expiry is measured on a monotonic clock, so a wall-clock change (the phone or the
+ * computer's time being set, a sleep, a timezone move) cannot lengthen or cut the hour.
+ * `performance.now()` is milliseconds from process start and never goes backwards.
+ */
+let grantClock: () => number = () => performance.now();
+
+/** Test hook: replace the grant clock (milliseconds, monotonic). Pass `null` to restore. */
+export function setConfirmGrantClock(clock: (() => number) | null): void {
+  grantClock = clock ?? (() => performance.now());
 }
 
-const GRANT_NOTE = '결제·포인트 SDK 호출은 계속 물어요';
+/** Test hook (and session end): forget both grants. */
+export function resetConfirmGrant(): void {
+  confirmGrants.code = null;
+  confirmGrants.sdk = null;
+}
 
-function grantCovers(key: string | null): boolean {
-  if (confirmGrant === null) return false;
-  if (Date.now() >= confirmGrant.expiresAt) {
-    confirmGrant = null;
+const GRANT_NOTE_CODE = '코드 안의 결제 호출도 묻지 않아요';
+const GRANT_NOTE_SDK = '결제·포인트 SDK 호출은 계속 물어요';
+
+function grantCovers(kind: GrantKind, key: string | null): boolean {
+  const grant = confirmGrants[kind];
+  if (grant === null) return false;
+  if (grantClock() >= grant.expiresAt) {
+    confirmGrants[kind] = null;
     return false;
   }
-  return key !== null && confirmGrant.key === key;
+  return key !== null && grant.key === key;
+}
+
+function grantNow(kind: GrantKind, key: string): void {
+  confirmGrants[kind] = { key, expiresAt: grantClock() + CONFIRM_GRANT_MS };
 }
 
 /**
@@ -594,7 +617,7 @@ async function gateEvaluate(
     };
   }
   const key = currentSessionKey(router, conn);
-  if (grantCovers(key)) return { ok: true, policy: { decision: 'allow', via: 'grant' } };
+  // The cap comes first: a grant never lets over-long code through unseen.
   const view = prepareCode(expression);
   if (view.tooLong) {
     return {
@@ -604,16 +627,17 @@ async function gateEvaluate(
       ),
     };
   }
+  if (grantCovers('code', key)) return { ok: true, policy: { decision: 'allow', via: 'grant' } };
   const answer = await confirmOnPhone(conn, 'run_script', {
     title: '에이전트가 폰에서 코드를 실행하려고 해요',
     lines: [],
     codes: [view.block],
     offerGrant: key !== null,
-    grantNote: GRANT_NOTE,
+    grantNote: GRANT_NOTE_CODE,
   });
   if (answer.error !== undefined) return { ok: false, error: answer.error };
   const granted = answer.decision === 'allow-hour' && key !== null;
-  if (granted) confirmGrant = { key, expiresAt: Date.now() + CONFIRM_GRANT_MS };
+  if (granted) grantNow('code', key);
   return {
     ok: true,
     policy: { decision: 'confirmed', via: granted ? 'grant' : 'phone' },
@@ -648,9 +672,6 @@ async function gateSdkCall(
   }
   const always = verdict.tier === 'confirm-always';
   const key = currentSessionKey(router, conn);
-  if (!always && grantCovers(key)) {
-    return { ok: true, policy: { decision: 'allow', via: 'grant', tier: 'confirm' } };
-  }
   let argsText = '';
   try {
     argsText = sdkArgs.length === 0 ? '(인자 없음)' : JSON.stringify(sdkArgs, null, 2);
@@ -658,13 +679,24 @@ async function gateSdkCall(
     argsText = '(인자를 표시할 수 없음)';
   }
   const argsView = prepareCode(argsText);
-  if (argsView.tooLong) {
+  // The cap covers the text that is shown and the compact text that is sent, and it comes
+  // before any grant: a grant never lets over-long arguments through unseen.
+  let sentLength = 0;
+  try {
+    sentLength = JSON.stringify(sdkArgs)?.length ?? 0;
+  } catch {
+    sentLength = 0;
+  }
+  if (argsView.tooLong || sentLength > CONFIRM_REFUSE_OVER) {
     return {
       ok: false,
       error: mcpError(
         `call_sdk: 인자가 ${CONFIRM_REFUSE_OVER}자보다 길어서 폰에서 확인할 수 없어 실행하지 않았습니다. 인자를 줄여서 요청하세요.`,
       ),
     };
+  }
+  if (!always && grantCovers('sdk', key)) {
+    return { ok: true, policy: { decision: 'allow', via: 'grant', tier: 'confirm' } };
   }
   const canGrant = !always && key !== null;
   const answer = await confirmOnPhone(conn, 'call_sdk', {
@@ -674,11 +706,11 @@ async function gateSdkCall(
     lines: [sdkName],
     codes: [argsView.block],
     offerGrant: canGrant,
-    grantNote: GRANT_NOTE,
+    grantNote: GRANT_NOTE_SDK,
   });
   if (answer.error !== undefined) return { ok: false, error: answer.error };
   const granted = canGrant && answer.decision === 'allow-hour' && key !== null;
-  if (granted) confirmGrant = { key, expiresAt: Date.now() + CONFIRM_GRANT_MS };
+  if (granted) grantNow('sdk', key);
   return {
     ok: true,
     policy: {
@@ -742,14 +774,14 @@ export async function gateRunTests(
   }
   if (policy === 'free') return { ok: true, policy: { decision: 'allow', via: 'policy-free' } };
   const key = router === undefined ? null : currentSessionKey(router, conn);
-  if (grantCovers(key)) return { ok: true, policy: { decision: 'allow', via: 'grant' } };
+  if (grantCovers('code', key)) return { ok: true, policy: { decision: 'allow', via: 'grant' } };
   const before = await hashTestFiles(files, root);
   const answer = await confirmOnPhone(conn, 'run_tests', {
     title: '에이전트가 폰에서 테스트를 실행하려고 해요',
     lines: describeTestFiles(before),
     codes: describeCellCode(cell),
     offerGrant: key !== null,
-    grantNote: GRANT_NOTE,
+    grantNote: GRANT_NOTE_CODE,
   });
   if (answer.error !== undefined) return { ok: false, error: answer.error };
   const after = await hashTestFiles(files, root);
@@ -762,7 +794,7 @@ export async function gateRunTests(
     };
   }
   const granted = answer.decision === 'allow-hour' && key !== null;
-  if (granted) confirmGrant = { key, expiresAt: Date.now() + CONFIRM_GRANT_MS };
+  if (granted) grantNow('code', key);
   return { ok: true, policy: { decision: 'confirmed', via: granted ? 'grant' : 'phone' } };
 }
 

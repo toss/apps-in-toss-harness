@@ -27,6 +27,7 @@ import {
   clientSupportsSessionEndClose,
   isRelaySessionEndReason,
   RELAY_SESSION_END_CLOSE_CODE,
+  RELAY_SESSION_END_MIN_CLIENT_VERSION,
   RELAY_SESSION_END_REASONS,
 } from '../relay-session-close.js';
 
@@ -132,5 +133,20 @@ describe('relay session end', () => {
     expect(clientSupportsSessionEndClose('')).toBe(false);
     expect(clientSupportsSessionEndClose(null)).toBe(false);
     expect(clientSupportsSessionEndClose('garbage')).toBe(false);
+  });
+
+  it('parses the version strictly, whatever the current floor is', () => {
+    const min = RELAY_SESSION_END_MIN_CLIENT_VERSION;
+    expect(clientSupportsSessionEndClose(min)).toBe(true);
+    expect(clientSupportsSessionEndClose(`${min}+build.5`)).toBe(true);
+    expect(clientSupportsSessionEndClose(`${min}garbage`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`${min}.1`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`${min}-`)).toBe(false);
+    expect(clientSupportsSessionEndClose(` ${min}`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`${min}\n`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`9.0.0garbage`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`9.0.0.1`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`9.0.0`)).toBe(true);
+    expect(clientSupportsSessionEndClose(`v${min}`)).toBe(false);
   });
 });

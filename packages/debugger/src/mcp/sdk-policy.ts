@@ -11,7 +11,8 @@
  * - **confirm**: everything else, including names this list has never seen (share,
  *   permission requests, opening a URL or scheme, storage writes, clipboard, location,
  *   contacts, camera, login ...). The developer taps 허용 on the phone (phone-confirm.ts);
- *   "1시간 동안 묻지 않기" skips the dialog for an hour (or until the phone disconnects).
+ *   "1시간 동안 묻지 않기" in a call_sdk dialog skips this tier's dialog for an hour (or
+ *   until the phone disconnects). It does not cover run_script or run_tests.
  * - **confirm-always**: payments and anything that spends or grants money or points
  *   (`checkoutPayment`, `requestTossPayPaysBilling`, the IAP order functions,
  *   `grantPromotionReward*`, `contactsViral` rewards). Asks on every call. "1시간 동안

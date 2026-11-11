@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CdpConnection } from '../cdp-connection.js';
 import {
   buildPhoneConfirmExpression,
+  CONFIRM_HOST_ATTR,
   CONFIRM_REFUSE_OVER,
   confirmFailureMessage,
   excerpt,
@@ -22,7 +23,10 @@ function runDialog(opts: Parameters<typeof buildPhoneConfirmExpression>[0]): {
   // biome-ignore lint/security/noGlobalEval: deliberately evaluating the injected dialog to exercise its DOM behavior.
   const indirectEval = eval;
   const result = indirectEval(buildPhoneConfirmExpression(opts)) as Promise<unknown>;
-  return { result, host: () => document.getElementById('__ait_confirm_host') };
+  return {
+    result,
+    host: () => document.querySelector(`[${CONFIRM_HOST_ATTR}]`) as HTMLElement | null,
+  };
 }
 
 /** Buttons live in a closed shadow root, so capture it while the dialog builds. */
@@ -137,12 +141,229 @@ describe('code box', () => {
   });
 });
 
+const LS = String.fromCharCode(0x2028);
+const PS = String.fromCharCode(0x2029);
+const RLO = String.fromCharCode(0x202e);
+
+function rowsOf(shadow: ReturnType<typeof captureShadow>): HTMLElement[] {
+  return Array.from(shadow.root()?.querySelectorAll('[data-code] > div') ?? []) as HTMLElement[];
+}
+const rowText = (r: HTMLElement | undefined): string => r?.lastElementChild?.textContent ?? '';
+
+describe('what is shown matches what runs', () => {
+  it('shows U+2028 and U+2029 as real line breaks and ends a // comment there', () => {
+    const shadow = captureShadow();
+    try {
+      runDialog({
+        title: 't',
+        lines: [],
+        codes: [{ label: 'x', text: `a(); // note${LS}fetch(1)${PS}b()` }],
+      });
+      const rows = rowsOf(shadow);
+      expect(rows.map(rowText)).toEqual(['a(); // note', 'fetch(1)', 'b()']);
+      // The comment colour stops at the terminator: the second row has no comment span.
+      const commentColor = 'rgb(107, 118, 132)';
+      const spans = Array.from(rows[1]?.querySelectorAll('span span') ?? []) as HTMLElement[];
+      expect(spans.some((sp) => sp.style.color === commentColor)).toBe(false);
+      const first = Array.from(rows[0]?.querySelectorAll('span span') ?? []) as HTMLElement[];
+      expect(first.find((sp) => sp.textContent === '// note')?.style.color).toBe(commentColor);
+    } finally {
+      shadow.restore();
+    }
+  });
+
+  it('marks bidi, zero-width and control characters visibly, and says how many', () => {
+    const shadow = captureShadow();
+    try {
+      const zw = String.fromCharCode(0x200b);
+      const bom = String.fromCharCode(0xfeff);
+      runDialog({
+        title: 't',
+        lines: [],
+        codes: [{ label: 'x', text: `a${RLO}b${zw}c${bom}d\u0001e\tf` }],
+      });
+      const markers = Array.from(
+        shadow.root()?.querySelectorAll('[data-invisible]') ?? [],
+      ) as HTMLElement[];
+      expect(markers.map((m) => m.textContent)).toEqual([
+        '[U+202E]',
+        '[U+200B]',
+        '[U+FEFF]',
+        '[U+0001]',
+      ]);
+      expect(markers[0]?.style.color).toBe('rgb(217, 45, 32)');
+      expect(shadow.root()?.querySelector('[data-invisible-caption]')?.textContent).toBe(
+        '보이지 않는 문자 4개를 표시했어요',
+      );
+      // The tab stays a tab; the marker replaces the character in the display only.
+      expect(rowText(rowsOf(shadow)[0])).toContain('\tf');
+    } finally {
+      shadow.restore();
+    }
+  });
+
+  it('shows no caption when nothing is hidden', () => {
+    const shadow = captureShadow();
+    try {
+      runDialog({ title: 't', lines: [], codes: [{ label: 'x', text: SNIPPET }] });
+      expect(shadow.root()?.querySelector('[data-invisible-caption]')).toBeNull();
+    } finally {
+      shadow.restore();
+    }
+  });
+
+  it('folds more than two blank lines into one marker row and keeps line numbers', () => {
+    const shadow = captureShadow();
+    try {
+      runDialog({
+        title: 't',
+        lines: [],
+        codes: [{ label: 'x', text: 'a\n\n\nb\n\n\n\n\n\nc' }],
+      });
+      const rows = rowsOf(shadow);
+      expect(rows.map(rowText)).toEqual(['a', '', '', 'b', '빈 줄 5개', 'c']);
+      expect(rows[4]?.getAttribute('data-gap')).toBe('5');
+      expect(rows[5]?.firstElementChild?.textContent).toBe('10');
+    } finally {
+      shadow.restore();
+    }
+  });
+
+  it('says how many lines are below the fold when the box overflows', () => {
+    const shadow = captureShadow();
+    const elProto = Element.prototype as unknown as Record<string, unknown>;
+    const htmlProto = HTMLElement.prototype as unknown as Record<string, unknown>;
+    const saved = {
+      ch: Object.getOwnPropertyDescriptor(elProto, 'clientHeight'),
+      sh: Object.getOwnPropertyDescriptor(elProto, 'scrollHeight'),
+      ot: Object.getOwnPropertyDescriptor(htmlProto, 'offsetTop'),
+    };
+    const isBox = (el: Element) => el.hasAttribute('data-code');
+    Object.defineProperty(elProto, 'clientHeight', {
+      configurable: true,
+      get(this: Element) {
+        return isBox(this) ? 100 : 0;
+      },
+    });
+    Object.defineProperty(elProto, 'scrollHeight', {
+      configurable: true,
+      get(this: Element) {
+        return isBox(this) ? 1000 : 0;
+      },
+    });
+    Object.defineProperty(htmlProto, 'offsetTop', {
+      configurable: true,
+      get(this: HTMLElement) {
+        const parent = this.parentElement;
+        return parent && isBox(parent) ? Array.from(parent.children).indexOf(this) * 10 : 0;
+      },
+    });
+    try {
+      runDialog({
+        title: 't',
+        lines: [],
+        codes: [{ label: 'x', text: Array.from({ length: 30 }, (_, i) => `l${i}`).join('\n') }],
+      });
+      const more = shadow.root()?.querySelector('[data-more]') as HTMLElement | null;
+      expect(more?.style.display).toBe('block');
+      expect(more?.textContent).toContain('아래에 20줄 더 있어요');
+      // Scrolled to the end: nothing is below any more.
+      const box = shadow.root()?.querySelector('[data-code]') as HTMLElement;
+      box.scrollTop = 900;
+      box.dispatchEvent(new Event('scroll'));
+      expect(more?.style.display).toBe('none');
+    } finally {
+      shadow.restore();
+      for (const [proto, key, d] of [
+        [elProto, 'clientHeight', saved.ch],
+        [elProto, 'scrollHeight', saved.sh],
+        [htmlProto, 'offsetTop', saved.ot],
+      ] as const) {
+        if (d) Object.defineProperty(proto, key, d);
+        else delete proto[key];
+      }
+    }
+  });
+
+  it('stays linear on long and hostile input', () => {
+    const shadow = captureShadow();
+    try {
+      const hostile = `${'/'.repeat(5000)}${LS}${'"'.repeat(5000)}${'`'.repeat(3)}${'[/'.repeat(3000)}${RLO.repeat(2000)}`;
+      const t0 = Date.now();
+      runDialog({ title: 't', lines: [], codes: [{ label: 'x', text: hostile }] });
+      expect(Date.now() - t0).toBeLessThan(5000);
+    } finally {
+      shadow.restore();
+    }
+  });
+});
+
+describe('the host element', () => {
+  it('gets a fresh random id each time, a stable data attribute, and forced inline style', () => {
+    const a = runDialog({ title: 't', lines: [] }).host();
+    const b = runDialog({ title: 't', lines: [] }).host();
+    expect(a?.id).toBeTruthy();
+    expect(b?.id).toBeTruthy();
+    expect(a?.id).not.toBe(b?.id);
+    expect(a?.hasAttribute(CONFIRM_HOST_ATTR)).toBe(true);
+    // Only one dialog host is left behind.
+    expect(document.querySelectorAll(`[${CONFIRM_HOST_ATTR}]`)).toHaveLength(1);
+    expect(a?.style.getPropertyPriority('z-index')).toBe('important');
+    expect(a?.style.getPropertyPriority('pointer-events')).toBe('important');
+    expect(a?.style.getPropertyPriority('display')).toBe('important');
+  });
+
+  it('opens a modal <dialog> in the top layer when the page supports it', () => {
+    const proto = HTMLDialogElement.prototype as unknown as { showModal?: () => void };
+    const had = Object.getOwnPropertyDescriptor(proto, 'showModal');
+    const opened = vi.fn();
+    proto.showModal = opened;
+    const shadow = captureShadow();
+    try {
+      runDialog({ title: 't', lines: [] });
+      expect(opened).toHaveBeenCalledTimes(1);
+      expect(shadow.root()?.querySelector('dialog button')).not.toBeNull();
+    } finally {
+      shadow.restore();
+      if (had) Object.defineProperty(proto, 'showModal', had);
+      else delete proto.showModal;
+    }
+  });
+
+  it('falls back to a fixed layer when showModal is missing or throws', () => {
+    const proto = HTMLDialogElement.prototype as unknown as { showModal?: () => void };
+    const had = Object.getOwnPropertyDescriptor(proto, 'showModal');
+    proto.showModal = () => {
+      throw new Error('nope');
+    };
+    const shadow = captureShadow();
+    try {
+      const { host } = runDialog({ title: 't', lines: [] });
+      expect(host()).not.toBeNull();
+      expect(shadow.buttons().length).toBe(2);
+      delete proto.showModal;
+      runDialog({ title: 't', lines: [] });
+      expect(shadow.root()?.querySelector('dialog')).toBeNull();
+      expect(shadow.buttons().length).toBe(2);
+    } finally {
+      shadow.restore();
+      if (had) Object.defineProperty(proto, 'showModal', had);
+    }
+  });
+});
+
 describe('prepareCode', () => {
   it('keeps formatting, drops only trailing blank space, and counts', () => {
     const p = prepareCode('a\r\n  b\n\n  \n');
     expect(p.block.text).toBe('a\n  b');
     expect(p.block.label).toBe('총 5자 · 2줄');
     expect(p.tooLong).toBe(false);
+  });
+
+  it('counts U+2028 as a line break and measures the cap on the evaluated string', () => {
+    expect(prepareCode(`a${LS}b`).block.label).toBe('총 3자 · 2줄');
+    // Trailing blanks are trimmed for display but still count against the cap.
+    expect(prepareCode(`a${' '.repeat(CONFIRM_REFUSE_OVER)}`).tooLong).toBe(true);
   });
 
   it('flags text over the cap', () => {
