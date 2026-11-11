@@ -1,7 +1,7 @@
 /**
  * Shared constants for the relay's named "session ended" close.
  *
- * Until 0.3.2 a session that the developer ended, that was revoked, or that
+ * Until 0.4.0 a session that the developer ended, that was revoked, or that
  * timed out reached the phone as the same code the expired-QR rejection uses
  * (4401), so the phone could only say "scan a new QR". A debugger that knows the
  * client is new enough (the client version travels in the attach handshake)
@@ -55,7 +55,7 @@ export const RELAY_CLIENT_STOP_REASON = 'user-stopped';
  * sends 4410 only to a client at or above this version and keeps 4401 for the
  * rest (including 0.3.1 and anything that reported no version).
  */
-export const RELAY_SESSION_END_MIN_CLIENT_VERSION = '0.3.2';
+export const RELAY_SESSION_END_MIN_CLIENT_VERSION = '0.4.0';
 
 /** Whether a client that reported `version` on the handshake understands the 4410 close. */
 export function clientSupportsSessionEndClose(version: string | null | undefined): boolean {

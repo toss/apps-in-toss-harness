@@ -92,10 +92,10 @@ export function protocolSkewParts(check: ProtocolVersionCheck): { detail: string
       detail:
         `기기에 들어 있는 것은 프로토콜 ${device}인 옛 @apps-in-toss/debug-console${label}이고, ` +
         `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-        'debugger 0.4.0과 debugger-client 0.3.2부터 두 패키지는 같은 프로토콜로만 연결되고, debug-console은 ' +
+        'debugger와 debugger-client 0.4.0부터 두 패키지는 같은 프로토콜로만 연결되고, debug-console은 ' +
         '@apps-in-toss/debugger-client로 이름이 바뀌었습니다. 이 기기는 연결하지 않았습니다.',
       action:
-        '미니앱에서 @apps-in-toss/debug-console을 지우고 @apps-in-toss/debugger-client 0.3.2 이상을 ' +
+        '미니앱에서 @apps-in-toss/debug-console을 지우고 @apps-in-toss/debugger-client 0.4.0 이상을 ' +
         '설치해 재배포하세요(설치 명령은 debugger-client README 참고). ' +
         '데몬은 @apps-in-toss/debugger 0.4.0 이상이어야 합니다.',
     };

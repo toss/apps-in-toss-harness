@@ -100,20 +100,20 @@ return true;
  * A device older than the relay is a pre-rename `@apps-in-toss/debug-console` (protocol 2 or
  * lower, see `isPreRenameDeviceProtocol`; a newer-but-still-older `debugger-client` gets a plain
  * "update debugger-client" text): the package continues as `@apps-in-toss/debugger-client`, so the text names the new
- * package and the first-release floors of both packages (debugger 0.4.0, debugger-client 0.3.2) instead of "update debug-console". A device
+ * package and the first-release floors of both packages (debugger와 debugger-client 0.4.0) instead of "update debug-console". A device
  * newer than the relay needs a newer daemon.
  */
 export function updateRequiredText(devicePathProtocol: number, hostProtocol: number): string {
   if (devicePathProtocol < hostProtocol) {
     return isPreRenameDeviceProtocol(devicePathProtocol)
-      ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고, 지금 디버거와는 연결되지 않아요. debug-console을 지우고 @apps-in-toss/debugger-client 0.3.2 이상을 설치해 다시 배포한 뒤 QR을 다시 스캔하세요.'
+      ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고, 지금 디버거와는 연결되지 않아요. debug-console을 지우고 @apps-in-toss/debugger-client 0.4.0 이상을 설치해 다시 배포한 뒤 QR을 다시 스캔하세요.'
       : '이 미니앱의 @apps-in-toss/debugger-client가 디버거(@apps-in-toss/debugger)보다 오래돼서 연결하지 않았어요. debugger-client를 최신 버전으로 올려 다시 배포한 뒤 QR을 다시 스캔하세요.';
   }
   return '디버거(@apps-in-toss/debugger)가 이 미니앱의 @apps-in-toss/debugger-client보다 오래돼서 연결하지 않았어요. 디버거를 0.4.0 이상 최신 버전으로 올려 다시 실행하세요.';
 }
 
 export const UPDATE_REQUIRED_CONSOLE_WARNING =
-  '[ait-debugger] 디버거와 미니앱 쪽 패키지의 프로토콜이 달라서 연결하지 않았어요. @apps-in-toss/debugger는 0.4.0 이상, @apps-in-toss/debugger-client는 0.3.2 이상으로 함께 맞추세요.';
+  '[ait-debugger] 디버거와 미니앱 쪽 패키지의 프로토콜이 달라서 연결하지 않았어요. @apps-in-toss/debugger는 0.4.0 이상, @apps-in-toss/debugger-client는 0.4.0 이상으로 함께 맞추세요.';
 
 /**
  * `target.js` 대신 내려주는 스크립트. 프로토콜이 다른 기기는 chii 코드를 받지 못하고, 화면 위쪽에

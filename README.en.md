@@ -5,9 +5,9 @@
 A harness monorepo that lets you go from an empty directory to a published Apps in Toss mini-app without ever leaving your AI coding agent (Claude Code, Codex, Cursor). The agent plugin `ait` acts as the orchestrator, weaving scaffolding, development, debugging, bundling, registration, and operations into a single flow. Scaffolding is built on `create-ait-app`; docs lookup and console integration are handled by two MCP servers enabled by default; and dev/debug tooling like devtools and debugger are wired in only when you opt in.
 
 > [!IMPORTANT]
-> **Use debugger 0.4.0 and debugger-client 0.3.2 or later.** In these versions `@apps-in-toss/debugger` and `@apps-in-toss/debugger-client` (formerly `@apps-in-toss/debug-console`) changed their names and connection rules together (0.3.1 was never released), and both packages must be at least these versions to connect. Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. The `ait` plugin must also be a release that points at these versions to wire the new names.
+> **Use debugger and debugger-client 0.4.0 or later.** In these versions `@apps-in-toss/debugger` and `@apps-in-toss/debugger-client` (formerly `@apps-in-toss/debug-console`) changed their names and connection rules together (0.3.1 was never released), and both packages must be at least these versions to connect. Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. The `ait` plugin must also be a release that points at these versions to wire the new names.
 >
-> | 0.3.0 and earlier | debugger 0.4.0 / debugger-client 0.3.2 and later |
+> | 0.3.0 and earlier | debugger and debugger-client 0.4.0 and later |
 > | --- | --- |
 > | Package `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
 > | MCP server key `ait-devtools` | `ait-debugger` |
@@ -335,11 +335,11 @@ Three packages managed as a pnpm workspace.
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code, Codex, and Cursor) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.4.0`) |
-| `@apps-in-toss/debugger-client` | `packages/debugger-client` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debugger-client-v0.3.2`) |
+| `@apps-in-toss/debugger-client` | `packages/debugger-client` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debugger-client-v0.4.0`) |
 
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debugger-client`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
-`debugger` and `debugger-client` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.4.0`, `debugger-client-v0.3.2`), and downloads don't require authentication.
+`debugger` and `debugger-client` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.4.0`, `debugger-client-v0.4.0`), and downloads don't require authentication.
 
 </details>
 

@@ -1092,7 +1092,7 @@ export function buildAttachUrl(
   // conservative lower bound.
   const expiresAtMs = now + RELAY_CODE_MIN_AGE_SECONDS * 1000;
   // Same signing as start_attach: sig + arc (+ ahn/ahs). A link without `arc` is
-  // refused by debugger-client 0.3.2.
+  // refused by debugger-client 0.4.0.
   const signed = signedLinkParams(totpSecret, tunnel.wssUrl, totpCode, signingHostName(), now);
 
   return {

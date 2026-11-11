@@ -294,7 +294,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * `target.js` 자리에 업데이트 안내 막대가 뜬다), 이 에러는 "업데이트가 필요하다"를 알리는 것이다.
  *
  * 프로토콜 3은 이름 변경 릴리스다. 기기 쪽이 낮거나 번호가 없으면 이름이 바뀌기 전의
- * `@apps-in-toss/debug-console`(0.3.0 이하)이므로, 새 이름과 최소 버전(debugger 0.4.0, debugger-client 0.3.2)을 직접 안내한다.
+ * `@apps-in-toss/debug-console`(0.3.0 이하)이므로, 새 이름과 최소 버전(debugger와 debugger-client 0.4.0)을 직접 안내한다.
  * 기기 쪽이 높으면 데몬을 올린다.
  *
  * SECRET-HANDLING: 숫자와 기기 패키지 버전 라벨만 싣는다. relay `wss://` URL·터널 호스트·

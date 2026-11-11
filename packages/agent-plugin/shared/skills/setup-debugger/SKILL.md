@@ -199,7 +199,7 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 
 - `stop_attach` 도구로 세션을 끊을 수 있다. 세션은 도구 호출 15분 무응답 또는 부착 60분에 끝나고(끝나기 1분 전 폰에 안내), 터널은 30분 안 쓰이면 닫힌다.
 - 실기기에서 `run_script`는 기본으로 매번, `call_sdk`는 읽기 전용 getter·진동(`generateHapticFeedback`)을 뺀 호출이 폰의 확인 창을 거친다(확인 창에 "1시간 동안 묻지 않기"가 있고, 결제 호출은 이 허용이 적용되지 않고 매번 묻는다). 사용자가 정하는 `env` 값: `AIT_DEBUG_SDK_ALLOW`(바로 실행할 SDK 메서드 이름, 결제 이름은 무시), `AIT_DEBUG_EVALUATE`(`confirm`(기본)·`confirm-on-sensitive`(약한 선택 사항)·`free`·`off`), `AIT_DEBUG_REDACT`(`off`면 마스킹 끔). 사용자가 요청하지 않으면 넣지 않는다.
-- 폰에는 `debugger-client` 0.3.2의 상태 칩과 vConsole "Remote Debugging" 탭이 뜬다.
+- 폰에는 `debugger-client` 0.4.0의 상태 칩과 vConsole "Remote Debugging" 탭이 뜬다.
 
 ## 다음 단계
 

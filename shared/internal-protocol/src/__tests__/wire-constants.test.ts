@@ -121,13 +121,14 @@ describe('relay session end', () => {
   });
 
   it('gates the close on the client version reported at the handshake', () => {
-    expect(clientSupportsSessionEndClose('0.3.2')).toBe(true);
-    expect(clientSupportsSessionEndClose('0.3.10')).toBe(true);
     expect(clientSupportsSessionEndClose('0.4.0')).toBe(true);
+    expect(clientSupportsSessionEndClose('0.4.10')).toBe(true);
     expect(clientSupportsSessionEndClose('1.0.0')).toBe(true);
+    expect(clientSupportsSessionEndClose('0.3.10')).toBe(false);
+    expect(clientSupportsSessionEndClose('0.3.2')).toBe(false);
     expect(clientSupportsSessionEndClose('0.3.1')).toBe(false);
     expect(clientSupportsSessionEndClose('0.2.9')).toBe(false);
-    expect(clientSupportsSessionEndClose('0.3.2-beta.1')).toBe(false);
+    expect(clientSupportsSessionEndClose('0.4.0-beta.1')).toBe(false);
     expect(clientSupportsSessionEndClose('')).toBe(false);
     expect(clientSupportsSessionEndClose(null)).toBe(false);
     expect(clientSupportsSessionEndClose('garbage')).toBe(false);

@@ -15,11 +15,11 @@
 
 ## 0. 옛 이름 점검 (0.3.0 이하로 배선한 프로젝트)
 
-debugger 0.4.0과 debugger-client 0.3.2에서 세 가지가 한꺼번에 바뀌었다(0.3.1은 발행되지 않았다). 한쪽만 올라간 부분 업데이트는 연결이 되지 않으므로
+debugger와 debugger-client 0.4.0에서 세 가지가 한꺼번에 바뀌었다(0.3.1은 발행되지 않았다). 한쪽만 올라간 부분 업데이트는 연결이 되지 않으므로
 (프로토콜 번호도 2에서 3으로 올라, 섞이면 서로 연결을 거부한다) **옛 이름이 보이면 "미설치"가
 아니라 "업그레이드 필요"로 다룬다.** 이 절의 점검은 읽기만 한다.
 
-| 옛 것 (0.3.0 이하) | 새 것 (debugger 0.4.0·debugger-client 0.3.2 이상) |
+| 옛 것 (0.3.0 이하) | 새 것 (debugger와 debugger-client 0.4.0 이상) |
 | --- | --- |
 | MCP 서버 키 `ait-devtools` | `ait-debugger` |
 | 패키지 `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
@@ -48,7 +48,7 @@ debugger 0.4.0과 debugger-client 0.3.2에서 세 가지가 한꺼번에 바뀌�
 3. 소스와 빌드 설정(`node_modules`·`dist`·`build`·`out` 제외)에서 `@apps-in-toss/debug-console`
    문자열을 grep한다. `import('@apps-in-toss/debug-console')`, `.../auto` 같은 import가 걸린다.
 4. 셋 중 하나라도 걸리면 아래 2-B로 간다. 둘 중 한쪽만 걸리면(예: 서버 키는 새 것인데 패키지는 옛
-   것) 어느 쪽이 옛 것인지 짚어 주고, debugger는 0.4.0 이상, debugger-client는 0.3.2 이상으로 함께 맞아야 한다고 알린다.
+   것) 어느 쪽이 옛 것인지 짚어 주고, debugger와 debugger-client 모두 0.4.0 이상으로 함께 맞아야 한다고 알린다.
    커스텀 런처 항목(Release URL 형태가 아닌 `args`)이 이 패키지를 가리키면 `args`를 건드리지 않는다.
    키 이름만 새 키로 옮기자고 제안하고, 런처가 가리키는 debugger가 0.4.0 이상이어야 한다고 알린다.
 
@@ -130,10 +130,10 @@ debugger와 debugger-client이 둘 다 낮으면 한 번에 묶어 묻되, 항�
 바꿀 것을 한 번에 보여 주고, 항목별로 동의를 받은 뒤 적용한다. 예:
 
 ```
-이 프로젝트는 0.3.0 이하 이름으로 배선돼 있습니다. debugger 0.4.0·debugger-client 0.3.2부터 이름이 바뀌어, 한쪽만 올리면 연결되지 않습니다.
+이 프로젝트는 0.3.0 이하 이름으로 배선돼 있습니다. debugger와 debugger-client 0.4.0부터 이름이 바뀌어, 한쪽만 올리면 연결되지 않습니다.
 바꿀 항목은 네 가지입니다.
   1. .mcp.json: "ait-devtools" 키를 "ait-debugger"로 바꾸고 args의 URL을 debugger-v0.4.0로 올립니다. (둘 다 있으면 "ait-debugger"를 두고 옛 "ait-devtools" 항목만 지우자고 제안합니다.)
-  2. package.json: @apps-in-toss/debug-console을 @apps-in-toss/debugger-client로 바꾸고 URL을 debugger-client-v0.3.2로 올립니다.
+  2. package.json: @apps-in-toss/debug-console을 @apps-in-toss/debugger-client로 바꾸고 URL을 debugger-client-v0.4.0으로 올립니다.
   3. 소스 import: '@apps-in-toss/debug-console' 2곳을 '@apps-in-toss/debugger-client'로 바꿉니다. (src/main.ts:12, vite.config.ts:5)
   4. 권한 규칙: mcp__ait-devtools__* 를 쓰고 있다면 mcp__ait-debugger__* 로 옮기고, 도구 하나를 지목한 규칙(예: mcp__ait-devtools__evaluate)은 도구 이름도 새 이름(mcp__ait-debugger__run_script)으로 바꿔야 합니다. (설정 파일은 직접 고치지 않고 안내만 합니다)
 다른 서버 항목은 건드리지 않습니다. 바꿀까요?
@@ -199,10 +199,10 @@ Release 자산은 바꿀 수 없으므로(잠긴 릴리스) 이미 받은 옛 �
 
 - 기기 쪽이 옛 `@apps-in-toss/debug-console`이라는 문구(0.3.0 이하)이거나 0절에서 옛 이름이
   걸리면: 이름 변경으로 생긴 부분 업데이트다. 2-B의 마이그레이션을 제안한다. 에러가 안내하는
-  대로 `@apps-in-toss/debugger-client` 0.3.2 이상으로 바꾸고 디버그 빌드를 다시 올려야 한다.
+  대로 `@apps-in-toss/debugger-client` 0.4.0 이상으로 바꾸고 디버그 빌드를 다시 올려야 한다.
   debugger도 0.4.0 이상인지 함께 본다.
 - 설정된 debugger가 0.2.2 또는 0.2.3이면: 이 에러는 그 두 버전의 알려진 버그다.
   패키지 버전 문자열을 비교하다 항상 불일치로 판정한다. 2단계의 업그레이드를 제안한다.
   디버그 패키지 쪽을 바꾸라고 하지 않는다.
 - 위 둘이 아니고 debugger가 0.4.0 이상이거나 Release URL이 아닌 런처면: 에러 문구대로 debugger는 0.4.0 이상,
-  debugger-client는 0.3.2 이상인지 확인한다.
+  debugger-client는 0.4.0 이상인지 확인한다.

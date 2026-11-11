@@ -252,7 +252,7 @@ describe('consent dialog before a first attach', () => {
     expect(window.history.state?.__ait_debug_attach).toBeUndefined();
   });
 
-  it('a link without a certificate (a debugger older than 0.3.2) asks for an update, no dialog, no request', async () => {
+  it('a link without a certificate (a debugger older than 0.4.0) asks for an update, no dialog, no request', async () => {
     const signed = attachSignatures(SECRET, RELAY, AT);
     window.history.replaceState(
       null,

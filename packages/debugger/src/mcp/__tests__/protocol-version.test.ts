@@ -134,16 +134,16 @@ describe('protocolVersionMismatchError', () => {
     expect(olderText).toContain('연결하지 않았습니다');
   });
 
-  it('tells a pre-rename device to switch to the renamed package at debugger 0.4.0 / debugger-client 0.3.2 or later', () => {
+  it('tells a pre-rename device to switch to the renamed package at debugger and debugger-client 0.4.0 or later', () => {
     expect(olderText).toContain('이름이 바뀌었습니다');
     expect(olderText).toContain('@apps-in-toss/debug-console을 지우고');
-    expect(olderText).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(olderText).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
     expect(olderText).toContain('@apps-in-toss/debugger 0.4.0 이상');
   });
 
   it('treats a device without a protocol number as the older side', () => {
     const text = unnumbered.content[0]?.text ?? '';
-    expect(text).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(text).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
     expect(text).toContain('옛 버전');
   });
 
@@ -153,7 +153,7 @@ describe('protocolVersionMismatchError', () => {
         match: false,
         deviceProtocol: 3,
         hostProtocol: 4,
-        deviceVersion: '0.3.2',
+        deviceVersion: '0.4.0',
       }).content[0]?.text ?? '';
     expect(text).toContain('기기의 @apps-in-toss/debugger-client');
     expect(text).not.toContain('debug-console');
@@ -178,9 +178,7 @@ describe('protocolVersionMismatchError', () => {
   it('only ever names the first-release floors besides the device label', () => {
     // The packages are versioned independently; a version borrowed from the other
     // package does not exist. Each floor is that package's own first release of the rename.
-    expect(new Set(olderText.match(/\d+\.\d+\.\d+/g))).toEqual(
-      new Set(['0.3.0', '0.3.2', '0.4.0']),
-    );
+    expect(new Set(olderText.match(/\d+\.\d+\.\d+/g))).toEqual(new Set(['0.3.0', '0.4.0']));
     expect(olderText).not.toMatch(/맞춰/);
   });
 
@@ -297,7 +295,7 @@ describe('relay refuses a device on another protocol', () => {
     expect(res.headers.get('content-type')).toContain('javascript');
     expect(res.headers.get('cache-control')).toBe('no-store');
     const body = await res.text();
-    expect(body).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(body).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
     expect(body).toContain('debug-console');
     // It is the notice, not chii.
     expect(body).not.toContain('ChiiServerUrl');
@@ -324,7 +322,7 @@ describe('relay refuses a device on another protocol', () => {
     expect(body).toContain(
       '@apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고',
     );
-    expect(body).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(body).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
     expect(body).toContain("window.__ait_debug_status='update-required'");
     expect(body).not.toContain('ChiiServerUrl');
     expect(body).not.toContain(CODE);

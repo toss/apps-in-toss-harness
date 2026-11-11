@@ -90,7 +90,7 @@ if (__DEBUG_BUILD__) {
 프로젝트에 이미 `/auto` import가 있으면 사용자에게 알린 뒤 게이트 import로 바꾼다.
 
 프로젝트에 0.3.0 이하의 옛 이름 `@apps-in-toss/debug-console`이 있으면 "이미 설치됨"으로 끝내지
-않는다. 이름이 `@apps-in-toss/debugger-client`로 바뀌었고 debugger 0.4.0 이상과 함께 0.3.2 이상이어야 연결되므로,
+않는다. 이름이 `@apps-in-toss/debugger-client`로 바뀌었고 debugger와 함께 0.4.0 이상이어야 연결되므로,
 `setup-debugger/references/upgrade-check.md`의 마이그레이션 경로(0절·2-B절)로 안내한다.
 
 이 패키지는 예전 `@apps-in-toss/devtools`의 `./in-app` export였다 — devtools의 MCP

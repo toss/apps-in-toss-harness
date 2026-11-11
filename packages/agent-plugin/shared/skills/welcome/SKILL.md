@@ -175,7 +175,7 @@ skill §5 adapter-note와 동일 패턴).
      여부를 확인하려면:
      /ait:setup-debugger
   ⚠️ 이 프로젝트는 옛 이름(ait-devtools 키 또는 @apps-in-toss/debug-console)으로 배선돼 있습니다 —
-     debugger 0.4.0·debugger-client 0.3.2부터 ait-debugger·@apps-in-toss/debugger-client로 바뀌었고, 한쪽만 올리면 연결되지 않습니다.
+     debugger와 debugger-client 0.4.0부터 ait-debugger·@apps-in-toss/debugger-client로 바뀌었고, 한쪽만 올리면 연결되지 않습니다.
      한꺼번에 옮기려면:
      /ait:setup-debugger
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
