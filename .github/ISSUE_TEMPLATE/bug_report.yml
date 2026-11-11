@@ -105,6 +105,12 @@ body:
         - /ait:debug
         - /ait:inject-debugger-client
         - /ait:inject-devtools
+        - /ait:inject-tossface
+        - /ait:test-on-device
+        - /ait:launch
+        - /ait:server
+        - /ait:feature
+        - /ait:ux-writing
         - 특정 명령과 무관 / 설치(marketplace add·install) 단계
         - 잘 모르겠음
     validations:

@@ -442,9 +442,8 @@ function checkA1(root) {
 
 // seam 검사 면제 skill: harness 외부 메인테이너 도구 (next-station seam 없음이 정상)
 // aitcc 전제 skill 제거(register/deploy/status/setup-bundle) + 불필요 skill 제거
-// (docs/auth-setup/changeset) + 환경 2 제거로 setup-phone-preview까지 빠진 뒤
-// `test-on-device` 신설(harness#98)까지 반영한 8개는 전부 next-station seam을
-// 갖는다 — 면제 대상 없음.
+// (docs/auth-setup/changeset) + 환경 2 제거로 setup-phone-preview까지 빠진 뒤에도
+// shared/skills/ 의 모든 skill 은 next-station seam을 갖는다 — 면제 대상 없음.
 const SEAM_EXEMPT_SKILLS = new Set();
 
 // fence 여는 줄 — **선행 공백을 허용한다**. 리스트 아이템 안의 코드블록은
@@ -2345,12 +2344,142 @@ function checkDesignGuideTemplateDrift(root) {
       }
     }
   }
+  violations.push(...checkDesignGuideFallbackMarker(root, mvMatch ? mvMatch[1] : null));
+  return violations;
+}
+
+// 자산 폴백(new-miniapp 등 skill 문서 안의 인라인 셸)은 마커를 직접 printf 로
+// 쓴다: `printf '<!-- %s v<N> -->`. 이 N 이 MV 와 다르면 폴백으로 만든 프로젝트가
+// 다음 design 주입에서 버전 불일치로 보인다. 구버전을 일부러 보여 주는 예시
+// (`agents=skip(ait:design-guide v0)` 등)는 printf 형태가 아니라 대상이 아니다.
+/** @param {string} root @param {string | null} mv @returns {Violation[]} */
+function checkDesignGuideFallbackMarker(root, mv) {
+  const violations = [];
+  const skillsDir = path.join(root, 'shared', 'skills');
+  if (!mv || !fs.existsSync(skillsDir)) return violations;
+  let found = 0;
+  for (const file of walkFiles(skillsDir)) {
+    if (!file.endsWith('.md')) continue;
+    readFile(file)
+      .split('\n')
+      .forEach((line, i) => {
+        // 여는 마커를 쓰는 printf 는 전부 본다. 정규 형태(`%s v<N>`)가 아니면 버전을
+        // 대조할 수 없으니 그 자체를 위반으로 낸다 — 두 printf 중 하나만 형태가 바뀌어도
+        // 나머지 하나가 found 를 채워 조용히 통과하는 것을 막는다.
+        for (const open of line.matchAll(/printf\s+(['"])<!-- (?!\/)(.*?) -->/g)) {
+          found++;
+          const m = /^%s v(\d+)$/.exec(open[2]);
+          if (!m) {
+            violations.push(
+              mkv(
+                path.relative(root, file),
+                i + 1,
+                'A3/design-guide-template-drift',
+                `폴백 printf 마커가 정규 형태(\`printf '<!-- %s v<N> -->\`)가 아님: \`${open[2]}\` — MV=${mv} 와 대조할 수 없다 (fix: 정규 형태로 되돌리거나 이 검사의 패턴을 함께 고쳐라)`,
+              ),
+            );
+            continue;
+          }
+          if (m[1] === mv) continue;
+          violations.push(
+            mkv(
+              path.relative(root, file),
+              i + 1,
+              'A3/design-guide-template-drift',
+              `폴백 printf 마커 v${m[1]} 이 inject-project-guide.sh 의 MV=${mv} 와 다름 (fix: v${mv} 으로 고쳐라)`,
+            ),
+          );
+        }
+      });
+  }
+  // 폴백 마커를 쓰는 자리를 하나도 못 찾으면 형태가 바뀌어 검사가 조용히 무력화된 것이다.
+  if (found === 0) {
+    violations.push(
+      mkv(
+        path.relative(root, skillsDir),
+        1,
+        'A3/design-guide-template-drift',
+        `skill 문서에서 폴백 마커 printf 줄(\`printf '<!-- %s v<N> -->\`)을 하나도 찾지 못함 — 폴백 마커 버전을 MV=${mv} 와 대조할 수 없다 (fix: 폴백 셸의 마커 쓰기 형태를 복원하거나, 형태를 바꿨다면 이 검사의 패턴을 함께 고쳐라)`,
+      ),
+    );
+  }
+  return violations;
+}
+
+// A3/bug-report-commands — .github/ISSUE_TEMPLATE/bug_report.yml 의 "관련 skill /
+// 명령" 드롭다운 선택지가 README 명령 표(`| \`/ait:<verb> ...`)와 같은 집합인지
+// 확인한다. 명령을 추가하고 드롭다운을 빠뜨리면 사용자가 그 명령을 고를 수 없다.
+// 명령이 아닌 선택지('특정 명령과 무관…' 등)는 대상이 아니다. monorepo 밖(tmp
+// fixture·단독 패키지 — findRepoRoot 가 null)에서는 검사하지 않고, monorepo 안에서
+// README.md·bug_report.yml 이 없으면 검사가 조용히 꺼진 것이므로 위반이다.
+/** @param {string} root @returns {Violation[]} */
+function checkBugReportCommands(root) {
+  const violations = [];
+  const repoRoot = findRepoRoot(root);
+  if (!repoRoot) return violations;
+  const readmePath = path.join(repoRoot, 'README.md');
+  const ymlPath = path.join(repoRoot, '.github', 'ISSUE_TEMPLATE', 'bug_report.yml');
+  const RULE = 'A3/bug-report-commands';
+  for (const fp of [readmePath, ymlPath]) {
+    if (fs.existsSync(fp)) continue;
+    violations.push(
+      mkv(
+        path.relative(root, fp),
+        1,
+        RULE,
+        `monorepo 안인데 ${path.relative(repoRoot, fp)} 가 없음 — 버그 리포트 드롭다운 ↔ README 명령 표 대조를 할 수 없다 (fix: 파일을 복원하라)`,
+      ),
+    );
+  }
+  if (violations.length > 0) return violations;
+  const relYml = path.relative(root, ymlPath);
+
+  const readmeVerbs = new Set(
+    [...readFile(readmePath).matchAll(/^\|\s*`\/ait:([a-z0-9-]+)/gm)].map((m) => m[1]),
+  );
+  const yml = readFile(ymlPath).split('\n');
+  const labelIdx = yml.findIndex((l) => /label:\s*관련 skill \/ 명령\s*$/.test(l));
+  const optStart =
+    labelIdx < 0 ? -1 : yml.findIndex((l, i) => i > labelIdx && /^\s*options:\s*$/.test(l));
+  if (optStart < 0) {
+    violations.push(mkv(relYml, 1, RULE, `'관련 skill / 명령' 드롭다운 options 를 찾지 못함`));
+    return violations;
+  }
+  const options = [];
+  for (let i = optStart + 1; i < yml.length && /^\s*-\s/.test(yml[i]); i++) {
+    options.push(yml[i].replace(/^\s*-\s+/, '').trim());
+  }
+  const optionVerbs = new Set(
+    options.map((o) => o.match(/^\/ait:([a-z0-9-]+)$/)?.[1]).filter(Boolean),
+  );
+  for (const v of readmeVerbs) {
+    if (optionVerbs.has(v)) continue;
+    violations.push(
+      mkv(
+        relYml,
+        optStart + 1,
+        RULE,
+        `README 명령 표의 /ait:${v} 가 버그 리포트 드롭다운에 없음 (fix: options 에 '- /ait:${v}' 를 추가하라)`,
+      ),
+    );
+  }
+  for (const v of optionVerbs) {
+    if (readmeVerbs.has(v)) continue;
+    violations.push(
+      mkv(
+        relYml,
+        optStart + 1,
+        RULE,
+        `드롭다운의 /ait:${v} 가 README 명령 표에 없음 (fix: 선택지를 지우거나 README 표에 등재하라)`,
+      ),
+    );
+  }
   return violations;
 }
 
 /** @param {string} root @returns {Violation[]} */
 function checkA3(root) {
-  const violations = [...checkDesignGuideTemplateDrift(root)];
+  const violations = [...checkDesignGuideTemplateDrift(root), ...checkBugReportCommands(root)];
 
   // 1. 템플릿 검증
   const templatesDir = path.join(root, 'shared', 'templates');
