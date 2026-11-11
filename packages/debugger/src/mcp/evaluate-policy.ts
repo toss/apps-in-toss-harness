@@ -4,8 +4,9 @@
  * `AIT_DEBUG_EVALUATE` in the MCP server `env` of `.mcp.json` picks one of:
  *
  * - `confirm`: every expression is confirmed on the phone (default for a real phone).
- *   "1시간 동안 묻지 않기" lets the developer stop the questions for an hour (or until
- *   the phone disconnects), and it means the agent may run any code, payments included.
+ *   "1시간 동안 묻지 않기" in a run_script or run_tests dialog lets the developer stop
+ *   those questions for an hour (or until the phone disconnects), and it means the agent
+ *   may run any code, payments included. It does not cover call_sdk.
  * - `confirm-on-sensitive`: weaker opt-in. The developer confirms only when the expression
  *   mentions something that reaches the SDK, the network or storage. The list is string
  *   matching and an expression can build the names from pieces

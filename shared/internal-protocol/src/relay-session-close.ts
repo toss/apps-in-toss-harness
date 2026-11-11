@@ -57,10 +57,13 @@ export const RELAY_CLIENT_STOP_REASON = 'user-stopped';
  */
 export const RELAY_SESSION_END_MIN_CLIENT_VERSION = '0.4.0';
 
+/** Anchored semver: `0.4.0garbage` and `0.4.0.1` do not parse; a prerelease or build suffix does. */
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 /** Whether a client that reported `version` on the handshake understands the 4410 close. */
 export function clientSupportsSessionEndClose(version: string | null | undefined): boolean {
   const parse = (v: string): [number, number, number] | null => {
-    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
+    const m = SEMVER.exec(v);
     return m === null ? null : [Number(m[1]), Number(m[2]), Number(m[3])];
   };
   if (typeof version !== 'string') return false;

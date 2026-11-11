@@ -404,8 +404,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'SECURITY: expression and result are not redacted — never include secrets or auth ' +
       'tokens in the expression. On a real phone, every expression waits for the developer ' +
       'to tap 허용 on the phone (30 s) by default; the dialog shows the whole expression ' +
-      'with its formatting. "1시간 동안 묻지 않기" lets the developer stop the questions for run_script, ' +
-      'run_tests and call_sdk (not its payment calls) for one hour or until the phone disconnects; ' +
+      'with its formatting. "1시간 동안 묻지 않기" in a run_script or run_tests dialog lets the developer stop ' +
+      'the questions for those two (not call_sdk) for one hour or until the phone disconnects; ' +
       'code inside run_script can do anything, payments included, so never ask for it on your own. ' +
       'An expression over 20000 characters is refused: split it. The developer can set AIT_DEBUG_EVALUATE ' +
       '(confirm | confirm-on-sensitive | free | off) in .mcp.json; confirm-on-sensitive is a ' +
@@ -475,8 +475,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'run directly. confirm — every other method (share, permissions, openURL, storage, ' +
       'clipboard, location, contacts, camera, login, unknown names) waits for the developer to ' +
       'tap 허용 on the phone (30 s; confirmation-timeout otherwise); the dialog shows the ' +
-      'arguments in full (over 20000 characters is refused). "1시간 동안 묻지 않기" skips the dialog ' +
-      'for one hour or until the phone disconnects. confirm-always — payments and anything that ' +
+      'arguments in full (over 20000 characters is refused). "1시간 동안 묻지 않기" in a call_sdk dialog skips ' +
+      "this tier's dialog for one hour or until the phone disconnects; it does not cover run_script or run_tests. confirm-always — payments and anything that " +
       'spends or grants money or points (checkoutPayment, requestTossPayPaysBilling, in-app ' +
       'purchase orders, grantPromotionReward, ...) ask on every call, whatever was allowed ' +
       'for the hour. The developer can add free names with AIT_DEBUG_SDK_ALLOW in ' +
@@ -643,7 +643,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'totals (passed/failed/skipped/total). ' +
       'On a real phone the developer confirms the file list and its digest on the phone first ' +
       '(30 s) and the run is refused if a file changes after the approval; AIT_DEBUG_EVALUATE ' +
-      'in .mcp.json sets the policy (the default for a real phone is to confirm; run_tests asks on every call unless the developer chose "1시간 동안 묻지 않기"). ' +
+      'in .mcp.json sets the policy (the default for a real phone is to confirm; run_tests asks on every call unless the developer chose "1시간 동안 묻지 않기" in a run_script or run_tests dialog). ' +
       'When there is no attached page and the current environment is relay (env 3), this tool ' +
       'automatically shows the QR dashboard and waits for a phone to connect before running ' +
       '(scheme_url required for env 3 relay-dev). ' +

@@ -70,14 +70,17 @@ export interface PreparedCode {
  */
 export function prepareCode(text: string): PreparedCode {
   const clean = text.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
-  const lines = clean === '' ? 0 : clean.split('\n').length;
+  // U+2028/U+2029 end a line in JavaScript, so the dialog counts and shows them as line breaks.
+  const lines = clean === '' ? 0 : clean.split(/\n|\u2028|\u2029/).length;
   return {
     block: { label: `총 ${clean.length}자 · ${lines}줄`, text: clean },
-    tooLong: clean.length > CONFIRM_REFUSE_OVER,
+    // The cap is on the string that is evaluated, not on the trimmed display copy.
+    tooLong: text.length > CONFIRM_REFUSE_OVER,
   };
 }
 
-const HOST_ID = '__ait_confirm_' + 'host';
+/** Stable attribute the host carries, so the next dialog can find and remove a leftover one. */
+export const CONFIRM_HOST_ATTR = 'data-ait-confirm';
 
 /**
  * Page-side highlighter (plain ES2015, no dependencies). `tok(src)` returns
@@ -89,9 +92,10 @@ const HOST_ID = '__ait_confirm_' + 'host';
 const TOKENIZER_SRC = String.raw`
 var KW = {}; ('break case catch class const continue debugger default delete do else export extends finally for function if import in instanceof let new of return static super switch this throw try typeof var void while with yield async await null undefined true false').split(' ').forEach(function (w) { KW[w] = 1; });
 var RE_NUM = /0[xX][0-9a-fA-F_]+n?|0[bB][01_]+n?|0[oO][0-7_]+n?|(?:\d[\d_]*\.?[\d_]*|\.\d[\d_]*)(?:[eE][+-]?\d+)?n?/y;
-var RE_ID = /[A-Za-z_$ -￿][\w$ -￿]*/y;
+var RE_ID = /[A-Za-z_$\u00a0-\u2027\u202a-\uffff][\w$\u00a0-\u2027\u202a-\uffff]*/y;
 var RE_FLAGS = /[a-z]*/y;
 var RE_WS = /\s+/y;
+function isLT(c) { return c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029'; }
 function tok(s) {
   var out = [], i = 0, n = s.length, last = '', m;
   function push(t, x) { out.push([t, x]); if (t !== 'w' || x.trim() !== '') { if (t !== 'c') { last = (t === 'k' || t === 'w') ? x.trim() : t; } } }
@@ -103,11 +107,11 @@ function tok(s) {
   }
   while (i < n) {
     var ch = s.charAt(i), nx = s.charAt(i + 1), j;
-    if (ch === '/' && nx === '/') { j = s.indexOf('\n', i); if (j < 0) { j = n; } push('c', s.slice(i, j)); i = j; continue; }
+    if (ch === '/' && nx === '/') { j = i + 2; while (j < n && !isLT(s.charAt(j))) { j++; } push('c', s.slice(i, j)); i = j; continue; }
     if (ch === '/' && nx === '*') { j = s.indexOf('*/', i + 2); j = j < 0 ? n : j + 2; push('c', s.slice(i, j)); i = j; continue; }
     if (ch === '"' || ch === "'" || ch === String.fromCharCode(96)) {
       j = i + 1;
-      while (j < n && s.charAt(j) !== ch) { if (s.charAt(j) === '\\') { j++; } else if (ch !== String.fromCharCode(96) && s.charAt(j) === '\n') { break; } j++; }
+      while (j < n && s.charAt(j) !== ch) { if (s.charAt(j) === '\\') { j++; } else if (ch !== String.fromCharCode(96) && (s.charAt(j) === '\n' || s.charAt(j) === '\r')) { break; } j++; }
       if (j < n && s.charAt(j) === ch) { j++; }
       if (j > n) { j = n; }
       push('s', s.slice(i, j)); i = j; continue;
@@ -116,7 +120,7 @@ function tok(s) {
       j = i + 1; var cls = false, closed = false;
       while (j < n) {
         var c = s.charAt(j);
-        if (c === '\n') { break; }
+        if (isLT(c)) { break; }
         if (c === '\\') { j += 2; continue; }
         if (c === '[') { cls = true; } else if (c === ']') { cls = false; } else if (c === '/' && !cls) { closed = true; j++; break; }
         j++;
@@ -151,51 +155,91 @@ export function buildPhoneConfirmExpression(req: PhoneConfirmRequest): string {
     hour: req.offerGrant === true,
     hourNote: req.offerGrant === true && req.grantNote ? excerpt(req.grantNote, 200) : '',
     seconds: Math.max(1, Math.round(timeoutMs / 1000)),
-    id: HOST_ID,
-  });
+    attr: CONFIRM_HOST_ATTR,
+  })
+    // Older script engines reject a raw U+2028/U+2029 inside a string literal.
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
   return (
     `(() => new Promise(function (resolve) {` +
     `var P = ${payload}; var d = document;` +
     TOKENIZER_SRC.replace(/\s*\n\s*/g, '\n') +
+    // What is shown must match what runs: line terminators become real line breaks, and
+    // invisible or control characters become visible markers.
+    `var LB = /\\r\\n|[\\n\\r\\u2028\\u2029]/;` +
+    `var INV = /[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]/;` +
+    `var WARN = '#d92d20';` +
+    `var hex = function (c) { return ('0000' + c.charCodeAt(0).toString(16).toUpperCase()).slice(-4); };` +
+    // Appends text to parent, one marker span per invisible character. cnt.n counts markers.
+    `var put = function (parent, type, text, cnt, color) {` +
+    `var buf = '';` +
+    `var emit = function () { if (buf === '') { return; } if (type === 'w') { parent.appendChild(d.createTextNode(buf)); } else { var sp = d.createElement('span'); sp.style.cssText = 'color:' + color; sp.textContent = buf; parent.appendChild(sp); } buf = ''; };` +
+    `for (var q = 0; q < text.length; q++) { var c = text.charAt(q);` +
+    `if (INV.test(c)) { emit(); var mk = d.createElement('span'); mk.setAttribute('data-invisible', '1'); mk.style.cssText = 'color:' + WARN + ';background:#fee4e2;border-radius:3px;font-weight:700;font-style:normal;padding:0 2px;margin:0 1px'; mk.textContent = '[U+' + hex(c) + ']'; parent.appendChild(mk); cnt.n += 1; } else { buf += c; } }` +
+    `emit(); };` +
+    `var warnCap = function (n) { var w = d.createElement('div'); w.setAttribute('data-invisible-caption', '1'); w.style.cssText = 'color:' + WARN + ';font-size:12px;font-weight:700;margin:0 0 4px'; w.textContent = '보이지 않는 문자 ' + n + '개를 표시했어요'; return w; };` +
+    `var rid = ''; try { var u = new Uint32Array(2); (window.crypto || window.msCrypto).getRandomValues(u); rid = u[0].toString(36) + u[1].toString(36); } catch (e) { rid = ''; }` +
+    `if (rid === '') { rid = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); }` +
     `if (!d.body) { resolve('unavailable'); return; }` +
-    `var old = d.getElementById(P.id); if (old && old.parentNode) { old.parentNode.removeChild(old); }` +
-    `var host = d.createElement('div'); host.id = P.id;` +
-    `host.style.cssText = 'position:fixed;inset:0;z-index:2147483647';` +
+    `var olds = d.querySelectorAll('[' + P.attr + ']'); for (var oi = 0; oi < olds.length; oi++) { if (olds[oi].parentNode) { olds[oi].parentNode.removeChild(olds[oi]); } }` +
+    `var host = d.createElement('ait-' + rid); host.setAttribute(P.attr, '1'); host.id = 'c' + rid;` +
+    `host.style.cssText = 'all:initial !important;display:block !important;position:fixed !important;top:0 !important;left:0 !important;right:0 !important;bottom:0 !important;width:100% !important;height:100% !important;z-index:2147483647 !important;opacity:1 !important;visibility:visible !important;pointer-events:auto !important;transform:none !important;filter:none !important;clip-path:none !important;mix-blend-mode:normal !important';` +
     `var root = host.attachShadow({ mode: 'closed' });` +
-    `var wrap = d.createElement('div');` +
-    `wrap.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;font:14px/1.45 system-ui,sans-serif';` +
+    // A <dialog> opened with showModal() sits in the top layer, above any stacking the page
+    // sets up; where that is not available the fixed full-screen layer does the job.
+    `var useDlg = false; try { useDlg = typeof window.HTMLDialogElement === 'function' && typeof d.createElement('dialog').showModal === 'function'; } catch (e) { useDlg = false; }` +
+    `var wrap = d.createElement(useDlg ? 'dialog' : 'div');` +
+    `wrap.style.cssText = (useDlg ? 'all:initial;position:fixed;top:0;left:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;' : 'position:absolute;top:0;left:0;right:0;bottom:0;') + 'background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;font:14px/1.45 system-ui,sans-serif';` +
+    `if (useDlg) { wrap.addEventListener('cancel', function (e) { e.preventDefault(); }); }` +
     `var card = d.createElement('div');` +
     `card.style.cssText = 'background:#fff;color:#191f28;border-radius:16px;padding:18px;width:100%;max-width:420px;max-height:100%;box-sizing:border-box;display:flex;flex-direction:column';` +
     `var body = d.createElement('div'); body.style.cssText = 'flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch';` +
     `var foot = d.createElement('div'); foot.style.cssText = 'flex:0 0 auto';` +
-    `var h = d.createElement('div'); h.style.cssText = 'font-weight:700;font-size:16px;margin-bottom:8px'; h.textContent = P.title; body.appendChild(h);` +
-    `P.lines.forEach(function (t) { var p = d.createElement('div'); p.style.cssText = 'font-family:ui-monospace,monospace;font-size:12px;background:#f2f4f6;border-radius:8px;padding:6px 8px;margin:4px 0;word-break:break-all'; p.textContent = t; body.appendChild(p); });` +
+    `var h = d.createElement('div'); h.style.cssText = 'font-weight:700;font-size:16px;margin-bottom:8px'; var hc = { n: 0 }; put(h, 'w', P.title, hc); body.appendChild(h);` +
+    `var lc = { n: 0 }; var lineEls = [];` +
+    `P.lines.forEach(function (t) { var p = d.createElement('div'); p.style.cssText = 'font-family:ui-monospace,monospace;font-size:12px;background:#f2f4f6;border-radius:8px;padding:6px 8px;margin:4px 0;word-break:break-all'; put(p, 'w', t, lc); lineEls.push(p); });` +
+    `if (hc.n + lc.n > 0) { body.appendChild(warnCap(hc.n + lc.n)); }` +
+    `lineEls.forEach(function (p) { body.appendChild(p); });` +
     `var COLORS = { c: '#6b7684;font-style:italic', s: '#1a7f37', n: '#b35900', k: '#6f42c1;font-weight:600', r: '#b4233c' };` +
+    `var updaters = [];` +
     `P.codes.forEach(function (cb) {` +
     `var cap = d.createElement('div'); cap.style.cssText = 'color:#6b7684;font-size:12px;margin:8px 0 4px'; cap.textContent = cb.label; body.appendChild(cap);` +
-    `var box = d.createElement('div'); box.setAttribute('data-code', '1'); box.style.cssText = 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.5;background:#f2f4f6;border-radius:8px;padding:6px 0;max-height:40vh;overflow:auto;-webkit-overflow-scrolling:touch;tab-size:2';` +
-    `var rows = [[]]; tok(cb.text).forEach(function (t) { var parts = t[1].split('\\n'); parts.forEach(function (part, k) { if (k > 0) { rows.push([]); } if (part !== '') { rows[rows.length - 1].push([t[0], part]); } }); });` +
-    `var pad = String(rows.length).length;` +
-    `rows.forEach(function (parts, idx) {` +
+    `var box = d.createElement('div'); box.setAttribute('data-code', '1'); box.style.cssText = 'position:relative;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.5;background:#f2f4f6;border-radius:8px;padding:6px 0;max-height:40vh;overflow:auto;-webkit-overflow-scrolling:touch;tab-size:2';` +
+    `var rows = [[]]; tok(cb.text).forEach(function (t) { var parts = t[1].split(LB); parts.forEach(function (part, k) { if (k > 0) { rows.push([]); } if (part !== '') { rows[rows.length - 1].push([t[0], part]); } }); });` +
+    `var isBlank = function (parts) { return parts.every(function (p) { return p[0] === 'w' && !/\\S/.test(p[1]) && !INV.test(p[1]); }); };` +
+    // Display only: a run of more than two blank lines becomes one marker row.
+    `var plan = []; for (var ri = 0; ri < rows.length;) { if (isBlank(rows[ri])) { var rj = ri; while (rj < rows.length && isBlank(rows[rj])) { rj++; } if (rj - ri > 2) { plan.push({ gap: rj - ri, no: ri + 1 }); } else { for (var rk = ri; rk < rj; rk++) { plan.push({ parts: rows[rk], no: rk + 1 }); } } ri = rj; } else { plan.push({ parts: rows[ri], no: ri + 1 }); ri++; } }` +
+    `var pad = String(rows.length).length; var cc = { n: 0 }; var rowEls = [];` +
+    `plan.forEach(function (it) {` +
     `var row = d.createElement('div'); row.style.cssText = 'display:flex;align-items:flex-start';` +
-    `var no = d.createElement('span'); no.textContent = String(idx + 1); no.style.cssText = 'flex:0 0 auto;box-sizing:content-box;min-width:' + pad + 'ch;padding:0 8px;text-align:right;color:#a0a8b3;user-select:none;-webkit-user-select:none'; row.appendChild(no);` +
+    `var no = d.createElement('span'); no.textContent = String(it.no); no.style.cssText = 'flex:0 0 auto;box-sizing:content-box;min-width:' + pad + 'ch;padding:0 8px;text-align:right;color:#a0a8b3;user-select:none;-webkit-user-select:none'; row.appendChild(no);` +
     `var code = d.createElement('span'); code.style.cssText = 'flex:1 1 auto;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;padding-right:8px;color:#191f28';` +
-    `parts.forEach(function (t) { if (t[0] === 'w') { code.appendChild(d.createTextNode(t[1])); } else { var sp = d.createElement('span'); sp.style.cssText = 'color:' + COLORS[t[0]]; sp.textContent = t[1]; code.appendChild(sp); } });` +
-    `row.appendChild(code); box.appendChild(row); });` +
-    `body.appendChild(box); });` +
+    `if (it.gap) { row.setAttribute('data-gap', String(it.gap)); code.style.color = '#a0a8b3'; code.style.fontStyle = 'italic'; code.textContent = '빈 줄 ' + it.gap + '개'; }` +
+    `else { it.parts.forEach(function (t) { put(code, t[0], t[1], cc, COLORS[t[0]]); }); }` +
+    `row.appendChild(code); box.appendChild(row); rowEls.push({ el: row, w: it.gap || 1 }); });` +
+    `if (cc.n > 0) { body.appendChild(warnCap(cc.n)); }` +
+    `body.appendChild(box);` +
+    // Lines scrolled out of view below the box are announced under it.
+    `var more = d.createElement('div'); more.setAttribute('data-more', '1'); more.style.cssText = 'display:none;color:#3182f6;font-size:12px;font-weight:700;text-align:center;margin:4px 0 0'; body.appendChild(more);` +
+    `var upd = function () { var vis = box.scrollTop + box.clientHeight; var hid = 0; if (box.scrollHeight > box.clientHeight + 1) { rowEls.forEach(function (r) { if (r.el.offsetTop >= vis - 1) { hid += r.w; } }); } if (hid > 0) { more.textContent = '아래에 ' + hid + '줄 더 있어요 ↓'; more.style.display = 'block'; } else { more.style.display = 'none'; } };` +
+    `box.addEventListener('scroll', upd); updaters.push(upd); });` +
     `var left = P.seconds; var note = d.createElement('div'); note.style.cssText = 'color:#6b7684;font-size:12px;margin:8px 0';` +
     `var renderNote = function () { note.textContent = '내가 시킨 게 아니면 거부하세요 · ' + left + '초 뒤 자동 거부'; }; renderNote(); foot.appendChild(note);` +
     `var row = d.createElement('div'); row.style.cssText = 'display:flex;flex-direction:column;gap:8px';` +
     `var finished = false;` +
     `var done = function (v) { if (finished) { return; } finished = true; clearInterval(tick); if (host.parentNode) { host.parentNode.removeChild(host); } resolve(v); };` +
-    `var mk = function (label, value, primary) { var b = d.createElement('button'); b.type = 'button'; b.textContent = label;` +
+    `var denyBtn = null;` +
+    `var mk = function (label, value, primary) { var b = d.createElement('button'); b.type = 'button'; b.textContent = label; if (value === 'deny') { denyBtn = b; }` +
     `b.style.cssText = 'min-height:44px;border:0;border-radius:10px;font:bold 15px system-ui,sans-serif;background:' + (primary ? '#3182f6;color:#fff' : '#e5e8eb;color:#191f28');` +
     `b.addEventListener('click', function (e) { if (!e.isTrusted) { return; } done(value); }); row.appendChild(b); };` +
     `mk('허용', 'allow', true); if (P.hour) { mk('1시간 동안 묻지 않기', 'allow-hour', false); } mk('거부', 'deny', false);` +
     `foot.appendChild(row);` +
     `if (P.hour && P.hourNote) { var hn = d.createElement('div'); hn.style.cssText = 'color:#8b95a1;font-size:12px;margin:6px 0 0;text-align:center'; hn.textContent = P.hourNote; foot.appendChild(hn); }` +
     `card.appendChild(body); card.appendChild(foot); wrap.appendChild(card); root.appendChild(wrap); d.body.appendChild(host);` +
-    `var tick = setInterval(function () { left -= 1; if (left <= 0) { done('timeout'); } else { renderNote(); } }, 1000);` +
+    // The browser would focus the first button (허용); start on 거부 so a stray key cannot allow.
+    `if (useDlg) { try { wrap.showModal(); if (denyBtn) { denyBtn.focus(); } } catch (e) { /* stays a fixed full-screen layer */ } }` +
+    `var runUpd = function () { updaters.forEach(function (f) { f(); }); }; runUpd(); setTimeout(runUpd, 0);` +
+    `var tick = setInterval(function () { left -= 1; if (left <= 0) { done('timeout'); } else { renderNote(); runUpd(); } }, 1000);` +
     `}))()`
   );
 }
