@@ -2,5 +2,5 @@
   "note": "Single source of truth for the minimum debug tool versions the plugin accepts in a user project. Raise these at release time together with the Release URL pins in setup-debugger/SKILL.md (step 4) and inject/references/debugger-client.md (section 4). The rename (debug-console -> debugger-client, MCP key ait-devtools -> ait-debugger, protocol 3) first ships in debugger 0.4.0 and debugger-client 0.4.0 (debugger-client 0.3.1 and 0.3.2 were never released, so its first release under the new name is 0.4.0 to match the debugger). 0.4.0 also renamed the debugger MCP tools without aliases (get_status, switch_environment, get_page, run_script, ...), so the debugger floor is 0.4.0 and the debugger-client floor is 0.4.0. The key @apps-in-toss/debugger:runtime-floor is the remote kill switch read by the debugger daemon itself (fetched from main at startup): a daemon below it blocks its tools and only points to /ait:setup-debugger. Raise it only after the newer release is published and installable, never in the same PR that bumps the floor above. Never move or rename this file: released debuggers fetch it by this exact path.",
   "@apps-in-toss/debugger": "0.4.0",
   "@apps-in-toss/debugger-client": "0.4.0",
-  "@apps-in-toss/debugger:runtime-floor": "0.3.1"
+  "@apps-in-toss/debugger:runtime-floor": "0.4.0"
 }
