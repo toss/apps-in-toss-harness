@@ -125,7 +125,7 @@ Cursor:
   `mcp_auth`를 호출하면 "Interactive MCP authentication is only available in
   the Cursor desktop IDE"가 돌아온다 — 실측). CLI 세션에서 콘솔 MCP를 쓰려면
   `.cursor/mcp.json`에 서버를 직접 등록한 뒤
-  `agent mcp login ait-console` 으로 인가한다(루트 README Cursor 절
+  `agent mcp login ait-console` 으로 인가한다(`.github/other-hosts.md` Cursor 절
   참고).
 - cwd가 기존 프로젝트(스택 무관)면 `.cursor/mcp.json`을 `Read`해
   `mcpServers.ait-debugger` 항목이 있는지 확인한다. 옛 키 `ait-devtools`나 옛 패키지
@@ -188,9 +188,8 @@ skill §5 adapter-note와 동일 패턴).
 분기대로 바뀐다.)
 
 이어서 **station map 블록과 자연어 예시 5종 블록을 아래 그대로** 인쇄한다.
-(이 두 블록은 루트 README ko/en의 노출 예시 5종과 결합돼 있다 — 문구를 바꿀
-땐 루트 `README.md`·`README.en.md`와 같은 PR에서 함께 고친다. 발화는 지어내지
-말고 라우팅 게이트가 재는 문장을 쓴다.)
+(이 두 블록의 예시 발화는 루트 README ko/en "쓰는 법" 예시와 같은 목록이 아니다 —
+그쪽은 4개만 싣는다. 둘 다 발화를 지어내지 말고 라우팅 게이트가 재는 문장을 쓴다.)
 
 ```
 Apps in Toss 플러그인이 설치됐습니다.

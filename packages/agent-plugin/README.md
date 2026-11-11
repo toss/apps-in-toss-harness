@@ -20,7 +20,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 - `/ait:server` — 서버 코드 쓰기·고치기 — 사용자 식별·mTLS·응답 봉투·CORS 기준을 먼저 읽고 적용
 - `/ait:feature` — SDK 기능(광고·인앱결제·공유·리더보드 등)을 내 프로젝트에 구현 — docs 원문을 확인하고 프로젝트 스택에 맞춰 작성
 
-명령을 몰라도 됩니다 — 같은 skill을 자연어로도 부를 수 있고, 각 skill은 다음 단계를 슬래시 명령과 자연어 동치 **두 표면으로** 인쇄합니다. 발화 예시 5종은 repo 루트 [`README.md`](../../README.md)의 "말로 시키기" 절에 있습니다.
+명령을 몰라도 됩니다 — 같은 skill을 자연어로도 부를 수 있고, 각 skill은 다음 단계를 슬래시 명령과 자연어 동치 **두 표면으로** 인쇄합니다. 발화 예시는 repo 루트 [`README.md`](../../README.md#쓰는-법)의 "쓰는 법" 절에 있습니다.
 
 문서 조회는 docs MCP(`searchDocumentation`/`getPage`), 콘솔 등록·번들 업로드·상태 조회는 콘솔 MCP
 (`miniapp_create`/`bundle_upload`/`bundle_upload_complete`/`miniapp_get_status`)를 씁니다 — 둘 다
@@ -53,7 +53,7 @@ Claude Code에서 marketplace를 추가하고 플러그인을 설치합니다:
 
 설치 후 `/ait:` 명령(`/ait:new`, `/ait:debug` 등)을 사용할 수 있습니다. 플러그인 이름이 네임스페이스라 콜론 형태가 실제 명령이고, 공백 형태(`/ait new`)는 존재하지 않습니다.
 
-Codex·Cursor는 지금 설치할 수 있습니다 — 설치·차이점은 루트 README의 [Codex에서 쓰기](../../README.md#codex에서-쓰기)·[Cursor에서 쓰기](../../README.md#cursor에서-쓰기) 절 참고. Gemini CLI·Windsurf는 후속입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
+Codex·Cursor는 지금 설치할 수 있습니다 — 설치·차이점은 [다른 에이전트에서 쓰기](../../.github/other-hosts.md)의 [Codex](../../.github/other-hosts.md#codex에서-쓰기)·[Cursor](../../.github/other-hosts.md#cursor에서-쓰기) 절 참고. Gemini CLI·Windsurf는 후속입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
 
 ## 개발 환경
 

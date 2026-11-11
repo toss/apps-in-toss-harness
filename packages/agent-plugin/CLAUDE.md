@@ -69,7 +69,7 @@
 
 설치 형상(`/plugin install`)에서 **플러그인 이름이 네임스페이스**가 된다. 그래서 사용자가 실제로 치는 형태는 `/ait:<verb>`이고, 공백 형태 `/ait <verb>`는 어떤 형상에서도 존재한 적이 없다(`Unknown command: /ait`). 문서·skill seam은 전부 콜론 형태로 인쇄한다 — 검증기 A8이 공백 형태를 하드 실패로 잡는다.
 
-**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)나 애초에 manifest에 `commands` 필드를 안 갖는 에이전트(Cursor — `.cursor-plugin/plugin.json`에 미탑재)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`·`plan`은 Codex 변환에서 아예 빠진다 — 루트 `README.md` "Codex에서 쓰기"·"Cursor에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시 5종(루트 README ko/en + `welcome` 출력)이 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
+**seam은 슬래시 단독이 아니라 2표면이다 (harness#101)**: 이 슬래시 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill로 변환해 얹는 에이전트(Codex)나 애초에 manifest에 `commands` 필드를 안 갖는 에이전트(Cursor — `.cursor-plugin/plugin.json`에 미탑재)에는 그대로 오지 않는다(`$ARGUMENTS`를 쓰는 `new`는 Codex 변환에서 아예 빠진다 — `.github/other-hosts.md` "Codex에서 쓰기"·"Cursor에서 쓰기"). 그래서 인쇄되는 seam은 `/ait:<verb>`와 **자연어 동치 문장**(`말로: "<발화>"`)을 같은 블록에 함께 싣는다. 검증기 A2가 `A2/seam-nl-missing`·`A2/seam-nl-block-incomplete`로 강제한다(기존 3겹 no-seam·seam-not-printed·A8을 대체하지 않고 확장). 발화는 지어내지 말고 라우팅 게이트가 재는 문장(로컬 `eval/routing/cases.tsv` — repo 미포함, maintainer-local)을 우선 재사용한다 — 노출 예시(루트 README ko/en "쓰는 법" + `welcome` 출력)가 그 문장들과 결합돼 있다. 규칙 정본은 로컬 `docs/design/skill-conventions.md`(repo 미포함 — maintainer-local) §9.
 
 같은 목록에 두 종류가 함께 오른다:
 

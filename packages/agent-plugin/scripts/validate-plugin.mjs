@@ -673,7 +673,7 @@ function blankFencedLines(lines) {
 // **자연어 동치 문장**을 함께 인쇄해야 한다. 이유는 표면 불일치다: `/ait:<verb>`
 // 네임스페이스는 Claude Code 설치 형상의 것이고, 플러그인 명령을 skill 로 변환해
 // 얹는 에이전트(Codex)에는 슬래시 목록이 그대로 오지 않는다(`$ARGUMENTS` 를 쓰는
-// `new`·`plan` 은 변환에서 아예 빠진다 — 루트 README "Codex에서 쓰기"). 그래서
+// `new` 는 변환에서 아예 빠진다 — `.github/other-hosts.md` "Codex에서 쓰기"). 그래서
 // 슬래시 단일 표면 seam 은 기계적으로 강제돼 있어도 그런 사용자에게는 dead-end 가
 // 된다. 규약: 인쇄 블록 안에 `말로: "<발화>"` 형태로 동치 발화를 함께 둔다
 // (`말로 하려면:` · `말로 해도 됩니다:` 같은 변형도 허용).
@@ -2434,8 +2434,12 @@ function checkBugReportCommands(root) {
   if (violations.length > 0) return violations;
   const relYml = path.relative(root, ymlPath);
 
+  // 명령 표 행의 첫 칸에 든 명령을 전부 읽는다. 한 칸에 `<br>`로 여러 명령을 묶은
+  // 행(예: inject 3종)도 있어서 행마다 첫 명령만 읽으면 나머지가 빠진다.
   const readmeVerbs = new Set(
-    [...readFile(readmePath).matchAll(/^\|\s*`\/ait:([a-z0-9-]+)/gm)].map((m) => m[1]),
+    [...readFile(readmePath).matchAll(/^\|\s*(`\/ait:[^|]*)\|/gm)].flatMap((row) =>
+      [...row[1].matchAll(/`\/ait:([a-z0-9-]+)/g)].map((m) => m[1]),
+    ),
   );
   const yml = readFile(ymlPath).split('\n');
   const labelIdx = yml.findIndex((l) => /label:\s*관련 skill \/ 명령\s*$/.test(l));
