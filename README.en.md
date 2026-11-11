@@ -4,6 +4,8 @@
 
 This repo holds `ait`, a plugin for building Apps in Toss mini-apps by talking to an AI coding agent. Say "I want to build a daily check-in mini-app" and the agent writes up a plan, creates the project, builds the screens and opens the result in the Toss app on your phone. Review submission happens inside the agent too. It works in Claude Code, Codex and Cursor.
 
+If you are upgrading from 0.3.x or earlier, read [.github/updating.en.md](./.github/updating.en.md) first.
+
 ## Getting started
 
 If you're new to coding or haven't installed an AI tool yet, start with [Creating a Mini App](https://developers-apps-in-toss.toss.im/ai-vibe-coding/en) on the developer center. It covers everything from installing the tool to launch, with screenshots and videos.
@@ -25,7 +27,7 @@ The desktop app's plugin search won't find `ait`. If slash commands don't work w
 Install the Apps in Toss mini-app plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` and then `claude plugin install ait@apps-in-toss`. Don't edit `~/.claude/settings.json` directly. When you're done, tell me the remaining manual step (authorize ait-console in `/mcp`), and tell me to open a new session and type /ait:welcome.
 ```
 
-Once it finishes, you can run `claude mcp list` in the same session to see whether both MCP servers are connected.
+Once it finishes, you can run `claude mcp list` in a terminal (not inside the Claude Code session) to see whether both MCP servers are connected.
 
 To install in Codex or Cursor, see [Using it from Codex and Cursor](./.github/other-hosts.en.md).
 

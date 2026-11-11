@@ -4,7 +4,7 @@
 
 플러그인은 `plugin.json`의 버전이 올라간 릴리즈만 새 버전으로 인식합니다.
 
-Claude Code. 자동 업데이트가 켜져 있다면([설치](../README.md#시작하기) 뒤 `/ait:welcome`이 켤지 물어봅니다), 세션을 시작하고 10분 안에 백그라운드에서 마켓플레이스를 다시 읽어 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 알림을 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
+Claude Code. 자동 업데이트가 켜져 있다면([설치](../README.md#시작하기) 뒤 `/ait:welcome`이 켤지 물어봅니다), Claude Code가 마켓플레이스를 다시 읽어 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 알림을 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
 
 ```
 claude plugin marketplace update apps-in-toss
@@ -51,7 +51,7 @@ agent plugin marketplace add https://github.com/toss/apps-in-toss-harness
 - 콘솔: `apps-in-toss-console` -> `ait-console`
 - 문서: `apps-in-toss-docs` -> `ait-docs`
 
-예전 버전에서 올라왔다면 `/mcp`에서 `ait-console`로 다시 로그인하세요. 문서 MCP는 로그인이 없으니 연결 상태만 확인하면 됩니다. 권한 규칙에 `mcp__plugin_ait_apps-in-toss-console__*`나 `mcp__plugin_ait_apps-in-toss-docs__*`를 적어 두었다면 각각 `mcp__plugin_ait_ait-console__*`, `mcp__plugin_ait_ait-docs__*`로 바꿔야 그대로 적용됩니다. 개발자센터의 수동 등록 예시에는 아직 예전 이름이 남아 있을 수 있는데, 직접 등록할 때는 어느 이름을 써도 동작합니다.
+예전 버전에서 올라왔다면 `/mcp`에서 `ait-console`로 다시 로그인하세요. 문서 MCP는 로그인이 없으니 연결 상태만 확인하면 됩니다. 권한 규칙에 `mcp__plugin_ait_apps-in-toss-console__*`나 `mcp__plugin_ait_apps-in-toss-docs__*`를 적어 두었다면 각각 `mcp__plugin_ait_ait-console__*`, `mcp__plugin_ait_ait-docs__*`로 바꿔야 그대로 적용됩니다. 개발자센터의 수동 등록 예시에는 아직 예전 이름이 남아 있을 수 있습니다. 플러그인에는 위의 새 이름을 쓰세요.
 
 ## 디버그 도구 이름이 바뀌었습니다 (0.4.0)
 

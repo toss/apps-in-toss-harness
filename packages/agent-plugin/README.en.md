@@ -57,7 +57,7 @@ In Claude Code, add the marketplace and install the plugin:
 
 After installation the `/ait:` commands (`/ait:new`, `/ait:debug`, etc.) become available. The plugin name is the namespace, so the colon form is the real command — a space form (`/ait new`) does not exist.
 
-Codex and Cursor can be installed today — see [Using it from Codex](../../README.md#using-it-from-codex) and [Using it from Cursor](../../README.md#using-it-from-cursor) in the root README for setup and the differences from Claude Code. Gemini CLI and Windsurf are planned for later. See the deployment-phases section in [`CLAUDE.md`](./CLAUDE.md).
+Codex and Cursor can be installed today — see [Using it from Codex](../../.github/other-hosts.en.md#using-it-from-codex) and [Using it from Cursor](../../.github/other-hosts.en.md#using-it-from-cursor) for setup and the differences from Claude Code. Gemini CLI and Windsurf are planned for later. See the deployment-phases section in [`CLAUDE.md`](./CLAUDE.md).
 
 ## Development
 

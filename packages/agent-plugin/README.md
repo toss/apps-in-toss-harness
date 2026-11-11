@@ -53,7 +53,7 @@ Claude Code에서 marketplace를 추가하고 플러그인을 설치합니다:
 
 설치 후 `/ait:` 명령(`/ait:new`, `/ait:debug` 등)을 사용할 수 있습니다. 플러그인 이름이 네임스페이스라 콜론 형태가 실제 명령이고, 공백 형태(`/ait new`)는 존재하지 않습니다.
 
-Codex·Cursor는 지금 설치할 수 있습니다 — 설치·차이점은 루트 README의 [Codex에서 쓰기](../../README.md#codex에서-쓰기)·[Cursor에서 쓰기](../../README.md#cursor에서-쓰기) 절 참고. Gemini CLI·Windsurf는 후속입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
+Codex·Cursor는 지금 설치할 수 있습니다 — 설치·차이점은 [다른 에이전트에서 쓰기](../../.github/other-hosts.md)의 [Codex](../../.github/other-hosts.md#codex에서-쓰기)·[Cursor](../../.github/other-hosts.md#cursor에서-쓰기) 절 참고. Gemini CLI·Windsurf는 후속입니다. [`CLAUDE.md`](./CLAUDE.md)의 "배포 phases" 참고.
 
 ## 개발 환경
 

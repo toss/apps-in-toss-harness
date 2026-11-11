@@ -4,7 +4,7 @@
 
 A new plugin version only registers when `plugin.json` gets a version bump.
 
-**Claude Code.** If auto-update is on (after [installing](../README.en.md#getting-started), `/ait:welcome` offers to turn it on), Claude Code refreshes the marketplace and updates the plugin in the background within ten minutes of a session start. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
+**Claude Code.** If auto-update is on (after [installing](../README.en.md#getting-started), `/ait:welcome` offers to turn it on), Claude Code refreshes the marketplace and updates the plugin. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
 
 ```
 claude plugin marketplace update apps-in-toss
@@ -51,7 +51,7 @@ The MCP servers the plugin registers now have shorter names. The URLs are the sa
 - Console: `apps-in-toss-console` -> `ait-console`
 - Docs: `apps-in-toss-docs` -> `ait-docs`
 
-If you're upgrading from an older version, sign in to `ait-console` again in `/mcp`. The docs server needs no sign-in, so just check that it shows as connected. If your permission rules mention `mcp__plugin_ait_apps-in-toss-console__*` or `mcp__plugin_ait_apps-in-toss-docs__*`, change them to `mcp__plugin_ait_ait-console__*` and `mcp__plugin_ait_ait-docs__*` so they keep applying. The developer center's manual setup example may still use the old names; when you register a server yourself, either name works.
+If you're upgrading from an older version, sign in to `ait-console` again in `/mcp`. The docs server needs no sign-in, so just check that it shows as connected. If your permission rules mention `mcp__plugin_ait_apps-in-toss-console__*` or `mcp__plugin_ait_apps-in-toss-docs__*`, change them to `mcp__plugin_ait_ait-console__*` and `mcp__plugin_ait_ait-docs__*` so they keep applying. The developer center's manual setup example may still use the old names; for the plugin, use the new names above.
 
 ## The debug tools were renamed (0.4.0)
 

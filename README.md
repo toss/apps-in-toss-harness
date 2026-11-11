@@ -4,6 +4,8 @@
 
 앱인토스 미니앱을 AI 코딩 에이전트와 대화하며 만드는 플러그인 `ait`가 들어 있는 저장소입니다. "출석 체크 미니앱 만들고 싶어"라고 말하면 에이전트가 기획을 정리하고, 프로젝트를 만들고, 화면을 그리고, 내 폰의 토스 앱에 띄워 보여 줍니다. 검수 요청도 에이전트 안에서 합니다. Claude Code, Codex, Cursor에서 쓸 수 있습니다.
 
+0.3.x 이하에서 올라오는 분은 먼저 [.github/updating.md](./.github/updating.md)를 읽어 주세요.
+
 ## 시작하기
 
 코딩이 처음이거나 AI 도구를 아직 설치하지 않았다면 개발자센터의 [미니앱 만들기](https://developers-apps-in-toss.toss.im/ai-vibe-coding)부터 보세요. 도구 설치부터 출시까지 화면과 영상으로 안내합니다.
@@ -25,7 +27,7 @@ Claude Code를 이미 쓰고 있다면 Node 24 이상과 git을 준비하고 입
 앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. `~/.claude/settings.json`은 직접 고치지 마. 끝나면 남은 수동 단계(`/mcp`에서 ait-console 인가)를 알려주고, 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
 ```
 
-설치가 끝나면 같은 세션에서 `claude mcp list`로 두 MCP 서버가 연결됐는지 확인할 수 있습니다.
+설치가 끝나면 터미널에서 `claude mcp list`를 실행해 두 MCP 서버가 연결됐는지 확인할 수 있습니다.
 
 Codex와 Cursor에서 설치하는 방법은 [Codex·Cursor에서 쓰기](./.github/other-hosts.md)에 있습니다.
 
