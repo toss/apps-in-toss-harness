@@ -3840,6 +3840,18 @@ describe('A3/design-guide-template-drift 폴백 printf 마커 negative tests', (
     expect(hit.some((v) => v.message.includes('폴백 마커 printf 줄'))).toBe(true);
     expect(hit.every((v) => v.level === 'error')).toBe(true);
   });
+
+  it('printf 둘 중 하나만 정규 형태를 벗어나도 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeValidGuideTemplate(tmpDir);
+    writeFile(
+      path.join(tmpDir, GUIDE_FALLBACK_REL),
+      `${guideFallbackDoc(3)}\n\`\`\`sh\nprintf "<!-- $MK v2 -->\\n"\n\`\`\`\n`,
+    );
+    const { violations } = await runChecks(tmpDir);
+    const hit = violations.filter((v) => v.rule === 'A3/design-guide-template-drift');
+    expect(hit.some((v) => v.message.includes('정규 형태'))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

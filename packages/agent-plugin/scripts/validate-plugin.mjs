@@ -2363,8 +2363,23 @@ function checkDesignGuideFallbackMarker(root, mv) {
     readFile(file)
       .split('\n')
       .forEach((line, i) => {
-        for (const m of line.matchAll(/printf '<!-- %s v(\d+) -->/g)) {
+        // 여는 마커를 쓰는 printf 는 전부 본다. 정규 형태(`%s v<N>`)가 아니면 버전을
+        // 대조할 수 없으니 그 자체를 위반으로 낸다 — 두 printf 중 하나만 형태가 바뀌어도
+        // 나머지 하나가 found 를 채워 조용히 통과하는 것을 막는다.
+        for (const open of line.matchAll(/printf\s+(['"])<!-- (?!\/)(.*?) -->/g)) {
           found++;
+          const m = /^%s v(\d+)$/.exec(open[2]);
+          if (!m) {
+            violations.push(
+              mkv(
+                path.relative(root, file),
+                i + 1,
+                'A3/design-guide-template-drift',
+                `폴백 printf 마커가 정규 형태(\`printf '<!-- %s v<N> -->\`)가 아님: \`${open[2]}\` — MV=${mv} 와 대조할 수 없다 (fix: 정규 형태로 되돌리거나 이 검사의 패턴을 함께 고쳐라)`,
+              ),
+            );
+            continue;
+          }
           if (m[1] === mv) continue;
           violations.push(
             mkv(
