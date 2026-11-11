@@ -62,7 +62,7 @@ jobs:
       # 결과를 보고하는데, repo의 devDependency(vitest 5)로 도는 단위 테스트는
       # 소비자 쪽 4.1을 보지 못한다(debugger 0.2.4가 4.1에서 요약이 깨지고 10초 뒤
       # 종료되는 결함을 그대로 발행한 선례). 방금 빌드한 debugger를 `pnpm pack`해
-      # 임시 소비자에 vitest 4.1.11과 5.x로 각각 설치하고 가짜 CDP 타깃으로 돌려
+      # 임시 소비자에 vitest 4.1.12과 5.x로 각각 설치하고 가짜 CDP 타깃으로 돌려
       # 1 failed | 1 passed | 1 skipped와 제때 종료를 단언한다. 소비자 설치는 커밋된
       # 픽스처 lockfile(packages/debugger/scripts/relay-pool-compat/, integrity 고정)의
       # `npm ci --ignore-scripts`라 전이 의존성이 떠다니지 않는다. dist가 필요해서
