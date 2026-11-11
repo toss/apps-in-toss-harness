@@ -19,7 +19,7 @@ If you already use Claude Code, have Node 24+ and git ready, then enter these li
 /ait:welcome
 ```
 
-In `/mcp`, pick `ait-console` and sign in once with your Apps in Toss console account. The last line, `/ait:welcome`, checks your setup and tells you what to do next. Marketplaces you add yourself start with auto-update off, so open `/plugin`, choose Marketplaces, select `apps-in-toss` and turn on Enable auto-update once. With it on, new versions are picked up when they come out. If a command doesn't show up, open a new session and enter it again.
+In `/mcp`, pick `ait-console` and sign in once with your Apps in Toss console account. The last line, `/ait:welcome`, checks your setup and tells you what to do next. It also checks whether auto-update is on and, if not, tells you how to turn it on. To do it yourself, open `/plugin`, choose Marketplaces, select `apps-in-toss` and pick Enable auto-update. With it on, new versions are picked up when they come out. If a command doesn't show up, open a new session and enter it again.
 
 The desktop app's plugin search won't find `ait`. If slash commands don't work where you are, paste this sentence as is and the agent will install from its shell:
 

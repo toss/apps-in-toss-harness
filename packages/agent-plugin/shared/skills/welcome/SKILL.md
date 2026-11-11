@@ -7,7 +7,7 @@ description: |
   install` itself prints no next step. Station-0→1 hand-off. Triggered by
   `/ait:welcome`, no args.
 argument-hint: ''
-adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface. Step 1-d is Claude Code-only — it reads the Claude Code plugin state directory (CLAUDE_CONFIG_DIR or ~/.claude); other targets skip it entirely.'
+adapter-note: 'Step 1-c is host-branched MCP introspection — Claude Code uses its own tool list, `/mcp` and project `.mcp.json`; Cursor uses its own tool list (naming rule unverified, so match on the server name) and `.cursor/mcp.json`. Other targets replace 1-c with that agent’s MCP configuration surface. Steps 1-d and 1-e are Claude Code-only — they read the Claude Code plugin state directory (CLAUDE_CONFIG_DIR or ~/.claude); other targets skip them entirely.'
 ---
 
 # welcome skill
@@ -153,6 +153,23 @@ skill §5 adapter-note와 동일 패턴).
 없음이다. 정상이면 아무것도 인쇄하지 않는다. 부분·없음일 때만 설치 문제
 해결 런북을 가리킨다.
 
+**e. 자동 업데이트** (Claude Code 전용 — 그 밖의 호스트에서는 건너뛴다):
+
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/known_marketplaces.json`을 `Read`한다.
+마켓플레이스 이름을 키로 하는 JSON 객체이고, 항목에는 `source`·`installLocation`·
+`lastUpdated`가 있다. `autoUpdate: true`는 사용자가 `/plugin`에서 자동 업데이트를 켠
+뒤에야 생기는 키로, 켜지 않은 항목에는 키 자체가 없다(실측). 판정은 읽기만 한다.
+
+- `apps-in-toss` 항목에 `autoUpdate: true`가 있으면 켜져 있다. 같은 위치의
+  `settings.json`에서 `extraKnownMarketplaces["apps-in-toss"].autoUpdate`가 `true`인 경우도
+  켜진 것으로 본다. 켜져 있으면 인쇄할 것이 없다.
+- 항목은 있는데 키가 없거나 `false`면, `/plugin` → Marketplaces → `apps-in-toss` →
+  Enable auto-update로 켤 수 있다고 안내한다.
+- 파일이나 항목이 없거나 JSON으로 읽히지 않아도 오류로 다루지 않고 같은 안내를
+  인쇄한다.
+
+두 파일 모두 쓰지 않는다. 설정은 사용자가 `/plugin`에서 직접 켠다.
+
 ### 2. 결과 인쇄
 
 점검 결과 블록을 **먼저** 인쇄한다. 항목별로 상태와 권장 조치를 한 줄로 담는다
@@ -178,6 +195,8 @@ skill §5 adapter-note와 동일 패턴).
      debugger와 debugger-client 0.4.0부터 ait-debugger·@apps-in-toss/debugger-client로 바뀌었고, 한쪽만 올리면 연결되지 않습니다.
      한꺼번에 옮기려면:
      /ait:setup-debugger
+  ⚠️ apps-in-toss 마켓플레이스의 자동 업데이트가 켜져 있지 않습니다 — 새 버전을 자동으로
+     받으려면 /plugin → Marketplaces → apps-in-toss → Enable auto-update
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:
      https://github.com/toss/apps-in-toss-harness/blob/main/.github/install-troubleshooting.md
 ```
