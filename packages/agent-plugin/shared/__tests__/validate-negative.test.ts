@@ -3884,6 +3884,17 @@ describe('A3/bug-report-commands negative tests', () => {
     expect(rulesFired(violations)).not.toContain('A3/bug-report-commands');
   });
 
+  it('한 칸에 <br>로 묶은 명령도 전부 README 명령으로 읽는다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeFile(
+      path.join(tmpDir, 'README.md'),
+      '| 명령 | 설명 |\n|---|---|\n| `/ait:new <앱 이름>` | x |\n| `/ait:inject-a`<br>`/ait:inject-b` | x |\n',
+    );
+    writeFile(path.join(tmpDir, BUG_TPL_REL), bugReportYml(['new', 'inject-a', 'inject-b']));
+    const { violations } = await runChecks(pkg());
+    expect(rulesFired(violations)).not.toContain('A3/bug-report-commands');
+  });
+
   it('README 에만 있는 명령이 있으면 위반이 난다', async () => {
     buildRepoRootFixture(tmpDir);
     writeBugReportFiles(tmpDir, ['new', 'debug'], ['new']);

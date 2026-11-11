@@ -2434,8 +2434,12 @@ function checkBugReportCommands(root) {
   if (violations.length > 0) return violations;
   const relYml = path.relative(root, ymlPath);
 
+  // 명령 표 행의 첫 칸에 든 명령을 전부 읽는다. 한 칸에 `<br>`로 여러 명령을 묶은
+  // 행(예: inject 3종)도 있어서 행마다 첫 명령만 읽으면 나머지가 빠진다.
   const readmeVerbs = new Set(
-    [...readFile(readmePath).matchAll(/^\|\s*`\/ait:([a-z0-9-]+)/gm)].map((m) => m[1]),
+    [...readFile(readmePath).matchAll(/^\|\s*(`\/ait:[^|]*)\|/gm)].flatMap((row) =>
+      [...row[1].matchAll(/`\/ait:([a-z0-9-]+)/g)].map((m) => m[1]),
+    ),
   );
   const yml = readFile(ymlPath).split('\n');
   const labelIdx = yml.findIndex((l) => /label:\s*관련 skill \/ 명령\s*$/.test(l));
