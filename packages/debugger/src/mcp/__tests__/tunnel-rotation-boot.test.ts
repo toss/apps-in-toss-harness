@@ -153,7 +153,9 @@ describe('bootRelayFamily — tunnel rotation', () => {
       fetch(`${f.relayHttpUrl}/v3/at/${generateTotp(SECRET)}/d/Zm9vYmFyYmF6cXV4MTIzNA/target.js`, {
         headers: { Host: 'fake2.trycloudflare.com', 'cf-connecting-ip': '203.0.113.10' },
       });
-    expect(rotated).toBe(0);
+    // No `rotated === 0` check here: the third lock triggers the rotation on the
+    // server as it answers, so on a loaded machine it can already be done by the
+    // time this line runs.
     await waitFor(() => rotated === 1);
     expect(rotated).toBe(1);
     expect(f.getTunnelStatus().wssUrl).toContain('fake2.trycloudflare.com');
