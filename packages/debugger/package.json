@@ -50,12 +50,12 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "chii": "1.15.5",
     "cloudflared": "0.7.3",
     "esbuild": "0.28.2",
     "qrcode": "1.5.4",
-    "ws": "8.22.0"
+    "ws": "8.22.1"
   },
   "devDependencies": {
     "@apps-in-toss/debugger-client": "workspace:*",

@@ -56,6 +56,10 @@ overrides:
   # 이후 low·moderate 4건(GHSA-333x-w4r6-6crp·w74x-v6f9-j3xg·wjr9-j795-jxcr·xhq7-xmqj-769h,
   # 모두 <3.1.9)으로 3.1.9 재상향(2026-10-30).
   fast-uri: 3.1.9
+  # uuid: GHSA-w5hq-g745-h8pq(<11.1.1, v3/v5/v6 buf 인자 범위 검사 누락). chii → @cypress/request
+  # 체인의 uuid 8.3.2만 해당(request는 v4만 호출해 취약 API에는 도달하지 않지만 alert 해소를 위해
+  # 고정). 부모 한정이라 다른 uuid 사용처는 건드리지 않는다. 11.x는 CJS require를 그대로 지원한다.
+  "@cypress/request>uuid": 11.1.1
 
 # 각 패키지의 단독 repo 시절 pnpm-workspace.yaml(allowBuilds 설정)을 병합한 것.
 allowBuilds:

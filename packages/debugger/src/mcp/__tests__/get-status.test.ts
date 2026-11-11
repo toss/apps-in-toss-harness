@@ -1295,7 +1295,7 @@ describe('getDiagnostics — attach timeline', () => {
       }),
     });
     expect(r.attachDiagnosis?.kind).toBe('protocol-skew');
-    expect(r.nextRecommendedAction?.reason).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(r.nextRecommendedAction?.reason).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
   });
 
   it('get_status tool exposes attachStages when a timeline is injected', async () => {

@@ -27,6 +27,7 @@ import {
   clientSupportsSessionEndClose,
   isRelaySessionEndReason,
   RELAY_SESSION_END_CLOSE_CODE,
+  RELAY_SESSION_END_MIN_CLIENT_VERSION,
   RELAY_SESSION_END_REASONS,
 } from '../relay-session-close.js';
 
@@ -121,15 +122,31 @@ describe('relay session end', () => {
   });
 
   it('gates the close on the client version reported at the handshake', () => {
-    expect(clientSupportsSessionEndClose('0.3.2')).toBe(true);
-    expect(clientSupportsSessionEndClose('0.3.10')).toBe(true);
     expect(clientSupportsSessionEndClose('0.4.0')).toBe(true);
+    expect(clientSupportsSessionEndClose('0.4.10')).toBe(true);
     expect(clientSupportsSessionEndClose('1.0.0')).toBe(true);
+    expect(clientSupportsSessionEndClose('0.3.10')).toBe(false);
+    expect(clientSupportsSessionEndClose('0.3.2')).toBe(false);
     expect(clientSupportsSessionEndClose('0.3.1')).toBe(false);
     expect(clientSupportsSessionEndClose('0.2.9')).toBe(false);
-    expect(clientSupportsSessionEndClose('0.3.2-beta.1')).toBe(false);
+    expect(clientSupportsSessionEndClose('0.4.0-beta.1')).toBe(false);
     expect(clientSupportsSessionEndClose('')).toBe(false);
     expect(clientSupportsSessionEndClose(null)).toBe(false);
     expect(clientSupportsSessionEndClose('garbage')).toBe(false);
+  });
+
+  it('parses the version strictly, whatever the current floor is', () => {
+    const min = RELAY_SESSION_END_MIN_CLIENT_VERSION;
+    expect(clientSupportsSessionEndClose(min)).toBe(true);
+    expect(clientSupportsSessionEndClose(`${min}+build.5`)).toBe(true);
+    expect(clientSupportsSessionEndClose(`${min}garbage`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`${min}.1`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`${min}-`)).toBe(false);
+    expect(clientSupportsSessionEndClose(` ${min}`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`${min}\n`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`9.0.0garbage`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`9.0.0.1`)).toBe(false);
+    expect(clientSupportsSessionEndClose(`9.0.0`)).toBe(true);
+    expect(clientSupportsSessionEndClose(`v${min}`)).toBe(false);
   });
 });

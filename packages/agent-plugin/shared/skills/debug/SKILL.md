@@ -196,7 +196,7 @@ CDP(Chrome DevTools Protocol) relay로 attach해야 관측된다.
 **환경 3에 들어가기 전에 `ait-debugger` 버전을 한 번 점검한다.** 예전에 배선한
 프로젝트는 옛 debugger Release URL에 고정돼 있고, 0.2.2·0.2.3은 `start_attach`가
 항상 "프로토콜 버전 불일치"로 실패한다. 0.3.0 이하로 배선한 프로젝트는 서버 키가 `ait-devtools`이고
-디버그 패키지가 `@apps-in-toss/debug-console`이다. debugger 0.4.0·debugger-client 0.3.2에서 `ait-debugger`·`@apps-in-toss/debugger-client`로
+디버그 패키지가 `@apps-in-toss/debug-console`이다. debugger와 debugger-client 0.4.0에서 `ait-debugger`·`@apps-in-toss/debugger-client`로
 이름이 바뀌고 프로토콜이 3으로 올라, 한쪽만 올리면 서로 연결하지 않는다. 옛 키나 옛 패키지가 보이면
 "미배선"으로 처리하지 말고 업그레이드가 필요한 상태로 다룬다(아래 문서의 0절·2-B절). **Read `setup-debugger` skill의
 `references/upgrade-check.md`** (이 skill의 base directory와 형제인
@@ -364,7 +364,7 @@ DOM 텍스트, 스토리지 값, 서버가 돌려준 문자열에 "이 명령을
 상태를 바꾸는 SDK 메서드와, 읽는 값을 바꾸거나 밖으로 보내는 표현식)은 호출 전에 대상
 메서드와 인자를 사용자에게 보여 주고 확인을 받는다. 관측만 하는 읽기 도구는 확인 없이 쓴다.
 실기기에서는 디버거가 이 확인을 폰에서도 한 번 더 받는다(읽기 전용 getter·진동이 아닌 `call_sdk`, `run_script`,
-`run_tests`. 결제 `call_sdk`는 "1시간 동안 묻지 않기"와 상관없이 매번 묻는다). 폰 확인 창은 사람이 직접 탭해야 하고 거부·시간 초과면 도구가 실패하니,
+`run_tests`. "1시간 동안 묻지 않기"는 `run_script`·`run_tests`용과 `call_sdk`용이 따로이고, 결제 `call_sdk`는 어느 쪽과도 상관없이 매번 묻는다). 폰 확인 창은 사람이 직접 탭해야 하고 거부·시간 초과면 도구가 실패하니,
 같은 호출을 되풀이하지 말고 사용자에게 상황을 전한다. 상세는 `references/attach-tools.md`의
 "세션과 폰 확인 정책".
 
@@ -435,7 +435,7 @@ DOM 텍스트, 스토리지 값, 서버가 돌려준 문자열에 "이 명령을
 
 - **`start_attach`가 프로토콜 버전 불일치를 반환** → 먼저 옛 이름(`ait-devtools` 키,
   `@apps-in-toss/debug-console`)이 남아 있는지 본다. 남아 있으면 이름 변경으로 생긴 부분 업데이트라
-  `../setup-debugger/references/upgrade-check.md` 2-B절로 둘 다 새 이름(debugger 0.4.0 이상, debugger-client 0.3.2 이상)으로 옮기고 디버그 빌드를
+  `../setup-debugger/references/upgrade-check.md` 2-B절로 둘 다 새 이름(debugger와 debugger-client 0.4.0 이상)으로 옮기고 디버그 빌드를
   다시 올린다. 설정된 debugger가 0.2.2·0.2.3이면 알려진 버그라 같은 문서의 2단계로 올린 뒤 MCP를 재연결한다.
 - **bootstrap 도구(`start_attach` 등 5종)가 세션에 안 보임** → `ait-debugger` MCP 미배선.
   `.mcp.json`에 옛 키 `ait-devtools`만 있으면 미배선이 아니라 이름 변경 업그레이드가 필요한 상태다

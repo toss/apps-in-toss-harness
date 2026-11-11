@@ -31,7 +31,7 @@ describe('relay pool compat fixtures', () => {
 
   test('vitest4 fixture pins the 4.1 consumer floor exactly', () => {
     const pinned = readJson(path.join(fixturesDir, 'vitest4', 'package.json')).dependencies.vitest;
-    assert.equal(pinned, '4.1.11');
+    assert.equal(pinned, '4.1.12');
   });
 
   for (const name of NAMES) {

@@ -59,7 +59,7 @@ export type BlockedReason =
  *                        public key; `blocked-relay-signature`: the QR link's
  *                        signature is missing or does not verify;
  *                        `blocked-debugger-update`: the link carries no certificate (a
- *                        debugger older than 0.3.2), so nothing was attempted
+ *                        debugger older than 0.4.0), so nothing was attempted
  *                        `blocked-relay-key-expired`: every pinned key that matches the
  *                        link is past its `notAfter` (rebuild the debug bundle);
  *                        `blocked-relay-key-form`: `relayPublicKeys` still has
@@ -156,7 +156,7 @@ const MESSAGES: Record<Exclude<DebugStatus, 'blocked-host'>, { tone: Tone; text:
   'relay-origin-rejected': { tone: 'error', text: '이 화면에서는 디버거를 쓸 수 없어요.' },
   'relay-version-mismatch': {
     tone: 'error',
-    text: '디버거와 debugger-client 버전이 맞지 않아요. debugger 0.4.0 이상, debugger-client 0.3.2 이상으로 맞추세요.',
+    text: '디버거와 debugger-client 버전이 맞지 않아요. debugger와 debugger-client 0.4.0 이상으로 맞추세요.',
   },
   'server-unreachable': { tone: 'error', text: '디버거 서버에 접속할 수 없어요.' },
 };

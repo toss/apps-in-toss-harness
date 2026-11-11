@@ -310,7 +310,7 @@ describe('an armed relay', () => {
 describe('a phone that dropped and comes back', () => {
   it('is served on every route after its socket closed, with an aged code and the same page id', async () => {
     relay.arm(60_000);
-    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.4.0`)).toBe(204);
     const first = await dial(CODE_A, PHONE_A, 'p1');
     expect(first.closeCode).toBeNull();
     expect(relay.armState().armed).toBe(false);
@@ -321,7 +321,7 @@ describe('a phone that dropped and comes back', () => {
     accepted.delete(CODE_A);
     rejectReasons.length = 0;
     expect(await get(`${prefix(CODE_A, PHONE_A)}/target.js`)).toBe(200);
-    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.4.0`)).toBe(204);
     const again = await dial(CODE_A, PHONE_A, 'p1');
     expect(again.closeCode).toBeNull();
     // A new page id of the same phone is let in as well.
@@ -405,7 +405,7 @@ describe('revokeSessions', () => {
     ['session-expired', 'expired'],
   ] as const)('sends close 4410 (%s) to a client that announced support', async (reason, named) => {
     relay.arm(60_000);
-    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.4.0`)).toBe(204);
     const mine = await dial(CODE_A, PHONE_A, 'p1');
     expect(mine.closeCode).toBeNull();
     relay.revokeSessions(reason);
@@ -426,7 +426,7 @@ describe('revokeSessions', () => {
 
   it('keeps close 4401 when the session is replaced, even for a new client', async () => {
     relay.arm(60_000);
-    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.4.0`)).toBe(204);
     const mine = await dial(CODE_A, PHONE_A, 'p1');
     relay.revokeSessions('replaced');
     await new Promise((r) => setTimeout(r, 200));
@@ -438,8 +438,8 @@ describe('status chip per attached phone', () => {
   it('follows the phone that is attached, not the last handshake', async () => {
     expect(relay.attachedTargetsHaveStatusChip()).toBe(false);
     relay.arm(60_000);
-    // A 0.3.2 phone attaches, then a 0.3.1 handshake arrives: the attached phone still has a chip.
-    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    // A 0.4.0 phone attaches, then a 0.3.1 handshake arrives: the attached phone still has a chip.
+    expect(await get(`${prefix(CODE_A, PHONE_A)}/ait-attach?p=3&v=0.4.0`)).toBe(204);
     const fresh = await dial(CODE_A, PHONE_A, 'p1');
     expect(fresh.closeCode).toBeNull();
     expect(relay.attachedTargetsHaveStatusChip()).toBe(true);
@@ -449,12 +449,12 @@ describe('status chip per attached phone', () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(relay.attachedTargetsHaveStatusChip()).toBe(false);
 
-    // The other way round: a 0.3.1 phone attached, a 0.3.2 handshake after it.
+    // The other way round: a 0.3.1 phone attached, a 0.4.0 handshake after it.
     relay.arm(60_000);
     expect(await get(`${prefix(CODE_C, PHONE_B)}/ait-attach?p=3&v=0.3.1`)).toBe(204);
     const old = await dial(CODE_C, PHONE_B, 'p2');
     expect(old.closeCode).toBeNull();
-    expect(await get(`${prefix(CODE_C, PHONE_B)}/ait-attach?p=3&v=0.3.2`)).toBe(204);
+    expect(await get(`${prefix(CODE_C, PHONE_B)}/ait-attach?p=3&v=0.4.0`)).toBe(204);
     expect(relay.attachedTargetsHaveStatusChip()).toBe(false);
   });
 });

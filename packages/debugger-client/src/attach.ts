@@ -413,7 +413,7 @@ function notifyRelayVersionMismatch(): void {
   relayVersionNotified = true;
   setDebugStatus('relay-version-mismatch');
   console.warn(
-    '[@apps-in-toss/debugger-client] relay and debugger-client protocol versions differ — use @apps-in-toss/debugger 0.4.0 or later and @apps-in-toss/debugger-client 0.3.2 or later together, then rebuild',
+    '[@apps-in-toss/debugger-client] relay and debugger-client protocol versions differ — use @apps-in-toss/debugger 0.4.0 or later and @apps-in-toss/debugger-client 0.4.0 or later together, then rebuild',
   );
 }
 
@@ -920,7 +920,7 @@ export function installRelayWsObserver(relayUrl: string): void {
  * public data), so the whole check is local: the page never asks the relay for
  * a certificate, and nothing at all is sent to the relay (no request, no
  * WebSocket, no script) until the person taps "연결" in the consent dialog. A
- * link without `arc` comes from a debugger older than 0.3.2: the page shows
+ * link without `arc` comes from a debugger older than 0.4.0: the page shows
  * `blocked-debugger-update` and does not attach. A same-page reload that reads
  * the values back from the history entry skips only the clock check. It fails
  * closed: no keys, no WebCrypto, a malformed key, certificate or signature stop
@@ -1250,7 +1250,7 @@ async function verifyHostName(
  * the device clock lies inside its window, and its session key verifies the
  * link signature. The clock check is skipped only when every attach value came
  * from the history entry (`fromHistory`): this page verified them when they
- * came from the URL. A link without `arc` (a debugger older than 0.3.2) is
+ * came from the URL. A link without `arc` (a debugger older than 0.4.0) is
  * `needs-update`, a malformed one is `bad-signature`.
  */
 async function verifyRelaySignature(

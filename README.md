@@ -5,9 +5,9 @@
 AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주할 수 있게 하는 harness monorepo입니다. 에이전트 플러그인 `ait`가 오케스트레이터가 되어 scaffold·개발·디버그·번들·등록·운영을 하나의 흐름으로 엮습니다. scaffolding은 `create-ait-app` 기반입니다. 문서 조회와 콘솔 연동은 기본으로 켜지는 MCP 서버 두 개가 담당하며 devtools·debugger 같은 개발/디버깅 도구는 필요할 때만 opt-in으로 배선됩니다.
 
 > [!IMPORTANT]
-> **디버그 도구는 debugger 0.4.0, debugger-client 0.3.2 이상을 쓰세요.** `@apps-in-toss/debugger`와 `@apps-in-toss/debugger-client`(옛 이름 `@apps-in-toss/debug-console`)는 이 두 버전에서 이름과 연결 규칙이 함께 바뀌었고(0.3.1은 발행되지 않았습니다), 두 패키지가 모두 이 버전 이상이어야 연결됩니다. 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 플러그인 `ait`도 이 버전을 가리키는 릴리스여야 새 이름으로 배선합니다.
+> **디버그 도구는 debugger와 debugger-client 0.4.0 이상을 쓰세요.** `@apps-in-toss/debugger`와 `@apps-in-toss/debugger-client`(옛 이름 `@apps-in-toss/debug-console`)는 이 두 버전에서 이름과 연결 규칙이 함께 바뀌었고(0.3.1은 발행되지 않았습니다), 두 패키지가 모두 이 버전 이상이어야 연결됩니다. 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 플러그인 `ait`도 이 버전을 가리키는 릴리스여야 새 이름으로 배선합니다.
 >
-> | 0.3.0 이하 | debugger 0.4.0·debugger-client 0.3.2 이상 |
+> | 0.3.0 이하 | debugger와 debugger-client 0.4.0 이상 |
 > | --- | --- |
 > | 패키지 `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
 > | MCP 서버 키 `ait-devtools` | `ait-debugger` |
@@ -335,11 +335,11 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex·Cursor) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
 | `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.4.0`) |
-| `@apps-in-toss/debugger-client` | `packages/debugger-client` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debugger-client-v0.3.2`) |
+| `@apps-in-toss/debugger-client` | `packages/debugger-client` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debugger-client-v0.4.0`) |
 
 `shared/internal-protocol`은 `debugger`·`debugger-client`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계). `packages/`가 아닌 `shared/`에 살며 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.
 
-`debugger`·`debugger-client`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.4.0`·`debugger-client-v0.3.2`). 다운로드에 별도 인증이 필요하지 않습니다.
+`debugger`·`debugger-client`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.4.0`·`debugger-client-v0.4.0`). 다운로드에 별도 인증이 필요하지 않습니다.
 
 </details>
 

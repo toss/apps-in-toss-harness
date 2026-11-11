@@ -7,7 +7,7 @@
 앱인토스(Apps in Toss) 미니앱을 위한 원격 디버깅 인프라 — MCP 디버깅 데몬, on-device CDP relay, test runner를 한 패키지에 담는다. **devDependency / `npx` 전용이며, 이 패키지의 코드는 프로덕션 번들에 절대 들어가지 않는다.** 루트(`.`) export가 없다는 사실이 그 경계를 그대로 드러낸다 — 임의로 앱 코드에 import할 수 있는 표면 자체가 존재하지 않는다.
 
 > [!IMPORTANT]
-> **`debugger` 0.4.0 이상과 `debugger-client` 0.3.2 이상을 함께 쓰세요.** 이 두 버전에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다(0.3.1은 발행되지 않았습니다). 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 최신 플러그인 `ait`의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요. 권한 규칙이 `mcp__ait-devtools__evaluate`처럼 도구 하나를 지목하고 있다면 서버 이름뿐 아니라 도구 이름도 새 이름(`mcp__ait-debugger__run_script`)으로 바꿔야 합니다. 대응표는 `packages/debugger/CHANGELOG.md`의 0.4.0 항목에 있습니다.
+> **`debugger` 0.4.0 이상과 `debugger-client` 0.4.0 이상을 함께 쓰세요.** 이 두 버전에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다(0.3.1은 발행되지 않았습니다). 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 최신 플러그인 `ait`의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요. 권한 규칙이 `mcp__ait-devtools__evaluate`처럼 도구 하나를 지목하고 있다면 서버 이름뿐 아니라 도구 이름도 새 이름(`mcp__ait-debugger__run_script`)으로 바꿔야 합니다. 대응표는 `packages/debugger/CHANGELOG.md`의 0.4.0 항목에 있습니다.
 
 ## 설치
 
@@ -80,7 +80,7 @@ npx -p <tgz URL> debugger relay-key --json     # [{ "publicKey", "notAfter" }] �
 npx -p <tgz URL> debugger relay-key --rotate   # 이 프로젝트의 키를 버리고 새 키를 만든다
 ```
 
-공개키는 루트 키이고 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, agent가 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지, 루트 만료를 넘지 않음)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.3.2 미만을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 0.3.2 미만 클라이언트가 더는 없다고 볼 수 있으면 이 경로는 없앨 수 있다. 0.3.2 클라이언트는 `arc`가 없는 링크(0.4.0 미만 디버거)를 연결하지 않고 업데이트를 안내한다.
+공개키는 루트 키이고 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, agent가 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지, 루트 만료를 넘지 않음)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.4.0 미만을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 0.4.0 미만 클라이언트가 더는 없다고 볼 수 있으면 이 경로는 없앨 수 있다. 0.4.0 클라이언트는 `arc`가 없는 링크(0.4.0 미만 디버거)를 연결하지 않고 업데이트를 안내한다.
 
 #### 키 교체 (`debugger relay-key --rotate`)
 
@@ -152,7 +152,7 @@ relay는 `Origin` 헤더도 확인한다. 터널로 들어온 요청은 앱 이�
 
 relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가져오지도 않는다. 폰의 소스 보기는 페이지 안에서 직접 소스를 불러오고, chii의 옛 `/proxy` 우회 요청은 알 수 없는 경로와 같이 404로 답한다. 만료된 코드로는 `target.js`와 핸드셰이크 확인, 같은 target id의 재연결만 되고, 그 코드에 묶인 소켓이 열려 있거나 마지막 소켓이 닫힌 뒤 5분 유예 안일 때만 통한다.
 
-기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 3)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debugger-client`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다. 프로토콜 3은 이름 변경 릴리스다. 프로토콜 2 이하(`@apps-in-toss/debug-console` 0.3.0 이하)를 만나면 미니앱에서 그 패키지를 지우고 `@apps-in-toss/debugger-client` 0.3.1 이상을 설치해 다시 배포하라고 안내한다.
+기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 3)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debugger-client`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다. 프로토콜 3은 이름 변경 릴리스다. 프로토콜 2 이하(`@apps-in-toss/debug-console` 0.3.0 이하)를 만나면 미니앱에서 그 패키지를 지우고 `@apps-in-toss/debugger-client` 0.4.0 이상을 설치해 다시 배포하라고 안내한다.
 
 ### 실기기에서 에이전트가 하는 일을 확인하기
 
@@ -160,9 +160,9 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 
 | 도구 | 기본 동작 (실기기) | 사람이 바꾸는 방법 |
 |---|---|---|
-| `call_sdk` | 세 단계로 나눈다. **바로 실행**: 읽기 전용 getter(`getLocale`, `getNetworkStatus`, `getOperationalEnvironment`, `getPlatformOS`, `getSafeAreaInsets`, `getServerTime`, `getTossAppVersion`, `getPermission`, `getAppsInTossGlobals`, `isMinVersionSupported`)와 사용자 데이터·돈·네트워크·저장소·권한을 건드리지 않는 `generateHapticFeedback`(진동). **폰에서 확인**: 그 밖의 이름 전부(공유, 권한 요청, `openURL`, 저장소 쓰기, 클립보드, 위치, 연락처, 카메라, 로그인 등. 처음 보는 이름 포함). 확인 창은 인자를 줄바꿈과 들여쓰기 그대로 전부 보여 주고(2만 자를 넘으면 실행하지 않음), "1시간 동안 묻지 않기"를 누르면 1시간 동안, 또는 폰 연결이 끝날 때까지 이 단계는 묻지 않는다. **매번 확인**: 결제와 돈·포인트를 쓰거나 주는 호출(`checkoutPayment`, `requestTossPayPaysBilling`, 인앱결제 주문·지급 완료·주문 조회, `grantPromotionReward`, `grantPromotionRewardForGame`, `contactsViral`). "1시간 동안 묻지 않기"가 적용되지 않고 호출마다 묻는다. 영숫자가 아닌 이름과 `constructor` 같은 객체 기본 키는 거부 | `.mcp.json`의 서버 `env`에 `AIT_DEBUG_SDK_ALLOW=setScreenAwakeMode`처럼 쉼표로 이름을 적으면 그 이름이 바로 실행 단계로 올라간다. 결제 이름은 적어도 무시하고 stderr에 경고한다. 에이전트는 바꿀 수 없다 |
-| `run_script` | 식마다 폰에서 확인. 확인 창이 코드 전체를 문법 색과 줄 번호와 함께 보여 준다(2만 자를 넘으면 실행하지 않고 나눠 요청하라는 에러). "1시간 동안 묻지 않기"를 누르면 1시간 동안, 또는 폰 연결이 끝날 때까지 `run_script`·`run_tests`·`call_sdk` 확인 단계를 함께 묻지 않는다. 코드 안에서 일어나는 결제는 가려낼 수 없어 확인 창에 그렇게 적혀 있고, `call_sdk`의 결제·포인트 호출은 계속 매번 묻는다 | `AIT_DEBUG_EVALUATE=confirm`(기본) / `confirm-on-sensitive`(약한 선택 사항: `__sdk`·`fetch`·`localStorage` 같은 이름이 든 식만 확인) / `free`(묻지 않음) / `off`(`run_script`·`run_tests` 거부) |
-| `run_tests` | 실행할 파일 목록과 지문(해시)을 폰에서 확인하고, 실행 직전에 다시 해시해 승인 뒤 파일이 바뀌었으면 거부. 넘기는 `cell` 값도 창에 함께 보인다. "1시간 동안 묻지 않기"를 누른 동안에는 묻지 않는다 | `AIT_DEBUG_EVALUATE`와 같음 |
+| `call_sdk` | 세 단계로 나눈다. **바로 실행**: 읽기 전용 getter(`getLocale`, `getNetworkStatus`, `getOperationalEnvironment`, `getPlatformOS`, `getSafeAreaInsets`, `getServerTime`, `getTossAppVersion`, `getPermission`, `getAppsInTossGlobals`, `isMinVersionSupported`)와 사용자 데이터·돈·네트워크·저장소·권한을 건드리지 않는 `generateHapticFeedback`(진동). **폰에서 확인**: 그 밖의 이름 전부(공유, 권한 요청, `openURL`, 저장소 쓰기, 클립보드, 위치, 연락처, 카메라, 로그인 등. 처음 보는 이름 포함). 확인 창은 인자를 줄바꿈과 들여쓰기 그대로 전부 보여 주고(2만 자를 넘으면 실행하지 않음), `call_sdk` 확인 창에서 "1시간 동안 묻지 않기"를 누르면 1시간 동안, 또는 폰 연결이 끝날 때까지 `call_sdk`의 이 단계만 묻지 않는다(`run_script`·`run_tests`는 따로 묻는다). **매번 확인**: 결제와 돈·포인트를 쓰거나 주는 호출(`checkoutPayment`, `requestTossPayPaysBilling`, 인앱결제 주문·지급 완료·주문 조회, `grantPromotionReward`, `grantPromotionRewardForGame`, `contactsViral`). "1시간 동안 묻지 않기"가 적용되지 않고 호출마다 묻는다. 영숫자가 아닌 이름과 `constructor` 같은 객체 기본 키는 거부 | `.mcp.json`의 서버 `env`에 `AIT_DEBUG_SDK_ALLOW=setScreenAwakeMode`처럼 쉼표로 이름을 적으면 그 이름이 바로 실행 단계로 올라간다. 결제 이름은 적어도 무시하고 stderr에 경고한다. 에이전트는 바꿀 수 없다 |
+| `run_script` | 식마다 폰에서 확인. 확인 창이 코드 전체를 문법 색과 줄 번호와 함께 보여 준다(2만 자를 넘으면 실행하지 않고 나눠 요청하라는 에러). `run_script`나 `run_tests` 확인 창에서 "1시간 동안 묻지 않기"를 누르면 1시간 동안, 또는 폰 연결이 끝날 때까지 그 둘의 확인 단계를 함께 묻지 않는다. `call_sdk`는 따로 묻는다. 코드 안에서 일어나는 결제는 가려낼 수 없어 확인 창에 "코드 안의 결제 호출도 묻지 않아요"라고 적혀 있다. 눈에 안 보이는 문자(줄바꿈 U+2028·U+2029, 방향 제어, 폭 없는 문자, 제어 문자)는 줄바꿈이나 `[U+XXXX]` 표시로 드러내고, 빈 줄이 3개 이상 이어지면 하나로 접어 보여 주며, 코드 상자 아래에 가려진 줄이 있으면 "아래에 N줄 더 있어요"가 뜬다 | `AIT_DEBUG_EVALUATE=confirm`(기본) / `confirm-on-sensitive`(약한 선택 사항: `__sdk`·`fetch`·`localStorage` 같은 이름이 든 식만 확인) / `free`(묻지 않음) / `off`(`run_script`·`run_tests` 거부) |
+| `run_tests` | 실행할 파일 목록과 지문(해시)을 폰에서 확인하고, 실행 직전에 다시 해시해 승인 뒤 파일이 바뀌었으면 거부. 넘기는 `cell` 값도 창에 함께 보인다. `run_script`나 `run_tests` 확인 창에서 "1시간 동안 묻지 않기"를 누른 동안에는 묻지 않는다 | `AIT_DEBUG_EVALUATE`와 같음 |
 
 로컬 브라우저(`local-browser`)에서는 `run_script`·`run_tests`가 기본 `free`이고 `call_sdk`는 목 SDK를 부른다. `confirm-on-sensitive`의 이름 목록은 `window['__s'+'dk']`처럼 문자열을 조합하면 피할 수 있어서 경계가 아니라 속도 방지턱이다. 그래서 기본값을 전부 확인하는 `confirm`으로 두었다. 확인 창과 배지는 페이지 안에서 동작하므로 페이지 코드 자체가 악성이면 막지 못한다. 막으려는 대상은 화면·로그 텍스트에 속은 에이전트다.
 

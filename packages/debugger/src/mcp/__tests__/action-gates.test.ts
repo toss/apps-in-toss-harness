@@ -25,6 +25,7 @@ import {
   gateRunTests,
   normalizeRunTestsCell,
   resetConfirmGrant,
+  setConfirmGrantClock,
 } from '../debug-server.js';
 import { UNTRUSTED_DATA_NOTE } from '../envelope.js';
 import { DEBUG_TOOL_DEFINITIONS, TOOL_ANNOTATIONS } from '../tools.js';
@@ -113,10 +114,12 @@ const ENV_KEYS = ['AIT_DEBUG_EVALUATE', 'AIT_DEBUG_SDK_ALLOW', 'AIT_DEBUG_REDACT
 let saved: Record<string, string | undefined>;
 beforeEach(() => {
   resetConfirmGrant();
+  setConfirmGrantClock(null);
   saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   for (const k of ENV_KEYS) delete process.env[k];
 });
 afterEach(() => {
+  setConfirmGrantClock(null);
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -143,8 +146,7 @@ describe('dialog shows what is approved', () => {
     expect(p.lines).toEqual([]);
     expect(p.codes).toEqual([{ label: '총 14자 · 1줄', text: 'document.title' }]);
     expect(p.hour).toBe(true);
-    expect(p.hourNote).toContain('결제·포인트');
-    expect(p.hourNote).toContain('결제·포인트');
+    expect(p.hourNote).toBe('코드 안의 결제 호출도 묻지 않아요');
   });
 
   it('shows a long formatted expression in full, unflattened, and still offers the hour button', async () => {
@@ -266,9 +268,8 @@ describe('run_script policy', () => {
     const phone = new FakePhone();
     const client = await connect(phone);
     await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
-    expect(phone.dialogs[0]).toContain('결제·포인트 SDK 호출은 계속 물어요');
-    expect(phone.dialogs[0]).toContain('결제·포인트 SDK 호출은 계속 물어요');
-    expect(phone.dialogs[0]).toContain('결제·포인트 SDK 호출은 계속 물어요');
+    expect(phone.dialogs[0]).toContain('코드 안의 결제 호출도 묻지 않아요');
+    expect(phone.dialogs[0]).not.toContain('결제·포인트 SDK 호출은 계속 물어요');
   });
 
   it('runs a plain expression without asking under confirm-on-sensitive', async () => {
@@ -396,8 +397,8 @@ describe('call_sdk policy', () => {
     const phone = new FakePhone();
     const client = await connect(phone);
     phone.answer = 'allow-hour';
-    // Grant made from run_script.
-    await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
+    // Grant made from a call_sdk dialog.
+    await client.callTool({ name: 'call_sdk', arguments: { name: 'openURL', args: [{}] } });
     expect(phone.dialogs).toHaveLength(1);
     // A confirm-tier call_sdk is covered by it ...
     const share = await client.callTool({
@@ -417,9 +418,11 @@ describe('call_sdk policy', () => {
     }
     expect(phone.dialogs).toHaveLength(3);
     expect(phone.dialogs[1]).toContain('"hour":false');
-    // Even a grant made from a call_sdk dialog does not cover payments.
-    await client.callTool({ name: 'call_sdk', arguments: { name: 'checkoutPayment', args: [{}] } });
+    // A grant made from a run_script dialog does not cover payments either.
+    await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
     expect(phone.dialogs).toHaveLength(4);
+    await client.callTool({ name: 'call_sdk', arguments: { name: 'checkoutPayment', args: [{}] } });
+    expect(phone.dialogs).toHaveLength(5);
   });
 
   it('asks every time for a namespaced payment call, and covers other dotted names by grant', async () => {
@@ -458,7 +461,7 @@ describe('call_sdk policy', () => {
     expect(phone.evaluated.some((e) => e.includes('__sdkCall'))).toBe(false);
   });
 
-  it('one grant covers run_script and call_sdk, whichever dialog it came from', async () => {
+  it('a call_sdk grant covers call_sdk only, and a run_script grant covers code only', async () => {
     const phone = new FakePhone();
     const client = await connect(phone);
     phone.answer = 'allow-hour';
@@ -468,27 +471,92 @@ describe('call_sdk policy', () => {
       arguments: { name: 'setClipboardText', args: [{}] },
     });
     expect(meta(again).policy).toMatchObject({ via: 'grant' });
-    const script = await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
-    expect(meta(script).policy).toEqual({ decision: 'allow', via: 'grant' });
     expect(phone.dialogs).toHaveLength(1);
+    // The sdk grant does not skip a run_script dialog; that tap sets the code grant.
+    const script = await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
+    expect(meta(script).policy).toEqual({ decision: 'confirmed', via: 'grant' });
+    expect(phone.dialogs).toHaveLength(2);
+    const script2 = await client.callTool({ name: 'run_script', arguments: { expression: '2' } });
+    expect(meta(script2).policy).toEqual({ decision: 'allow', via: 'grant' });
+    expect(phone.dialogs).toHaveLength(2);
+    // Both grants stand on their own.
+    await client.callTool({ name: 'call_sdk', arguments: { name: 'share', args: [{}] } });
+    expect(phone.dialogs).toHaveLength(2);
   });
 
-  it('a grant ends after an hour', async () => {
+  it('a run_script grant does not cover call_sdk', async () => {
+    const phone = new FakePhone();
+    const client = await connect(phone);
+    phone.answer = 'allow-hour';
+    await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
+    phone.answer = 'allow';
+    const sdk = await client.callTool({
+      name: 'call_sdk',
+      arguments: { name: 'share', args: [{}] },
+    });
+    expect(meta(sdk).policy).toEqual({ decision: 'confirmed', via: 'phone', tier: 'confirm' });
+    expect(phone.dialogs).toHaveLength(2);
+    expect(dialogPayload(phone.dialogs[1] ?? '').hourNote).toBe(
+      '결제·포인트 SDK 호출은 계속 물어요',
+    );
+  });
+
+  it('the grants are told apart in the dialog note and in their own tap', async () => {
+    const phone = new FakePhone();
+    const client = await connect(phone);
+    await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
+    expect(dialogPayload(phone.dialogs[0] ?? '').hourNote).toBe(
+      '코드 안의 결제 호출도 묻지 않아요',
+    );
+    await client.callTool({ name: 'call_sdk', arguments: { name: 'share', args: [{}] } });
+    expect(dialogPayload(phone.dialogs[1] ?? '').hourNote).toBe(
+      '결제·포인트 SDK 호출은 계속 물어요',
+    );
+  });
+
+  it('a grant ends after an hour on a monotonic clock, whatever the wall clock does', async () => {
+    let t = 5_000;
+    setConfirmGrantClock(() => t);
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
       const phone = new FakePhone();
       const client = await connect(phone);
       phone.answer = 'allow-hour';
       await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
-      vi.setSystemTime(Date.now() + CONFIRM_GRANT_MS - 1000);
+      // Moving the wall clock a day ahead does not end the grant.
+      vi.setSystemTime(Date.now() + 24 * CONFIRM_GRANT_MS);
+      t += CONFIRM_GRANT_MS - 1000;
       await client.callTool({ name: 'run_script', arguments: { expression: '2' } });
       expect(phone.dialogs).toHaveLength(1);
-      vi.setSystemTime(Date.now() + 2000);
+      // Moving it back does not extend the grant.
+      vi.setSystemTime(0);
+      t += 2000;
       await client.callTool({ name: 'run_script', arguments: { expression: '3' } });
       expect(phone.dialogs).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('refuses over-long code and call_sdk arguments even while a grant is active', async () => {
+    const phone = new FakePhone();
+    const client = await connect(phone);
+    phone.answer = 'allow-hour';
+    await client.callTool({ name: 'run_script', arguments: { expression: '1' } });
+    await client.callTool({ name: 'call_sdk', arguments: { name: 'share', args: [{}] } });
+    expect(phone.dialogs).toHaveLength(2);
+    const longCode = await client.callTool({
+      name: 'run_script',
+      arguments: { expression: `1;${' '.repeat(20_001)}` },
+    });
+    expect(longCode.isError).toBe(true);
+    const longArgs = await client.callTool({
+      name: 'call_sdk',
+      arguments: { name: 'share', args: ['x'.repeat(20_001)] },
+    });
+    expect(longArgs.isError).toBe(true);
+    expect(phone.dialogs).toHaveLength(2);
+    expect(phone.evaluated.some((e) => e.includes('x'.repeat(100)))).toBe(false);
   });
 
   it('a grant also covers run_tests, which still lists its files when it asks', async () => {

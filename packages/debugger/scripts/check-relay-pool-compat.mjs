@@ -70,7 +70,7 @@ const FIXTURES_DIR = path.join(pkgDir, 'scripts', 'relay-pool-compat');
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const debuggerPkg = readJson(path.join(pkgDir, 'package.json'));
 
-// 4.1은 소비자 하한선이라 4.1.11 정확 버전으로, 5.x는 repo devDependency의 하한
+// 4.1은 소비자 하한선이라 4.1.12 정확 버전으로, 5.x는 repo devDependency의 하한
 // (`^5.0.4` → 5.0.4)으로 핀한 픽스처를 쓴다. devDependency를 올리면서 픽스처를 안 올리면
 // 여기서 먼저 멈춘다 — 조용히 낡은 5.x만 검사하는 드리프트를 막는다.
 const FIXTURE_NAMES = (process.env.RELAY_POOL_COMPAT_FIXTURES ?? 'vitest4,vitest5')

@@ -278,7 +278,7 @@ export interface ChiiRelay {
   attachedTargetCount(): number;
   /**
    * Whether every open `/target/<id>` socket belongs to a phone whose client announced
-   * (handshake `v`) a version that draws its own status chip (0.3.2 and up), and at least one
+   * (handshake `v`) a version that draws its own status chip (0.4.0 and up), and at least one
    * is open. Decided per socket, so an old phone after a new one (or the other way round) gets
    * the right indicator. `false` when no phone is attached.
    */
