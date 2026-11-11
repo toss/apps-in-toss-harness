@@ -1,5 +1,25 @@
 # @apps-in-toss/agent-plugin
 
+## 0.4.0
+
+### Minor Changes
+
+- debugger 0.4.0의 MCP 도구 이름 정리에 맞춰 `debug`·`setup-debugger`·`test-on-device`·`inject`·`launch`·`welcome` skill을 고쳤다. 옛 이름은 별칭이 없어서, 이 버전의 skill은 debugger 0.4.0 이상에서만 맞다. `get_debug_status`는 `get_status`, `start_debug`는 `switch_environment`, `list_pages`는 `get_page`, `get_dom_document`는 `get_dom`, `take_snapshot`은 `get_dom_snapshot`, `evaluate`는 `run_script`, `AIT.getSdkCallHistory`는 `list_sdk_calls`, `AIT.getMockState`는 `get_mock_state`, `AIT.getOperationalEnvironment`는 `get_sdk_environment`다. `call_sdk`는 `IAP.getPendingOrders`처럼 한 단계 네임스페이스 이름도 받고, 결제 네임스페이스는 호출마다 폰에서 확인한다.
+  
+  권한 규칙을 쓰는 사용자는 직접 옮겨야 한다. 서버 키가 `ait-debugger`이므로 도구 이름은 `mcp__ait-debugger__*`이고, 규칙에 도구 이름을 적었다면 새 이름으로 바꾼다(예: `mcp__ait-debugger__evaluate`는 `mcp__ait-debugger__run_script`). 0.3.0 이하의 `mcp__ait-devtools__*` 규칙은 이 버전에서도 여전히 맞지 않는다.
+  
+  `setup-debugger`는 `.mcp.json`의 `ait-devtools` 항목이 `@apps-in-toss/debugger`를 가리킬 때만 `ait-debugger`로 옮기고(다른 서버 항목은 그대로, 이미 새 키가 있으면 옛 키만 지우자고 제안), 이 패키지가 아닌 같은 이름의 항목은 건드리지 않고 알린다. 최소 debugger 버전을 0.4.0으로 올렸다.
+- 플러그인이 등록하는 docs MCP 서버 키를 `apps-in-toss-docs`에서 `ait-docs`로 줄인다(`.claude-plugin`·`.cursor-plugin` manifest 모두). 콘솔 키를 `ait-console`로 줄인 것과 같은 이유로, 플러그인 도구 이름이 `mcp__plugin_ait_<키>__<tool>`이라 키 길이가 세션 컨텍스트에 실리기 때문이다. 주소는 그대로고 공식 문서의 수동 등록 표기는 계속 `apps-in-toss-docs`다. skill(`welcome`·`design`·`plan`), 루트·패키지 README의 안내와 `debugger`가 출력하는 안내 문구를 새 키로 맞췄다. 업데이트 후 `/mcp`에서 `ait-docs`가 연결됐는지 확인하고, 권한 규칙에 `mcp__plugin_ait_apps-in-toss-docs__*`가 있으면 `mcp__plugin_ait_ait-docs__*`로 바꿔야 한다.
+
+### Patch Changes
+
+- 디버거 폰 확인 창 변경에 맞춰 debug·setup-debugger skill 문서를 고쳤다. "1시간 동안 묻지 않기"가 코드 실행(`run_script`·`run_tests`)용과 `call_sdk`용으로 나뉘어 적용된다고 적었다.
+- debug skill 도구 표에 실기기 `take_screenshot`의 한계(canvas·WebGL은 비어 보일 수 있음)와 `list_sdk_calls`·`get_mock_state`가 로컬 mock 전용이라는 점을 적었다.
+- `setup-debugger`·`debug`·`inject` skill이 안내하는 설치 URL을 debugger와 debugger-client 0.4.0으로 올렸다.
+- 디버거 폰 허용 창이 바뀐 데 맞춰 debug·setup-debugger skill 문서를 고쳤다. "이 세션 동안 허용"이 "1시간 동안 묻지 않기"로 바뀌었고, `run_script`·`run_tests`용과 `call_sdk`용으로 나뉘어 적용되며 결제 `call_sdk`는 계속 매번 묻는다고 적었다.
+- 디버거의 폰 확인 정책 변경에 맞춰 debug·setup-debugger skill 문서를 고쳤다. 실기기에서 `run_script`는 기본으로 식마다 확인하고(`confirm-on-sensitive`는 약한 선택 사항), `call_sdk`는 읽기 전용 getter·진동은 바로 실행, 그 밖의 호출은 확인, 결제는 "이 세션 동안 허용"과 상관없이 매번 확인한다고 적었다.
+- 보안 강화에 맞춰 inject·setup-debugger·debug skill 문서를 고쳤다. 디버거 relay 키가 메모리 전용 키 에이전트로 바뀌어 `.ait_relay` 안내를 없애고, 번들러 define에서 `readRelayPublicKeys`로 공개키와 만료 시각을 받는 방식으로 적었다. debug skill에는 `stop_attach`(bootstrap 5종), 세션 수명(15분 무응답·60분, 폰 "계속"으로 연장)과 터널 30분 유휴 종료, 폰 확인 창(읽기 전용이 아닌 `call_sdk`, 민감한 `run_script`의 "이 세션 동안 허용", `run_tests`), 폰의 상태 칩과 vConsole "Remote Debugger" 탭을 적었다. 출시 전 스캔과 빌드 산출물 점검의 디버그 마커에 `__ait_session_chip`, `ait_remote_debugger`를 더했다.
+
 ## 0.3.1
 
 ### Patch Changes
