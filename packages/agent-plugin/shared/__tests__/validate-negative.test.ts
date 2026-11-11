@@ -3759,9 +3759,16 @@ const GUIDE_COPIES: Array<[string, string, string]> = [
   ['icons.tsx', path.join('src', 'components', 'icons.tsx'), 'export const X = 1;\n'],
 ];
 
+const GUIDE_FALLBACK_REL = path.join('shared', 'skills', 'fallback-skill', 'SKILL.md');
+
+function guideFallbackDoc(version: number): string {
+  return `# fallback\n\n\`\`\`sh\nprintf '<!-- %s v${version} -->\\n' ait:design-guide\n\`\`\`\n`;
+}
+
 function writeValidGuideTemplate(dir: string): void {
   writeFile(path.join(dir, GUIDE_SCRIPT_REL), '#!/usr/bin/env bash\nMV=3\n');
   writeFile(path.join(dir, GUIDE_CANON_REL, 'memory-digest.md'), GUIDE_DIGEST);
+  writeFile(path.join(dir, GUIDE_FALLBACK_REL), guideFallbackDoc(3));
   for (const [canon, rel, body] of GUIDE_COPIES) {
     writeFile(path.join(dir, GUIDE_CANON_REL, canon), body);
     writeFile(path.join(dir, GUIDE_TPL_REL, rel), body);
@@ -3808,6 +3815,105 @@ describe('A3/design-guide-template-drift negative tests', () => {
     );
     const { violations } = await runChecks(tmpDir);
     expect(rulesFired(violations)).toContain('A3/design-guide-template-drift');
+  });
+});
+
+describe('A3/design-guide-template-drift 폴백 printf 마커 negative tests', () => {
+  it('폴백 printf 마커 버전이 MV 와 다르면 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeValidGuideTemplate(tmpDir);
+    writeFile(path.join(tmpDir, GUIDE_FALLBACK_REL), guideFallbackDoc(2));
+    const { violations } = await runChecks(tmpDir);
+    const hit = violations.filter((v) => v.rule === 'A3/design-guide-template-drift');
+    expect(hit.some((v) => v.message.includes('폴백 printf 마커 v2'))).toBe(true);
+  });
+
+  it('폴백 printf 줄이 어디에도 없으면 조용히 통과하지 않고 위반이 난다', async () => {
+    buildValidFixture(tmpDir);
+    writeValidGuideTemplate(tmpDir);
+    writeFile(
+      path.join(tmpDir, GUIDE_FALLBACK_REL),
+      '# fallback\n\necho "<!-- ait:design-guide v3 -->"\n',
+    );
+    const { violations } = await runChecks(tmpDir);
+    const hit = violations.filter((v) => v.rule === 'A3/design-guide-template-drift');
+    expect(hit.some((v) => v.message.includes('폴백 마커 printf 줄'))).toBe(true);
+    expect(hit.every((v) => v.level === 'error')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A3/bug-report-commands — 버그 리포트 드롭다운 ↔ README 명령 표
+// ---------------------------------------------------------------------------
+
+const BUG_TPL_REL = path.join('.github', 'ISSUE_TEMPLATE', 'bug_report.yml');
+
+function bugReportYml(verbs: string[]): string {
+  return `body:\n  - type: dropdown\n    attributes:\n      label: 관련 skill / 명령\n      options:\n${verbs
+    .map((v) => `        - /ait:${v}`)
+    .join('\n')}\n        - 특정 명령과 무관\n`;
+}
+
+function writeBugReportFiles(repoDir: string, readmeVerbs: string[], optionVerbs: string[]): void {
+  writeFile(
+    path.join(repoDir, 'README.md'),
+    `| 명령 | 설명 |\n|---|---|\n${readmeVerbs.map((v) => `| \`/ait:${v}\` | x |`).join('\n')}\n`,
+  );
+  writeFile(path.join(repoDir, BUG_TPL_REL), bugReportYml(optionVerbs));
+}
+
+describe('A3/bug-report-commands negative tests', () => {
+  const pkg = () => path.join(tmpDir, 'packages', 'agent-plugin');
+
+  it('README 와 드롭다운이 같은 집합이면 발화하지 않는다 (positive control)', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeBugReportFiles(tmpDir, ['new', 'debug'], ['new', 'debug']);
+    const { violations } = await runChecks(pkg());
+    expect(rulesFired(violations)).not.toContain('A3/bug-report-commands');
+  });
+
+  it('README 에만 있는 명령이 있으면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeBugReportFiles(tmpDir, ['new', 'debug'], ['new']);
+    const { violations } = await runChecks(pkg());
+    const hit = violations.filter((v) => v.rule === 'A3/bug-report-commands');
+    expect(hit.some((v) => v.message.includes('/ait:debug 가 버그 리포트 드롭다운에 없음'))).toBe(
+      true,
+    );
+  });
+
+  it('드롭다운에만 있는 명령이 있으면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeBugReportFiles(tmpDir, ['new'], ['new', 'ghost']);
+    const { violations } = await runChecks(pkg());
+    const hit = violations.filter((v) => v.rule === 'A3/bug-report-commands');
+    expect(hit.some((v) => v.message.includes('/ait:ghost 가 README 명령 표에 없음'))).toBe(true);
+  });
+
+  it('monorepo 안에서 bug_report.yml 이 없으면 조용히 건너뛰지 않고 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeBugReportFiles(tmpDir, ['new'], ['new']);
+    fs.rmSync(path.join(tmpDir, BUG_TPL_REL));
+    const { violations } = await runChecks(pkg());
+    const hit = violations.filter((v) => v.rule === 'A3/bug-report-commands');
+    expect(
+      hit.some((v) => v.message.includes('bug_report.yml 가 없음') && v.level === 'error'),
+    ).toBe(true);
+  });
+
+  it('monorepo 안에서 루트 README.md 가 없으면 위반이 난다', async () => {
+    buildRepoRootFixture(tmpDir);
+    writeBugReportFiles(tmpDir, ['new'], ['new']);
+    fs.rmSync(path.join(tmpDir, 'README.md'));
+    const { violations } = await runChecks(pkg());
+    const hit = violations.filter((v) => v.rule === 'A3/bug-report-commands');
+    expect(hit.some((v) => v.message.includes('README.md 가 없음'))).toBe(true);
+  });
+
+  it('monorepo 밖(pnpm-workspace.yaml 없음)에서는 건너뛴다', async () => {
+    buildValidFixture(tmpDir);
+    const { violations } = await runChecks(tmpDir);
+    expect(rulesFired(violations)).not.toContain('A3/bug-report-commands');
   });
 });
 

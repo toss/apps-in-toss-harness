@@ -2357,12 +2357,14 @@ function checkDesignGuideFallbackMarker(root, mv) {
   const violations = [];
   const skillsDir = path.join(root, 'shared', 'skills');
   if (!mv || !fs.existsSync(skillsDir)) return violations;
+  let found = 0;
   for (const file of walkFiles(skillsDir)) {
     if (!file.endsWith('.md')) continue;
     readFile(file)
       .split('\n')
       .forEach((line, i) => {
         for (const m of line.matchAll(/printf '<!-- %s v(\d+) -->/g)) {
+          found++;
           if (m[1] === mv) continue;
           violations.push(
             mkv(
@@ -2375,22 +2377,46 @@ function checkDesignGuideFallbackMarker(root, mv) {
         }
       });
   }
+  // 폴백 마커를 쓰는 자리를 하나도 못 찾으면 형태가 바뀌어 검사가 조용히 무력화된 것이다.
+  if (found === 0) {
+    violations.push(
+      mkv(
+        path.relative(root, skillsDir),
+        1,
+        'A3/design-guide-template-drift',
+        `skill 문서에서 폴백 마커 printf 줄(\`printf '<!-- %s v<N> -->\`)을 하나도 찾지 못함 — 폴백 마커 버전을 MV=${mv} 와 대조할 수 없다 (fix: 폴백 셸의 마커 쓰기 형태를 복원하거나, 형태를 바꿨다면 이 검사의 패턴을 함께 고쳐라)`,
+      ),
+    );
+  }
   return violations;
 }
 
 // A3/bug-report-commands — .github/ISSUE_TEMPLATE/bug_report.yml 의 "관련 skill /
 // 명령" 드롭다운 선택지가 README 명령 표(`| \`/ait:<verb> ...`)와 같은 집합인지
 // 확인한다. 명령을 추가하고 드롭다운을 빠뜨리면 사용자가 그 명령을 고를 수 없다.
-// 명령이 아닌 선택지('특정 명령과 무관…' 등)는 대상이 아니다. repo 루트(README.md,
-// bug_report.yml)가 없는 레이아웃에서는 검사하지 않는다.
+// 명령이 아닌 선택지('특정 명령과 무관…' 등)는 대상이 아니다. monorepo 밖(tmp
+// fixture·단독 패키지 — findRepoRoot 가 null)에서는 검사하지 않고, monorepo 안에서
+// README.md·bug_report.yml 이 없으면 검사가 조용히 꺼진 것이므로 위반이다.
 /** @param {string} root @returns {Violation[]} */
 function checkBugReportCommands(root) {
   const violations = [];
-  const repoRoot = path.resolve(root, '..', '..');
+  const repoRoot = findRepoRoot(root);
+  if (!repoRoot) return violations;
   const readmePath = path.join(repoRoot, 'README.md');
   const ymlPath = path.join(repoRoot, '.github', 'ISSUE_TEMPLATE', 'bug_report.yml');
-  if (!fs.existsSync(readmePath) || !fs.existsSync(ymlPath)) return violations;
   const RULE = 'A3/bug-report-commands';
+  for (const fp of [readmePath, ymlPath]) {
+    if (fs.existsSync(fp)) continue;
+    violations.push(
+      mkv(
+        path.relative(root, fp),
+        1,
+        RULE,
+        `monorepo 안인데 ${path.relative(repoRoot, fp)} 가 없음 — 버그 리포트 드롭다운 ↔ README 명령 표 대조를 할 수 없다 (fix: 파일을 복원하라)`,
+      ),
+    );
+  }
+  if (violations.length > 0) return violations;
   const relYml = path.relative(root, ymlPath);
 
   const readmeVerbs = new Set(
