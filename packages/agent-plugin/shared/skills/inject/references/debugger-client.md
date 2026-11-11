@@ -54,7 +54,7 @@ package.json이 없습니다. 프로젝트 루트 디렉토리에서 다시 실�
 이름)이 있거나 소스에 그 import가 있으면 "이미 설치됨"이 아니라 **이름 변경 마이그레이션이 필요한
 상태**다. 신규 설치로 새 이름을 하나 더 얹지 않는다(두 패키지가 한 번들에 들어간다).
 `../../setup-debugger/references/upgrade-check.md` 0절과 2-B절의 절차대로 동의를 받아 키·URL·import를
-`@apps-in-toss/debugger-client` 0.3.2 이상으로 한꺼번에 옮기고, 같은 문서가 안내하는 대로 MCP 서버 키
+`@apps-in-toss/debugger-client` 0.4.0 이상으로 한꺼번에 옮기고, 같은 문서가 안내하는 대로 MCP 서버 키
 `ait-devtools`도 함께 점검한다. 옛 이름이 없으면 아래를 본다.
 
 1. 설치: `package.json`의 `dependencies` 또는 `devDependencies`에 `@apps-in-toss/debugger-client`
@@ -94,10 +94,10 @@ GitHub Release tarball URL을 설치 스펙으로 준다 — 설치 후 `package
 `devDependencies` 키는 `@apps-in-toss/debugger-client`, 값은 이 URL이 된다:
 
 ```bash
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.3.2/apps-in-toss-debugger-client-0.3.2.tgz"   # npm (기본)
-pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.3.2/apps-in-toss-debugger-client-0.3.2.tgz"      # pnpm
-yarn add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.3.2/apps-in-toss-debugger-client-0.3.2.tgz"       # yarn
-bun add -d "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.3.2/apps-in-toss-debugger-client-0.3.2.tgz"        # bun
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"   # npm (기본)
+pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"      # pnpm
+yarn add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"       # yarn
+bun add -d "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"        # bun
 ```
 
 ※ **설치 스펙(위 URL)과 import specifier(아래 §5)는 다르다.** URL은 "어디서 받는가"를
@@ -144,7 +144,7 @@ if (__DEBUG_BUILD__) {
   공개키와 만료 시각 `{ publicKey, notAfter }`만 번들에 들어간다. 키 없이 `maybeAttach()`만 부르면 QR 테스트
   호스트에서 `blocked-relay-key`로 멈춘다. 구버전 `.ait_relay`나 `AIT_DEBUG_TOTP_SECRET`은 디버거가 처음 실행될 때
   자동으로 가져온 뒤 삭제한다.
-- 연결되면 폰 화면에 상태 칩이 남고(탭하면 "끊기"·"웹 디버그 툴즈 열기"·"배지 숨기기" 메뉴), 페이지에 vConsole이 있으면 "Remote Debugging" 탭이 붙는다. 디버거 0.4.0는 이 클라이언트에는 자기 배지를 붙이지 않는다.
+- 연결되면 폰 화면에 상태 칩이 남고(탭하면 "끊기"·"웹 디버그 툴즈 열기"·"배지 숨기기" 메뉴), 페이지에 vConsole이 있으면 "Remote Debugging" 탭이 붙는다. 디버거 0.4.0은 이 클라이언트에는 자기 배지를 붙이지 않는다.
   사용자가 폰에서 직접 끊을 수 있고, 디버거 쪽 `stop_attach`·세션 수명(15분 무응답·60분)으로 끝나면 이유를 폰에 알린다.
   디버그 번들은 검수·출시에 올리지 않으므로 이 표시도 프로덕션에는 없다.
 - `startDebugConsole({ relayPublicKeys })`는 아래 `maybeAttach`와 같은 게이트를 쓰고 키를 함께 받는다.

@@ -42,7 +42,7 @@ export interface PageAttachParams {
   /** Developer computer name (`ahn`) and its signature (`ahs`); absent on links from older debuggers. */
   readonly ahn: string | null;
   readonly ahs: string | null;
-  /** Session certificate (`arc`, 180 characters); absent on links from debuggers older than 0.3.2. */
+  /** Session certificate (`arc`, 180 characters); absent on links from debuggers older than 0.4.0. */
   readonly arc: string | null;
 }
 

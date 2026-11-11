@@ -1,5 +1,5 @@
 /**
- * 0.3.2 hardening on the phone: a local "끊기" that does not need the daemon, the
+ * 0.4.0 hardening on the phone: a local "끊기" that does not need the daemon, the
  * persistent status chip and its coordination with the daemon badge, and the
  * named session-end close (4410) with its own messages.
  *

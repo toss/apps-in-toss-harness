@@ -1,7 +1,7 @@
 /**
  * What the developer can do from the phone: end the session.
  *
- * The phone's client (0.3.2+) draws its own status chip with **끊기** and the daemon adds
+ * The phone's client (0.4.0+) draws its own status chip with **끊기** and the daemon adds
  * no badge for it; for an older client the daemon badge menu carries **끊기** (see
  * `buildIndicatorExpression({ controls: true })`). Both report through the page
  * console: the tap handler logs `console.debug('ait:ctl', 'kill')`, the daemon reads it

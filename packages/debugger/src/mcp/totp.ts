@@ -225,7 +225,7 @@ export function relayCodeStep(when: number = Date.now()): number {
  *     at least 120 s after it was minted and never for more than 125 s.
  *   - The window must cover the cold start of the mini-app after a scan (about
  *     20 s measured on a device) AND the person reading the consent dialog:
- *     debugger-client 0.3.2 sends nothing to the relay before "연결" is tapped,
+ *     debugger-client 0.4.0 sends nothing to the relay before "연결" is tapped,
  *     so the consent time counts against the code. 30 s proved too short on a
  *     real device; 120 s leaves room to read the dialog.
  *   - A longer window is acceptable because the link is signed (`sig` + `arc`),

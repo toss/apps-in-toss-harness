@@ -7,17 +7,17 @@
 앱인토스(Apps in Toss) 미니앱의 on-device attach + 폰 화면 상태 표시. **이번 분리에서 프로덕션 번들에 들어갈 수 있는 유일한 패키지**다 — dependency와 peerDependency가 모두 0개라, SDK 버전(2.x/3.x)과 완전히 무관하게 동작한다.
 
 > [!IMPORTANT]
-> **`debugger` 0.4.0 이상과 `debugger-client` 0.3.2 이상을 함께 쓰세요.** 이 두 버전에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다(0.3.1은 발행되지 않았습니다). 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 최신 플러그인 `ait`의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요. 권한 규칙이 `mcp__ait-devtools__evaluate`처럼 도구 하나를 지목하고 있다면 서버 이름뿐 아니라 도구 이름도 새 이름(`mcp__ait-debugger__run_script`)으로 바꿔야 합니다. 대응표는 `packages/debugger/CHANGELOG.md`의 0.4.0 항목에 있습니다.
+> **`debugger` 0.4.0 이상과 `debugger-client` 0.4.0 이상을 함께 쓰세요.** 이 두 버전에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다(0.3.1은 발행되지 않았습니다). 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 최신 플러그인 `ait`의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요. 권한 규칙이 `mcp__ait-devtools__evaluate`처럼 도구 하나를 지목하고 있다면 서버 이름뿐 아니라 도구 이름도 새 이름(`mcp__ait-debugger__run_script`)으로 바꿔야 합니다. 대응표는 `packages/debugger/CHANGELOG.md`의 0.4.0 항목에 있습니다.
 
 > [!IMPORTANT]
-> **debugger-client 0.3.2는 debugger 0.4.0 이상이 필요합니다.** 0.3.2부터 `relayPublicKeys`는 `{ publicKey, notAfter }` 형태만 받고(옛 문자열 형태는 연결하지 않는다), 세션 정보·원격 실행 기록·끊기 신호는 debugger 0.4.0가 보낸다. 디버그 번들은 debugger 0.4.0의 `relay-key` 출력으로 다시 빌드한다.
+> **debugger-client 0.4.0은 debugger 0.4.0 이상이 필요합니다.** 0.4.0부터 `relayPublicKeys`는 `{ publicKey, notAfter }` 형태만 받고(옛 문자열 형태는 연결하지 않는다), 세션 정보·원격 실행 기록·끊기 신호는 debugger 0.4.0이 보낸다. 디버그 번들은 debugger 0.4.0의 `relay-key` 출력으로 다시 빌드한다.
 
 ## 설치
 
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.3.2/apps-in-toss-debugger-client-0.3.2.tgz"
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"
 ```
 
 peerDependency가 없으므로 `@apps-in-toss/web-framework`의 설치 여부·버전과 무관하게 그대로 추가할 수 있다. SDK 브릿지(아래 `window.__sdk`)는 런타임에 동적 import로 SDK 존재 여부를 probe하며, SDK가 없으면 조용히 스킵된다.
@@ -111,7 +111,7 @@ attach가 어디까지 됐는지를 폰 화면 아래쪽 작은 막대로 알려
 | `blocked-relay-key-form` | 번들의 디버거 키 형식이 옛날 방식이에요. `debugger relay-key` 출력으로 다시 빌드하세요. | `relayPublicKeys`에 문자열이 들어 있다. `{ publicKey, notAfter }` 항목으로 바꾸고 다시 빌드한다 |
 | `blocked-debugger-update` | 디버거를 0.4.0 이상으로 업데이트한 뒤 새 QR을 스캔하세요. | 링크에 세션 인증서(`arc`)가 없다. 0.4.0 미만 디버거가 만든 QR이다. relay에는 아무 요청도 보내지 않고 연결하지 않는다. 디버거를 0.4.0 이상으로 올리고 새 QR을 스캔한다 |
 | `relay-origin-rejected` | 이 화면에서는 디버거를 쓸 수 없어요. | relay가 이 페이지의 origin을 거부했다(close 4403). 토스 앱에서 테스트 번들로 연 화면인지 확인한다 |
-| `relay-version-mismatch` | 디버거와 debugger-client 버전이 맞지 않아요. debugger 0.4.0 이상, debugger-client 0.3.2 이상으로 맞추세요. | relay가 연결을 거부했다(close 4426). 디버거와 debugger-client 중 오래된 쪽을 올리고 새 QR을 스캔한다. 0.3.0 디버거가 보낸 업데이트 안내 스크립트를 받았을 때도 이 상태가 된다 |
+| `relay-version-mismatch` | 디버거와 debugger-client 버전이 맞지 않아요. debugger와 debugger-client 0.4.0 이상으로 맞추세요. | relay가 연결을 거부했다(close 4426). 디버거와 debugger-client 중 오래된 쪽을 올리고 새 QR을 스캔한다. 0.3.0 디버거가 보낸 업데이트 안내 스크립트를 받았을 때도 이 상태가 된다 |
 | `blocked-auth` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | QR 코드(`at=`)가 없거나 형식이 맞지 않거나 만료됐다. 대시보드를 새로고침하고 새 QR을 스캔한다 |
 | `connecting` | 디버거에 연결하는 중이에요… | 스크립트를 넣고 relay 연결을 기다리는 중이다 |
 | `connected` | 디버거에 연결됐어요. | 연결됐다. 막대는 몇 초 뒤 사라지고, 대신 폰 화면에 상태 칩이 남는다(아래 "폰에서 세션 보기와 끊기") |
@@ -137,7 +137,7 @@ attach가 어디까지 됐는지를 폰 화면 아래쪽 작은 막대로 알려
 
 칩은 닫힌(closed) shadow root에 들어 있고 1초마다 점검해 지워지면 다시 붙인다. 원격 쪽이 `run_script`로 칩을 지우거나 가릴 수 있다는 한계는 남는다. 근본 해결은 토스 앱의 네이티브 표시다.
 
-**표시는 하나만.** 디버거 0.4.0는 이 클라이언트에는 자기 배지(`#__ait_debug_indicator`)를 붙이지 않으므로 칩이 유일한 표시다. 칩을 탭하면 "끊기", "웹 디버그 툴즈 열기", "배지 숨기기" 메뉴가 열린다. "배지 숨기기"는 사람이 직접 고른 경우에만 칩을 감추고(4초 안내가 뜬다) 세션이 끝나면 풀린다. 다시 보이게 하려면 오른쪽 상단의 "..." → "웹 디버그 툴즈" → "Remote Debugging"에서 "배지 다시 보이기"를 누른다. 그 밖의 이유로 칩이 사라지면 다시 그려지고, 다른 경로로 보이는 데몬 배지가 있으면 그 배지가 있는 동안 칩은 비켜 준다. vConsole 탭의 "끊기"는 칩 유무와 상관없이 쓸 수 있다.
+**표시는 하나만.** 디버거 0.4.0은 이 클라이언트에는 자기 배지(`#__ait_debug_indicator`)를 붙이지 않으므로 칩이 유일한 표시다. 칩을 탭하면 "끊기", "웹 디버그 툴즈 열기", "배지 숨기기" 메뉴가 열린다. "배지 숨기기"는 사람이 직접 고른 경우에만 칩을 감추고(4초 안내가 뜬다) 세션이 끝나면 풀린다. 다시 보이게 하려면 오른쪽 상단의 "..." → "웹 디버그 툴즈" → "Remote Debugging"에서 "배지 다시 보이기"를 누른다. 그 밖의 이유로 칩이 사라지면 다시 그려지고, 다른 경로로 보이는 데몬 배지가 있으면 그 배지가 있는 동안 칩은 비켜 준다. vConsole 탭의 "끊기"는 칩 유무와 상관없이 쓸 수 있다.
 
 **vConsole "Remote Debugging" 탭.** 페이지에 vConsole이 있으면 탭 하나를 더한다. `startDebugConsole({ vConsole })`로 넘긴 인스턴스, `window.vConsole`, `window.VConsole.instance` 순으로 찾고, `startDebugConsole`보다 늦게 만들어진 vConsole도 1초마다 최대 1분 확인해 붙는다. vConsole 플러그인 API(`new VConsole.VConsolePlugin(id, name)`)만 쓰므로 이 패키지에 vConsole 의존성은 없다. `*.private-apps.tossmini.com`·`*.private-web.tossmini.com`에서 `debug=1`이나 `relay=`가 있을 때만 등록하고, 프로덕션 호스트와 localhost에서는 등록하지 않는다. 탭에는 상태, 서명이 검증된 개발자 컴퓨터 이름(없으면 "확인되지 않음"), 연결 시각, 남은 시간(실시간), "끊기", "배지 다시 보이기"(숨겼을 때만), 최근 원격 실행 목록(시각·종류·요약·성공/오류, 최신순)이 나온다. 탭의 모든 글자는 `textContent`로 넣고 `innerHTML`은 쓰지 않는다.
 
@@ -150,7 +150,7 @@ attach가 어디까지 됐는지를 폰 화면 아래쪽 작은 막대로 알려
 
 ## 세션이 끝난 이유
 
-디버거 0.4.0는 연결을 닫을 때 이유를 close 코드 4410과 close reason(`revoked`·`idle-timeout`·`user-stopped`·`expired`)으로 알려 준다. 폰은 이유별로 다른 문구를 보여 주고 다시 접속하지 않는다. 0.3.2 미만 클라이언트는 4410을 모르기 때문에 디버거는 그쪽에는 계속 4401을 보낸다. 이 클라이언트가 4401을 받으면 예전처럼 `code-expired`로 처리한다.
+디버거 0.4.0은 연결을 닫을 때 이유를 close 코드 4410과 close reason(`revoked`·`idle-timeout`·`user-stopped`·`expired`)으로 알려 준다. 폰은 이유별로 다른 문구를 보여 주고 다시 접속하지 않는다. 0.4.0 미만 클라이언트는 4410을 모르기 때문에 디버거는 그쪽에는 계속 4401을 보낸다. 이 클라이언트가 4401을 받으면 예전처럼 `code-expired`로 처리한다.
 
 ## 페이지 URL
 

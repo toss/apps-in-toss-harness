@@ -291,7 +291,7 @@ export interface SignedLinkParams {
 /**
  * Signs an attach link for every link builder (start_attach, the dashboard QR,
  * `buildAttachUrl`), so all of them carry `sig`, `arc` and, when a host name is
- * given, `ahn`/`ahs`. A link without `arc` is refused by debugger-client 0.3.2.
+ * given, `ahn`/`ahs`. A link without `arc` is refused by debugger-client 0.4.0.
  *
  * @param hostName - Already sanitized computer name, or `undefined` to omit it.
  */

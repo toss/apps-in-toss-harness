@@ -7,7 +7,7 @@
 앱인토스(Apps in Toss) 미니앱을 위한 원격 디버깅 인프라 — MCP 디버깅 데몬, on-device CDP relay, test runner를 한 패키지에 담는다. **devDependency / `npx` 전용이며, 이 패키지의 코드는 프로덕션 번들에 절대 들어가지 않는다.** 루트(`.`) export가 없다는 사실이 그 경계를 그대로 드러낸다 — 임의로 앱 코드에 import할 수 있는 표면 자체가 존재하지 않는다.
 
 > [!IMPORTANT]
-> **`debugger` 0.4.0 이상과 `debugger-client` 0.3.2 이상을 함께 쓰세요.** 이 두 버전에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다(0.3.1은 발행되지 않았습니다). 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 최신 플러그인 `ait`의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요. 권한 규칙이 `mcp__ait-devtools__evaluate`처럼 도구 하나를 지목하고 있다면 서버 이름뿐 아니라 도구 이름도 새 이름(`mcp__ait-debugger__run_script`)으로 바꿔야 합니다. 대응표는 `packages/debugger/CHANGELOG.md`의 0.4.0 항목에 있습니다.
+> **`debugger` 0.4.0 이상과 `debugger-client` 0.4.0 이상을 함께 쓰세요.** 이 두 버전에서 이름(`@apps-in-toss/debug-console` → `@apps-in-toss/debugger-client`), MCP 서버 키(`ait-devtools` → `ait-debugger`), 프로토콜 버전(2 → 3)이 함께 바뀌었습니다(0.3.1은 발행되지 않았습니다). 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 옛 이름으로 배선한 프로젝트는 최신 플러그인 `ait`의 `/ait:setup-debugger`로 한꺼번에 옮기거나, `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 직접 바꾸고 디버그 빌드를 다시 올리세요. 권한 규칙을 쓰고 있다면 `mcp__ait-devtools__*`를 `mcp__ait-debugger__*`로 옮기세요. 권한 규칙이 `mcp__ait-devtools__evaluate`처럼 도구 하나를 지목하고 있다면 서버 이름뿐 아니라 도구 이름도 새 이름(`mcp__ait-debugger__run_script`)으로 바꿔야 합니다. 대응표는 `packages/debugger/CHANGELOG.md`의 0.4.0 항목에 있습니다.
 
 ## 설치
 
@@ -80,7 +80,7 @@ npx -p <tgz URL> debugger relay-key --json     # [{ "publicKey", "notAfter" }] �
 npx -p <tgz URL> debugger relay-key --rotate   # 이 프로젝트의 키를 버리고 새 키를 만든다
 ```
 
-공개키는 루트 키이고 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, agent가 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지, 루트 만료를 넘지 않음)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.3.2 미만을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 0.3.2 미만 클라이언트가 더는 없다고 볼 수 있으면 이 경로는 없앨 수 있다. 0.3.2 클라이언트는 `arc`가 없는 링크(0.4.0 미만 디버거)를 연결하지 않고 업데이트를 안내한다.
+공개키는 루트 키이고 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, agent가 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지, 루트 만료를 넘지 않음)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.4.0 미만을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 0.4.0 미만 클라이언트가 더는 없다고 볼 수 있으면 이 경로는 없앨 수 있다. 0.4.0 클라이언트는 `arc`가 없는 링크(0.4.0 미만 디버거)를 연결하지 않고 업데이트를 안내한다.
 
 #### 키 교체 (`debugger relay-key --rotate`)
 
@@ -152,7 +152,7 @@ relay는 `Origin` 헤더도 확인한다. 터널로 들어온 요청은 앱 이�
 
 relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가져오지도 않는다. 폰의 소스 보기는 페이지 안에서 직접 소스를 불러오고, chii의 옛 `/proxy` 우회 요청은 알 수 없는 경로와 같이 404로 답한다. 만료된 코드로는 `target.js`와 핸드셰이크 확인, 같은 target id의 재연결만 되고, 그 코드에 묶인 소켓이 열려 있거나 마지막 소켓이 닫힌 뒤 5분 유예 안일 때만 통한다.
 
-기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 3)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debugger-client`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다. 프로토콜 3은 이름 변경 릴리스다. 프로토콜 2 이하(`@apps-in-toss/debug-console` 0.3.0 이하)를 만나면 미니앱에서 그 패키지를 지우고 `@apps-in-toss/debugger-client` 0.3.1 이상을 설치해 다시 배포하라고 안내한다.
+기기와 데몬은 같은 프로토콜(`PROTOCOL_VERSION`, 현재 3)이어야 한다. 프로토콜이 다른 `@apps-in-toss/debugger-client`은 relay가 받지 않는다. 폰에서는 `target.js`가 로드될 자리에 "업데이트 필요" 막대가 뜨고, `start_attach`도 타임아웃까지 기다리지 않고 같은 안내로 끝난다. 둘 중 오래된 쪽을 올리고 QR을 다시 스캔한다. 프로토콜 3은 이름 변경 릴리스다. 프로토콜 2 이하(`@apps-in-toss/debug-console` 0.3.0 이하)를 만나면 미니앱에서 그 패키지를 지우고 `@apps-in-toss/debugger-client` 0.4.0 이상을 설치해 다시 배포하라고 안내한다.
 
 ### 실기기에서 에이전트가 하는 일을 확인하기
 

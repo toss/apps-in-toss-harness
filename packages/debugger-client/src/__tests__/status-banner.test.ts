@@ -503,7 +503,7 @@ describe('maybeAttach — update-required notice script', () => {
     document.head.querySelector('script')?.dispatchEvent(new Event('load'));
     expect(window.__ait_debug_status).toBe('relay-version-mismatch');
     expect(bannerText()).toMatch(/버전이 맞지 않아요/);
-    expect(bannerText()).toMatch(/0\.3\.2 이상/);
+    expect(bannerText()).toMatch(/0\.4\.0 이상/);
   });
 
   it('leaves a normally loaded script alone', async () => {

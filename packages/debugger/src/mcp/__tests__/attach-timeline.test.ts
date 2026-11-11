@@ -138,7 +138,7 @@ describe('diagnoseAttach — priority table', () => {
     expect(d.kind).toBe('protocol-skew');
     expect(d.summary).toContain('프로토콜 2');
     expect(d.summary).toContain('프로토콜 3');
-    expect(d.actions[0]).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+    expect(d.actions[0]).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
     // a skew-free daemon keeps the generic diagnosis
     expect(diagnoseAttach(tl.snapshot(), { protocolSkew: null }).kind).toBe('script-not-loaded');
   });

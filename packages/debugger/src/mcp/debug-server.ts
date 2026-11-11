@@ -398,7 +398,7 @@ export interface DebugServerDeps {
   getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
   /**
    * Whether the attached phone's client draws its own status chip (the version it announced
-   * on its handshake is at or above the one that understands close 4410, 0.3.2). Judged per
+   * on its handshake is at or above the one that understands close 4410, 0.4.0). Judged per
    * attached phone connection, not by the most recent handshake. When it does the daemon
    * injects no badge, so the person sees one indicator. Omitted or `false`: the daemon badge
    * is injected as before (older clients, tests).
@@ -1850,7 +1850,7 @@ export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): s
   // 터널이 새로 발급됐으면 start_attach 때 잡아 둔 옛 주소 대신 지금 주소로 링크를 만든다.
   const current = withCurrentRelay(parts, tunnel);
   // Same signing as start_attach (sig + arc + ahn/ahs): the dashboard QR is the one
-  // phones scan most, and debugger-client 0.3.2 refuses a link without `arc`.
+  // phones scan most, and debugger-client 0.4.0 refuses a link without `arc`.
   const signed = signedLinkParams(secret, current.wssUrl, code, signingHostName());
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
@@ -3421,7 +3421,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // Device↔host version skew, or null. Read at call time so a device that
     // reports after the server was built is still seen.
     getProtocolVersionSkew: () => protocolVersionMonitor.getMismatch(),
-    // Same version gate as close 4410 (0.3.2+ draws the status chip), but read per open phone
+    // Same version gate as close 4410 (0.4.0+ draws the status chip), but read per open phone
     // connection from the relay, not from whichever handshake arrived last.
     phoneHasStatusChip: () => router.phoneHasStatusChip(),
     getMinVersionGate,

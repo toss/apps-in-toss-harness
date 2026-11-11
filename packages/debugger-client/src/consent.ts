@@ -85,7 +85,7 @@ interface ConsentEntry {
   readonly t: number;
 }
 
-/** Stored shape: `{ v: 2, e: [...] }`. The 0.3.2 pre-release array of relay origins is dropped. */
+/** Stored shape: `{ v: 2, e: [...] }`. The 0.4.0 pre-release array of relay origins is dropped. */
 const STORAGE_VERSION = 2;
 const ID_RE = /^[0-9a-f]{64}$/;
 /** Same character set and length cap the link signs (`isRelayHostName`). */

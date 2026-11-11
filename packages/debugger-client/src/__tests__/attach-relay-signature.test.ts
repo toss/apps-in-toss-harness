@@ -581,7 +581,7 @@ describe('maybeAttach — the certificate comes from the link only', () => {
     await maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
   }
 
-  it('a link without arc (a debugger older than 0.3.2) asks for an update and sends nothing', async () => {
+  it('a link without arc (a debugger older than 0.4.0) asks for an update and sends nothing', async () => {
     setPage(signLink(SECRET, RELAY, AT), AT, null);
     const { maybeAttach } = await import('../attach.js');
     const pending = maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });

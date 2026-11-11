@@ -7,17 +7,17 @@
 On-device attach + an on-phone status banner for Apps in Toss mini-apps. **The only package in this split that can enter a production bundle** — it has zero dependencies and zero peerDependencies, so it is completely agnostic to the SDK version (2.x/3.x) it ships alongside.
 
 > [!IMPORTANT]
-> **Use `debugger` 0.4.0 or later and `debugger-client` 0.3.2 or later together.** These versions changed the package name (`@apps-in-toss/debug-console` to `@apps-in-toss/debugger-client`), the MCP server key (`ait-devtools` to `ait-debugger`) and the protocol version (2 to 3) at once (0.3.1 was never released). Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. For a project wired with the old names, run `/ait:setup-debugger` from the latest plugin `ait` to move everything in one pass, or change the key and URL in `.mcp.json`, the dependency in `package.json` and the imports in your source yourself, then upload a new debug build. If you use permission rules, move `mcp__ait-devtools__*` to `mcp__ait-debugger__*`. A rule that names a single tool, such as `mcp__ait-devtools__evaluate`, must move to the new tool name as well as the new server name (`mcp__ait-debugger__run_script`); the rename table is in the 0.4.0 entry of `packages/debugger/CHANGELOG.md`.
+> **Use `debugger` 0.4.0 or later and `debugger-client` 0.4.0 or later together.** These versions changed the package name (`@apps-in-toss/debug-console` to `@apps-in-toss/debugger-client`), the MCP server key (`ait-devtools` to `ait-debugger`) and the protocol version (2 to 3) at once (0.3.1 was never released). Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. For a project wired with the old names, run `/ait:setup-debugger` from the latest plugin `ait` to move everything in one pass, or change the key and URL in `.mcp.json`, the dependency in `package.json` and the imports in your source yourself, then upload a new debug build. If you use permission rules, move `mcp__ait-devtools__*` to `mcp__ait-debugger__*`. A rule that names a single tool, such as `mcp__ait-devtools__evaluate`, must move to the new tool name as well as the new server name (`mcp__ait-debugger__run_script`); the rename table is in the 0.4.0 entry of `packages/debugger/CHANGELOG.md`.
 
 > [!IMPORTANT]
-> **debugger-client 0.3.2 requires debugger 0.4.0 or later.** From 0.3.2, `relayPublicKeys` accepts only `{ publicKey, notAfter }` entries (the old string form is refused), and the session info, remote-execution log and disconnect signal come from debugger 0.4.0. Rebuild the debug bundle with the `relay-key` output of debugger 0.4.0.
+> **debugger-client 0.4.0 requires debugger 0.4.0 or later.** From 0.4.0, `relayPublicKeys` accepts only `{ publicKey, notAfter }` entries (the old string form is refused), and the session info, remote-execution log and disconnect signal come from debugger 0.4.0. Rebuild the debug bundle with the `relay-key` output of debugger 0.4.0.
 
 ## Install
 
 Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.3.2/apps-in-toss-debugger-client-0.3.2.tgz"
+npm install "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"
 ```
 
 With no peerDependency, you can add this regardless of whether `@apps-in-toss/web-framework` is installed or which version it is. The SDK bridge (`window.__sdk` below) probes for the SDK at runtime via a dynamic import and silently skips itself when the SDK is absent.
@@ -111,7 +111,7 @@ The bar text is deliberately short and does not say which check failed. Develope
 | `blocked-relay-key-form` | 번들의 디버거 키 형식이 옛날 방식이에요. `debugger relay-key` 출력으로 다시 빌드하세요. | `relayPublicKeys` contains a string. Switch to `{ publicKey, notAfter }` entries and rebuild |
 | `blocked-debugger-update` | 디버거를 0.4.0 이상으로 업데이트한 뒤 새 QR을 스캔하세요. | The link carries no session certificate (`arc`): the QR came from a debugger older than 0.4.0. Nothing is sent to the relay and the page does not attach. Update the debugger to 0.4.0 or later and scan a new QR |
 | `relay-origin-rejected` | 이 화면에서는 디버거를 쓸 수 없어요. | The relay refused this page's origin (close 4403). Check that the page was opened as a test bundle in the Toss app |
-| `relay-version-mismatch` | 디버거와 debugger-client 버전이 맞지 않아요. debugger 0.4.0 이상, debugger-client 0.3.2 이상으로 맞추세요. | The relay refused the connection (close 4426). Update whichever of the debugger and debugger-client is older and scan a new QR. The same status appears when the page receives the update notice script that a 0.3.0 debugger sends |
+| `relay-version-mismatch` | 디버거와 debugger-client 버전이 맞지 않아요. debugger와 debugger-client 0.4.0 이상으로 맞추세요. | The relay refused the connection (close 4426). Update whichever of the debugger and debugger-client is older and scan a new QR. The same status appears when the page receives the update notice script that a 0.3.0 debugger sends |
 | `blocked-auth` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | The QR code (`at=`) is missing, malformed, or expired. Refresh the dashboard and scan the new QR |
 | `connecting` | 디버거에 연결하는 중이에요… | The script is injected; waiting for the relay connection |
 | `connected` | 디버거에 연결됐어요. | Connected. The bar hides after a few seconds and a status chip stays on the phone screen instead (see "Viewing and ending the session on the phone") |
@@ -150,7 +150,7 @@ The values debugger 0.4.0 writes to the page are below. Each is shape-checked an
 
 ## Why a session ended
 
-When debugger 0.4.0 closes a connection it names the reason with close code 4410 and a close reason (`revoked`, `idle-timeout`, `user-stopped`, `expired`). The phone shows a different message for each and does not redial. A client older than 0.3.2 does not know 4410, so the debugger keeps sending it 4401. When this client gets 4401 it behaves as before and reports `code-expired`.
+When debugger 0.4.0 closes a connection it names the reason with close code 4410 and a close reason (`revoked`, `idle-timeout`, `user-stopped`, `expired`). The phone shows a different message for each and does not redial. A client older than 0.4.0 does not know 4410, so the debugger keeps sending it 4401. When this client gets 4401 it behaves as before and reports `code-expired`.
 
 ## Page URL
 
