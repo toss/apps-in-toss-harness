@@ -21,9 +21,9 @@ Ties together `@apps-in-toss/devtools`, the docs MCP, and the console MCP into a
 - `/ait:feature` — implement an SDK feature (ads, in-app purchase, share, leaderboard, …) in your project, confirming the docs page first and matching your stack
 
 You do not have to memorize the commands — the same skills answer to plain language, and every skill
-prints its next step on **both surfaces**: the slash command and its plain-language equivalent. Five
-kinds of example phrasings live in the "Just ask for it" section of the repo-root
-[`README.en.md`](../../README.en.md).
+prints its next step on **both surfaces**: the slash command and its plain-language equivalent. Example
+phrasings live in the "How to use it" section of the repo-root
+[`README.en.md`](../../README.en.md#how-to-use-it).
 
 Docs lookups go through the docs MCP (`searchDocumentation`/`getPage`); console registration, bundle
 upload, and status queries go through the console MCP (`miniapp_create`/`bundle_upload`/

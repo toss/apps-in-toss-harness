@@ -19,15 +19,15 @@ If you already use Claude Code, have Node 24+ and git ready, then enter these li
 /ait:welcome
 ```
 
-In `/mcp`, pick `ait-console` and sign in once with your Apps in Toss console account. The last line, `/ait:welcome`, checks your setup and tells you what to do next. Marketplaces you add yourself start with auto-update off; welcome notices this and offers to turn it on. Say yes and new versions arrive on their own. If a command doesn't show up, open a new session and enter it again.
+In `/mcp`, pick `ait-console` and sign in once with your Apps in Toss console account. The last line, `/ait:welcome`, checks your setup and tells you what to do next. Marketplaces you add yourself start with auto-update off, so open `/plugin`, choose Marketplaces, select `apps-in-toss` and turn on Enable auto-update once. With it on, new versions are picked up when they come out. If a command doesn't show up, open a new session and enter it again.
 
 The desktop app's plugin search won't find `ait`. If slash commands don't work where you are, paste this sentence as is and the agent will install from its shell:
 
 ```
-Install the Apps in Toss mini-app plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` and then `claude plugin install ait@apps-in-toss`. Don't edit `~/.claude/settings.json` directly. When you're done, tell me the remaining manual step (authorize ait-console in `/mcp`), and tell me to open a new session and type /ait:welcome.
+Install the Apps in Toss mini-app plugin. In the shell, run `claude plugin marketplace add toss/apps-in-toss-harness` and then `claude plugin install ait@apps-in-toss`. Don't edit `~/.claude/settings.json` directly. When you're done, tell me the two remaining manual steps (authorize ait-console in `/mcp`, and turn on Enable auto-update for the apps-in-toss marketplace in `/plugin`), and tell me to open a new session and type /ait:welcome.
 ```
 
-Once it finishes, you can run `claude mcp list` in a terminal (not inside the Claude Code session) to see whether both MCP servers are connected.
+Once it finishes, you can open `/mcp` in the same session to see whether both MCP servers are listed.
 
 To install in Codex or Cursor, see [Using it from Codex and Cursor](./.github/other-hosts.en.md).
 
@@ -45,10 +45,10 @@ When you want to pick the step yourself, use these. You usually go top to bottom
 | Command | What it does |
 |---|---|
 | `/ait:plan` | Turns your idea into a plan (`PRD.md`) and points out the SDK features, permissions and console terms you'll need. |
-| `/ait:new <app-name>` | Creates a new project with `create-ait-app` and wires in devtools so it runs in a browser without the Toss app. |
+| `/ait:new <app-name> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | Creates a new project with `create-ait-app` and wires in devtools so it runs in a browser without the Toss app. |
 | `/ait:design` | Builds or fixes screens. Fixes text and touch targets that are too small right in the code, and makes the logo and screenshots for console registration. |
 | `/ait:feature` | Adds SDK features such as ads, in-app purchases, sharing, leaderboards, haptics and storage to your project. Writes them to fit your stack and SDK version, and tells you what to set up in the console first. |
-| `/ait:test-on-device` | Builds the bundle, uploads it to the console and gives you a link to open in your Toss app. If the app has in-app purchases, it tells you first that payments are real. |
+| `/ait:test-on-device` | Builds the bundle, uploads it to the console and gives you a link to open in your Toss app. If the app has in-app purchases, it tells you first that payments are real. `ait build` fails when `brand.icon` in `granite.config.ts` is empty, so run `/ait:design` first if you have no icon asset. |
 | `/ait:debug` | Looks at the app's state in the browser or on your phone, finds the cause and fixes it. |
 | `/ait:launch` | Runs the launch checklist and submits for review once you approve. If you were rejected, run it with the reason. |
 | `/ait:server` | Writes server code that stores user data or adds Toss login. Keeps whatever you already chose, such as Cloudflare Workers, Supabase or Firebase. |
@@ -59,6 +59,8 @@ When you want to pick the step yourself, use these. You usually go top to bottom
 
 Codex and Cursor name the slash commands a little differently, so asking in plain words is easier there.
 
+When you preview in a browser, the default desktop width lays the mini-app out differently from the real thing. Check at a mobile width in the AIT panel's Viewport tab (or the browser's responsive mode). The WebView in the Toss app uses the WebKit (Safari) engine on iOS, so rendering can differ from a Chromium-based local browser. Open it in Safari before launch, or check on a real device with `/ait:test-on-device`.
+
 ## MCP servers that come with it
 
 | Server | URL | Sign-in |
@@ -67,6 +69,8 @@ Codex and Cursor name the slash commands a little differently, so asking in plai
 | `ait-console` | `https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | Once, with your console account (OAuth) |
 
 The agent reads developer center docs through `ait-docs`, and registers apps and uploads bundles through `ait-console`. If you're moving over from the old names (`apps-in-toss-console`, `apps-in-toss-docs`), see [Updating](./.github/updating.en.md#the-mcp-servers-were-renamed).
+
+There is also a path that needs no MCP. `https://developers-apps-in-toss.toss.im/llms.txt` is the full index and `https://developers-apps-in-toss.toss.im/llms-full.txt` is the full text. Append `?ask=<question>` to any docs page URL and you get an answer grounded in that page, with source links. Use it before the plugin is installed, or where MCP can't be attached.
 
 ## What the agent won't do
 
@@ -77,7 +81,7 @@ Only `/ait:launch` submits for review, and it shows you the request first and se
 - [Using it from Codex and Cursor](./.github/other-hosts.en.md)
 - [Updating](./.github/updating.en.md)
 - [Install troubleshooting](./.github/install-troubleshooting.en.md)
-- [Bug report guide](./.github/bug-report-guide.md): read it, then [open an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). Don't paste secrets or internal identifiers.
+- [Bug report guide (Korean)](./.github/bug-report-guide.md): read it, then [open an issue](https://github.com/toss/apps-in-toss-harness/issues/new/choose). Don't paste secrets or internal identifiers.
 
 ## Contributing
 

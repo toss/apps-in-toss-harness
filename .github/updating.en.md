@@ -4,7 +4,7 @@
 
 A new plugin version only registers when `plugin.json` gets a version bump.
 
-**Claude Code.** If auto-update is on (after [installing](../README.en.md#getting-started), `/ait:welcome` offers to turn it on), Claude Code refreshes the marketplace and updates the plugin. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
+**Claude Code.** If auto-update is on (after [installing](../README.en.md#getting-started), turn it on in `/plugin` under Marketplaces → `apps-in-toss` → Enable auto-update), Claude Code refreshes the marketplace and updates the plugin. When something updates you get a notification asking you to run `/reload-plugins`, and if you miss it the new version loads on your next launch. To update right now, run this in your shell:
 
 ```
 claude plugin marketplace update apps-in-toss

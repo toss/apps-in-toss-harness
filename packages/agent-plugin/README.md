@@ -20,7 +20,7 @@ AI 코딩 에이전트 안에서 앱인토스 미니앱을 생성·개발·테�
 - `/ait:server` — 서버 코드 쓰기·고치기 — 사용자 식별·mTLS·응답 봉투·CORS 기준을 먼저 읽고 적용
 - `/ait:feature` — SDK 기능(광고·인앱결제·공유·리더보드 등)을 내 프로젝트에 구현 — docs 원문을 확인하고 프로젝트 스택에 맞춰 작성
 
-명령을 몰라도 됩니다 — 같은 skill을 자연어로도 부를 수 있고, 각 skill은 다음 단계를 슬래시 명령과 자연어 동치 **두 표면으로** 인쇄합니다. 발화 예시 5종은 repo 루트 [`README.md`](../../README.md)의 "말로 시키기" 절에 있습니다.
+명령을 몰라도 됩니다 — 같은 skill을 자연어로도 부를 수 있고, 각 skill은 다음 단계를 슬래시 명령과 자연어 동치 **두 표면으로** 인쇄합니다. 발화 예시는 repo 루트 [`README.md`](../../README.md#쓰는-법)의 "쓰는 법" 절에 있습니다.
 
 문서 조회는 docs MCP(`searchDocumentation`/`getPage`), 콘솔 등록·번들 업로드·상태 조회는 콘솔 MCP
 (`miniapp_create`/`bundle_upload`/`bundle_upload_complete`/`miniapp_get_status`)를 씁니다 — 둘 다

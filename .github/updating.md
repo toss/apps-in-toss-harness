@@ -4,7 +4,7 @@
 
 플러그인은 `plugin.json`의 버전이 올라간 릴리즈만 새 버전으로 인식합니다.
 
-Claude Code. 자동 업데이트가 켜져 있다면([설치](../README.md#시작하기) 뒤 `/ait:welcome`이 켤지 물어봅니다), Claude Code가 마켓플레이스를 다시 읽어 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 알림을 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
+Claude Code. 자동 업데이트가 켜져 있다면([설치](../README.md#시작하기) 뒤 `/plugin`에서 Marketplaces → `apps-in-toss` → Enable auto-update로 켭니다), Claude Code가 마켓플레이스를 다시 읽어 플러그인을 갱신합니다. 갱신되면 `/reload-plugins`를 실행하라는 알림이 뜹니다. 알림을 놓쳐도 다음 세션부터 새 버전이 로드됩니다. 지금 바로 올리려면 셸에서 아래를 실행하세요.
 
 ```
 claude plugin marketplace update apps-in-toss

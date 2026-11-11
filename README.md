@@ -19,15 +19,15 @@ Claude Code를 이미 쓰고 있다면 Node 24 이상과 git을 준비하고 입
 /ait:welcome
 ```
 
-`/mcp`에서는 `ait-console`을 골라 앱인토스 콘솔 계정으로 한 번 로그인합니다. 마지막 `/ait:welcome`은 설치 상태를 점검하고 다음에 할 일을 알려 줍니다. 직접 추가한 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하는데, welcome이 이걸 보고 켤지 물어봅니다. 그때 켜 두면 새 버전이 나올 때마다 알아서 받습니다. 명령이 보이지 않으면 새 세션을 열고 다시 입력하세요.
+`/mcp`에서는 `ait-console`을 골라 앱인토스 콘솔 계정으로 한 번 로그인합니다. 마지막 `/ait:welcome`은 설치 상태를 점검하고 다음에 할 일을 알려 줍니다. 직접 추가한 마켓플레이스는 자동 업데이트가 꺼진 채로 시작하니, `/plugin`에서 Marketplaces를 고르고 `apps-in-toss`를 선택한 뒤 Enable auto-update를 한 번 켜 두세요. 켜 두면 새 버전이 나올 때 받습니다. 명령이 보이지 않으면 새 세션을 열고 다시 입력하세요.
 
 데스크톱 앱의 플러그인 검색에는 `ait`가 나오지 않습니다. 슬래시 명령이 안 먹는 환경이라면 아래 문장을 그대로 붙여넣으세요. 에이전트가 셸에서 대신 설치합니다.
 
 ```
-앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. `~/.claude/settings.json`은 직접 고치지 마. 끝나면 남은 수동 단계(`/mcp`에서 ait-console 인가)를 알려주고, 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
+앱인토스 미니앱 개발 플러그인을 설치해줘. 쉘에서 `claude plugin marketplace add toss/apps-in-toss-harness`와 `claude plugin install ait@apps-in-toss`를 순서대로 실행해줘. `~/.claude/settings.json`은 직접 고치지 마. 끝나면 남은 수동 단계 두 가지(`/mcp`에서 ait-console 인가, `/plugin`에서 apps-in-toss 마켓플레이스의 Enable auto-update)를 알려주고, 새 세션을 열어 /ait:welcome 을 입력하라고 안내해줘.
 ```
 
-설치가 끝나면 터미널에서 `claude mcp list`를 실행해 두 MCP 서버가 연결됐는지 확인할 수 있습니다.
+설치가 끝나면 같은 세션에서 `/mcp`를 열어 두 MCP 서버가 목록에 뜨는지 확인할 수 있습니다.
 
 Codex와 Cursor에서 설치하는 방법은 [Codex·Cursor에서 쓰기](./.github/other-hosts.md)에 있습니다.
 
@@ -45,10 +45,10 @@ Codex와 Cursor에서 설치하는 방법은 [Codex·Cursor에서 쓰기](./.git
 | 명령 | 하는 일 |
 |---|---|
 | `/ait:plan` | 아이디어를 기획서(`PRD.md`)로 정리합니다. 필요한 SDK 기능과 권한, 콘솔에서 동의할 약관도 짚어 줍니다. |
-| `/ait:new <앱 이름>` | `create-ait-app`으로 새 프로젝트를 만듭니다. 토스 앱 없이 브라우저에서 바로 돌려 볼 수 있도록 devtools를 붙여 둡니다. |
+| `/ait:new <앱 이름> [--template <name>] [--tds] [--sample <ids>] [--local] [--no-devtools] [--no-design-guide] [--no-tossface]` | `create-ait-app`으로 새 프로젝트를 만듭니다. 토스 앱 없이 브라우저에서 바로 돌려 볼 수 있도록 devtools를 붙여 둡니다. |
 | `/ait:design` | 화면을 만들거나 고칩니다. 너무 작은 글자나 터치 영역은 코드에서 바로 고치고, 콘솔 등록용 로고와 스크린샷도 만듭니다. |
 | `/ait:feature` | 광고, 인앱 결제, 공유, 리더보드, 햅틱, 저장소 같은 SDK 기능을 프로젝트에 붙입니다. 프로젝트의 스택과 SDK 버전에 맞는 형태로 쓰고 콘솔에서 먼저 해 둘 설정을 알려 줍니다. |
-| `/ait:test-on-device` | 번들을 빌드해 콘솔에 올리고 내 토스 앱에서 열 수 있는 링크를 줍니다. 인앱 결제가 있으면 실제로 결제된다는 점부터 알려 줍니다. |
+| `/ait:test-on-device` | 번들을 빌드해 콘솔에 올리고 내 토스 앱에서 열 수 있는 링크를 줍니다. 인앱 결제가 있으면 실제로 결제된다는 점부터 알려 줍니다. `ait build`는 `granite.config.ts`의 `brand.icon`이 비어 있으면 실패하니, 아이콘 자산이 없으면 `/ait:design`을 먼저 실행하세요. |
 | `/ait:debug` | 브라우저나 폰에서 앱 상태를 들여다보며 원인을 찾고 고칩니다. |
 | `/ait:launch` | 출시 체크리스트로 점검하고 승인을 받은 뒤 검수를 요청합니다. 반려됐다면 사유를 붙여 실행하세요. |
 | `/ait:server` | 사용자 데이터를 저장하거나 토스 로그인을 붙이는 서버 코드를 씁니다. Cloudflare Workers, Supabase, Firebase처럼 이미 고른 곳을 그대로 씁니다. |
@@ -59,6 +59,8 @@ Codex와 Cursor에서 설치하는 방법은 [Codex·Cursor에서 쓰기](./.git
 
 Codex와 Cursor에서는 슬래시 명령 이름이 조금 다릅니다. 이 두 곳에서는 말로 요청하는 편이 쉽습니다.
 
+브라우저에서 미리 볼 때 데스크탑 기본 폭에서는 레이아웃이 실제와 다르게 보입니다. AIT 패널의 Viewport 탭(또는 브라우저 반응형 모드)에서 모바일 폭으로 확인하세요. 실기기 토스 앱 WebView는 iOS에서 WebKit(Safari) 엔진을 쓰므로 Chromium 기반 로컬 브라우저와 렌더링이 다를 수 있습니다. 출시 전에 Safari로도 열어 보거나 `/ait:test-on-device`로 실기기에서 확인하세요.
+
 ## 함께 설치되는 MCP 서버
 
 | 서버 | 주소 | 로그인 |
@@ -67,6 +69,8 @@ Codex와 Cursor에서는 슬래시 명령 이름이 조금 다릅니다. 이 두
 | `ait-console` | `https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | 콘솔 계정으로 한 번(OAuth) |
 
 에이전트는 `ait-docs`로 개발자센터 문서를 찾아 읽고, `ait-console`로 콘솔에 앱을 등록하고 번들을 올립니다. 예전 이름(`apps-in-toss-console`, `apps-in-toss-docs`)에서 옮겨 오는 방법은 [업데이트](./.github/updating.md#mcp-서버-이름이-바뀌었습니다)에 있습니다.
+
+MCP 없이 문서만 읽는 경로도 있습니다. `https://developers-apps-in-toss.toss.im/llms.txt`가 전체 색인, `https://developers-apps-in-toss.toss.im/llms-full.txt`가 본문 전문이고, 문서 페이지 URL 뒤에 `?ask=<질문>`을 붙이면 그 문서를 근거로 한 답이 출처 링크와 함께 돌아옵니다. 플러그인을 아직 설치하지 않았거나 MCP를 붙일 수 없는 환경에서 쓰세요.
 
 ## 에이전트가 하지 않는 일
 
