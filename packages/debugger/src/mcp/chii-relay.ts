@@ -105,10 +105,24 @@ import {
   RELAY_BUSY_REASON,
 } from '@apps-in-toss/internal-protocol/relay-busy-close';
 import {
+  clientSupportsSessionEndClose,
+  RELAY_SESSION_END_CLOSE_CODE,
+  type RelaySessionEndReason,
+} from '@apps-in-toss/internal-protocol/relay-session-close';
+import {
   RELAY_CERT_PATH,
   type RelayCertDocument,
 } from '@apps-in-toss/internal-protocol/relay-signature';
 import { type WebSocket, WebSocketServer } from 'ws';
+import {
+  createRelayArming,
+  fingerprintDevice,
+  type RelayArmState,
+  type RelayClaimEvent,
+  type RelayClaimKind,
+  sanitizeCountry,
+  uaFamilyOf,
+} from './relay-arming.js';
 import {
   createRelayAuthThrottle,
   type RelayAuthScope,
@@ -135,6 +149,8 @@ const TARGET_SCRIPT_PATH = '/target.js';
 
 /** How long a phone session outlives its last socket (see `sessions` in `startChiiRelay`). */
 const SESSION_GRACE_MS = 5 * 60_000;
+/** How long a socket closed by a revoke may take to answer the close frame before it is terminated. */
+const REVOKE_TERMINATE_MS = 2_000;
 /** Bound on remembered phone sessions. */
 const MAX_SESSIONS = 32;
 /** Target ids one code may carry at once (two phones on one QR, a reload overlapping its predecessor). */
@@ -261,12 +277,58 @@ export interface ChiiRelay {
   /** Number of accepted `/target/<id>` sockets that are open right now. */
   attachedTargetCount(): number;
   /**
+   * Whether every open `/target/<id>` socket belongs to a phone whose client announced
+   * (handshake `v`) a version that draws its own status chip (0.3.2 and up), and at least one
+   * is open. Decided per socket, so an old phone after a new one (or the other way round) gets
+   * the right indicator. `false` when no phone is attached.
+   */
+  attachedTargetsHaveStatusChip(): boolean;
+  /**
    * Clears the code-check failures and lock of one source scope. The daemon
    * resets the tunnel scope after it reissues the tunnel.
    */
   resetAuthLock(scope: RelayAuthScope): void;
+  /**
+   * Opens the attach window for `durationMs` (see relay-arming.ts). Only a relay
+   * started with `requireArming` enforces it; the others accept it and ignore it.
+   */
+  arm(durationMs: number): void;
+  /** Closes the attach window. Sessions that are already bound are untouched. */
+  disarm(): void;
+  /** The attach window and the device holding its claim (as a fingerprint). */
+  armState(): RelayArmState;
+  /**
+   * Ends every phone session: forgets the bound (code, device) pairs, closes the
+   * phone and client sockets with 4401 and closes the attach window. A phone that
+   * dials again with an old code is refused. Returns how many sockets were closed.
+   */
+  revokeSessions(reason: RelayRevokeReason): number;
+  /** The latest claim reports, oldest first. */
+  recentClaims(): RelayClaimEvent[];
   close(): Promise<void>;
 }
+
+/**
+ * Why sessions were revoked. Goes out as the close reason with code 4401, so a
+ * device that predates the reasons treats it like any other rejected code.
+ */
+export type RelayRevokeReason =
+  | 'revoked'
+  | 'user-stopped'
+  | 'idle-timeout'
+  | 'session-expired'
+  | 'replaced';
+
+/** The 4410 close reason for each revoke reason that has one (`replaced` keeps 4401). */
+const SESSION_END_REASON_OF: Partial<Record<RelayRevokeReason, RelaySessionEndReason>> = {
+  revoked: 'revoked',
+  'user-stopped': 'user-stopped',
+  'idle-timeout': 'idle-timeout',
+  'session-expired': 'expired',
+};
+
+/** Why a phone's target socket was refused with 4409. */
+export type TargetRejectReason = 'host-busy' | 'host-missing' | 'origin-mismatch' | 'device-busy';
 
 /**
  * Secret-free metadata about a single auth rejection (issue #467).
@@ -278,7 +340,39 @@ export interface ChiiRelay {
 export interface RelayAuthRejectEvent {
   /** Which inbound surface was rejected. */
   kind: 'ws-upgrade' | 'http-request';
+  /**
+   * Why the request was refused (a fixed enum, never request data), so a phone that
+   * attached and then could not come back shows which rule turned it away.
+   */
+  reason: RelayAuthRejectReason;
 }
+
+/**
+ * - `no-prefix`: a tunnel request without the `/v<N>/at/<code>/d/<id>/` prefix.
+ * - `bad-code-shape`: the code is missing or malformed.
+ * - `other-device`: a live session of another device holds this code.
+ * - `window-closed`: no live session for this code, and the attach window is closed.
+ * - `session-gone`: like `window-closed`, but this code had a bound session that is
+ *   no longer live (its grace ran out, or the sessions were revoked or cleared when the
+ *   tunnel address changed): the phone has to scan a new QR.
+ * - `contested`: another device holds the claim on the open window.
+ * - `code-invalid`: the code is well-formed but expired or wrong (counts toward the lock).
+ * - `locked`: the source scope is locked and the code did not pass.
+ * - `client-via-tunnel`: a tunnel caller asked for the daemon's `/client` socket.
+ * - `session-full`: the code already carries the most live target ids, or another
+ *   device bound it between the check and the upgrade.
+ */
+export type RelayAuthRejectReason =
+  | 'no-prefix'
+  | 'bad-code-shape'
+  | 'other-device'
+  | 'window-closed'
+  | 'session-gone'
+  | 'contested'
+  | 'code-invalid'
+  | 'locked'
+  | 'client-via-tunnel'
+  | 'session-full';
 
 /**
  * A device's version report on the attach handshake path (see
@@ -527,6 +621,18 @@ function headerString(value: string | string[] | undefined): string | undefined 
   return Array.isArray(value) ? value[0] : value;
 }
 
+/** The lower-case hostname of an `Origin` header, or `null` when it is missing or not a URL. */
+function originHostname(origin: string | string[] | undefined): string | null {
+  const value = headerString(origin);
+  if (value === undefined) return null;
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === '' ? null : host;
+  } catch {
+    return null;
+  }
+}
+
 /** Reads the `at` code from a query-form URL. `''` when absent. */
 function readAtParam(rawUrl: string): string {
   const q = rawUrl.indexOf('?');
@@ -577,7 +683,10 @@ export interface StartChiiRelayOptions {
   /** Bind host. Default 127.0.0.1 (tunnel reaches it locally). */
   host?: string;
   /**
-   * Source of the public session certificates served at `GET /relay-cert`
+   * Source of the public session certificates served at `GET /relay-cert`.
+   * Only debugger-client 0.3.1 and earlier fetch it (the current client reads the
+   * certificate from the link's `arc`), so the route can go once the runtime floor
+   * is above them.
    * (see `@apps-in-toss/internal-protocol/relay-signature`). The route needs no
    * code, never counts toward the code lock, and follows the same Origin rule
    * as the rest of the relay. Absent, or an empty list → 404.
@@ -665,6 +774,13 @@ export interface StartChiiRelayOptions {
    */
   onTargetClose?: () => void;
   /**
+   * Fired once when a `/target/<id>` WebSocket is accepted and counted (after every
+   * gate, so a refused page never reports). Exceptions are swallowed.
+   *
+   * SECRET-HANDLING: no payload.
+   */
+  onTargetOpen?: () => void;
+  /**
    * "먼저 붙은 미니앱이 이긴다" 게이트. 인증을 통과한 `/target/<id>` 업그레이드마다 불린다.
    * `true`를 돌려주면 relay가 핸드셰이크를 끝낸 뒤 `RELAY_BUSY_CLOSE_CODE`(4409)로 닫고 chii에는
    * 넘기지 않는다. 던지면 허용으로 처리한다(fail-open).
@@ -687,7 +803,25 @@ export interface StartChiiRelayOptions {
   onTargetRejectedBusy?: (event: {
     pageHost: string | null;
     attachedHosts: ReadonlyArray<string | null>;
+    /** Why the socket was refused. Absent for the first-wins host gate of older callers. */
+    reason?: TargetRejectReason;
   }) => void;
+  /**
+   * When `true`, a phone coming through the tunnel can start an attach only while the
+   * relay is armed ({@link ChiiRelay.arm}); see relay-arming.ts. Default `false`:
+   * every valid code attaches (library users, the `debugger-test` runner).
+   */
+  requireArming?: boolean;
+  /**
+   * A device claimed the attach window, or a second one tried to. Exceptions are
+   * swallowed.
+   *
+   * SECRET-HANDLING: the event holds a device fingerprint, a coarse user-agent family
+   * and the edge's country code. Never a URL, a code or a host.
+   */
+  onClaim?: (event: RelayClaimEvent) => void;
+  /** The attach window opened or closed (including by running out). Exceptions are swallowed. */
+  onArmChange?: (armed: boolean) => void;
   /**
    * WS protocol ping interval in milliseconds (issue #483).
    *
@@ -748,11 +882,15 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     onTargetScriptServed,
     onWsUpgrade,
     onTargetClose,
+    onTargetOpen,
     shouldRejectTarget,
     onTargetRejectedBusy,
     getAppName,
     onOriginReject,
     getRelayCertDocument,
+    requireArming = false,
+    onClaim,
+    onArmChange,
   } = options;
   const keepaliveIntervalMs =
     options.keepaliveIntervalMs !== undefined
@@ -763,10 +901,13 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
 
   // Secret-free observability hook (issue #467). Swallow callback exceptions —
   // a broken observer must never turn into an open gate or a crashed relay.
-  const notifyAuthReject = (kind: RelayAuthRejectEvent['kind']): void => {
+  const notifyAuthReject = (
+    kind: RelayAuthRejectEvent['kind'],
+    reason: RelayAuthRejectReason,
+  ): void => {
     if (onAuthReject === undefined) return;
     try {
-      onAuthReject({ kind });
+      onAuthReject({ kind, reason });
     } catch {
       // Ignore — observability is best-effort.
     }
@@ -799,6 +940,59 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
   // like a wrong code. The daemon's own `/client` and `/targets` calls are not
   // phone requests and are not bound.
   const sessionNow = options.authThrottle?.now ?? Date.now;
+  // Whether a request came in through the tunnel, decided once from the headers the
+  // client sent. The `x-forwarded-for` header is stripped before chii sees the
+  // request (see `stripClientForwarding`), so later checks must not re-read it.
+  const tunnelByRequest = new WeakMap<IncomingMessage, boolean>();
+  const tunnelOf = (req: IncomingMessage): boolean => {
+    let tunnel = tunnelByRequest.get(req);
+    if (tunnel === undefined) {
+      tunnel = isTunnelRequest(req, host);
+      tunnelByRequest.set(req, tunnel);
+    }
+    return tunnel;
+  };
+  // chii shows the first `x-forwarded-for` entry as the phone's address in its target
+  // list. The edge appends the real address, so whatever a client sent is the first,
+  // forged entry. Nothing downstream needs the header.
+  const stripClientForwarding = (req: IncomingMessage): void => {
+    delete req.headers['x-forwarded-for'];
+  };
+
+  // Attach window (relay-arming.ts). Enforced only with `requireArming`.
+  const arming = createRelayArming({
+    now: sessionNow,
+    onChange: (armed) => {
+      if (onArmChange === undefined) return;
+      try {
+        onArmChange(armed);
+      } catch {
+        // Observability is best-effort.
+      }
+    },
+  });
+  /** Stand-in key for a device that sent no id (older protocols). */
+  const NO_DEVICE = '';
+  const MAX_CLAIM_LOG = 8;
+  const claimLog: RelayClaimEvent[] = [];
+  const reportClaim = (kind: RelayClaimKind, req: IncomingMessage, device: string): void => {
+    const event: RelayClaimEvent = {
+      kind,
+      at: sessionNow(),
+      device: fingerprintDevice(device),
+      ua: uaFamilyOf(headerString(req.headers['user-agent'])),
+    };
+    const country = sanitizeCountry(headerString(req.headers['cf-ipcountry']));
+    if (country !== undefined) event.country = country;
+    claimLog.push(event);
+    if (claimLog.length > MAX_CLAIM_LOG) claimLog.shift();
+    if (onClaim === undefined) return;
+    try {
+      onClaim(event);
+    } catch {
+      // Observability is best-effort.
+    }
+  };
   interface PhoneTarget {
     open: number;
     lastCloseAt: number;
@@ -832,6 +1026,34 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     return session.device !== device;
   };
   const sessions = new Map<string, PhoneSession>();
+  // Codes that had a bound session at some point (bounded). Only used to tell a reload that
+  // lost its session (`session-gone`) from a code that never attached (`window-closed`).
+  const MAX_BOUND_CODES = 64;
+  const everBoundCodes = new Set<string>();
+  const noteEverBound = (code: string): void => {
+    everBoundCodes.delete(code);
+    everBoundCodes.add(code);
+    if (everBoundCodes.size > MAX_BOUND_CODES) {
+      const oldest = everBoundCodes.values().next().value;
+      if (oldest !== undefined) everBoundCodes.delete(oldest);
+    }
+  };
+  // Codes whose phone announced on the handshake that it understands close 4410.
+  // Bounded; an unknown code is treated as an old client (4401).
+  const MAX_SESSION_END_CODES = 64;
+  const sessionEndCodes = new Set<string>();
+  const noteSessionEndSupport = (code: string, version: string): void => {
+    if (!clientSupportsSessionEndClose(version)) {
+      sessionEndCodes.delete(code);
+      return;
+    }
+    sessionEndCodes.delete(code);
+    sessionEndCodes.add(code);
+    if (sessionEndCodes.size > MAX_SESSION_END_CODES) {
+      const oldest = sessionEndCodes.values().next().value;
+      if (oldest !== undefined) sessionEndCodes.delete(oldest);
+    }
+  };
   const targetLive = (target: PhoneTarget): boolean =>
     target.open > 0 || sessionNow() - target.lastCloseAt <= SESSION_GRACE_MS;
   /** Drops targets whose socket is gone and whose grace ran out. */
@@ -878,6 +1100,9 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
         if (sessions.size <= MAX_SESSIONS && sessionLive(value)) break;
       }
     }
+    noteEverBound(code);
+    // A phone is attached: the window closes.
+    arming.markBound();
     return target;
   };
   /**
@@ -914,32 +1139,55 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     kind: RelayAuthRejectEvent['kind'],
     use?: SessionUse,
   ): AuthVerdict => {
-    const scope: RelayAuthScope = isTunnelRequest(req, host) ? 'tunnel' : 'local';
+    const scope: RelayAuthScope = tunnelOf(req) ? 'tunnel' : 'local';
     const code = readAtParam(req.url ?? '');
     const locked = authThrottle.lockRemainingMs(scope) > 0;
     // A phone without the code prefix cannot be a current device and cannot
     // have guessed anything: refused, not counted toward the lock.
     if (scope === 'tunnel' && !prefixedRequests.has(req)) {
-      notifyAuthReject(kind);
+      notifyAuthReject(kind, 'no-prefix');
       return locked ? 'locked' : 'rejected';
     }
     if (!isRelayAuthCode(code)) {
-      notifyAuthReject(kind);
+      notifyAuthReject(kind, 'bad-code-shape');
       return locked ? 'locked' : 'rejected';
     }
     // A phone request for a code another phone holds. Not a guess (the code is
     // right), so it does not count toward the lock.
     if (use !== undefined && sessionOfOtherDevice(code, requestDevice.get(req) ?? null)) {
-      notifyAuthReject(kind);
+      notifyAuthReject(kind, 'other-device');
       return locked ? 'locked' : 'rejected';
     }
     if (sessionAllows(code, use)) return 'ok';
+    // Outside the attach window the tunnel serves only the phone that is already
+    // attached. A fresh code from anyone else is refused without counting toward the
+    // lock: the code may be right, the window is what is closed.
+    const gated = scope === 'tunnel' && requireArming;
+    if (gated && !arming.isArmed()) {
+      notifyAuthReject(kind, everBoundCodes.has(code) ? 'session-gone' : 'window-closed');
+      return locked ? 'locked' : 'rejected';
+    }
     if (verifyAuth(req)) {
+      if (gated) {
+        const device = requestDevice.get(req) ?? NO_DEVICE;
+        const claim = arming.noteClaim(device);
+        if (claim === 'contested') {
+          // Another device holds the claim. The code is right, so this is not a guess.
+          reportClaim('contested', req, device);
+          notifyAuthReject(kind, 'contested');
+          return 'rejected';
+        }
+        if (claim === 'disarmed') {
+          notifyAuthReject(kind, 'window-closed');
+          return locked ? 'locked' : 'rejected';
+        }
+        if (claim === 'first') reportClaim('claim', req, device);
+      }
       authThrottle.noteAccepted(code);
       return 'ok';
     }
     if (locked) {
-      notifyAuthReject(kind);
+      notifyAuthReject(kind, 'locked');
       return 'locked';
     }
     const lockMs = authThrottle.noteFailure(scope, code);
@@ -950,7 +1198,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
         // Ignore — observability is best-effort.
       }
     }
-    notifyAuthReject(kind);
+    notifyAuthReject(kind, 'code-invalid');
     return 'rejected';
   };
 
@@ -977,7 +1225,8 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
   // CLI/Vitest pool (createRelayConnectionFactory) boot chii through, so
   // bracketing it here covers both.
   const tlsSnapshot = snapshotTlsRejectUnauthorized();
-  const chiiWssClass = keepaliveIntervalMs > 0 ? tryLoadChiiWssClass() : null;
+  // Always captured: keepalive pings, `revokeSessions` and `close` all need the socket set.
+  const chiiWssClass = tryLoadChiiWssClass();
   const capturedChiiWss = await startChiiWithCapture(
     loadChiiServer(),
     { server: httpServer, domain: `${host}:${requestedPort}`, port: requestedPort },
@@ -986,7 +1235,34 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
   restoreTlsRejectUnauthorized(tlsSnapshot);
 
   // 수락돼 열려 있는 target 소켓의 페이지 호스트(= relay가 직접 센 "지금 붙어 있는 미니앱").
-  const openTargetHosts = new Set<{ host: string | null }>();
+  interface OpenTarget {
+    host: string | null;
+    device: string | null;
+    socket: Duplex;
+    /** The phone's client announced (handshake `v`) that it understands close 4410. */
+    sessionEndClose: boolean;
+  }
+  const openTargetHosts = new Set<OpenTarget>();
+
+  /** Closes the chii socket that sits on `socket` with a named code, falling back to a hard close. */
+  const closeSocketWith = (socket: Duplex, code: number, reason: string): boolean => {
+    if (capturedChiiWss !== null) {
+      for (const client of capturedChiiWss._wss.clients) {
+        if ((client as unknown as { _socket?: Duplex })._socket === socket) {
+          try {
+            client.close(code, reason);
+          } catch {
+            client.terminate();
+          }
+          const timer = setTimeout(() => client.terminate(), REVOKE_TERMINATE_MS);
+          timer.unref?.();
+          return true;
+        }
+      }
+    }
+    socket.destroy();
+    return true;
+  };
 
   // HTTP gate: take over the request chain AFTER chii.start() has registered
   // Koa. Koa is reached only by an explicit dispatch below.
@@ -1040,7 +1316,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     const rawPath = questionMark === -1 ? url : url.slice(0, questionMark);
     const query = questionMark === -1 ? '' : url.slice(questionMark);
     const route = classifyRelayPath(rawPath);
-    const tunnel = isTunnelRequest(req, host);
+    const tunnel = tunnelOf(req);
 
     if (route !== null && !TUNNEL_ROUTES.has(route.kind) && tunnel) {
       refuse(res, 404, 'not-found');
@@ -1175,6 +1451,10 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
         const params = new URLSearchParams(query);
         const deviceVersion = sanitizeDeviceVersion(params.get(ATTACH_HANDSHAKE_VERSION_PARAM));
         const deviceProtocol = params.get(ATTACH_HANDSHAKE_PROTOCOL_PARAM) ?? '';
+        {
+          const handshakeCode = readAtParam(req.url ?? '');
+          if (isRelayAuthCode(handshakeCode)) noteSessionEndSupport(handshakeCode, deviceVersion);
+        }
         if (onAttachHandshake !== undefined) {
           try {
             onAttachHandshake({ deviceVersion, deviceProtocol });
@@ -1229,6 +1509,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     }
     // Hand chii the canonical spelling, never the one the caller typed.
     req.url = `${route.path}${query}`;
+    stripClientForwarding(req);
     dispatchToChii(req, res);
   });
 
@@ -1286,7 +1567,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     // below (they never get a `/client` socket).
     if (
       /^\/client\/[^/]+$/.test((req.url ?? '').split('?')[0] ?? '') &&
-      !isTunnelRequest(req, host) &&
+      !tunnelOf(req) &&
       !isAllowedClientOrigin(req, host)
     ) {
       notifyOriginReject('ws-upgrade', req.headers.origin !== undefined);
@@ -1311,7 +1592,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     // looked at, so it never counts toward a code lock.
     const wsVerdict = judgeRelayOrigin({
       origin: req.headers.origin,
-      tunnel: isTunnelRequest(req, host),
+      tunnel: tunnelOf(req),
       host: req.headers.host,
       appName: getAppName?.() ?? null,
       secFetchSite: headerString(req.headers['sec-fetch-site']),
@@ -1374,29 +1655,49 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     }
     // `/client` drives the page over CDP. The daemon and inspector dial it on
     // loopback; a tunnel caller holding a phone's code does not get it.
-    if (upgradeKind === 'client' && isTunnelRequest(req, host)) {
+    if (upgradeKind === 'client' && tunnelOf(req)) {
       rejectWss.handleUpgrade(req, socket, head, (ws) => {
         ws.close(RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
       });
       rejectedUpgrades.add(req);
-      notifyAuthReject('ws-upgrade');
+      notifyAuthReject('ws-upgrade', 'client-via-tunnel');
       return;
     }
     // Auth passed. A phone `/target/<id>` upgrade may still lose to a page
-    // that is already attached from a DIFFERENT mini-app (first wins).
+    // that is already attached from a DIFFERENT mini-app (first wins), or, through
+    // the tunnel, to the rules that keep the attached page from being swapped
+    // silently: the page has to say which host it is and that host has to be the
+    // one its `Origin` names, and another device cannot take over a phone that is
+    // attached unless the developer armed the relay for it.
     if (upgradeKind === 'target') {
       req.url = redactTargetPageUrl(req.url ?? '');
       const pageHost = extractTargetPageHost(req.url ?? '');
       const attachedHosts = [...openTargetHosts].map((e) => e.host);
-      let reject = false;
-      if (shouldRejectTarget) {
+      const viaTunnel = tunnelOf(req);
+      const device = requestDevice.get(req) ?? null;
+      let rejectReason: TargetRejectReason | null = null;
+      let replaced: OpenTarget[] = [];
+      if (viaTunnel) {
+        if (pageHost === null) rejectReason = 'host-missing';
+        else if (originHostname(req.headers.origin) !== pageHost) rejectReason = 'origin-mismatch';
+      }
+      if (rejectReason === null && shouldRejectTarget) {
         try {
-          reject = shouldRejectTarget({ pageHost, attachedHosts }) === true;
+          if (shouldRejectTarget({ pageHost, attachedHosts }) === true) rejectReason = 'host-busy';
         } catch {
-          reject = false; // fail-open: a broken policy must not block attach.
+          // fail-open: a broken policy must not block attach.
         }
       }
-      if (reject) {
+      if (rejectReason === null && viaTunnel) {
+        const others = [...openTargetHosts].filter((e) => e.device !== device);
+        if (others.length > 0) {
+          const takeover =
+            requireArming && arming.isArmed() && arming.claimDevice() === (device ?? NO_DEVICE);
+          if (takeover) replaced = others;
+          else rejectReason = 'device-busy';
+        }
+      }
+      if (rejectReason !== null) {
         // SECRET-HANDLING: the close reason is a fixed enum; req.url is never logged.
         rejectWss.handleUpgrade(req, socket, head, (ws) => {
           ws.close(RELAY_BUSY_CLOSE_CODE, RELAY_BUSY_REASON);
@@ -1404,7 +1705,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
         rejectedUpgrades.add(req);
         if (onTargetRejectedBusy) {
           try {
-            onTargetRejectedBusy({ pageHost, attachedHosts });
+            onTargetRejectedBusy({ pageHost, attachedHosts, reason: rejectReason });
           } catch {
             // Observability is best-effort.
           }
@@ -1414,7 +1715,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
       const boundCode = readAtParam(req.url ?? '');
       const bound =
         upgradeTarget !== undefined && isRelayAuthCode(boundCode)
-          ? bindSession(boundCode, upgradeTarget, requestDevice.get(req) ?? null)
+          ? bindSession(boundCode, upgradeTarget, device)
           : undefined;
       if (bound === null) {
         // The code already carries MAX_TARGETS_PER_CODE live ids (a live one is
@@ -1423,12 +1724,33 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
           ws.close(RELAY_AUTH_REJECT_CLOSE_CODE, RELAY_AUTH_REJECT_REASON);
         });
         rejectedUpgrades.add(req);
-        notifyAuthReject('ws-upgrade');
+        notifyAuthReject('ws-upgrade', 'session-full');
         return;
       }
-      const entry = { host: pageHost };
+      if (replaced.length > 0) {
+        // The developer armed the relay and this device holds the claim: the phone
+        // that was attached is replaced, loudly.
+        reportClaim('replaced', req, device ?? NO_DEVICE);
+        for (const old of replaced) {
+          openTargetHosts.delete(old);
+          closeSocketWith(old.socket, RELAY_AUTH_REJECT_CLOSE_CODE, 'replaced');
+        }
+      }
+      const entry: OpenTarget = {
+        host: pageHost,
+        device,
+        socket,
+        sessionEndClose: isRelayAuthCode(boundCode) && sessionEndCodes.has(boundCode),
+      };
       openTargetHosts.add(entry);
       if (bound !== undefined) bound.open += 1;
+      if (onTargetOpen !== undefined) {
+        try {
+          onTargetOpen();
+        } catch {
+          // Observability is best-effort.
+        }
+      }
       socket.once('close', () => {
         openTargetHosts.delete(entry);
         if (bound !== undefined) {
@@ -1437,6 +1759,7 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
         }
       });
     }
+    stripClientForwarding(req);
     // Hand the upgrade to chii's own listeners (it sees the stripped URL —
     // same observable behaviour as the pre-#478 ordering).
     // A listener that throws (for example on a malformed `/target` request) must
@@ -1531,13 +1854,58 @@ export async function startChiiRelay(options: StartChiiRelayOptions): Promise<Ch
     port: actualPort,
     baseUrl: `http://${host}:${actualPort}`,
     attachedTargetCount: () => openTargetHosts.size,
+    attachedTargetsHaveStatusChip: () => {
+      if (openTargetHosts.size === 0) return false;
+      for (const target of openTargetHosts) {
+        if (!target.sessionEndClose) return false;
+      }
+      return true;
+    },
     resetAuthLock: (scope) => {
       authThrottle.resetScope(scope);
       // The sessions came in through the old tunnel URL.
       if (scope === 'tunnel') sessions.clear();
     },
+    arm: (durationMs) => arming.arm(durationMs),
+    disarm: () => arming.disarm(),
+    armState: () => arming.state(),
+    recentClaims: () => [...claimLog],
+    revokeSessions: (reason) => {
+      sessions.clear();
+      sessionEndCodes.clear();
+      arming.disarm();
+      // Close 4410 (with the named end reason) goes only to a phone whose client
+      // announced support on the handshake; every other phone gets 4401 as before.
+      const endReason = SESSION_END_REASON_OF[reason];
+      const capable = new Set<Duplex>();
+      for (const entry of openTargetHosts) if (entry.sessionEndClose) capable.add(entry.socket);
+      let closed = 0;
+      if (capturedChiiWss !== null) {
+        for (const client of capturedChiiWss._wss.clients) {
+          const useNamed =
+            endReason !== undefined &&
+            capable.has((client as unknown as { _socket?: Duplex })._socket as Duplex);
+          try {
+            if (useNamed) client.close(RELAY_SESSION_END_CLOSE_CODE, endReason);
+            else client.close(RELAY_AUTH_REJECT_CLOSE_CODE, reason);
+          } catch {
+            client.terminate();
+          }
+          const timer = setTimeout(() => client.terminate(), REVOKE_TERMINATE_MS);
+          timer.unref?.();
+          closed += 1;
+        }
+      } else {
+        for (const entry of openTargetHosts) {
+          entry.socket.destroy();
+          closed += 1;
+        }
+      }
+      return closed;
+    },
     close: () =>
       new Promise<void>((resolve) => {
+        arming.close();
         if (keepaliveHandle !== null) {
           clearInterval(keepaliveHandle);
           keepaliveHandle = null;

@@ -53,6 +53,39 @@ declare global {
   }
 }
 
+const SDK_SEGMENT = /^[A-Za-z][A-Za-z0-9]*$/;
+
+/**
+ * Resolves `name` against the mirrored SDK. A flat name is an own export of the SDK. A dotted
+ * name has exactly two segments (`Namespace.method`), both plain identifiers: the namespace
+ * must be an own export that is an object, and the method an own property of that object.
+ * A name that exists only on a prototype is not an SDK API.
+ */
+function resolveSdkTarget(
+  bridge: Record<string, unknown>,
+  name: unknown,
+): { fn: (...a: unknown[]) => unknown; self: unknown } | undefined {
+  if (typeof name !== 'string') return undefined;
+  const parts = name.split('.');
+  if (parts.length === 1) {
+    const fn = Object.hasOwn(bridge, name) ? bridge[name] : undefined;
+    return typeof fn === 'function'
+      ? { fn: fn as (...a: unknown[]) => unknown, self: undefined }
+      : undefined;
+  }
+  if (parts.length !== 2) return undefined;
+  const [nsName, fnName] = parts as [string, string];
+  if (!SDK_SEGMENT.test(nsName) || !SDK_SEGMENT.test(fnName)) return undefined;
+  if (!Object.hasOwn(bridge, nsName)) return undefined;
+  const ns = bridge[nsName];
+  if ((typeof ns !== 'object' && typeof ns !== 'function') || ns === null) return undefined;
+  if (!Object.hasOwn(ns, fnName)) return undefined;
+  const fn = (ns as Record<string, unknown>)[fnName];
+  return typeof fn === 'function'
+    ? { fn: fn as (...a: unknown[]) => unknown, self: ns }
+    : undefined;
+}
+
 /**
  * Installs `window.__sdk` and `window.__sdkCall`. Resolves once the SDK probe
  * settled; never rejects. Calling it again replaces the bridge with a fresh
@@ -65,7 +98,9 @@ export async function installSdkBridge(): Promise<void> {
 
   // Enumerate all exports onto a plain writable object. A namespace import
   // is frozen/read-only, so callers need a plain enumerable surface.
-  const bridge: Record<string, unknown> = {};
+  // No prototype: `constructor`, `toString`, `__proto__` and the rest of
+  // `Object.prototype` are not callable through `__sdkCall` by name.
+  const bridge: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(sdk)) {
     bridge[key] = sdk[key];
   }
@@ -73,13 +108,14 @@ export async function installSdkBridge(): Promise<void> {
 
   // window.__sdkCall('apiName', arg1, arg2) returns { ok: true, value } or
   // { ok: false, error } — safe for any CDP Runtime.evaluate result consumer.
+  // A one-level namespaced name (`IAP.getPendingOrders`) is called with `this` = the namespace.
   window.__sdkCall = async (name: string, ...args: unknown[]) => {
-    const fn = bridge[name];
-    if (typeof fn !== 'function') {
-      return { ok: false, error: `__sdk.${name} is not a function` };
+    const target = resolveSdkTarget(bridge, name);
+    if (target === undefined) {
+      return { ok: false, error: `__sdk.${String(name)} is not a function` };
     }
     try {
-      const value = await (fn as (...a: unknown[]) => unknown)(...args);
+      const value = await target.fn.apply(target.self, args);
       return { ok: true, value };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };

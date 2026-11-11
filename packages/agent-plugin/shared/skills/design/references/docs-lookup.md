@@ -2,14 +2,14 @@
 
 design이 "앱인토스에서는 이렇게 하는 게 맞다"고 말하려면 근거가 있어야 한다.
 에이전트가 실제로 닿을 수 있는 근거는 **공식 문서**뿐이고, 조회 경로는 docs
-MCP(`apps-in-toss-docs`) 하나다. 이 파일은 그 조회 절차와, 디자인 단계에서 실제로
+MCP(`ait-docs`) 하나다. 이 파일은 그 조회 절차와, 디자인 단계에서 실제로
 쓸 질의어를 둔다.
 
 ## 조회 경로 (실측 2026-08-10)
 
 | 후보 경로 | 판정 | 근거 |
 |---|---|---|
-| docs MCP(`apps-in-toss-docs`) | **있음** | `tools/list` 실측: `searchDocumentation`·`getPage`·`askQuestion`·`sendFeedback` 4종 |
+| docs MCP(`ait-docs`) | **있음** | `tools/list` 실측: `searchDocumentation`·`getPage`·`askQuestion`·`sendFeedback` 4종 |
 | docs MCP의 "디자인 리소스 다운로드" tool | **없음** | 위 4종이 전부. 파일 배포 성격 tool 없음 |
 | 콘솔 MCP(`ait-console`)의 디자인 가이드 조회 | **없음** | 콘솔 tool은 자기 워크스페이스 scope의 등록·번들·검수 축이다 |
 | 토스 디자인 시스템(TDS) 조회 | **하지 않는다** | SKILL.md의 TDS 방침 — 모사·의존을 권하지 않는다 |

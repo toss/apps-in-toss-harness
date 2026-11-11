@@ -5,16 +5,16 @@
 AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부터 앱인토스 미니앱 출시까지 에이전트를 떠나지 않고 완주할 수 있게 하는 harness monorepo입니다. 에이전트 플러그인 `ait`가 오케스트레이터가 되어 scaffold·개발·디버그·번들·등록·운영을 하나의 흐름으로 엮습니다. scaffolding은 `create-ait-app` 기반입니다. 문서 조회와 콘솔 연동은 기본으로 켜지는 MCP 서버 두 개가 담당하며 devtools·debugger 같은 개발/디버깅 도구는 필요할 때만 opt-in으로 배선됩니다.
 
 > [!IMPORTANT]
-> **디버그 도구는 0.3.1 이상을 쓰세요.** `@apps-in-toss/debugger`와 `@apps-in-toss/debugger-client`(옛 이름 `@apps-in-toss/debug-console`)는 0.3.1에서 이름과 연결 규칙이 함께 바뀌었고, 두 패키지가 모두 0.3.1 이상이어야 연결됩니다. 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 플러그인 `ait`도 0.3.1 이상이어야 새 이름으로 배선합니다.
+> **디버그 도구는 debugger 0.4.0, debugger-client 0.3.2 이상을 쓰세요.** `@apps-in-toss/debugger`와 `@apps-in-toss/debugger-client`(옛 이름 `@apps-in-toss/debug-console`)는 이 두 버전에서 이름과 연결 규칙이 함께 바뀌었고(0.3.1은 발행되지 않았습니다), 두 패키지가 모두 이 버전 이상이어야 연결됩니다. 0.3.0 이하와 섞으면 서로 연결하지 않고 "업데이트 필요" 안내가 나옵니다. 플러그인 `ait`도 이 버전을 가리키는 릴리스여야 새 이름으로 배선합니다.
 >
-> | 0.3.0 이하 | 0.3.1 이상 |
+> | 0.3.0 이하 | debugger 0.4.0·debugger-client 0.3.2 이상 |
 > | --- | --- |
 > | 패키지 `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
 > | MCP 서버 키 `ait-devtools` | `ait-debugger` |
-> | 권한 규칙 `mcp__ait-devtools__*` | `mcp__ait-debugger__*` |
+> | 권한 규칙 `mcp__ait-devtools__*` | `mcp__ait-debugger__*` (도구 하나를 지목한 규칙은 도구 이름도 새 이름으로. 예: `evaluate` → `run_script`, 대응표는 `packages/debugger/CHANGELOG.md`) |
 > | 명령 `/ait:inject-debug-console` | `/ait:inject-debugger-client` |
 >
-> 옛 이름으로 배선한 프로젝트는 플러그인을 0.3.1 이상으로 올린 뒤 `/ait:setup-debugger`를 실행하세요. 확인을 받고 MCP 키, 의존성, import를 한꺼번에 새 이름으로 옮깁니다. 직접 옮기려면 `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 바꾸고 디버그 빌드를 다시 올려야 합니다. 한쪽만 바꾸면 연결되지 않습니다.
+> 옛 이름으로 배선한 프로젝트는 플러그인을 최신으로 올린 뒤 `/ait:setup-debugger`를 실행하세요. 확인을 받고 MCP 키, 의존성, import를 한꺼번에 새 이름으로 옮깁니다. 직접 옮기려면 `.mcp.json`의 키와 주소, `package.json`의 의존성, 소스의 import를 모두 바꾸고 디버그 빌드를 다시 올려야 합니다. 한쪽만 바꾸면 연결되지 않습니다.
 
 ## 무엇을 하는가
 
@@ -40,7 +40,7 @@ AI 코딩 에이전트(Claude Code·Codex·Cursor) 안에서 빈 디렉토리부
 # 2) ait 플러그인 설치 (skill 12종 + MCP 서버 2개 자동 등록)
 /plugin install ait@apps-in-toss
 
-# 3) 콘솔 MCP 인가 (OAuth, 최초 1회) — 문서 MCP(apps-in-toss-docs)는 인증 없이 자동 연결됨
+# 3) 콘솔 MCP 인가 (OAuth, 최초 1회) — 문서 MCP(ait-docs)는 인증 없이 자동 연결됨
 /mcp
 
 # 4) 자동 업데이트 켜기 (Marketplaces > apps-in-toss > Enable auto-update)
@@ -107,7 +107,7 @@ codex mcp login ait-console
 플러그인 없이 **MCP 서버만** 쓰고 싶다면 직접 등록할 수도 있습니다.
 
 ```
-codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
+codex mcp add ait-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
 ```
 
 ```
@@ -163,7 +163,7 @@ agent
 ```json
 {
   "mcpServers": {
-    "apps-in-toss-docs": {
+    "ait-docs": {
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },
     "ait-console": {
@@ -179,7 +179,7 @@ agent
 이 경로에서는 `auth.CLIENT_ID`를 생략하면 안 됩니다. 인증 서버가 동적 클라이언트 등록(DCR)을 지원하지 않아 정적 client id가 필요합니다. 등록 후 서버 승인과 콘솔 인가는 CLI에서 끝낼 수 있습니다.
 
 ```
-agent mcp enable apps-in-toss-docs
+agent mcp enable ait-docs
 agent mcp enable ait-console
 agent mcp login ait-console
 ```
@@ -192,14 +192,14 @@ agent mcp login ait-console
 
 ## 인증
 
-`apps-in-toss-docs`는 인증이 필요 없어 설치 즉시 연결됩니다. `ait-console`은 OAuth로 최초 1회만 인가하면 되고, 호스트별 인가 절차는 위 [설치](#설치) 섹션의 펼침 안내에 있습니다.
+`ait-docs`는 인증이 필요 없어 설치 즉시 연결됩니다. `ait-console`은 OAuth로 최초 1회만 인가하면 되고, 호스트별 인가 절차는 위 [설치](#설치) 섹션의 펼침 안내에 있습니다.
 
-공식 개발자센터의 수동 등록 예시는 콘솔 MCP를 `apps-in-toss-console`이라는 이름으로 적습니다. 이 플러그인은 같은 서버(주소 동일)를 `ait-console`이라는 짧은 이름으로 등록합니다. 도구 이름에 서버 이름이 붙어 매 세션 컨텍스트를 차지하기 때문입니다.
+공식 개발자센터의 수동 등록 예시는 콘솔 MCP를 `apps-in-toss-console`, 문서 MCP를 `apps-in-toss-docs`라는 이름으로 적습니다. 이 플러그인은 같은 서버(주소 동일)를 각각 `ait-console`, `ait-docs`라는 짧은 이름으로 등록합니다. 도구 이름에 서버 이름이 붙어 매 세션 컨텍스트를 차지하기 때문입니다.
 
-이전 버전에서 업데이트했다면 두 가지를 확인하세요.
+이전 버전에서 업데이트했다면 아래를 확인하세요.
 
-- `/mcp`를 열어 `ait-console`이 needs-auth로 보이면 다시 인가합니다. 서버 이름이 바뀌어 이전 인가가 이어지지 않을 수 있습니다.
-- 권한 규칙(`settings.json`의 `permissions`)에 `mcp__plugin_ait_apps-in-toss-console__*` 형태가 있다면 `mcp__plugin_ait_ait-console__*`로 바꿉니다.
+- `/mcp`를 열어 `ait-console`이 needs-auth로 보이면 다시 인가합니다. 서버 이름이 바뀌어 이전 인가가 이어지지 않을 수 있습니다. 문서 MCP `ait-docs`는 인증이 없으니 연결 상태만 확인하면 됩니다.
+- 권한 규칙(`settings.json`의 `permissions`)에 `mcp__plugin_ait_apps-in-toss-console__*` 형태가 있다면 `mcp__plugin_ait_ait-console__*`로, `mcp__plugin_ait_apps-in-toss-docs__*` 형태가 있다면 `mcp__plugin_ait_ait-docs__*`로 바꿉니다.
 
 ## 말로 시키기 — 자연어 예시 5종
 
@@ -256,7 +256,7 @@ station 5(등록·업로드)와 6(상태 조회)에는 전용 슬래시 명령�
 
 | 서버 | 인증 | 주요 도구 |
 |---|---|---|
-| `apps-in-toss-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | 없음 — 설치 즉시 connected | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
+| `ait-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | 없음 — 설치 즉시 connected | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
 | `ait-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — `/mcp`에서 1회 인가, 인가 전에는 needs-auth | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
 
 MCP 없이 문서만 읽는 경로도 있습니다. 개발자센터가 같은 문서를 에이전트가 바로 읽는 형태로도 냅니다. `https://developers-apps-in-toss.toss.im/llms.txt`가 전체 색인, `https://developers-apps-in-toss.toss.im/llms-full.txt`가 본문 전문이고, 아무 문서 페이지 URL 뒤에 `?ask=<질문>`을 붙이면 그 문서를 근거로 한 답이 출처 링크와 함께 돌아옵니다. 플러그인을 아직 설치하지 않았거나 MCP를 붙일 수 없는 환경에서 쓰는 경로입니다.
@@ -334,12 +334,12 @@ pnpm 워크스페이스로 관리되는 패키지 3개입니다.
 | 패키지 | 디렉터리 | 역할 | 배포 |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | 에이전트 플러그인(Claude Code·Codex·Cursor) — `/ait` 명령·skill·MCP manifest 오케스트레이터 | 플러그인 자체 배포 메커니즘 (npm 미배포) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.3.1`) |
-| `@apps-in-toss/debugger-client` | `packages/debugger-client` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debugger-client-v0.3.1`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP 디버깅 데몬, on-device CDP relay, test runner, dev bridge — devDependency/npx 전용, 프로덕션 번들에 포함되지 않음 | GitHub Releases(`debugger-v0.4.0`) |
+| `@apps-in-toss/debugger-client` | `packages/debugger-client` | on-device attach 런타임 — 이 중 유일하게 프로덕션 번들에 들어갈 수 있음 | GitHub Releases(`debugger-client-v0.3.2`) |
 
 `shared/internal-protocol`은 `debugger`·`debugger-client`이 공유하는 device↔host wire-protocol 소스지만 pnpm workspace 멤버가 아닙니다(의도된 설계). `packages/`가 아닌 `shared/`에 살며 두 패키지가 tsconfig `paths`·번들러 `alias`로 소스를 직접 참조합니다. 배포 대상 아님.
 
-`debugger`·`debugger-client`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.3.1`·`debugger-client-v0.3.1`). 다운로드에 별도 인증이 필요하지 않습니다.
+`debugger`·`debugger-client`은 npm에는 발행하지 않고 GitHub Releases로 유통합니다(`debugger-v0.4.0`·`debugger-client-v0.3.2`). 다운로드에 별도 인증이 필요하지 않습니다.
 
 </details>
 

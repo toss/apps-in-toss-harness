@@ -496,14 +496,14 @@ describe('maybeAttach — update-required notice script', () => {
     (window as unknown as { __ait_debug_status: string }).__ait_debug_status = 'update-required';
   };
 
-  it('turns the daemon notice into the version-mismatch banner that names 0.3.1', async () => {
+  it('turns the daemon notice into the version-mismatch banner that names the required versions', async () => {
     const { maybeAttach } = await import('../attach.js');
     maybeAttach(pass);
     markAsUpdateRequired();
     document.head.querySelector('script')?.dispatchEvent(new Event('load'));
     expect(window.__ait_debug_status).toBe('relay-version-mismatch');
     expect(bannerText()).toMatch(/버전이 맞지 않아요/);
-    expect(bannerText()).toMatch(/0\.3\.1 이상/);
+    expect(bannerText()).toMatch(/0\.3\.2 이상/);
   });
 
   it('leaves a normally loaded script alone', async () => {

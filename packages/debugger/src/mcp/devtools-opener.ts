@@ -34,7 +34,7 @@
  *
  * TOTP expiry caveat:
  *   The `at=` TOTP code embedded in the `wss=` parameter is minted fresh at the
- *   moment `open()` is called. The code is valid for 30–35 s (the relay gate
+ *   moment `open()` is called. The code is valid for 120–125 s (the relay gate
  *   accepts RELAY_VERIFY_SKEW_STEPS=3 steps back). If the developer
  *   does not open the URL within that window the WebSocket upgrade will be
  *   rejected with 4401. In practice the browser opens immediately after the OS
@@ -48,10 +48,10 @@
  *   so some panels (Network, Layers) may appear empty or show limited data.
  *   This is a WebKit runtime constraint, not a relay or devtools-opener issue.
  *
- * Node-only: uses `child_process.spawnSync` to invoke the OS open command.
+ * Node-only: uses `child_process.spawn` (async) to invoke the OS open command.
  */
 
-import { childProcessEnv } from './child-env.js';
+import { BROWSER_LAUNCH_TIMEOUT_MS, launchBrowserCommand } from './browser-launch.js';
 import type { McpEnvironment } from './environment.js';
 
 // ---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ import type { McpEnvironment } from './environment.js';
  * by Chii's own target list page (derived from `chii/public/index.js`).
  *
  * The `at=` TOTP code is minted at call time via `mintTotp()`.  It is valid
- * for 30–35 s (relay gate accepts RELAY_VERIFY_SKEW_STEPS=6 steps back).  The developer must open the returned URL within that window.
+ * for 120–125 s (relay gate accepts RELAY_VERIFY_SKEW_STEPS=24 steps back).  The developer must open the returned URL within that window.
  * If the window expires before the browser connects, the relay will reject the
  * WebSocket upgrade with close code 4401.
  *
@@ -171,22 +171,28 @@ export function isAutoDevtoolsDisabled(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Browser open (Node-only, sync)
+// Browser open (Node-only, async)
 // ---------------------------------------------------------------------------
 
 /**
  * Opens the given URL in the OS default browser using a platform-appropriate
- * command. Returns `true` on success.
+ * command. Resolves `true` when the URL was opened.
+ *
+ * 비동기 `spawn`이라 데몬 이벤트 루프를 막지 않는다. 후보가 제한 시간(기본 5초) 안에
+ * 끝나지 않으면 "느리지만 실행기는 동작 중"으로 보고 열린 것으로 처리하며, 프로세스를
+ * 죽이지 않고 다음 후보도 시도하지 않는다(같은 URL이 다른 브라우저로 중복해서 열리는 것을 막는다).
+ * spawn 오류(ENOENT 등)·0이 아닌 종료 코드만 실패로 보고 다음 후보로 넘어간다.
  *
  * Failures are silent from the caller's perspective — the caller should log
  * the URL to stderr as a fallback before calling this function.
  */
-export function openUrlInBrowser(url: string): boolean {
+export async function openUrlInBrowser(
+  url: string,
+  timeoutMs: number = BROWSER_LAUNCH_TIMEOUT_MS,
+): Promise<boolean> {
   // Test hook: skip actual spawn when running in vitest / CI where the OS open
   // command may hang or be absent. Production code never sets this.
   if (process.env.AIT_AUTO_DEVTOOLS_TEST_SKIP_SPAWN === '1') return false;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
   const platform = process.platform;
 
   type Candidate = { cmd: string; args: string[] };
@@ -205,16 +211,8 @@ export function openUrlInBrowser(url: string): boolean {
   }
 
   for (const { cmd, args } of candidates) {
-    try {
-      const result = spawnSync(cmd, args, {
-        encoding: 'utf8',
-        timeout: 5_000,
-        env: childProcessEnv(),
-      });
-      if (!result.error && result.status === 0) return true;
-    } catch {
-      // Try next candidate.
-    }
+    const result = await launchBrowserCommand(cmd, args, () => false, timeoutMs);
+    if (result.outcome !== 'failed') return true;
   }
   return false;
 }
@@ -272,8 +270,13 @@ export class AutoDevtoolsOpener {
   /** Per-target de-dupe set (issue #530 — target-unit guard replaces once-per-daemon). */
   private readonly _openedTargets = new Set<string>();
 
-  /** @param launch 브라우저를 띄우는 함수. 테스트에서 실행된 URL을 확인하려고 바꿀 수 있다. */
-  constructor(private readonly launch: (url: string) => boolean = openUrlInBrowser) {}
+  /**
+   * @param launch 브라우저를 띄우는 함수. 테스트에서 실행된 URL을 확인하려고 바꿀 수 있다.
+   *   동기 boolean이면 바로, Promise면 끝난 뒤 실패 안내를 출력한다(`open()`은 기다리지 않는다).
+   */
+  constructor(
+    private readonly launch: (url: string) => boolean | Promise<boolean> = openUrlInBrowser,
+  ) {}
 
   /**
    * Attempts to auto-open Chii DevTools in the developer's browser.
@@ -315,10 +318,21 @@ export class AutoDevtoolsOpener {
         '[ait-debugger] (AIT_AUTO_DEVTOOLS=1 로 설정하면 연결 시 자동으로 열립니다)\n',
     );
     // 접근 토큰이 붙은 URL은 브라우저 실행에만 쓰고 stderr에는 토큰 없는 URL만 쓴다.
-    const opened = this.launch(options.inspectorOpenUrl ?? stableUrl);
-    if (!opened) {
+    // 브라우저 실행은 기다리지 않는다(fire-and-forget): 느린 실행기가 attach 알림 경로를 막지 않게.
+    const reportFailure = (): void => {
       process.stderr.write(
         `[ait-debugger] 브라우저 자동 열기 실패 — ${stableUrl} 을 브라우저에서 직접 여세요.\n`,
+      );
+    };
+    const launched = this.launch(options.inspectorOpenUrl ?? stableUrl);
+    if (typeof launched === 'boolean') {
+      if (!launched) reportFailure();
+    } else {
+      launched.then(
+        (opened) => {
+          if (!opened) reportFailure();
+        },
+        () => reportFailure(),
       );
     }
   }

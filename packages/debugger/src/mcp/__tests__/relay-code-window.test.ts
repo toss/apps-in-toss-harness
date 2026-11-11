@@ -77,12 +77,12 @@ const closeSocket = (ws: WebSocket) =>
     ws.terminate();
   });
 
-describe('relay code window (30 to 35 s)', () => {
+describe('relay code window (120 to 125 s)', () => {
   it('states the window the tests below pin', () => {
     expect(RELAY_CODE_STEP_SECONDS).toBe(5);
-    expect(RELAY_VERIFY_SKEW_STEPS).toBe(6);
-    expect(RELAY_CODE_MIN_AGE_SECONDS).toBe(30);
-    expect(RELAY_CODE_MAX_AGE_SECONDS).toBe(35);
+    expect(RELAY_VERIFY_SKEW_STEPS).toBe(24);
+    expect(RELAY_CODE_MIN_AGE_SECONDS).toBe(120);
+    expect(RELAY_CODE_MAX_AGE_SECONDS).toBe(125);
   });
 
   it('accepts a code minted at the start of a step until the end of the last accepted step', async () => {

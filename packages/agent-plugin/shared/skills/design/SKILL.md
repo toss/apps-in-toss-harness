@@ -340,7 +340,7 @@ tokens·base·아이콘·entry를 `ds-skip`으로 찍는다(`references/project-
 
 컨테이너 제약(safe-area·swipe-back·헤더)과 품질 기준 중 **근거가 공식 문서에
 있어야 하는 항목**(quality bar의 `D` 근거)은 추측하지 말고 docs
-MCP(`apps-in-toss-docs`)로 조회한다 — `searchDocumentation`으로 찾고, 근거로
+MCP(`ait-docs`)로 조회한다 — `searchDocumentation`으로 찾고, 근거로
 삼을 페이지는 `getPage`로 열어 확인한다.
 
 조회 경로·tool 4종 구분·단계별 질의어는 **Read <이 skill의 base

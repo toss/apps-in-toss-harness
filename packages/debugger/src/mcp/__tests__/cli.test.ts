@@ -110,14 +110,14 @@ describe('unknownFlagHint', () => {
     expect(hint).toContain('--force');
     expect(hint).toContain('--help');
     expect(hint).toContain('--version');
-    expect(hint).not.toContain('start_debug');
+    expect(hint).not.toContain('switch_environment');
   });
 
-  it('points removed --mode/--target at start_debug', () => {
+  it('points removed --mode/--target at switch_environment', () => {
     for (const flag of ['--mode=dev', '--mode', '--target=local', '--target']) {
       const hint = unknownFlagHint([flag]);
-      expect(hint).toContain('removed in 0.3.1');
-      expect(hint).toContain('start_debug');
+      expect(hint).toContain('removed in 0.4.0');
+      expect(hint).toContain('switch_environment');
     }
   });
 });

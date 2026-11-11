@@ -1,5 +1,5 @@
 /**
- * Tests for the `get_debug_status` MCP tool (#286).
+ * Tests for the `get_status` MCP tool (#286).
  *
  * Exercises:
  *   - Full response schema (all nullable fields present)
@@ -301,7 +301,7 @@ describe('getDiagnostics helper', () => {
     expect('devtoolsVersion' in result).toBe(true);
   });
 
-  it('includes list_pages result when a connection is supplied', async () => {
+  it('includes get_page result when a connection is supplied', async () => {
     const connection = new FakeCdpConnection([
       { id: 'p1', title: 'My App', url: 'https://example.com' },
     ]);
@@ -319,7 +319,7 @@ describe('getDiagnostics helper', () => {
     expect(result.pages!.pages[0]!.id).toBe('p1');
   });
 
-  it("takes the tunnel pid and start time from this daemon's own registry entry", async () => {
+  it("takes the start time from this daemon's registry entry and reports the cloudflared child pid, not the daemon's", async () => {
     const result = await getDiagnostics({
       tunnel: tunnelUp,
       env: 'relay-dev',
@@ -340,7 +340,8 @@ describe('getDiagnostics helper', () => {
       }),
     });
 
-    expect(result.tunnel.pid).toBe(12345);
+    // The daemon's own pid (12345) is not the tunnel's pid; no child is known here.
+    expect(result.tunnel.pid).toBeNull();
     expect(result.tunnel.startedAt).toBe('2026-01-01T00:00:00.000Z');
     expect(result.otherSessions).toEqual({ count: 0, sessions: [] });
   });
@@ -573,11 +574,11 @@ describe('getDiagnostics helper', () => {
     expect(resultDead.process.parentAlive).toBe(false);
   });
 
-  // ---- refreshTargets on get_debug_status (#551) ----------------------------
+  // ---- refreshTargets on get_status (#551) ----------------------------
 
   it('(a) calls refreshTargets before reading pages — relay target present after refresh', async () => {
     // Simulate the #551 scenario: in-memory cache is empty, but relay /targets
-    // returns a target. refreshTargets() updates the cache; get_debug_status
+    // returns a target. refreshTargets() updates the cache; get_status
     // should see the updated pages after the refresh.
     const connection = new FakeCdpConnection([]); // cache starts empty
     connection.setOnRefresh(() => [{ id: 'tgt1', title: 'App', url: 'http://127.0.0.1:5173/' }]);
@@ -602,7 +603,7 @@ describe('getDiagnostics helper', () => {
   });
 
   it('(b) refresh failure falls back to cached state without throwing', async () => {
-    // refreshTargets throws (e.g. relay unreachable) — get_debug_status must
+    // refreshTargets throws (e.g. relay unreachable) — get_status must
     // still return a result using the in-memory cache, not propagate the error.
     const connection = new FakeCdpConnection([
       { id: 'cached', title: 'Cached Page', url: 'http://127.0.0.1:5173/' },
@@ -713,17 +714,17 @@ describe('getDiagnostics helper', () => {
 
 // ---- MCP tool via createDebugServer -----------------------------------------
 
-describe('get_debug_status MCP tool', () => {
+describe('get_status MCP tool', () => {
   it('is available before any page attaches (bootstrap tier)', async () => {
     const client = await makeClient({ env: 'mock' });
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name);
-    expect(names).toContain('get_debug_status');
+    expect(names).toContain('get_status');
   });
 
   it('is available in mock env', async () => {
     const client = await makeClient({ env: 'mock' });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const data = parseResult(result) as Record<string, unknown>;
     expect(data.environment).toEqual({ kind: 'mock', reason: 'test-pinned-mock' });
@@ -731,7 +732,7 @@ describe('get_debug_status MCP tool', () => {
 
   it('is available in relay-dev env', async () => {
     const client = await makeClient({ env: 'relay-dev' });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const data = parseResult(result) as Record<string, unknown>;
     expect(data.environment).toEqual({ kind: 'relay-dev', reason: 'test-pinned-relay-dev' });
@@ -742,7 +743,7 @@ describe('get_debug_status MCP tool', () => {
   it('returns the current tunnel status', async () => {
     const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc.trycloudflare.com' };
     const client = await makeClient({ env: 'relay-dev', tunnelStatus: tunnelUp });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     const data = parseResult(result) as Record<string, unknown>;
     const tunnel = data.tunnel as Record<string, unknown>;
     expect(tunnel.up).toBe(true);
@@ -760,7 +761,7 @@ describe('get_debug_status MCP tool', () => {
       tunnelStatus: tunnelUp,
       diagnosticsCollector: collector,
     });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     const text = JSON.stringify(result);
     expect(text).not.toContain(host);
     expect(text).not.toContain('secret-words-here');
@@ -772,7 +773,7 @@ describe('get_debug_status MCP tool', () => {
     for (let i = 0; i < 20; i++) collector.recordError(`err${i}`);
     const client = await makeClient({ diagnosticsCollector: collector });
     const result = await client.callTool({
-      name: 'get_debug_status',
+      name: 'get_status',
       arguments: { recent_errors_limit: 3 },
     });
     const data = parseResult(result) as Record<string, unknown>;
@@ -784,18 +785,18 @@ describe('get_debug_status MCP tool', () => {
     const collector = new InMemoryDiagnosticsCollector();
     collector.recordError('auth failed at=654321 for relay');
     const client = await makeClient({ diagnosticsCollector: collector });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     const text = (result.content as Array<{ text?: string }>)[0]!.text!;
     expect(text).not.toContain('654321');
     expect(text).toContain('<redacted>');
   });
 
-  it('pages field is populated from list_pages when a target is attached', async () => {
+  it('pages field is populated from get_page when a target is attached', async () => {
     const connection = new FakeCdpConnection([
       { id: 'tgt1', title: 'SDK Example', url: 'https://sdk-example.aitc.dev' },
     ]);
     const client = await makeClient({ connection, env: 'relay-dev' });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     const data = parseResult(result) as Record<string, unknown>;
     const pages = data.pages as Record<string, unknown>;
     expect(pages).not.toBeNull();
@@ -809,13 +810,13 @@ describe('get_debug_status MCP tool', () => {
     ]);
     const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc.trycloudflare.com' };
     const client = await makeClient({ connection, env: 'relay-dev', tunnelStatus: tunnelUp });
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     const data = parseResult(result) as Record<string, unknown>;
     expect(data.nextRecommendedAction).toBeNull();
   });
 
   // ---- FIX 2 HANDLER-LEVEL: production wiring gate (issue #572 review) --------
-  // These tests exercise the actual get_debug_status MCP handler (not just
+  // These tests exercise the actual get_status MCP handler (not just
   // getDiagnostics directly) to verify the handler feeds tunnelChildPid into
   // getDiagnostics so the live PID check fires in production.
 
@@ -852,7 +853,7 @@ describe('get_debug_status MCP tool', () => {
     const client = new Client({ name: 'handler-test', version: '0.0.0' });
     await client.connect(clientTransport);
 
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const data = parseResult(result) as Record<string, unknown>;
     const tunnel = data.tunnel as Record<string, unknown>;
@@ -906,7 +907,7 @@ describe('get_debug_status MCP tool', () => {
     const client = new Client({ name: 'handler-test-lock', version: '0.0.0' });
     await client.connect(clientTransport);
 
-    const result = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const result = await client.callTool({ name: 'get_status', arguments: {} });
     expect(result.isError).toBeFalsy();
     const data = parseResult(result) as Record<string, unknown>;
     const tunnel = data.tunnel as Record<string, unknown>;
@@ -1155,7 +1156,7 @@ describe('computeNextRecommendedAction', () => {
 // Issue #361 — the version resolvers must read the build-time `define`
 // (bare identifier `__VERSION__` / `__MCP_SDK_VERSION__`), NOT
 // `globalThis.__VERSION__`. The old `globalThis.__VERSION__` access always read
-// `undefined`, so `get_debug_status` reported `devtoolsVersion: null` in every
+// `undefined`, so `get_status` reported `devtoolsVersion: null` in every
 // real bundle. vitest.config supplies the same defines tsdown does, so these
 // pin that the resolvers return the (non-null) define value.
 //
@@ -1273,7 +1274,31 @@ describe('getDiagnostics — attach timeline', () => {
     expect(result.nextRecommendedAction?.reason).toContain('직전 시도');
   });
 
-  it('get_debug_status tool exposes attachStages when a timeline is injected', async () => {
+  it('reports a protocol skew instead of script-not-loaded and repeats the update action', async () => {
+    const tl = new AttachTimeline();
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'mint');
+    tl.record('device-handshake', 'ok');
+    const r = await getDiagnostics({
+      tunnel: tunnelUp,
+      connection: new FakeCdpConnection([]),
+      env: 'relay-dev',
+      envReason: 'test',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => null,
+      attachTimeline: tl,
+      getProtocolVersionSkew: () => ({
+        match: false,
+        deviceProtocol: 2,
+        hostProtocol: 3,
+        deviceVersion: '0.3.0',
+      }),
+    });
+    expect(r.attachDiagnosis?.kind).toBe('protocol-skew');
+    expect(r.nextRecommendedAction?.reason).toContain('@apps-in-toss/debugger-client 0.3.2 이상');
+  });
+
+  it('get_status tool exposes attachStages when a timeline is injected', async () => {
     const tl = new AttachTimeline();
     tl.beginAttempt();
     tl.record('qr-issued', 'ok', 'mint');
@@ -1289,7 +1314,7 @@ describe('getDiagnostics — attach timeline', () => {
     await server.connect(serverTransport);
     const client = new Client({ name: 'c', version: '0.0.0' });
     await client.connect(clientTransport);
-    const res = await client.callTool({ name: 'get_debug_status', arguments: {} });
+    const res = await client.callTool({ name: 'get_status', arguments: {} });
     const text = (res.content as Array<{ text?: string }>)[0]?.text ?? '';
     const parsed = JSON.parse(text) as { data?: Record<string, unknown> } & Record<string, unknown>;
     const body = (parsed.data ?? parsed) as {

@@ -24,7 +24,7 @@
 | 1·3 | 프로젝트 소스·테스트 파일 | 예 (`Read`/`Grep`) | — |
 | 3 | attach 후 도구 13종(`references/attach-tools.md`) | 예 — attach가 완료된 세션에서 | `ait-debugger` MCP 미배선이면 환경 3 관측 자체가 불가. `/ait:setup-debugger`를 안내하고, 그 전까지는 환경 1 안에서만 루프를 돈다 |
 | 3 | `run_tests` 실기기 실행 결과 | 예 | 테스트 파일이 없으면 재현 절차를 수동으로 반복 |
-| 3 | `list_pages`·`get_debug_status`(attach·relay 상태) | 예 | — |
+| 3 | `get_page`·`get_status`(attach·relay 상태) | 예 | — |
 
 **degrade 원칙은 기존과 같다** — MCP가 없으면 루프를 포기하는 게 아니라, 그 관측 단계만
 사용자에게 스니펫/확인 요청으로 넘기고 나머지 단계(가설·수정·판정)는 에이전트가 계속 든다.

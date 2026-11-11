@@ -38,33 +38,49 @@ import {
   RELAY_ORIGIN_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-origin-close';
 import {
+  isRelaySessionEndReason,
+  RELAY_CLIENT_STOP_REASON,
+  RELAY_SESSION_END_CLOSE_CODE,
+  type RelaySessionEndReason,
+} from '@apps-in-toss/internal-protocol/relay-session-close';
+import {
   decodeBase64Url,
+  isRelayHostName,
   isRelayPublicKey,
-  parseRelayCertDocument,
+  parseRelayCertParam,
+  parseRelayHostSignature,
   parseRelaySignature,
-  RELAY_CERT_DOCUMENT_MAX_BYTES,
-  RELAY_CERT_PATH,
   RELAY_PUBLIC_KEY_BYTES,
   type RelayCert,
   relayCertMessage,
+  relayHostMessage,
   relayLinkMessage,
   relayOriginOf,
 } from '@apps-in-toss/internal-protocol/relay-signature';
-import { installBridgeObserver, uninstallBridgeObserver } from './bridge-observer.js';
-import { askAttachConsent, isRelayOriginConsented, rememberRelayOriginConsent } from './consent.js';
+import {
+  getAppScreenAwake,
+  installBridgeObserver,
+  onAppScreenAwake,
+  uninstallBridgeObserver,
+} from './bridge-observer.js';
+import {
+  askAttachConsent,
+  computerConsentId,
+  isComputerConsented,
+  rememberComputerConsent,
+} from './consent.js';
 import { isLocalhostHost } from './gate.js';
 import { checkDebugGate, type GateResult } from './index.js';
 import {
   dropPageAttachParams,
   hidePageAttachParams,
-  keepVerifiedRelayCert,
-  keptRelayCert,
   pageAttachParamsFromHistory,
   readPageAttachParams,
   relayDeviceId,
 } from './page-at-code.js';
 import { setScreenAwake, setScreenAwakeNow } from './sdk-probe.js';
-import { setDebugStatus } from './status-banner.js';
+import { registerDisconnect, sendKillControl, setVerifiedHostName } from './session.js';
+import { type DebugStatus, setDebugStatus } from './status-banner.js';
 
 /**
  * `/v<protocol>/at/<code>/d/<deviceId>`. The relay refuses any request without
@@ -230,9 +246,77 @@ let relayVersionMismatch = false;
  */
 let relayWsEverOpened = false;
 
-/** Whether a terminal named rejection (4401, 4403, 4409, 4426) was already seen. */
+/**
+ * Set once the relay closed with 4410 (the session ended on purpose or by a
+ * timer); holds the named reason. Terminal: dials fail fast with the same code.
+ */
+let relaySessionEnd: RelaySessionEndReason | null = null;
+let relaySessionEndNotified = false;
+
+/**
+ * Set when the person ended the session on the phone ({@link disconnectDebugger}).
+ * Terminal for this page: every later relay dial fails fast and no new attach
+ * starts, until the page is loaded again from a fresh link.
+ */
+let relayUserKilled = false;
+
+/** `sessionStorage` key of the "ended on this phone" marker (cleared by a fresh link). */
+const KILLED_STORAGE_KEY = '__ait_debug_stopped';
+
+/** Relay-bound sockets that are open or opening, so a local disconnect can close them. */
+const relaySockets = new Set<WebSocket>();
+
+/** `WebSocket.prototype.close` as it was before any page code could wrap it. */
+let nativeSocketClose: ((code?: number, reason?: string) => void) | null = null;
+
+/** The `<script>` that loads the relay's target script, and its `src`, for local removal. */
+let injectedScript: HTMLScriptElement | null = null;
+let injectedScriptSrc: string | null = null;
+
+/**
+ * Whether this package asked for the screen to stay awake (so it owes a restore).
+ * Set when the enable call is dispatched, before it lands: a teardown that runs
+ * while the call is in flight still restores, and the landing handler undoes it.
+ */
+let awakeRequested = false;
+
+/**
+ * Gives the screen back at the end of the session: to what the APP last asked
+ * for (observed by bridge-observer.ts), "off" when it never asked. Prefers the
+ * synchronous form for unload paths. If the app's value could not be observed
+ * (a call made before the observer was installed), "off" is the choice that
+ * never leaves the screen pinned awake by us.
+ */
+function restoreScreenAwake(): void {
+  const value = getAppScreenAwake() ?? false;
+  if (!setScreenAwakeNow(value)) void setScreenAwake(value);
+}
+
+/** Whether a terminal named rejection (4401, 4403, 4409, 4410, 4426) was already seen. */
 function terminalRelayRejection(): boolean {
-  return relayAuthExpired || relayBusy || relayOriginRejected || relayVersionMismatch;
+  return (
+    relayAuthExpired ||
+    relayBusy ||
+    relayOriginRejected ||
+    relayVersionMismatch ||
+    relaySessionEnd !== null ||
+    relayUserKilled
+  );
+}
+
+const SESSION_END_STATUS: Record<RelaySessionEndReason, DebugStatus> = {
+  revoked: 'session-revoked',
+  'idle-timeout': 'session-idle',
+  'user-stopped': 'session-stopped',
+  expired: 'session-expired',
+};
+
+/** Records the named session end in the page console, once. Fixed label only. */
+function notifyRelaySessionEnd(reason: RelaySessionEndReason): void {
+  if (relaySessionEndNotified) return;
+  relaySessionEndNotified = true;
+  setDebugStatus(SESSION_END_STATUS[reason]);
+  console.warn(`[@apps-in-toss/debugger-client] 디버거가 세션을 닫았어요 (${reason})`);
 }
 
 /** How long a relay socket must stay open before the status reads `connected`. */
@@ -329,7 +413,7 @@ function notifyRelayVersionMismatch(): void {
   relayVersionNotified = true;
   setDebugStatus('relay-version-mismatch');
   console.warn(
-    '[@apps-in-toss/debugger-client] relay and debugger-client protocol versions differ — use @apps-in-toss/debugger and @apps-in-toss/debugger-client 0.3.1 or later together, then rebuild',
+    '[@apps-in-toss/debugger-client] relay and debugger-client protocol versions differ — use @apps-in-toss/debugger 0.4.0 or later and @apps-in-toss/debugger-client 0.3.2 or later together, then rebuild',
   );
 }
 
@@ -500,7 +584,8 @@ function scheduleDetach(): void {
  *      removed, so nothing we wrapped survives the run's end.
  *   3. keepAwake — forced on at attach; restored here so a run that ends
  *      WITHOUT a page unload does not leave the screen pinned awake (the
- *      existing `beforeunload` restore only covers the unload path).
+ *      existing `beforeunload` restore only covers the unload path). The
+ *      restore goes to the value the APP last requested, not blindly to "off".
  *
  * Deliberately NOT touched: the `window.WebSocket` observer proxy (kept so the
  * #478 post-4401 fail-fast survives; it is non-blocking and never absorbs
@@ -547,10 +632,94 @@ export function detachDebugSurface(): void {
   // async form is the fallback for a teardown that runs before any probe has
   // resolved. SECRET-HANDLING: no relay/TOTP value is read or logged here —
   // this only flips the awake flag.
+  // Only when this package turned it on: with `noKeepAwake=1` there is nothing
+  // of ours to give back, and "off" would clobber the app's own setting.
   try {
-    if (!setScreenAwakeNow(false)) void setScreenAwake(false);
+    if (awakeRequested) restoreScreenAwake();
   } catch {
     // Neither form throws, but keep teardown bullet-proof.
+  }
+}
+
+/**
+ * Ends the debug session from the phone. Everything here is local: it does not
+ * wait for, or depend on, an answer from the debugger, so it works when the
+ * daemon is frozen, gone, or hostile.
+ *
+ *   1. tells the debugger (a console control line, best effort);
+ *   2. closes every relay socket with the original `close` and makes any later
+ *      relay dial fail fast, so chii's reconnect loop cannot bring it back;
+ *   3. removes the target script and the SDK bridge (`__sdk`, `__sdkCall`);
+ *   4. leaves a marker in `sessionStorage`, so a reload does not attach again.
+ *      The remembered computer is kept: 끊기 is how a session normally ends,
+ *      and forgetting there made every next scan ask again. The person removes
+ *      a computer from the "Remote Debugging" tab's list instead;
+ *   5. tears down the rest of the debug surface and shows `session-ended`.
+ *
+ * Idempotent. Never throws into the host app. Called from the status chip, the
+ * vConsole tab and exported for a consumer that wants its own control.
+ */
+export function disconnectDebugger(): void {
+  if (relayUserKilled) return;
+  relayUserKilled = true;
+  sendKillControl();
+
+  for (const ws of [...relaySockets]) {
+    try {
+      if (nativeSocketClose !== null) nativeSocketClose.call(ws, 1000, RELAY_CLIENT_STOP_REASON);
+      else ws.close(1000, RELAY_CLIENT_STOP_REASON);
+    } catch {
+      // A socket that refuses to close is cut off by the fail-fast dials anyway.
+    }
+  }
+  relaySockets.clear();
+
+  try {
+    injectedScript?.remove();
+    if (injectedScriptSrc !== null && typeof document !== 'undefined') {
+      for (const el of Array.from(document.querySelectorAll('script'))) {
+        if (el.getAttribute('src') === injectedScriptSrc) el.remove();
+      }
+    }
+    injectedScript = null;
+  } catch {
+    // Removal is best effort; the closed sockets and blocked dials do the work.
+  }
+
+  try {
+    if (typeof window !== 'undefined') {
+      delete window.__sdk;
+      delete window.__sdkCall;
+    }
+  } catch {
+    // Never let the bridge cleanup stop the disconnect.
+  }
+
+  try {
+    window.sessionStorage.setItem(KILLED_STORAGE_KEY, '1');
+  } catch {
+    // Storage may be blocked; the in-memory flag still holds for this page.
+  }
+  dropPageAttachParams();
+
+  detachDebugSurface();
+  setDebugStatus('session-ended');
+}
+
+/** Whether the person ended the session on the phone and the marker is still set. */
+function killedMarkerSet(): boolean {
+  try {
+    return window.sessionStorage.getItem(KILLED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function clearKilledMarker(): void {
+  try {
+    window.sessionStorage.removeItem(KILLED_STORAGE_KEY);
+  } catch {
+    // Nothing to clear without storage.
   }
 }
 
@@ -587,12 +756,21 @@ export function installRelayWsObserver(relayUrl: string): void {
   window.addEventListener('pagehide', () => detachDebugSurface(), { once: true });
 
   const NativeWebSocket = window.WebSocket;
+  // Captured now, before the page or the remote side can replace it, so the
+  // local disconnect closes sockets with the original function.
+  nativeSocketClose = NativeWebSocket.prototype?.close ?? null;
   const observed = new Proxy(NativeWebSocket, {
     construct(target, args: unknown[]): object {
       const url = String(args[0]);
       if (wsOriginKey(url) !== relayKey) {
         // Not relay traffic — construct natively, no observation.
         return Reflect.construct(target, args);
+      }
+      if (relayUserKilled) {
+        return createFailFastSocket(url, RELAY_SESSION_END_CLOSE_CODE, RELAY_CLIENT_STOP_REASON);
+      }
+      if (relaySessionEnd !== null) {
+        return createFailFastSocket(url, RELAY_SESSION_END_CLOSE_CODE, relaySessionEnd);
       }
       if (relayAuthExpired) {
         // Retry-storm cutoff: the relay already named this session expired.
@@ -617,6 +795,7 @@ export function installRelayWsObserver(relayUrl: string): void {
         );
       }
       const ws = Reflect.construct(target, args) as WebSocket;
+      relaySockets.add(ws);
       // #730: broadcast generic open/close lifecycle (any close code) so the
       // debug indicator can flip its live badge — additive to the existing
       // 4401-specific branch below, which is untouched.
@@ -643,12 +822,24 @@ export function installRelayWsObserver(relayUrl: string): void {
       });
       ws.addEventListener('close', (event) => {
         socketClosed = true;
+        relaySockets.delete(ws);
         if (stableTimer !== null) {
           clearTimeout(stableTimer);
           stableTimer = null;
         }
         broadcastRelayWsState('close');
-        if ((event as CloseEvent).code === RELAY_AUTH_REJECT_CLOSE_CODE) {
+        if (relayUserKilled) {
+          // Ended on this phone: the local disconnect already handled everything.
+          return;
+        }
+        if ((event as CloseEvent).code === RELAY_SESSION_END_CLOSE_CODE) {
+          // The debugger named why the session ended (revoked, idle timeout,
+          // ended by the developer, maximum length). Terminal, with its own message.
+          const reason = (event as CloseEvent).reason;
+          relaySessionEnd = isRelaySessionEndReason(reason) ? reason : 'user-stopped';
+          notifyRelaySessionEnd(relaySessionEnd);
+          detachDebugSurface();
+        } else if ((event as CloseEvent).code === RELAY_AUTH_REJECT_CLOSE_CODE) {
           relayAuthExpired = true;
           notifyAuthExpired();
           // #748: 4401 is terminal by design (no reconnect without a QR rescan)
@@ -712,7 +903,10 @@ export function installRelayWsObserver(relayUrl: string): void {
  *
  * **keepAwake side effect**: on a successful attach, `setScreenAwakeMode({
  * enabled: true })` is called so the phone screen stays awake during the debug
- * session. A `beforeunload` handler restores normal sleep on page unload.
+ * session. Teardown (and a `beforeunload` handler) gives the screen back to the
+ * value the app itself last requested through `setScreenAwakeMode` (observed by
+ * bridge-observer.ts), or to "off" if the app never asked. If the app turns it
+ * off mid-session, the screen is kept awake until teardown.
  * Opt out by adding `noKeepAwake=1` to the page URL query string — the check
  * reads `window.location.search` directly, consistent with other guards in
  * this file.
@@ -722,18 +916,17 @@ export function installRelayWsObserver(relayUrl: string): void {
  * short-lived session key, certified by one of the root public keys the bundle
  * carries (`options.relayPublicKeys`, else `globalThis.__AIT_DEBUG_RELAY_KEYS__`)
  * for a window that contains the device clock, signs the relay origin and the
- * `at` code. The certificate comes from the relay itself: before verification
- * the page sends exactly one request, a GET for the public certificate document
- * (`/relay-cert`, no `at` code, no credentials, no cache, no redirects, 3 s and
- * 4 KB caps), and parses the answer as data. Nothing from the relay is executed
- * and nothing else is sent (no version handshake, no script, no WebSocket), and
- * the page URL stays as it is, until the signature verifies. A same-page reload
- * that reads the values back from the history entry reuses the certificate kept
- * there (no request) and skips only the clock check. It fails closed: no
- * keys, no WebCrypto, a malformed key or a bad signature stop the attach and set
- * `blocked-relay-key` or `blocked-relay-signature`. Because the check is
- * asynchronous, the call returns a promise on such pages; loopback pages attach
- * synchronously and return nothing.
+ * `at` code. The certificate travels in the link itself (`arc`, 180 characters,
+ * public data), so the whole check is local: the page never asks the relay for
+ * a certificate, and nothing at all is sent to the relay (no request, no
+ * WebSocket, no script) until the person taps "연결" in the consent dialog. A
+ * link without `arc` comes from a debugger older than 0.3.2: the page shows
+ * `blocked-debugger-update` and does not attach. A same-page reload that reads
+ * the values back from the history entry skips only the clock check. It fails
+ * closed: no keys, no WebCrypto, a malformed key, certificate or signature stop
+ * the attach and set `blocked-relay-key` or `blocked-relay-signature`. Because
+ * the check is asynchronous, the call returns a promise on such pages; loopback
+ * pages attach synchronously and return nothing.
  *
  * @param gateResult - Optional pre-evaluated gate result for testability.
  *   Defaults to `checkDebugGate()` which reads the current page URL. Passing a
@@ -747,7 +940,7 @@ export function maybeAttach(
 ): Promise<void> | undefined {
   // First, so a later call cannot read the now code-free URL as an auth failure.
   // The in-flight flag covers the window while a signature check is pending.
-  if (attached || attachInFlight) {
+  if (attached || attachInFlight || relayUserKilled) {
     return undefined;
   }
 
@@ -816,6 +1009,22 @@ export function maybeAttach(
     return undefined;
   }
 
+  // A page reloaded after the person ended the session does not attach again.
+  // A fresh link (values from the URL, not the history entry) starts clean.
+  const reloaded = pageAttachParamsFromHistory();
+  if (reloaded && killedMarkerSet()) {
+    dropPageAttachParams();
+    setDebugStatus('session-ended');
+    return undefined;
+  }
+  if (!reloaded) clearKilledMarker();
+
+  // Watch the native bridge from here on, before the consent dialog can sit open
+  // for a while: a `setScreenAwakeMode` the app calls in that time is what
+  // teardown must give the screen back to (see bridge-observer.ts). Idempotent;
+  // removed again if the attach is declined or refused.
+  installBridgeObserver();
+
   // A loopback page talks to a loopback relay (the gate pairs them), so there
   // is nothing to verify and the attach stays synchronous.
   if (typeof window !== 'undefined' && isLocalhostHost(window.location.hostname)) {
@@ -824,38 +1033,73 @@ export function maybeAttach(
   }
 
   attachInFlight = true;
-  return consentThenVerify(gateResult.relayUrl, atCode, params.sig, options).finally(() => {
+  return consentThenVerify(
+    gateResult.relayUrl,
+    atCode,
+    params.sig,
+    params.arc,
+    { name: params.ahn, sig: params.ahs },
+    options,
+  ).finally(() => {
     attachInFlight = false;
   });
 }
 
 /**
- * Asks the person before a first attach from the URL (consent.ts), then
- * verifies. A same-page reload of a page that already attached does not ask,
- * nor does a relay origin the person accepted within the last day. Nothing is
- * requested from the relay before the answer; "취소" drops the attach values
- * from the URL and history and leaves no banner. A failed verification drops
- * them too (see {@link verifyThenInject}); only an attach that succeeded keeps
- * them, on the history entry, for a reload.
+ * Verifies the link locally (certificate and signatures, no network), then asks
+ * the person before a first attach from the URL (consent.ts). A same-page
+ * reload of a page that already attached does not ask, nor does a developer
+ * computer the person accepted within the last day: the memory is keyed by the
+ * pinned root key plus the host name whose signature verified, so a new tunnel
+ * host does not ask again, and a link without a verified name always asks. Nothing is sent to the relay before
+ * the answer, on any path; "취소" drops the attach values from the URL and
+ * history and leaves no banner. A failed verification drops them too (see
+ * {@link failAttach}); only an attach that succeeded keeps them, on the history
+ * entry, for a reload.
  */
 async function consentThenVerify(
   relayUrl: string,
   atCode: string,
   sig: string | null,
+  arc: string | null,
+  host: { readonly name: string | null; readonly sig: string | null },
   options: MaybeAttachOptions | undefined,
 ): Promise<void> {
   const fromHistory = pageAttachParamsFromHistory();
   const origin = relayOriginOf(relayUrl);
+  const keys: readonly unknown[] | undefined =
+    options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
+  const verdict = await verifyRelaySignature(relayUrl, atCode, sig, arc, keys, fromHistory);
+  if (verdict.kind !== 'ok') {
+    failAttach(verdict.kind);
+    return;
+  }
+  // The computer name is used only when its signature verifies under the
+  // certificate that just verified the link (local, no request). The consent
+  // dialog and the vConsole tab show it; otherwise they show the relay host.
+  let hostName: string | null = null;
+  if (origin !== null && host.name !== null && host.sig !== null) {
+    hostName = await verifyHostName(verdict.cert, origin, atCode, host.name, host.sig);
+  }
+  setVerifiedHostName(hostName);
+  // The memory key exists only for a link whose host-name signature verified:
+  // pinned root key + verified name (consent.ts). Without it the dialog always
+  // appears and nothing is remembered.
+  const consentId = hostName === null ? null : await computerConsentId(verdict.rootKey, hostName);
   let asked = false;
-  if (!fromHistory && (origin === null || !isRelayOriginConsented(origin))) {
+  if (!fromHistory && (consentId === null || !isComputerConsented(consentId))) {
     asked = true;
-    if (!(await askAttachConsent(origin))) {
+    if (!(await askAttachConsent(origin, hostName))) {
       dropPageAttachParams();
+      uninstallBridgeObserver();
       return;
     }
   }
-  await verifyThenInject(relayUrl, atCode, sig, options, fromHistory);
-  if (asked && attached && origin !== null) rememberRelayOriginConsent(origin);
+  // Re-check after the awaits: another path may have attached meanwhile.
+  if (!attached) injectRelay(relayUrl, atCode);
+  if (attached && consentId !== null && hostName !== null) {
+    if (asked) rememberComputerConsent(consentId, hostName);
+  }
 }
 
 /**
@@ -863,36 +1107,58 @@ async function consentThenVerify(
  * injected, or is already in the document). `false` on every blocked path.
  */
 export function isDebugAttached(): boolean {
-  return attached;
+  return attached && !relayUserKilled;
 }
 
 /** Options for {@link maybeAttach}. */
 export interface MaybeAttachOptions {
   /**
-   * Relay public keys of the projects whose daemon may serve this bundle
-   * (base64url, as printed by `debugger relay-key`). Any one key may match.
-   * Public values; safe to commit. Falls back to `globalThis.__AIT_DEBUG_RELAY_KEYS__`.
+   * Relay public keys of the projects whose daemon may serve this bundle, each
+   * with an expiry (see {@link RelayPublicKeyPin}). Any one key may match.
+   * Plain strings (the earlier form) are refused. Public values; safe to commit.
+   * Falls back to `globalThis.__AIT_DEBUG_RELAY_KEYS__`.
    */
-  readonly relayPublicKeys?: readonly string[];
+  readonly relayPublicKeys?: readonly RelayPublicKeyPin[];
+  /**
+   * The page's vConsole instance. When it is present on a QR test page, a
+   * "Remote Debugging" tab is added to it (state, session time, 끊기 and the
+   * recent remote actions). Optional: `window.vConsole` is found on its own, and
+   * a vConsole created later is picked up too. Never a dependency of this package.
+   */
+  readonly vConsole?: unknown;
+}
+
+/**
+ * One pinned relay key. `publicKey` is the base64url key printed by
+ * `debugger relay-key`; `notAfter` is the Unix time in seconds after which the
+ * bundle stops trusting signatures under it (plus a 5 minute clock allowance).
+ * Produce the pair with the debugger's helper at build time; do not edit by hand.
+ */
+export interface RelayPublicKeyPin {
+  readonly publicKey: string;
+  readonly notAfter: number;
 }
 
 declare global {
-  var __AIT_DEBUG_RELAY_KEYS__: readonly string[] | undefined;
+  var __AIT_DEBUG_RELAY_KEYS__: readonly RelayPublicKeyPin[] | undefined;
 }
 
 /** Module-level guard: a signature check is pending, so a second call must not start another. */
 let attachInFlight = false;
 
 type SignatureVerdict =
-  | { readonly kind: 'ok'; readonly certDocument: string }
+  | { readonly kind: 'ok'; readonly cert: RelayCert; readonly rootKey: Uint8Array }
   | { readonly kind: 'no-key' }
+  | { readonly kind: 'key-form' }
+  | { readonly kind: 'key-expired' }
+  | { readonly kind: 'needs-update' }
   | { readonly kind: 'bad-signature' };
 
 const NO_KEY: SignatureVerdict = { kind: 'no-key' };
+const KEY_FORM: SignatureVerdict = { kind: 'key-form' };
+const KEY_EXPIRED: SignatureVerdict = { kind: 'key-expired' };
+const NEEDS_UPDATE: SignatureVerdict = { kind: 'needs-update' };
 const BAD_SIGNATURE: SignatureVerdict = { kind: 'bad-signature' };
-
-/** How long the certificate request may take before the attach is refused. */
-export const RELAY_CERT_FETCH_TIMEOUT_MS = 3_000;
 
 const ECDSA_P256 = { name: 'ECDSA', namedCurve: 'P-256' } as const;
 const ECDSA_SHA256 = { name: 'ECDSA', hash: 'SHA-256' } as const;
@@ -919,184 +1185,159 @@ async function verifyWith(
   }
 }
 
-/** Reads at most `limit` bytes of a response body as text, or `null` when it is longer. */
-async function readCapped(res: Response, limit: number): Promise<string | null> {
-  const declared = Number(res.headers?.get?.('content-length') ?? '');
-  if (Number.isFinite(declared) && declared > limit) return null;
-  const reader = res.body?.getReader?.();
-  if (reader === undefined) {
-    const text = await res.text();
-    return new TextEncoder().encode(text).length > limit ? null : text;
-  }
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    if (total > limit) {
-      void reader.cancel().catch(() => {});
-      return null;
+/** A pinned key as parsed: the point bytes and when it stops being trusted. */
+interface RootKey {
+  readonly bytes: Uint8Array;
+  readonly notAfter: number;
+}
+
+/** Clock allowance past `notAfter`, in seconds, before a pinned key counts as expired. */
+const KEY_EXPIRY_GRACE_SECONDS = 300;
+
+/** A `notAfter` this large was written in milliseconds, not seconds: not a valid pin. */
+const MAX_NOT_AFTER_SECONDS = 100_000_000_000;
+
+function parseRootKeys(keys: readonly unknown[]): RootKey[] {
+  const rootKeys: RootKey[] = [];
+  for (const entry of keys) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { publicKey, notAfter } = entry as Record<string, unknown>;
+    if (!isRelayPublicKey(publicKey)) continue;
+    if (typeof notAfter !== 'number' || !Number.isFinite(notAfter)) continue;
+    if (notAfter <= 0 || notAfter > MAX_NOT_AFTER_SECONDS) continue;
+    const bytes = decodeBase64Url(publicKey);
+    if (bytes !== null && bytes.length === RELAY_PUBLIC_KEY_BYTES && bytes[0] === 0x04) {
+      rootKeys.push({ bytes, notAfter });
     }
-    chunks.push(value);
   }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  return rootKeys;
 }
 
 /**
- * Fetches the relay's public certificate document. One plain GET to
- * `https://<relay host>/relay-cert`: no `at` code, no credentials, no cache, no
- * redirects, at most {@link RELAY_CERT_FETCH_TIMEOUT_MS} and
- * {@link RELAY_CERT_DOCUMENT_MAX_BYTES}. Nothing in the answer is executed; it
- * is parsed as data. `null` on any failure.
+ * Checks the developer computer's name carried by a link (`ahn`) against its
+ * signature (`ahs`): the session key of the certificate that already verified
+ * the link must have signed the name together with the relay origin and the
+ * `at` code. Returns the name only when that holds, else `null` (the dialog
+ * then shows the relay host). Local only. Never throws.
  */
-async function fetchRelayCertDocument(relayOrigin: string): Promise<string | null> {
-  if (typeof fetch !== 'function') return null;
-  const url = `https://${relayOrigin.slice('wss://'.length)}${RELAY_CERT_PATH}`;
-  const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => {
-      controller?.abort();
-      resolve(null);
-    }, RELAY_CERT_FETCH_TIMEOUT_MS);
-  });
-  const attempt = (async (): Promise<string | null> => {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        credentials: 'omit',
-        cache: 'no-store',
-        redirect: 'error',
-        referrerPolicy: 'no-referrer',
-        ...(controller !== undefined ? { signal: controller.signal } : {}),
-      });
-      if (res.status !== 200 || res.redirected === true) return null;
-      return await readCapped(res, RELAY_CERT_DOCUMENT_MAX_BYTES);
-    } catch {
-      return null;
-    }
-  })();
+async function verifyHostName(
+  cert: RelayCert,
+  origin: string,
+  atCode: string,
+  name: string,
+  hostSig: string,
+): Promise<string | null> {
   try {
-    return await Promise.race([attempt, timeout]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (!isRelayHostName(name)) return null;
+    const hostSigBytes = parseRelayHostSignature(hostSig);
+    const subtle = globalThis.crypto?.subtle;
+    if (hostSigBytes === null || subtle === undefined || atCode === '') return null;
+    const message = relayHostMessage(origin, atCode, name);
+    return (await verifyWith(subtle, cert.sessionPublicKeyBytes, hostSigBytes, message))
+      ? name
+      : null;
+  } catch {
+    return null;
   }
 }
 
 /**
- * Verifies the relay signature with WebCrypto. Fails closed on every path.
+ * Verifies the relay signature with WebCrypto, locally. Fails closed on every
+ * path. Nothing is requested from the relay.
  *
- * The only network activity is one GET for the relay's public certificate
- * document (no code, no credentials), skipped on a same-page reload that kept
- * the certificate on its history entry. Nothing from the relay is executed
- * before this returns `ok`.
- *
- * A certificate counts when it was issued for the key id in `sig`, its root
- * signature verifies against a pinned key, the device clock lies inside its
- * window, and its session key verifies the link signature. The clock check is
- * skipped only when every attach value came from the history entry
- * (`fromHistory`): this page verified them when they came from the URL.
+ * The certificate is the one in the link (`arc`). It counts when it was issued
+ * for the key id in `sig`, its root signature verifies against a pinned key,
+ * the device clock lies inside its window, and its session key verifies the
+ * link signature. The clock check is skipped only when every attach value came
+ * from the history entry (`fromHistory`): this page verified them when they
+ * came from the URL. A link without `arc` (a debugger older than 0.3.2) is
+ * `needs-update`, a malformed one is `bad-signature`.
  */
 async function verifyRelaySignature(
   relayUrl: string,
   atCode: string,
   sig: string | null,
+  arc: string | null,
   keys: readonly unknown[] | undefined,
   fromHistory: boolean,
 ): Promise<SignatureVerdict> {
   if (!Array.isArray(keys) || keys.length === 0) return NO_KEY;
-  const rootKeys: Uint8Array[] = [];
-  for (const key of keys) {
-    if (!isRelayPublicKey(key)) continue;
-    const bytes = decodeBase64Url(key);
-    if (bytes !== null && bytes.length === RELAY_PUBLIC_KEY_BYTES && bytes[0] === 0x04) {
-      rootKeys.push(bytes);
-    }
-  }
+  // The earlier form (plain strings) carries no expiry. Fail closed with a message
+  // that names the new form rather than guessing a lifetime for it.
+  if (keys.some((key) => typeof key === 'string')) return KEY_FORM;
+  const rootKeys = parseRootKeys(keys);
   if (rootKeys.length === 0) return NO_KEY;
+  if (arc === null || arc === '') return NEEDS_UPDATE;
 
   const subtle = globalThis.crypto?.subtle;
   if (subtle === undefined || atCode === '') return BAD_SIGNATURE;
   const origin = relayOriginOf(relayUrl);
   const link = parseRelaySignature(sig);
-  if (origin === null || link === null) return BAD_SIGNATURE;
-
-  const kept = fromHistory ? keptRelayCert() : null;
-  const certDocument = kept ?? (await fetchRelayCertDocument(origin));
-  const certs = parseRelayCertDocument(certDocument);
-  if (certDocument === null || certs === null) return BAD_SIGNATURE;
-
+  const cert = parseRelayCertParam(arc);
+  if (origin === null || link === null || cert === null) return BAD_SIGNATURE;
+  if (cert.keyId !== link.keyId) return BAD_SIGNATURE;
+  const matched = await certifiedByRoot(subtle, rootKeys, cert);
+  if (matched.length === 0) return BAD_SIGNATURE;
   const now = Math.floor(Date.now() / 1000);
+  // Trust ends at the pin's `notAfter`, not at the certificate's own window: a
+  // leaked signing secret stops being useful against bundles built after that.
+  const trusted = matched.find((key) => now <= key.notAfter + KEY_EXPIRY_GRACE_SECONDS);
+  if (trusted === undefined) return KEY_EXPIRED;
+  if (!fromHistory && !(now >= cert.notBefore && now <= cert.notAfter)) return BAD_SIGNATURE;
   const linkMessage = relayLinkMessage(origin, atCode);
-  for (const cert of certs) {
-    if (cert.keyId !== link.keyId) continue;
-    if (!(await certifiedByRoot(subtle, rootKeys, cert))) continue;
-    if (!fromHistory && !(now >= cert.notBefore && now <= cert.notAfter)) continue;
-    if (
-      await verifyWith(subtle, cert.sessionPublicKeyBytes, link.linkSignatureBytes, linkMessage)
-    ) {
-      // Keep only the certificate that verified.
-      return { kind: 'ok', certDocument: JSON.stringify({ v: 1, certs: [certJson(cert)] }) };
-    }
-  }
-  return BAD_SIGNATURE;
+  return (await verifyWith(
+    subtle,
+    cert.sessionPublicKeyBytes,
+    link.linkSignatureBytes,
+    linkMessage,
+  ))
+    ? { kind: 'ok', cert, rootKey: trusted.bytes }
+    : BAD_SIGNATURE;
 }
 
 async function certifiedByRoot(
   subtle: SubtleCrypto,
-  rootKeys: readonly Uint8Array[],
+  rootKeys: readonly RootKey[],
   cert: RelayCert,
-): Promise<boolean> {
+): Promise<RootKey[]> {
   const message = relayCertMessage(cert.sessionPublicKey, cert.notBefore, cert.notAfter);
+  const matched: RootKey[] = [];
   for (const root of rootKeys) {
-    if (await verifyWith(subtle, root, cert.certSignatureBytes, message)) return true;
+    if (await verifyWith(subtle, root.bytes, cert.certSignatureBytes, message)) matched.push(root);
   }
-  return false;
+  return matched;
 }
 
-function certJson(cert: RelayCert): { pub: string; nb: number; na: number; sig: string } {
-  return {
-    pub: cert.sessionPublicKey,
-    nb: cert.notBefore,
-    na: cert.notAfter,
-    sig: cert.certSignature,
-  };
-}
-
-async function verifyThenInject(
-  relayUrl: string,
-  atCode: string,
-  sig: string | null,
-  options: MaybeAttachOptions | undefined,
-  fromHistory: boolean,
-): Promise<void> {
-  const keys = options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
-  const verdict = await verifyRelaySignature(relayUrl, atCode, sig, keys, fromHistory);
-  if (verdict.kind === 'ok') {
-    // Re-check after the await: another path may have attached meanwhile.
-    if (!attached) {
-      injectRelay(relayUrl, atCode);
-      keepVerifiedRelayCert(verdict.certDocument);
-    }
-    return;
-  }
+/** Reports a failed verification and removes the attach values from the page. */
+function failAttach(
+  kind: 'no-key' | 'key-form' | 'key-expired' | 'needs-update' | 'bad-signature',
+): void {
   // SECRET-HANDLING: fixed labels only — no key, signature, code, host or URL.
-  console.warn(
-    verdict.kind === 'no-key'
-      ? '[@apps-in-toss/debugger-client] debug attach skipped — this bundle has no relay public key'
-      : '[@apps-in-toss/debugger-client] debug attach skipped — relay signature did not verify',
-  );
-  setDebugStatus(verdict.kind === 'no-key' ? 'blocked-relay-key' : 'blocked-relay-signature');
+  const messages = {
+    'no-key':
+      '[@apps-in-toss/debugger-client] debug attach skipped — this bundle has no relay public key',
+    'key-form':
+      '[@apps-in-toss/debugger-client] 연결하지 않았어요 — relayPublicKeys가 옛 형식(문자열)이에요. 디버거 0.4.0의 relay-key 출력({ publicKey, notAfter })으로 바꾸고 다시 빌드하세요',
+    'key-expired':
+      '[@apps-in-toss/debugger-client] 연결하지 않았어요 — 이 번들에 고정된 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요',
+    'needs-update':
+      '[@apps-in-toss/debugger-client] debug attach skipped — the link has no certificate; update @apps-in-toss/debugger to 0.4.0 or later and rescan',
+    'bad-signature':
+      '[@apps-in-toss/debugger-client] debug attach skipped — relay signature did not verify',
+  } as const;
+  console.warn(messages[kind]);
+  const statuses = {
+    'no-key': 'blocked-relay-key',
+    'key-form': 'blocked-relay-key-form',
+    'key-expired': 'blocked-relay-key-expired',
+    'needs-update': 'blocked-debugger-update',
+    'bad-signature': 'blocked-relay-signature',
+  } as const;
+  setDebugStatus(statuses[kind]);
   // Nothing attached, so `at` / `sig` have no reason to stay in the URL or on
   // the history entry. Only the success path keeps them (for a reload).
   dropPageAttachParams();
+  uninstallBridgeObserver();
 }
 
 /**
@@ -1105,6 +1346,7 @@ async function verifyThenInject(
  * elsewhere.
  */
 function injectRelay(relayUrl: string, atCode: string): void {
+  registerDisconnect(disconnectDebugger);
   // TOTP path-prefix transport (issue #466): forward the page URL's `at` code
   // (delivered by the dashboard QR → launcher deep-link) into the target
   // script URL so the WS upgrade derived from it passes the relay's TOTP
@@ -1149,11 +1391,15 @@ function injectRelay(relayUrl: string, atCode: string): void {
   // (e.g. injected by a different code path or a page reload within SPA).
   const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
   if (existing !== null) {
+    injectedScript = existing;
+    injectedScriptSrc = src;
     attached = true;
     return;
   }
 
   const script = document.createElement('script');
+  injectedScript = script;
+  injectedScriptSrc = src;
   script.src = src;
   script.async = true;
   // Issue #478: a first-load stale code (QR scanned after expiry) fails the
@@ -1207,17 +1453,32 @@ function injectRelay(relayUrl: string, atCode: string): void {
   // exist on `@apps-in-toss/web-framework` 2.x's web surface at all, so a
   // static import would break every 2.x consumer — and it would drag the SDK
   // into this package's graph, which must stay dependency-free (see sdk-probe.ts).
+  awakeRequested = true;
+  // The app may turn screen-awake off itself during the session. Its value is
+  // remembered by the bridge observer for the restore at teardown; until then
+  // the screen stays awake, so re-assert ours right after the app's "off".
+  onAppScreenAwake((enabled) => {
+    if (!enabled && !debugSurfaceDetached) void setScreenAwake(true);
+  });
   void setScreenAwake(true).then((held) => {
-    // Restore normal sleep on page unload — only if the enable call landed
-    // (nothing to restore when the API was unavailable or rejected).
+    // Restore on page unload — only if the enable call landed (nothing to
+    // restore when the API was unavailable or rejected).
     if (!held) return;
+    // The session may have ended while the enable call was in flight (a quick
+    // 끊기, an immediate 4410). Teardown already restored before this "on"
+    // landed, so undo it here (to the app's own value) or the screen would stay
+    // pinned awake.
+    if (debugSurfaceDetached) {
+      restoreScreenAwake();
+      return;
+    }
     window.addEventListener(
       'beforeunload',
       () => {
         // Synchronous: the probe is warm by construction here (the enable call
         // above is what warmed it), and an unloading page may not run another
         // microtask turn. See sdk-probe.ts's `getLoadedTossSdk`.
-        if (!setScreenAwakeNow(false)) void setScreenAwake(false);
+        restoreScreenAwake();
       },
       { once: true },
     );

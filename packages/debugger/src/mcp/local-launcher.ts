@@ -74,6 +74,10 @@ export interface LaunchChromiumOptions {
    * `child_process.spawn`. Tests inject a fake to avoid launching a real browser.
    */
   spawnFn?: typeof spawn;
+  /** Browser binary to run instead of searching the system. Tests only. */
+  binaryPath?: string;
+  /** Directory the per-session profile directory is created in. Defaults to the OS temp dir. */
+  profileBaseDir?: string;
 }
 
 /**
@@ -158,7 +162,9 @@ export function chromiumProfileDir(
 export function removeChromiumProfileDir(dir: string): void {
   if (!basename(dir).startsWith(PROFILE_PREFIX)) return;
   try {
-    rmSync(dir, { recursive: true, force: true });
+    // Chromium's helper processes can still be writing right after the kill, which makes the
+    // first pass fail with ENOTEMPTY — retry briefly instead of leaving the directory.
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   } catch {
     // Chromium may still be flushing; the next session's sweep removes it.
   }
@@ -232,7 +238,7 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
 
   const devUrl = options.devUrl ?? process.env.AIT_DEVTOOLS_URL ?? 'http://localhost:5173';
 
-  const binary = findChromeBinary();
+  const binary = options.binaryPath ?? findChromeBinary();
   if (binary === null) {
     throw new Error(
       'No Chrome/Chromium binary found on this system. ' +
@@ -242,8 +248,8 @@ export async function launchChromium(options: LaunchChromiumOptions = {}): Promi
     );
   }
 
-  sweepStaleChromiumProfiles();
-  const profileDir = chromiumProfileDir();
+  sweepStaleChromiumProfiles(options.profileBaseDir);
+  const profileDir = chromiumProfileDir(options.profileBaseDir);
 
   const args = [
     `--remote-debugging-port=${requestedPort}`,

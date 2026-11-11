@@ -4,7 +4,7 @@
  * 클라이언트가 요청에 `_meta.progressToken`을 실어 보낸 경우에만 동작한다. attach 단계
  * 기록기(`AttachTimeline`)를 구독해 단계가 바뀔 때마다, 그리고 단계 변화가 없어도 15초마다
  * 한 번 `notifications/progress`를 보낸다. 대기가 3분까지 길어지는 동안 "지금 어디까지
- * 왔는지"를 보여 주기 위한 것이고, 같은 정보는 타임아웃 에러·`get_debug_status`에도 들어
+ * 왔는지"를 보여 주기 위한 것이고, 같은 정보는 타임아웃 에러·`get_status`에도 들어
  * 있어서 progress를 못 보는 클라이언트도 잃는 게 없다.
  *
  * SECRET-HANDLING: 메시지는 `formatStageLabel`(고정 라벨)과 경과 초만 담는다. relay URL·

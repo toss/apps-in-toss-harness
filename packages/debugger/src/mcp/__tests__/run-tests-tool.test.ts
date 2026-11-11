@@ -70,6 +70,13 @@ vi.mock('../../test-runner/discover.js', async (importActual) => {
 
 // Spy on injectGlobals for cell-injection assertions (issue #684 PR2).
 const injectGlobalsSpy = vi.fn((_conn?: unknown, _cell?: unknown) => Promise.resolve());
+// injectCell is the run_tests cell path; kept apart from injectGlobals so the order tests
+// can tell them apart. `callOrder` records the steps of the auto-attach flow.
+const callOrder: string[] = [];
+const injectCellSpy = vi.fn((_conn?: unknown, _cell?: unknown) => {
+  callOrder.push('injectCell');
+  return Promise.resolve();
+});
 // runPermissionPreflight (devtools#739) is called unconditionally by
 // relay-worker.ts before the first file — stub it as a non-fatal no-op
 // (resolves undefined, mirroring "preflight did not complete") so tests in
@@ -78,6 +85,7 @@ const runPermissionPreflightSpy = vi.fn((_conn?: unknown, _timeoutMs?: number, _
   Promise.resolve(undefined),
 );
 vi.mock('../../test-runner/cell.js', () => ({
+  injectCell: (...args: [unknown, unknown]) => injectCellSpy(...args),
   injectGlobals: (...args: [unknown, unknown]) => injectGlobalsSpy(...args),
   runPermissionPreflight: (...args: [unknown, number?, boolean?]) =>
     runPermissionPreflightSpy(...args),
@@ -85,6 +93,24 @@ vi.mock('../../test-runner/cell.js', () => ({
   // the explicit timeoutMs it forwards positionally to runPermissionPreflight.
   PERMISSION_PREFLIGHT_TIMEOUT_MS: 20_000,
 }));
+
+// The attach core is real unless a test overrides it (auto-attach order tests below).
+const prepareAttachSpy = vi.fn();
+const renderAndMaybeWaitSpy = vi.fn();
+vi.mock('../attach-orchestrator.js', async (importActual) => {
+  const actual = await importActual<typeof import('../attach-orchestrator.js')>();
+  return {
+    ...actual,
+    prepareAttach: (...args: Parameters<typeof actual.prepareAttach>) =>
+      prepareAttachSpy.getMockImplementation()
+        ? prepareAttachSpy(...args)
+        : actual.prepareAttach(...args),
+    renderAndMaybeWait: (...args: Parameters<typeof actual.renderAndMaybeWait>) =>
+      renderAndMaybeWaitSpy.getMockImplementation()
+        ? renderAndMaybeWaitSpy(...args)
+        : actual.renderAndMaybeWait(...args),
+  };
+});
 
 /* -------------------------------------------------------------------------- */
 /* Fakes                                                                       */
@@ -203,10 +229,25 @@ afterAll(async () => {
 
 // Clear the run-core / discovery / cell spies' captured calls.
 // liveIntent reset removed (#665 — bit no longer exists).
+// These tests drive the tool with a fake relay and no phone to tap: the confirmation
+// policy has its own tests (action-gates.test.ts).
+const savedEvaluatePolicy = process.env.AIT_DEBUG_EVALUATE;
+beforeAll(() => {
+  process.env.AIT_DEBUG_EVALUATE = 'free';
+});
+afterAll(() => {
+  if (savedEvaluatePolicy === undefined) delete process.env.AIT_DEBUG_EVALUATE;
+  else process.env.AIT_DEBUG_EVALUATE = savedEvaluatePolicy;
+});
+
 afterEach(() => {
   runWithConnectionSpy.mockClear();
   discoverTestFilesSpy.mockClear();
   injectGlobalsSpy.mockClear();
+  injectCellSpy.mockClear();
+  prepareAttachSpy.mockReset();
+  renderAndMaybeWaitSpy.mockReset();
+  callOrder.length = 0;
 });
 
 /* -------------------------------------------------------------------------- */
@@ -525,7 +566,7 @@ describe('run_tests auto-attach branch (PR2 — issue #684)', () => {
     expect(text).toContain('scheme_url');
   });
 
-  it('4b path: no page + relay env + cell arg → injectGlobals called if attach succeeds', async () => {
+  it('4b path: no page + relay env + cell arg → cell is NOT injected on the already-attached path', async () => {
     // Build a fake connection that simulates "attach happens" by returning one
     // target AFTER the first send (the attach wait resolves immediately via
     // waitForAttachWithEvents' immediate-check path when listTargets is truthy
@@ -635,5 +676,117 @@ describe('run_tests tool — path boundary', () => {
     };
     const { realpath } = await import('node:fs/promises');
     expect(opts.bundleOptions?.allowedRoot).toBe(await realpath(proj));
+  });
+});
+
+describe('run_tests auto-attach: cell order (gate before injectCell)', () => {
+  /** A relay phone with no page until the mocked attach "completes". */
+  class AutoAttachPhone extends FakeCdpConnection {
+    answer = 'allow';
+    private attached: CdpTarget[] = [];
+    constructor(private readonly pageUrl: string) {
+      super({ kind: 'relay', raw: cannedRunReport() });
+    }
+    override listTargets(): CdpTarget[] {
+      return this.attached;
+    }
+    attach(): void {
+      this.attached = [{ id: 't1', title: 'fixture', url: this.pageUrl }];
+    }
+    override send<M extends CdpCommandName>(
+      method: M,
+      params?: CdpCommandMap[M]['params'],
+    ): Promise<CdpCommandMap[M]['result']> {
+      const expression = (params as { expression?: string } | undefined)?.expression ?? '';
+      if (expression.includes('attachShadow')) {
+        callOrder.push('gate');
+        return Promise.resolve({
+          result: { type: 'string', value: this.answer },
+        } as CdpCommandMap[M]['result']);
+      }
+      if (expression.includes('__ait_remote_log')) {
+        return Promise.resolve({
+          result: { type: 'boolean', value: true },
+        } as CdpCommandMap[M]['result']);
+      }
+      return super.send(method, params);
+    }
+  }
+
+  const savedPolicy = process.env.AIT_DEBUG_EVALUATE;
+  afterEach(() => {
+    if (savedPolicy === undefined) delete process.env.AIT_DEBUG_EVALUATE;
+    else process.env.AIT_DEBUG_EVALUATE = savedPolicy;
+  });
+
+  function mockAttach(phone: AutoAttachPhone): void {
+    prepareAttachSpy.mockImplementation(async () => {
+      callOrder.push('prepareAttach');
+      return { ok: true };
+    });
+    renderAndMaybeWaitSpy.mockImplementation(async () => {
+      callOrder.push('attach');
+      phone.attach();
+      return { content: [{ type: 'text', text: 'attached' }] };
+    });
+  }
+
+  const CELL = { sdkLine: '2.x', platform: 'ios' };
+
+  async function run(phone: AutoAttachPhone, cell: Record<string, unknown> = CELL) {
+    const client = await makeClient({ connection: phone, env: 'relay-dev' });
+    return client.callTool({
+      name: 'run_tests',
+      arguments: { files: ['*.ait.test.ts'], projectRoot, cell, scheme_url: 'intoss-private://h' },
+    });
+  }
+
+  it('does not inject the cell when the phone gate denies', async () => {
+    process.env.AIT_DEBUG_EVALUATE = 'confirm';
+    const phone = new AutoAttachPhone('http://localhost/');
+    phone.answer = 'deny';
+    mockAttach(phone);
+    const result = await run(phone);
+    expect(result.isError).toBe(true);
+    expect(callOrder).toContain('gate');
+    expect(injectCellSpy).not.toHaveBeenCalled();
+    expect(injectGlobalsSpy).not.toHaveBeenCalled();
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cell over 300 JSON chars before starting the attach', async () => {
+    process.env.AIT_DEBUG_EVALUATE = 'confirm';
+    const phone = new AutoAttachPhone('http://localhost/');
+    mockAttach(phone);
+    const result = await run(phone, { big: 'x'.repeat(300) });
+    expect(result.isError).toBe(true);
+    expect(getText(result)).toContain('300자');
+    expect(prepareAttachSpy).not.toHaveBeenCalled();
+    expect(renderAndMaybeWaitSpy).not.toHaveBeenCalled();
+    expect(callOrder).toEqual([]);
+  });
+
+  it('injects nothing when the attached host is not allowed', async () => {
+    process.env.AIT_DEBUG_EVALUATE = 'confirm';
+    const phone = new AutoAttachPhone('https://evil.example.com/');
+    mockAttach(phone);
+    const result = await run(phone);
+    expect(result.isError).toBe(true);
+    expect(callOrder).toEqual(['prepareAttach', 'attach']);
+    expect(injectCellSpy).not.toHaveBeenCalled();
+    expect(injectGlobalsSpy).not.toHaveBeenCalled();
+    expect(runWithConnectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('calls injectCell only after the approved gate, then runs', async () => {
+    process.env.AIT_DEBUG_EVALUATE = 'confirm';
+    const phone = new AutoAttachPhone('http://localhost/');
+    mockAttach(phone);
+    const result = await run(phone);
+    expect(result.isError).toBeFalsy();
+    expect(callOrder).toEqual(['prepareAttach', 'attach', 'gate', 'injectCell']);
+    expect(injectCellSpy).toHaveBeenCalledWith(phone, CELL);
+    expect(injectGlobalsSpy).not.toHaveBeenCalled();
+    expect(runWithConnectionSpy).toHaveBeenCalledTimes(1);
   });
 });

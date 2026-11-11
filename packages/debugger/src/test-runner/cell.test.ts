@@ -36,6 +36,7 @@ import type {
 } from '../mcp/cdp-connection.js';
 import {
   buildPermissionPreflightExpression,
+  injectCell,
   injectDebugIndicator,
   injectGlobals,
   removeDebugIndicator,
@@ -85,6 +86,24 @@ function makeSpyConnection(): {
 /* -------------------------------------------------------------------------- */
 /* Tests                                                                       */
 /* -------------------------------------------------------------------------- */
+
+describe('injectCell', () => {
+  it('assigns only globalThis.__AIT_CELL__, never the cell keys themselves', async () => {
+    const { conn, sentExpressions } = makeSpyConnection();
+    await injectCell(conn, { location: 'javascript:alert(1)', fetch: 'x', __proto__: 'p' });
+    expect(sentExpressions).toHaveLength(1);
+    const expr = sentExpressions[0] ?? '';
+    expect(expr).toContain('globalThis.__AIT_CELL__ = JSON.parse(');
+    expect(expr).not.toContain('Object.assign');
+    // Run the expression against a stand-in global to prove nothing else is touched.
+    const fakeGlobal: Record<string, unknown> = {};
+    new Function('globalThis', `return ${expr}`)(fakeGlobal);
+    expect(Object.keys(fakeGlobal)).toEqual(['__AIT_CELL__']);
+    expect((fakeGlobal.__AIT_CELL__ as Record<string, unknown>).location).toBe(
+      'javascript:alert(1)',
+    );
+  });
+});
 
 describe('injectGlobals', () => {
   it('sends exactly one Runtime.evaluate for a non-empty globals map', async () => {
@@ -214,15 +233,15 @@ describe('buildIndicatorExpression', () => {
     expect(expr.length).toBeGreaterThan(0);
   });
 
-  it('embeds the default label "Debugger Connected"', () => {
+  it('embeds the default label "디버거 연결됨"', () => {
     const expr = buildIndicatorExpression();
-    expect(expr).toContain('Debugger Connected');
+    expect(expr).toContain('디버거 연결됨');
   });
 
   it('embeds a custom label', () => {
     const expr = buildIndicatorExpression({ label: 'My Custom Label' });
     expect(expr).toContain('My Custom Label');
-    expect(expr).not.toContain('Debugger Connected');
+    expect(expr).not.toContain('디버거 연결됨');
   });
 
   it('escapes label via JSON.stringify (quotes and backslashes)', () => {
@@ -260,15 +279,16 @@ describe('buildIndicatorExpression', () => {
     expect(expr).toContain('position:fixed');
   });
 
-  it('positions element at the bottom-left (bottom + left tokens)', () => {
+  it('positions element at the top-left (top + left tokens)', () => {
     const expr = buildIndicatorExpression();
-    expect(expr).toContain('bottom');
+    expect(expr).toContain('top:max');
+    expect(expr).not.toContain('bottom:');
     expect(expr).toContain('left');
   });
 
-  it('uses a red background colour (#e5484d) for the attached state', () => {
+  it('uses a green background colour (#0f7b4d) for the attached state', () => {
     const expr = buildIndicatorExpression();
-    expect(expr).toContain('#e5484d');
+    expect(expr).toContain('#0f7b4d');
   });
 
   it('uses a grey background colour (#8a8f98) for the disconnected state', () => {
@@ -277,7 +297,7 @@ describe('buildIndicatorExpression', () => {
   });
 
   // #748: the default disconnected label is now the ko-primary notice (the
-  // persistent English "Debugger Disconnected" is replaced by a self-dismissing
+  // persistent English "디버거 연결 끊김" is replaced by a self-dismissing
   // one). DOM behavior of the notice is covered in
   // src/mcp/__tests__/indicator-expression.test.ts.
   it('embeds the actionable ko default disconnected label (close the app, rescan the QR)', () => {

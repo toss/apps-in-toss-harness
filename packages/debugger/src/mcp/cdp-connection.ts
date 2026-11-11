@@ -2,7 +2,7 @@
  * Injectable CDP connection abstraction for the debug-mode MCP server.
  *
  * The Phase 1 tool layer (`list_console_messages`, `list_network_requests`,
- * `list_pages`) reads from CDP events captured off a Chii relay connection.
+ * `get_page`) reads from CDP events captured off a Chii relay connection.
  * To keep that tool layer CI-verifiable without a phone roundtrip, the actual
  * relay websocket sits behind this interface. Production wires
  * `ChiiCdpConnection` (see `chii-connection.ts`); tests inject a fake that
@@ -127,6 +127,29 @@ export interface CdpEventMap {
 
 export type CdpEventName = keyof CdpEventMap;
 
+/** Payload of a `Page.screencastFrame` event (subset). */
+export interface PageScreencastFrameEvent {
+  /** Base64-encoded image bytes (format requested in `Page.startScreencast`). */
+  data: string;
+  /** Must be passed back to `Page.screencastFrameAck`. */
+  sessionId: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Streaming events delivered to live subscribers only — never ring-buffered
+ * (frames are large). Used by the `take_screenshot` screencast fallback.
+ */
+export interface CdpTransientEventMap {
+  'Page.screencastFrame': PageScreencastFrameEvent;
+}
+
+export type CdpTransientEventName = keyof CdpTransientEventMap;
+
+type CdpAnyEventMap = CdpEventMap & CdpTransientEventMap;
+/** Payload type for a live-subscribable event (buffered or transient). */
+export type CdpListenerPayload<E extends CdpEventName | CdpTransientEventName> = CdpAnyEventMap[E];
+
 /* -------------------------------------------------------------------------- */
 /* Phase 2 — CDP commands (request → response)                                */
 /* -------------------------------------------------------------------------- */
@@ -210,6 +233,24 @@ export interface CdpCommandMap {
     params: RuntimeEvaluateParams;
     result: RuntimeEvaluateResult;
   };
+  'Page.startScreencast': {
+    params: {
+      format?: 'png' | 'jpeg';
+      quality?: number;
+      maxWidth?: number;
+      maxHeight?: number;
+      everyNthFrame?: number;
+    };
+    result: Record<string, unknown>;
+  };
+  'Page.stopScreencast': {
+    params: Record<string, never>;
+    result: Record<string, unknown>;
+  };
+  'Page.screencastFrameAck': {
+    params: { sessionId: number };
+    result: Record<string, unknown>;
+  };
 }
 
 export type CdpCommandName = keyof CdpCommandMap;
@@ -254,6 +295,15 @@ export interface CdpConnection {
 
   /** Subscribe to live events. Returns an unsubscribe function. */
   on<E extends CdpEventName>(event: E, listener: (payload: CdpEventMap[E]) => void): () => void;
+
+  /**
+   * Subscribe to transient streaming events (never buffered). Optional — only
+   * `ChiiCdpConnection` forwards `Page.screencastFrame`.
+   */
+  onTransient?<E extends CdpTransientEventName>(
+    event: E,
+    listener: (payload: CdpTransientEventMap[E]) => void,
+  ): () => void;
 
   /**
    * Issue a CDP command (request → response). Phase 2's DOM/snapshot/screenshot

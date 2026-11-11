@@ -1,7 +1,7 @@
 /**
  * The `at` codes come from a per-process key held in memory, not from the
- * relay secret (`.ait_relay` / `AIT_DEBUG_TOTP_SECRET`), which now feeds only
- * the root signing key. Every mint path of the daemon must agree with the
+ * relay root key, which lives in the key agent and signs only
+ * session certificates. Every mint path of the daemon must agree with the
  * relay predicate it boots in the same process.
  */
 
@@ -10,8 +10,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type AttachDeps, type AttachUrlParts, mintAttachUrl } from '../attach-orchestrator.js';
 import { rebuildAttachUrl } from '../debug-server.js';
 import { relayCodeSecret } from '../relay-code-secret.js';
+import { resetRelaySessionKey } from '../relay-signing.js';
 import { buildAttachUrl } from '../tools.js';
 import { buildRelayVerifyAuth, generateTotp, mintRelayCode } from '../totp.js';
+import { primeRoot } from './relay-test-root.js';
 
 const SECRET = 'ab'.repeat(32);
 const WSS = 'wss://abc-def.trycloudflare.com';
@@ -24,6 +26,7 @@ const req = (code: string) => ({ url: `/target.js?at=${code}` }) as IncomingMess
 
 afterEach(() => {
   delete process.env.AIT_DEBUG_TOTP_SECRET;
+  resetRelaySessionKey();
 });
 
 describe('relay code key', () => {
@@ -34,8 +37,8 @@ describe('relay code key', () => {
     expect(key).not.toBe(SECRET);
   });
 
-  it('every daemon mint path produces a code the in-process relay accepts', () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
+  it('every daemon mint path produces a code the in-process relay accepts', async () => {
+    await primeRoot(SECRET);
     const verify = buildRelayVerifyAuth()!;
     const deps = {
       getTunnelStatus: () => ({ up: true, wssUrl: WSS }),
@@ -55,19 +58,18 @@ describe('relay code key', () => {
     }
   });
 
-  it('a code derived from the relay secret is refused', () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
+  it('a code derived from the relay secret is refused', async () => {
+    await primeRoot(SECRET);
     expect(buildRelayVerifyAuth()(req(generateTotp(SECRET)))).toBe(false);
   });
 
-  it('without a relay secret no code is minted and the gate refuses everything', () => {
-    delete process.env.AIT_DEBUG_TOTP_SECRET;
+  it('without a live relay key no code is minted and the gate refuses everything', () => {
     expect(rebuildAttachUrl(parts, { up: true, wssUrl: WSS })).toBeNull();
     expect(buildRelayVerifyAuth()(req(mintRelayCode()))).toBe(false);
   });
 
-  it('never reaches the environment', () => {
-    process.env.AIT_DEBUG_TOTP_SECRET = SECRET;
+  it('never reaches the environment', async () => {
+    await primeRoot(SECRET);
     rebuildAttachUrl(parts, { up: true, wssUrl: WSS });
     const key = relayCodeSecret();
     expect(Object.values(process.env).some((v) => v?.includes(key))).toBe(false);

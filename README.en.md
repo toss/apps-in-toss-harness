@@ -5,16 +5,16 @@
 A harness monorepo that lets you go from an empty directory to a published Apps in Toss mini-app without ever leaving your AI coding agent (Claude Code, Codex, Cursor). The agent plugin `ait` acts as the orchestrator, weaving scaffolding, development, debugging, bundling, registration, and operations into a single flow. Scaffolding is built on `create-ait-app`; docs lookup and console integration are handled by two MCP servers enabled by default; and dev/debug tooling like devtools and debugger are wired in only when you opt in.
 
 > [!IMPORTANT]
-> **Use debug tools 0.3.1 or later.** In 0.3.1, `@apps-in-toss/debugger` and `@apps-in-toss/debugger-client` (formerly `@apps-in-toss/debug-console`) changed their names and connection rules together, and both packages must be 0.3.1 or later to connect. Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. The `ait` plugin must also be 0.3.1 or later to wire the new names.
+> **Use debugger 0.4.0 and debugger-client 0.3.2 or later.** In these versions `@apps-in-toss/debugger` and `@apps-in-toss/debugger-client` (formerly `@apps-in-toss/debug-console`) changed their names and connection rules together (0.3.1 was never released), and both packages must be at least these versions to connect. Mixing them with 0.3.0 or earlier makes them refuse each other and show an "update required" notice. The `ait` plugin must also be a release that points at these versions to wire the new names.
 >
-> | 0.3.0 and earlier | 0.3.1 and later |
+> | 0.3.0 and earlier | debugger 0.4.0 / debugger-client 0.3.2 and later |
 > | --- | --- |
 > | Package `@apps-in-toss/debug-console` | `@apps-in-toss/debugger-client` |
 > | MCP server key `ait-devtools` | `ait-debugger` |
-> | Permission rule `mcp__ait-devtools__*` | `mcp__ait-debugger__*` |
+> | Permission rule `mcp__ait-devtools__*` | `mcp__ait-debugger__*` (a rule that names one tool must use the new tool name too, e.g. `evaluate` -> `run_script`; the table is in `packages/debugger/CHANGELOG.md`) |
 > | Command `/ait:inject-debug-console` | `/ait:inject-debugger-client` |
 >
-> If a project was wired with the old names, update the plugin to 0.3.1 or later and run `/ait:setup-debugger`. It asks for confirmation, then moves the MCP key, the dependency and the imports to the new names in one pass. To migrate by hand, change the key and URL in `.mcp.json`, the dependency in `package.json` and the imports in your source, then upload a new debug build. Changing only one side leaves them unable to connect.
+> If a project was wired with the old names, update the plugin to the latest release and run `/ait:setup-debugger`. It asks for confirmation, then moves the MCP key, the dependency and the imports to the new names in one pass. To migrate by hand, change the key and URL in `.mcp.json`, the dependency in `package.json` and the imports in your source, then upload a new debug build. Changing only one side leaves them unable to connect.
 
 ## What it does
 
@@ -40,7 +40,7 @@ Paste the block below into Claude Code's chat input box (in the desktop app, tha
 # 2) Install the ait plugin (registers 12 skills + 2 MCP servers)
 /plugin install ait@apps-in-toss
 
-# 3) Authorize the console MCP (OAuth, one time) — the docs MCP (apps-in-toss-docs) connects automatically, no auth required
+# 3) Authorize the console MCP (OAuth, one time) — the docs MCP (ait-docs) connects automatically, no auth required
 /mcp
 
 # 4) Turn on auto-update (Marketplaces > apps-in-toss > Enable auto-update)
@@ -107,7 +107,7 @@ Right after installing, both MCP servers show up in `codex mcp list` (the docs M
 If you want **only the MCP servers** without the plugin, register them directly.
 
 ```
-codex mcp add apps-in-toss-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
+codex mcp add ait-docs --url https://developers-apps-in-toss.toss.im/~gitbook/mcp
 ```
 
 ```
@@ -163,7 +163,7 @@ If you want **only the MCP servers** without the plugin, create `.cursor/mcp.jso
 ```json
 {
   "mcpServers": {
-    "apps-in-toss-docs": {
+    "ait-docs": {
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },
     "ait-console": {
@@ -179,7 +179,7 @@ If you want **only the MCP servers** without the plugin, create `.cursor/mcp.jso
 On that path, don't drop `auth.CLIENT_ID`: the auth server doesn't support dynamic client registration (DCR), so a static client id is required. After registering, you can finish server approval and console authorization from the CLI.
 
 ```
-agent mcp enable apps-in-toss-docs
+agent mcp enable ait-docs
 agent mcp enable ait-console
 agent mcp login ait-console
 ```
@@ -192,14 +192,14 @@ The commands in this section were verified against Cursor CLI `2026.08.25-3e8eec
 
 ## Authentication
 
-`apps-in-toss-docs` needs no auth and connects as soon as it's installed. `ait-console` needs a one-time OAuth authorization; the per-host steps are in the collapsed details inside the [Install](#install) section above.
+`ait-docs` needs no auth and connects as soon as it's installed. `ait-console` needs a one-time OAuth authorization; the per-host steps are in the collapsed details inside the [Install](#install) section above.
 
-The official developer docs show the manual registration of the console MCP under the name `apps-in-toss-console`. This plugin registers the same server (same URL) under the shorter name `ait-console`, because the server name is part of every tool name and takes up context in each session.
+The official developer docs show the manual registration of the console MCP under the name `apps-in-toss-console` and the docs MCP under `apps-in-toss-docs`. This plugin registers the same servers (same URLs) under the shorter names `ait-console` and `ait-docs`, because the server name is part of every tool name and takes up context in each session.
 
-If you are updating from an earlier version, check two things.
+If you are updating from an earlier version, check the following.
 
-- Open `/mcp`. If `ait-console` shows needs-auth, authorize it again. The server name changed, so the earlier authorization may not carry over.
-- If a permission rule in `settings.json` (`permissions`) uses `mcp__plugin_ait_apps-in-toss-console__*`, rename it to `mcp__plugin_ait_ait-console__*`.
+- Open `/mcp`. If `ait-console` shows needs-auth, authorize it again. The server name changed, so the earlier authorization may not carry over. The docs MCP `ait-docs` needs no auth, so just confirm it is connected.
+- If a permission rule in `settings.json` (`permissions`) uses `mcp__plugin_ait_apps-in-toss-console__*`, rename it to `mcp__plugin_ait_ait-console__*`. Likewise rename `mcp__plugin_ait_apps-in-toss-docs__*` to `mcp__plugin_ait_ait-docs__*`.
 
 ## Just ask for it — five kinds of plain-language examples
 
@@ -256,7 +256,7 @@ Installing the plugin registers two MCP servers, in Claude Code, Codex, and Curs
 
 | Server | Auth | Key tools |
 |---|---|---|
-| `apps-in-toss-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | None — connected as soon as it's installed | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
+| `ait-docs`<br>`https://developers-apps-in-toss.toss.im/~gitbook/mcp` | None — connected as soon as it's installed | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
 | `ait-console`<br>`https://mcp.toss.im/adapters/apps-in-toss-console/mcp` | OAuth (RFC 9728) — one-time authorization from `/mcp`; needs-auth until then | `miniapp_create`, `bundle_upload`, `bundle_upload_complete`, `miniapp_get_status`, `bundle_list` |
 
 The docs are also readable without MCP. The developer center publishes the same documentation in a form agents can read directly: `https://developers-apps-in-toss.toss.im/llms.txt` is the full index, `https://developers-apps-in-toss.toss.im/llms-full.txt` is the complete text, and appending `?ask=<question>` to any docs page URL returns an answer grounded in that documentation, with source links. Use this path when the plugin isn't installed yet or MCP can't be attached.
@@ -334,12 +334,12 @@ Three packages managed as a pnpm workspace.
 | Package | Directory | Role | Published |
 |---|---|---|---|
 | `@apps-in-toss/agent-plugin` | `packages/agent-plugin` | Agent plugin (Claude Code, Codex, and Cursor) — orchestrates `/ait` commands, skills, and MCP manifests | Via the plugin's own distribution mechanism (not published to npm) |
-| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.3.1`) |
-| `@apps-in-toss/debugger-client` | `packages/debugger-client` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debugger-client-v0.3.1`) |
+| `@apps-in-toss/debugger` | `packages/debugger` | MCP debugging daemon, on-device CDP relay, test runner, dev bridge — devDependency/npx only, never shipped in a production bundle | GitHub Releases (`debugger-v0.4.0`) |
+| `@apps-in-toss/debugger-client` | `packages/debugger-client` | On-device attach runtime — the only one of these allowed in a production bundle | GitHub Releases (`debugger-client-v0.3.2`) |
 
 `shared/internal-protocol` is the device↔host wire-protocol source shared by `debugger` and `debugger-client`, but it is not a pnpm workspace member (by design). It lives under `shared/`, not `packages/`, and both packages reach it directly via tsconfig `paths` and bundler `alias`. Not published.
 
-`debugger` and `debugger-client` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.3.1`, `debugger-client-v0.3.1`), and downloads don't require authentication.
+`debugger` and `debugger-client` are not published to npm. They're distributed via GitHub Releases (`debugger-v0.4.0`, `debugger-client-v0.3.2`), and downloads don't require authentication.
 
 </details>
 

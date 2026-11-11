@@ -10,7 +10,7 @@
  * you reach the CDP endpoint. Here we hit the Chromium DevTools HTTP endpoint
  * (`GET /json`) to discover per-target websocket URLs, then connect directly.
  * The Chii relay (env 3) uses `GET /targets` + `/client/<id>?target=<id>`.
- * Every tool (list_console_messages, get_dom_document, take_screenshot, …)
+ * Every tool (list_console_messages, get_dom, take_screenshot, …)
  * reads only the `CdpConnection` interface and works unchanged on both.
  *
  * Node-only: imports `ws`. Never bundled into the browser/in-app entries.

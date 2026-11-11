@@ -283,7 +283,7 @@ describe('relay origin rule, live', () => {
     expect(res.headers['access-control-allow-origin']).toBe(own);
     const at = code();
     const target = new WebSocket(
-      `${ws()}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t?url=x&title=t`,
+      `${ws()}/v3/at/${at}/d/Zm9vYmFyYmF6cXV4MTIzNA/target/t?url=${encodeURIComponent(`${PRIVATE_APPS}/p`)}&title=t`,
       {
         headers: { ...TUNNEL, Origin: PRIVATE_APPS },
       },

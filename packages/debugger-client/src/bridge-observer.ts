@@ -32,6 +32,9 @@
  * SECRET-HANDLING: this module records API METHOD NAMES + timestamps + a
  * correlation id ONLY. It NEVER reads, stores, or forwards call arguments
  * (`params`/`args`) or results — those may carry tokens, URLs, or user data.
+ * The single exception is the boolean `enabled` of `setScreenAwakeMode`, read to
+ * remember what the APP asked for (see the screen-awake section below); nothing
+ * else of that call, and no argument of any other call, is looked at.
  * The outbound-message parser reads `type`/`name`/`functionName`/`callbackId`/
  * `eventId` and deliberately never touches `params`/`args`.
  *
@@ -107,6 +110,92 @@ let callIdCounter = 0;
 /** Undo hooks that {@link uninstallBridgeObserver} runs to restore originals. */
 let restoreHooks: Array<() => void> = [];
 
+// ── Screen-awake tracking ────────────────────────────────────────────────────
+//
+// WHY — the debug session holds the screen awake and gives it back at teardown.
+// If the app itself had turned screen-awake on, giving back "off" would break
+// the app. The only way to know what the app asked for is to see its
+// `setScreenAwakeMode({ enabled })` calls here, where every 3.0 bridge call
+// passes. Calls the debugger-client makes itself go through sdk-probe.ts inside
+// {@link runAsOwnSdkCall}, which marks them so they never count as the app's.
+//
+// GAPS (documented, not hidden):
+//   - A call the app made BEFORE this observer was installed is invisible; the
+//     value then stays unknown and teardown restores "off" (never leaves the
+//     screen pinned awake by us). attach.ts installs the observer as early as the
+//     gate allows to keep that window short.
+//   - The own-call mark is a synchronous flag around the SDK function call. It
+//     works because the SDK hands the call to the bridge in the same tick; an SDK
+//     that defers the dispatch would make our own call look like the app's.
+//   - On the 2.x line the API does not exist; the postMessage path reads the same
+//     boolean if it ever appears.
+
+/** Last `enabled` the app asked for since the observer was installed; `null` = never seen. */
+let appScreenAwake: boolean | null = null;
+/** Depth of our own SDK calls in progress (synchronous segment). */
+let ownCallDepth = 0;
+/** Counts app calls so a late rejection only rolls back its own record. */
+let awakeSeq = 0;
+let appAwakeListener: ((enabled: boolean) => void) | null = null;
+
+const SCREEN_AWAKE_METHOD = 'setScreenAwakeMode';
+
+/**
+ * Runs `fn` (an SDK call made by this package) so the observer ignores any
+ * `setScreenAwakeMode` it dispatches. Returns what `fn` returns.
+ */
+export function runAsOwnSdkCall<T>(fn: () => T): T {
+  ownCallDepth += 1;
+  try {
+    return fn();
+  } finally {
+    ownCallDepth -= 1;
+  }
+}
+
+/** The last screen-awake value the app requested while observed, or `null` if none was seen. */
+export function getAppScreenAwake(): boolean | null {
+  return appScreenAwake;
+}
+
+/**
+ * Registers the single listener told about each app `setScreenAwakeMode` call
+ * (after the app's call was forwarded). `null` removes it.
+ */
+export function onAppScreenAwake(listener: ((enabled: boolean) => void) | null): void {
+  appAwakeListener = listener;
+}
+
+/** Reads only the boolean `enabled` out of a call's options; anything else is ignored. */
+function readEnabled(options: unknown): boolean | null {
+  if (typeof options !== 'object' || options === null) return null;
+  const enabled = (options as { enabled?: unknown }).enabled;
+  return typeof enabled === 'boolean' ? enabled : null;
+}
+
+/** Records an app screen-awake request. Returns a rollback for a call that fails. */
+function recordAppAwake(enabled: boolean): () => void {
+  const previous = appScreenAwake;
+  const seq = ++awakeSeq;
+  appScreenAwake = enabled;
+  return () => {
+    if (awakeSeq === seq) appScreenAwake = previous;
+  };
+}
+
+function notifyAppAwake(enabled: boolean): void {
+  const listener = appAwakeListener;
+  if (listener === null) return;
+  // After the app's call was handed to native, never inside the wrapper.
+  queueMicrotask(() => {
+    try {
+      listener(enabled);
+    } catch {
+      // The listener must not affect the app.
+    }
+  });
+}
+
 /** Drops pending entries older than {@link MAX_PENDING_AGE_MS}. */
 function pruneStale(state: BridgeObserverState, now: number): void {
   for (const id of Object.keys(state.pending)) {
@@ -179,6 +268,15 @@ function observeOutbound(state: BridgeObserverState, message: string): void {
     typeof parsed.eventId === 'string'
   ) {
     startCall(state, parsed.eventId, parsed.functionName, now);
+    if (parsed.functionName === SCREEN_AWAKE_METHOD && ownCallDepth === 0) {
+      // Reads only the boolean `enabled` of the first argument.
+      const args = parsed.args;
+      const enabled = Array.isArray(args) ? readEnabled(args[0]) : null;
+      if (enabled !== null) {
+        recordAppAwake(enabled);
+        notifyAppAwake(enabled);
+      }
+    }
   }
 }
 
@@ -215,6 +313,7 @@ export function installBridgeObserver(): void {
   if (bridgeObserverInstalled) return;
   if (typeof window === 'undefined') return;
   bridgeObserverInstalled = true;
+  appScreenAwake = null;
 
   const state: BridgeObserverState = {
     pending: Object.create(null) as Record<string, never>,
@@ -230,20 +329,37 @@ export function installBridgeObserver(): void {
       const id = `c${++callIdCounter}`;
       const started = Date.now();
       startCall(state, id, String(name), started);
+      // SECRET-HANDLING: params is forwarded UNTOUCHED and never stored. The only
+      // value read from it is the boolean `enabled` of the app's own
+      // `setScreenAwakeMode` call (screen-awake section above).
+      let rollbackAwake: (() => void) | null = null;
+      let appAwake: boolean | null = null;
+      if (name === SCREEN_AWAKE_METHOD && ownCallDepth === 0) {
+        try {
+          appAwake = readEnabled(params);
+          if (appAwake !== null) rollbackAwake = recordAppAwake(appAwake);
+        } catch {
+          // A hostile params object must not affect the call.
+        }
+      }
       let result: unknown;
       try {
-        // SECRET-HANDLING: params is forwarded UNTOUCHED — never read or stored.
         result = original.call(this, name, params);
       } catch (err) {
+        rollbackAwake?.();
         settleCall(state, id, 'rejected', Date.now());
         throw err;
       }
+      if (appAwake !== null) notifyAppAwake(appAwake);
       if (result !== null && typeof (result as { then?: unknown }).then === 'function') {
         // Observe the returned native Promise WITHOUT altering it — the original
         // reference is returned unchanged (behavior-preserving).
         (result as Promise<unknown>).then(
           () => settleCall(state, id, 'resolved', Date.now()),
-          () => settleCall(state, id, 'rejected', Date.now()),
+          () => {
+            rollbackAwake?.();
+            settleCall(state, id, 'rejected', Date.now());
+          },
         );
       } else {
         settleCall(state, id, 'resolved', Date.now());
@@ -298,6 +414,7 @@ export function installBridgeObserver(): void {
 export function uninstallBridgeObserver(): void {
   if (!bridgeObserverInstalled) return;
   bridgeObserverInstalled = false;
+  appAwakeListener = null;
   const hooks = restoreHooks;
   restoreHooks = [];
   for (const undo of hooks) {

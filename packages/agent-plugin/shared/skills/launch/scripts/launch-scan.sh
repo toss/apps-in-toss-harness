@@ -23,7 +23,7 @@
 #                    (산출물 검사는 규칙 6 debug-artifact로 옮겼다)
 #   debug-artifact   [차단] 빌드 산출물(깊이 5까지의 dist·build·out 의 js·mjs·cjs·html·htm·json, 그리고
 #                    *.ait 번들 — zip이면 unzip -p로 풀어 본다)에 디버그 도구 마커가 하나라도 있다:
-#                    __ait_status_banner __ait_debug_status ait-attach relayPublicKeys startDebugConsole.
+#                    __ait_status_banner __ait_debug_status ait-attach relayPublicKeys startDebugConsole __ait_session_chip ait_remote_debugger.
 #                    다른 규칙과 달리 후보가 아니라 차단이다. 이 산출물로 올린 배포는 검수에 제출하지
 #                    않는다. 한 건이라도 있으면 summary 앞에 `launch-scan:blocking …` 줄이 붙는다.
 #
@@ -496,7 +496,7 @@ r5b() {
 # (b) *.ait 번들 — zip이면 unzip -p로 푼 내용과 원본 바이트를 함께 본다(임시 파일 없이 스트림으로).
 #     풀지 못하고 마커도 안 보이면 AIT_UNREADABLE에 모아 note 줄로 알린다.
 # ---------------------------------------------------------------------------
-SENTINELS="__ait_status_banner __ait_debug_status ait-attach relayPublicKeys startDebugConsole"
+SENTINELS="__ait_status_banner __ait_debug_status ait-attach relayPublicKeys startDebugConsole __ait_session_chip ait_remote_debugger"
 AIT_UNREADABLE=""
 
 r6a() {
@@ -504,14 +504,14 @@ r6a() {
   [ -n "$OUT_DIRS" ] || return 0
   while IFS= read -r od; do
     [ -n "$od" ] || continue
-    grep -rlIF -e __ait_status_banner -e __ait_debug_status -e ait-attach -e relayPublicKeys -e startDebugConsole \
+    grep -rlIF -e __ait_status_banner -e __ait_debug_status -e ait-attach -e relayPublicKeys -e startDebugConsole -e __ait_session_chip -e ait_remote_debugger \
       "${INC_DIST[@]}" "${EXCL_DIST[@]}" "$od" 2>/dev/null | while IFS= read -r f; do
       [ -n "$f" ] || continue
       labels=""
       for s in $SENTINELS; do
         if grep -qF -e "$s" "$f" 2>/dev/null; then labels="${labels:+$labels,}$s"; fi
       done
-      n="$(grep -nIF -m1 -e __ait_status_banner -e __ait_debug_status -e ait-attach -e relayPublicKeys -e startDebugConsole "$f" 2>/dev/null | cut -d: -f1)"
+      n="$(grep -nIF -m1 -e __ait_status_banner -e __ait_debug_status -e ait-attach -e relayPublicKeys -e startDebugConsole -e __ait_session_chip -e ait_remote_debugger "$f" 2>/dev/null | cut -d: -f1)"
       printf '%s\t%s\t1\t%s\n' "$f" "${n:-1}" "$labels"
     done
   done <<EOF_OUT6

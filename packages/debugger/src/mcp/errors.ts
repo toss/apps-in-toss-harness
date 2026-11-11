@@ -5,7 +5,7 @@
  * debug-server.ts · tools.ts의 거부 응답 호출부가 이 헬퍼를 통해 생성된다.
  *
  * 4가지 상태 (진단 메시지 차별화):
- *   - tunnel-down  : cloudflared 터널 미가동 — 서버 재시작 필요
+ *   - tunnel-down  : cloudflared 터널 미가동 — 자동 재시도 중이면 start_attach 재호출
  *   - page-missing : 페이지가 attach 안 됨 — start_attach → QR 스캔
  *   - page-crash   : 페이지 crash 감지 — 앱 재실행 후 재attach
  *   - sdk-absent   : window.__sdkCall 미주입 — dog-food 채널로 재배포
@@ -14,12 +14,12 @@
  * relay-live / LIVE guard 전체가 positive-allowlist kill-switch로 대체됐다.
  */
 
-import {
-  isPreRenameDeviceProtocol,
-  type ProtocolVersionCheck,
-} from '@apps-in-toss/internal-protocol/attach-handshake';
+import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import type { AttachDiagnosis, BusyApps, DetachCause, LastDetach } from './attach-timeline.js';
 import { UNTRUSTED_DATA_NOTE } from './envelope.js';
+import { protocolSkewParts } from './protocol-version.js';
+import { ToolMessageError } from './tool-message-error.js';
+import { type TunnelStatus, tunnelErrorLabel } from './tools.js';
 
 /** MCP tool-result 에러 응답 형식. */
 export interface McpErrorResult {
@@ -77,7 +77,7 @@ export function sanitizeRemoteText(text: unknown, max: number = REMOTE_TEXT_MAX_
  * Tier A/B 환경 불일치 거부 메시지.
  *
  * 기본 hint는 **런타임 전환 도구**를 가리킨다 — 이 데몬은 dual-connection
- * 라우터라 `start_debug`/`start_attach` 한 호출로 환경을 warm swap하며, 서버
+ * 라우터라 `switch_environment`/`start_attach` 한 호출로 환경을 warm swap하며, 서버
  * 재시작이 필요 없다. 과거 hint가 안내하던 `MCP_ENV`는 **소스 어디에서도 읽지
  * 않는다**(값이 수용되고 무시된다 — `cli.ts` 헤더 주석, `tier-filtering.test.ts`의
  * ambient scrub 주석 참고). 죽은 환경 변수를 설정하고 재시작하라는 안내는
@@ -105,7 +105,7 @@ export function tierRejectionError(
     requiredEnv === 'relay'
       ? 'relay로 전환하려면 `start_attach({mode:"relay-staging", scheme_url, projectRoot})`를 호출하세요 — ' +
         '한 호출이 relay·터널을 띄우고 QR을 발급합니다. 서버 재시작은 필요 없습니다.'
-      : 'mock으로 전환하려면 `start_debug({mode:"local-browser"})`를 호출하세요. 서버 재시작은 필요 없습니다.';
+      : 'mock으로 전환하려면 `switch_environment({mode:"local-browser"})`를 호출하세요. 서버 재시작은 필요 없습니다.';
   const effectiveHint = hint ?? defaultHint;
   const text =
     `${toolName}은 ${envLabel} 환경에서만 사용할 수 있습니다. ` +
@@ -125,8 +125,50 @@ export function tierRejectionError(
 export function tunnelDownError(): McpErrorResult {
   return mcpError(
     'cloudflared 터널이 안 떠 있습니다. ' +
-      'MCP 서버를 재시작하거나 잠시 후 list_pages로 터널 상태를 다시 확인하세요.',
+      '잠시 후 start_attach를 다시 호출하거나 get_page로 터널 상태를 확인하세요.',
   );
+}
+
+/**
+ * 터널을 기다렸는데도 안 떴을 때의 `start_attach` 에러. `waitedMs`는 실제로 기다린 시간이다. 원인 종류와 다음 재시도 시각을 말하고,
+ * 서버 재시작이 아니라 `start_attach` 재호출을 안내한다.
+ *
+ * SECRET-HANDLING: 상태 이름, 횟수, 초 단위 시간, 원인 종류만 싣는다. 터널 호스트·relay URL은 없다.
+ */
+export function tunnelUnavailableError(
+  tunnel: TunnelStatus,
+  nowMs: number,
+  waitedMs: number,
+): McpErrorResult {
+  if (tunnel.state === undefined || tunnel.state === 'down') return tunnelDownError();
+  const waited = Math.round(waitedMs / 1000);
+  const head =
+    waited >= 1
+      ? `cloudflared 터널이 ${waited}초를 기다려도 안 떴어요`
+      : 'cloudflared 터널이 아직 안 떴어요';
+  const parts: string[] = [];
+  if (tunnel.state === 'starting') {
+    parts.push(
+      `${head}. 아직 뜨는 중이에요 (처음 실행이면 cloudflared 바이너리를 내려받느라 더 걸려요).`,
+    );
+  } else {
+    parts.push(`${head}: ${tunnelErrorLabel(tunnel.lastErrorKind)}.`);
+    if (tunnel.lastErrorKind === 'rate-limited') {
+      parts.push(
+        '짧은 시간에 요청이 몰려 Cloudflare가 막은 거라 재시도 간격을 1분 이상으로 늘렸어요.',
+      );
+    }
+    const retryAt = tunnel.nextRetryAt != null ? Date.parse(tunnel.nextRetryAt) : Number.NaN;
+    parts.push(
+      Number.isNaN(retryAt)
+        ? `지금 재시도하는 중이에요(연속 실패 ${tunnel.attempts ?? 0}회).`
+        : `연속 실패 ${tunnel.attempts ?? 0}회, 다음 재시도는 약 ${Math.max(0, Math.round((retryAt - nowMs) / 1000))}초 뒤예요.`,
+    );
+  }
+  parts.push(
+    '자동으로 계속 재시도하니 서버를 재시작하지 말고, 잠시 후 start_attach를 다시 호출하세요.',
+  );
+  return mcpError(parts.join(' '));
 }
 
 /**
@@ -211,7 +253,7 @@ export function pageCrashError(toolName?: string): McpErrorResult {
  * connection 종류에 따라 정반대다 (issue #360):
  *   - relay(intoss, env 3): dog-food 빌드가 아니다 → dog-food
  *     채널로 재배포 후 QR 재스캔.
- *   - local(`start_debug local-browser`, env 1 로컬 브라우저): 재배포가 아니라 dev 서버를
+ *   - local(`switch_environment local-browser`, env 1 로컬 브라우저): 재배포가 아니라 dev 서버를
  *     `npm run dev`로 띄웠는지 + unplugin alias가 `@apps-in-toss/web-framework`를
  *     devtools mock으로 resolve하는지 확인. debugger-client이 켜진 빌드면
  *     (`startDebugConsole()` 또는 `/auto`) attach 허용 뒤 `window.__sdkCall`이 자동 설치된다.
@@ -252,7 +294,7 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * `target.js` 자리에 업데이트 안내 막대가 뜬다), 이 에러는 "업데이트가 필요하다"를 알리는 것이다.
  *
  * 프로토콜 3은 이름 변경 릴리스다. 기기 쪽이 낮거나 번호가 없으면 이름이 바뀌기 전의
- * `@apps-in-toss/debug-console`(0.3.0 이하)이므로, 새 이름과 0.3.1 이상을 직접 안내한다.
+ * `@apps-in-toss/debug-console`(0.3.0 이하)이므로, 새 이름과 최소 버전(debugger 0.4.0, debugger-client 0.3.2)을 직접 안내한다.
  * 기기 쪽이 높으면 데몬을 올린다.
  *
  * SECRET-HANDLING: 숫자와 기기 패키지 버전 라벨만 싣는다. relay `wss://` URL·터널 호스트·
@@ -261,37 +303,8 @@ export function sdkAbsentError(toolName?: string, isLocal = false): McpErrorResu
  * @param check - `match: false`인 프로토콜 비교 결과.
  */
 export function protocolVersionMismatchError(check: ProtocolVersionCheck): McpErrorResult {
-  const device = check.deviceProtocol === null ? '없음(옛 버전)' : String(check.deviceProtocol);
-  const label = check.deviceVersion !== '' ? ` (패키지 ${check.deviceVersion})` : '';
-  const deviceOlder = check.deviceProtocol === null || check.deviceProtocol < check.hostProtocol;
-  if (deviceOlder && isPreRenameDeviceProtocol(check.deviceProtocol)) {
-    return mcpError(
-      `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-        `기기에 들어 있는 패키지${label}는 프로토콜 ${device}인 옛 @apps-in-toss/debug-console이고, ` +
-        `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-        '0.3.1부터 두 패키지는 같은 프로토콜로만 연결되고, debug-console은 ' +
-        '@apps-in-toss/debugger-client로 이름이 바뀌었습니다. 이 기기는 연결하지 않았습니다. ' +
-        '미니앱에서 @apps-in-toss/debug-console을 지우고 @apps-in-toss/debugger-client 0.3.1 이상을 ' +
-        '설치해 재배포하세요(설치 명령은 debugger-client README 참고). ' +
-        '데몬은 @apps-in-toss/debugger 0.3.1 이상이어야 합니다.',
-    );
-  }
-  if (deviceOlder) {
-    return mcpError(
-      `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-        `기기의 @apps-in-toss/debugger-client${label}은 프로토콜 ${device}, ` +
-        `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-        '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
-        '미니앱의 @apps-in-toss/debugger-client를 최신 릴리스로 올려 재배포하세요(설치 명령은 debugger-client README 참고).',
-    );
-  }
-  return mcpError(
-    `업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ` +
-      `기기의 @apps-in-toss/debugger-client${label}은 프로토콜 ${device}, ` +
-      `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
-      '두 패키지는 같은 프로토콜로만 연결되므로 이 기기는 연결하지 않았습니다. ' +
-      '데몬의 @apps-in-toss/debugger를 0.3.1 이상 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).',
-  );
+  const { detail, action } = protocolSkewParts(check);
+  return mcpError(`업데이트가 필요합니다 — device↔host 프로토콜 버전 불일치: ${detail} ${action}`);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -348,7 +361,7 @@ export function attachTimeoutMessage(details: AttachTimeoutDetails): string {
   const observedNote =
     observed.length > 0 ? ` — previously attached pages: [${observed.join(', ')}]` : '';
   lines.push(
-    `No page${deploymentNote} attached within ${timeoutSec}s${observedNote} — call list_pages to retry.`,
+    `No page${deploymentNote} attached within ${timeoutSec}s${observedNote} — call get_page to retry.`,
   );
   if (diagnosis.kind === 'page-not-opened' || diagnosis.kind === 'wrong-page') {
     lines.push(
@@ -401,7 +414,7 @@ export function relayDisconnectError(toolName?: string): McpErrorResult {
   const prefix = toolName ? `${toolName}: ` : '';
   return mcpError(
     `${prefix}relay 연결이 끊겼습니다. ` +
-      'list_pages로 상태를 확인하고, 필요하면 앱을 재실행 후 재attach하세요.',
+      'get_page로 상태를 확인하고, 필요하면 앱을 재실행 후 재attach하세요.',
   );
 }
 
@@ -422,7 +435,11 @@ export function classifyToolError(
   toolName: string,
   isLocal = false,
   gone?: PageGoneContext,
+  attached = false,
 ): McpErrorResult {
+  // 이 서버가 직접 만든 안내 문장은 그대로 돌려준다 (페이지가 보낸 문구가 아니다).
+  if (err instanceof ToolMessageError) return mcpError(err.message);
+
   const message = err instanceof Error ? err.message : String(err);
 
   // 상태 2: page 미attach (sendCommand 경로가 던지는 패턴). 끊긴 적이 있으면 시각·원인을 말한다.
@@ -467,12 +484,12 @@ export function classifyToolError(
     return relayDisconnectError(toolName);
   }
 
-  // 그 외: 원본 메시지를 포함하되 list_pages 다음 행동 안내 추가.
+  // 그 외: 원본 메시지를 포함하되 get_page 다음 행동 안내 추가.
   // 메시지는 페이지·CDP가 보낸 문구일 수 있다 — 정제(제어 문자 제거·200자 제한)하고
   // 신뢰 불가 데이터 표지를 붙여 지시로 읽히지 않게 한다.
-  return mcpError(
-    `${toolName} 실패: ${sanitizeRemoteText(message)}\n` +
-      `${UNTRUSTED_DATA_NOTE}\n` +
-      'list_pages로 미니앱이 relay에 attach됐는지 확인하세요.',
-  );
+  // 이미 attach된 상태에서 페이지가 돌려준 오류면 attach 확인 안내는 붙이지 않는다
+  // (원인이 attach가 아니라 페이지 쪽이므로 엉뚱한 곳을 보게 만든다).
+  const base = `${toolName} 실패: ${sanitizeRemoteText(message)}\n${UNTRUSTED_DATA_NOTE}`;
+  if (attached) return mcpError(base);
+  return mcpError(`${base}\nget_page로 미니앱이 relay에 attach됐는지 확인하세요.`);
 }

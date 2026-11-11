@@ -6,14 +6,14 @@
  */
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  relayCertDocument,
-  relayPublicKey,
-  signRelay,
-} from '../../../debugger/src/mcp/relay-signing.js';
+import { SEED_HOST_NAME, seedComputerConsent } from './consent-seed.js';
+import { attachSignatures, relayPublicKey } from './legacy-relay-signing.js';
 
 const SECRET = '11'.repeat(32);
 const KEY = relayPublicKey(SECRET);
+/** A pinned key as the bundle carries it: the key and a far-off expiry (Unix seconds). */
+const FAR = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
+const KEY_PIN = { publicKey: KEY, notAfter: FAR };
 const AT = '0123456789abcdef0123456789abcdef';
 const RELAY = 'wss://abc-def.trycloudflare.com';
 
@@ -30,10 +30,10 @@ function setPage(query: string): void {
 
 let originalWebSocket: typeof WebSocket;
 
-beforeEach(() => {
-  // The person already said "연결" to this relay origin (consent.ts); the
+beforeEach(async () => {
+  // The person already said "연결" to this developer computer (consent.ts); the
   // dialog itself is covered in attach-consent.test.ts.
-  window.localStorage.setItem('__ait_debug_consent', JSON.stringify([{ o: RELAY, t: Date.now() }]));
+  await seedComputerConsent(KEY);
   vi.resetModules();
   document.head.innerHTML = '';
   delete window.__sdk;
@@ -43,16 +43,7 @@ beforeEach(() => {
   vi.stubGlobal('crypto', webcrypto);
   vi.stubGlobal(
     'fetch',
-    vi.fn((url: unknown) =>
-      String(url).endsWith('/relay-cert')
-        ? Promise.resolve({
-            status: 200,
-            redirected: false,
-            headers: { get: () => null },
-            text: () => Promise.resolve(JSON.stringify(relayCertDocument(SECRET))),
-          })
-        : Promise.resolve({ status: 200 }),
-    ),
+    vi.fn(() => Promise.resolve({ status: 200 })),
   );
   originalWebSocket = window.WebSocket;
   window.WebSocket = SpyWebSocket as unknown as typeof WebSocket;
@@ -83,7 +74,7 @@ describe('/auto — SDK bridge needs an accepted attach', () => {
 
   it('a relay address without a valid signature installs nothing', async () => {
     setPage(`debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${UNSIGNED_V2}`);
-    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
+    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY_PIN];
     await import('../auto.js');
     await settle();
     expect(window.__sdk).toBeUndefined();
@@ -91,10 +82,11 @@ describe('/auto — SDK bridge needs an accepted attach', () => {
   });
 
   it('a signed attach installs the bridge once the signature check settles', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT, SEED_HOST_NAME);
     setPage(
-      `debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signRelay(SECRET, RELAY, AT)}`,
+      `debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&arc=${signed?.cert}&ahn=${SEED_HOST_NAME}&ahs=${signed?.hostSig}`,
     );
-    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY];
+    globalThis.__AIT_DEBUG_RELAY_KEYS__ = [KEY_PIN];
     await import('../auto.js');
     await vi.waitFor(() => expect(typeof window.__sdkCall).toBe('function'));
     expect(Object.keys(window.__sdk ?? {}).length).toBeGreaterThan(0);

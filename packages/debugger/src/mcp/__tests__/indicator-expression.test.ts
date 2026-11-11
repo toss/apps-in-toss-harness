@@ -10,7 +10,7 @@
  * - #748 disconnected → NON-BLOCKING (`pointer-events:none`) + SELF-DISMISSING
  *   (fades and removes itself after the window), so a run that ends with
  *   `close()` injecting `{ state: 'disconnected' }` no longer leaves a permanent
- *   "Debugger Disconnected" element that intercepts taps on the phone.
+ *   "디버거 연결 끊김" element that intercepts taps on the phone.
  * - reconnect before the self-dismiss cancels it and restores the badge
  *   (transient tunnel blips do not flash-remove it).
  *
@@ -69,14 +69,131 @@ describe('buildIndicatorExpression — badge DOM behavior', () => {
     delete (window as unknown as Record<string, unknown>).__ait_indicator;
   });
 
-  it('renders the attached badge — visible, red, pointer-events:auto', () => {
+  it('renders the attached badge — visible, green, pointer-events:auto', () => {
     evalExpression();
     const el = badge();
     expect(el).not.toBeNull();
-    expect(label()?.textContent).toBe('Debugger Connected');
+    expect(label()?.textContent).toBe('디버거 연결됨');
     expect(el?.style.pointerEvents).toBe('auto');
-    expect(el?.style.background).toBe('rgb(229, 72, 77)'); // #e5484d
+    expect(el?.style.background).toBe('rgb(15, 123, 77)'); // #0f7b4d
     expect(el?.style.display).toBe('block');
+  });
+
+  describe('safe-area placement', () => {
+    const w = window as unknown as Record<string, unknown>;
+    const ctl = () => w.__ait_indicator as { topPx: number; leftPx: number };
+    afterEach(() => {
+      delete w.__sdk;
+      delete w.__ait;
+    });
+
+    it('falls back to the CSS env() offset when the SDK insets are unavailable', () => {
+      evalExpression();
+      expect(ctl().topPx).toBe(8);
+      expect(badge()?.style.cssText).toContain('top');
+    });
+
+    it('uses the SDK top inset (CSS env() is 0 in the Toss WebView) plus a margin', () => {
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 59, bottom: 34, left: 0, right: 0 }) } };
+      evalExpression();
+      expect(ctl().topPx).toBe(67);
+    });
+
+    it('reads getSafeAreaInsets() and the mock window.__ait state the way measure_safe_area does', () => {
+      w.__sdk = { getSafeAreaInsets: () => ({ top: 47 }) };
+      evalExpression();
+      expect(ctl().topPx).toBe(55);
+      delete w.__sdk;
+      delete w.__ait_indicator;
+      document.body.innerHTML = '';
+      w.__ait = { state: { safeAreaInsets: { top: 20, bottom: 0, left: 0, right: 0 } } };
+      evalExpression();
+      expect(ctl().topPx).toBe(28);
+    });
+
+    it('re-reads the insets on each heartbeat (late SDK init) and on resize', () => {
+      evalExpression();
+      expect(ctl().topPx).toBe(8);
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 59, left: 0 }) } };
+      vi.advanceTimersByTime(1000);
+      expect(ctl().topPx).toBe(67);
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 0, left: 44 }) } };
+      window.dispatchEvent(new Event('resize'));
+      expect(ctl().topPx).toBe(8);
+      expect(ctl().leftPx).toBe(52);
+    });
+
+    it('ignores garbage and a throwing SDK', () => {
+      w.__sdk = {
+        SafeAreaInsets: {
+          get: () => {
+            throw new Error('boom');
+          },
+        },
+      };
+      expect(() => evalExpression()).not.toThrow();
+      expect(ctl().topPx).toBe(8);
+      w.__sdk = { SafeAreaInsets: { get: () => ({ top: 'x', left: NaN }) } };
+      vi.advanceTimersByTime(1000);
+      expect(ctl().topPx).toBe(8);
+    });
+
+    it('keeps the badge at the top and puts no bottom offset in the expression', () => {
+      const expr = buildIndicatorExpression();
+      expect(expr).toContain('top:max(12px');
+      expect(expr).not.toMatch(/'bottom:/);
+    });
+  });
+
+  describe('client status banner de-duplication', () => {
+    const HOST_ID = '__ait_status_' + 'banner';
+    const w = window as unknown as Record<string, unknown>;
+
+    function addClientBanner(status: string): void {
+      const host = document.createElement('div');
+      host.id = HOST_ID;
+      document.body.appendChild(host);
+      w.__ait_debug_status = status;
+    }
+
+    afterEach(() => {
+      document.getElementById(HOST_ID)?.remove();
+      delete w.__ait_debug_status;
+    });
+
+    it('removes the client banner when it shows the connected confirmation', () => {
+      addClientBanner('connected');
+      evalExpression();
+      expect(document.getElementById(HOST_ID)).toBeNull();
+      expect(badge()).not.toBeNull();
+    });
+
+    it('removes a connected banner that appears after injection (heartbeat tick)', () => {
+      evalExpression();
+      addClientBanner('connected');
+      vi.advanceTimersByTime(1100);
+      expect(document.getElementById(HOST_ID)).toBeNull();
+    });
+
+    it.each(['connecting', 'server-unreachable', 'session-ended'])(
+      'keeps the client banner while it shows %s',
+      (status) => {
+        addClientBanner(status);
+        evalExpression();
+        vi.advanceTimersByTime(1100);
+        expect(document.getElementById(HOST_ID)).not.toBeNull();
+      },
+    );
+
+    it('keeps the client banner when the disconnected badge is injected', () => {
+      addClientBanner('connected');
+      evalExpression({ state: 'disconnected' });
+      expect(document.getElementById(HOST_ID)).not.toBeNull();
+    });
+
+    it('does not carry the client banner host id as a contiguous string', () => {
+      expect(buildIndicatorExpression()).not.toContain(HOST_ID);
+    });
   });
 
   it('disconnected badge is NON-BLOCKING (pointer-events:none) with the ko notice', () => {
@@ -111,7 +228,7 @@ describe('buildIndicatorExpression — badge DOM behavior', () => {
     const el = badge();
     expect(el).not.toBeNull();
     expect(el?.style.pointerEvents).toBe('auto');
-    expect(label()?.textContent).toBe('Debugger Connected');
+    expect(label()?.textContent).toBe('디버거 연결됨');
   });
 
   it('a reconnect AFTER a self-dismiss re-mounts the badge (durable controller)', () => {
@@ -279,7 +396,7 @@ describe('buildIndicatorExpression — freeze/spinner triage signals (#749)', ()
     // window.__ait_bridge is undefined (env 2 mock / no bridge).
     expect(() => evalExpression()).not.toThrow();
     const text = badge()?.textContent ?? '';
-    expect(text).toContain('Debugger Connected');
+    expect(text).toContain('디버거 연결됨');
     expect(text).toContain('♥0');
     expect(text).not.toContain('⏳');
     expect(text).not.toContain('last:');
@@ -403,7 +520,7 @@ describe('buildIndicatorRemovalExpression — end-of-run badge removal', () => {
     evalExpression();
 
     expect(badge()).not.toBeNull();
-    expect(label()?.textContent).toBe('Debugger Connected');
+    expect(label()?.textContent).toBe('디버거 연결됨');
   });
 
   it('SECRET-HANDLING: the expression carries no URLs or codes', () => {
@@ -419,5 +536,110 @@ describe('DEFAULT_DISCONNECTED_LABEL', () => {
     expect(DEFAULT_DISCONNECTED_LABEL).toContain('디버거 연결 끊김');
     expect(DEFAULT_DISCONNECTED_LABEL).toContain('앱을 닫고');
     expect(DEFAULT_DISCONNECTED_LABEL).toContain('QR을 다시 스캔');
+  });
+});
+
+describe('buildIndicatorExpression — controls (끊기 / 숨기기)', () => {
+  let debugSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '';
+    (window as unknown as Record<string, unknown>).__ait_relay_ws_observed = true;
+    delete (window as unknown as Record<string, unknown>).__ait_indicator;
+    debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    debugSpy.mockRestore();
+    delete (window as unknown as Record<string, unknown>).__ait_relay_ws_observed;
+    delete (window as unknown as Record<string, unknown>).__ait_indicator;
+  });
+
+  function tap(el: Element | null): void {
+    el?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  }
+
+  function buttons(): HTMLButtonElement[] {
+    return [...(badge()?.querySelectorAll('button') ?? [])] as HTMLButtonElement[];
+  }
+
+  type ClickListener = (e: { isTrusted: boolean }) => void;
+
+  /**
+   * jsdom cannot mint a trusted event, so the click listeners the page registers on its
+   * buttons are captured while the expression runs and called with a stand-in event.
+   * Order: 끊기, 숨기기.
+   */
+  function evalCapturingClicks(
+    opts: Parameters<typeof buildIndicatorExpression>[0],
+  ): ClickListener[] {
+    const listeners: ClickListener[] = [];
+    const add = vi.spyOn(HTMLButtonElement.prototype, 'addEventListener').mockImplementation(((
+      type: string,
+      listener: ClickListener,
+    ) => {
+      if (type === 'click') listeners.push(listener);
+    }) as never);
+    try {
+      evalExpression(opts);
+    } finally {
+      add.mockRestore();
+    }
+    return listeners;
+  }
+
+  it('without controls a tap hides the badge, as before, and no menu exists', () => {
+    evalExpression();
+    expect(buttons()).toHaveLength(0);
+    tap(badge());
+    expect(badge()?.style.display).toBe('none');
+  });
+
+  it('with controls a tap opens the menu instead of hiding the badge', () => {
+    evalExpression({ controls: true });
+    expect(buttons().map((b) => b.textContent)).toEqual(['끊기', '배지 숨기기']);
+    const menu = buttons()[0]?.parentElement as HTMLElement;
+    expect(menu.style.display).toBe('none');
+    tap(badge());
+    expect(badge()?.style.display).toBe('block');
+    expect(menu.style.display).toBe('flex');
+    tap(badge());
+    expect(menu.style.display).toBe('none');
+  });
+
+  it('숨기기 hides the badge for a real tap only', () => {
+    const [, hide] = evalCapturingClicks({ controls: true });
+    tap(badge());
+    hide?.({ isTrusted: false });
+    expect(badge()?.style.display).toBe('block');
+    hide?.({ isTrusted: true });
+    expect(badge()?.style.display).toBe('none');
+  });
+
+  it('끊기 reports the tap on the page console, once per real tap', () => {
+    const [kill] = evalCapturingClicks({ controls: true });
+    tap(badge());
+    kill?.({ isTrusted: false });
+    expect(debugSpy).not.toHaveBeenCalled();
+    kill?.({ isTrusted: true });
+    expect(debugSpy).toHaveBeenCalledWith('ait:ctl', 'kill');
+  });
+
+  it('a later injection without controls turns the menu off', () => {
+    evalExpression({ controls: true });
+    evalExpression({ controls: false });
+    tap(badge());
+    expect(badge()?.style.display).toBe('none');
+  });
+
+  it('the menu does not appear on a disconnected badge', () => {
+    evalExpression({ controls: true });
+    evalExpression({ controls: true, state: 'disconnected' });
+    tap(badge());
+    const menu = buttons()[0]?.parentElement as HTMLElement;
+    expect(menu.style.display).toBe('none');
   });
 });

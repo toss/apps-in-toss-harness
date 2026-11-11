@@ -5,11 +5,7 @@
  */
 
 import { webcrypto } from 'node:crypto';
-import {
-  parseRelayCertDocument,
-  parseRelaySignature,
-  relayCertMessage,
-} from '@apps-in-toss/internal-protocol/relay-signature';
+import { relayCertMessage } from '@apps-in-toss/internal-protocol/relay-signature';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const SECRET = '11'.repeat(32);
@@ -38,7 +34,7 @@ async function loadWithBadFirstOutputs(bad: string[]) {
     };
   });
   vi.resetModules();
-  const mod = await import('../relay-signing.js');
+  const mod = await import('../../agent/root-key.js');
   return { mod, infos };
 }
 
@@ -48,7 +44,7 @@ describe('scalar derivation', () => {
       '00'.repeat(32), // zero
       ORDER_HEX, // equal to the order
     ]);
-    const key = mod.relayPublicKey(SECRET);
+    const key = mod.derivePublicKey(SECRET);
     expect(key).toMatch(/^[A-Za-z0-9_-]{87}$/);
     expect(infos).toEqual([
       'ait-relay-signing-v1',
@@ -59,10 +55,11 @@ describe('scalar derivation', () => {
 
   it('still yields a usable, deterministic key after a retry', async () => {
     const first = await loadWithBadFirstOutputs(['00'.repeat(32)]);
-    const keyA = first.mod.relayPublicKey(SECRET);
-    const sig = first.mod.signRelay(SECRET, 'wss://a.trycloudflare.com', 'a'.repeat(32));
+    const keyA = first.mod.derivePublicKey(SECRET);
+    const root = first.mod.deriveRootKey(SECRET);
+    const cert = root.signCert(first.mod.createRootKey().publicKey, 1_800_000_000, 1_800_000_900);
     const second = await loadWithBadFirstOutputs(['00'.repeat(32)]);
-    expect(second.mod.relayPublicKey(SECRET)).toBe(keyA);
+    expect(second.mod.derivePublicKey(SECRET)).toBe(keyA);
     const key = await webcrypto.subtle.importKey(
       'raw',
       new Uint8Array(Buffer.from(keyA, 'base64url')),
@@ -70,19 +67,11 @@ describe('scalar derivation', () => {
       false,
       ['verify'],
     );
-    // The root key signs the certificate the relay serves for the key named in `sig`.
-    const keyId = parseRelaySignature(sig)?.keyId;
-    const parts = (
-      parseRelayCertDocument(JSON.stringify(first.mod.relayCertDocument(SECRET))) ?? []
-    ).find((c) => c.keyId === keyId);
-    expect(parts).toBeDefined();
     const ok = await webcrypto.subtle.verify(
       { name: 'ECDSA', hash: 'SHA-256' },
       key,
-      new Uint8Array(parts!.certSignatureBytes),
-      new TextEncoder().encode(
-        relayCertMessage(parts!.sessionPublicKey, parts!.notBefore, parts!.notAfter),
-      ),
+      new Uint8Array(Buffer.from(cert.sig, 'base64url')),
+      new TextEncoder().encode(relayCertMessage(cert.pub, cert.nb, cert.na)),
     );
     expect(ok).toBe(true);
   });

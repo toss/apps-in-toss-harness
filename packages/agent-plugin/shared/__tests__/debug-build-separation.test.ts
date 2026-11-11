@@ -24,6 +24,8 @@ const MARKERS = [
   'ait-attach',
   'relayPublicKeys',
   'startDebugConsole',
+  '__ait_session_chip',
+  'ait_remote_debugger',
 ];
 const RECORD = '.ait-debug-deployments.json';
 

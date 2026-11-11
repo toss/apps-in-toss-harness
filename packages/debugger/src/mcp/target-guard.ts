@@ -100,25 +100,28 @@ return true;
  * A device older than the relay is a pre-rename `@apps-in-toss/debug-console` (protocol 2 or
  * lower, see `isPreRenameDeviceProtocol`; a newer-but-still-older `debugger-client` gets a plain
  * "update debugger-client" text): the package continues as `@apps-in-toss/debugger-client`, so the text names the new
- * package and the 0.3.1 floor of both packages instead of "update debug-console". A device
+ * package and the first-release floors of both packages (debugger 0.4.0, debugger-client 0.3.2) instead of "update debug-console". A device
  * newer than the relay needs a newer daemon.
  */
 export function updateRequiredText(devicePathProtocol: number, hostProtocol: number): string {
   if (devicePathProtocol < hostProtocol) {
     return isPreRenameDeviceProtocol(devicePathProtocol)
-      ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고, 지금 디버거와는 연결되지 않아요. debug-console을 지우고 @apps-in-toss/debugger-client 0.3.1 이상을 설치해 다시 배포한 뒤 QR을 다시 스캔하세요.'
+      ? '이 미니앱에 들어 있는 @apps-in-toss/debug-console은 @apps-in-toss/debugger-client로 이름이 바뀌었고, 지금 디버거와는 연결되지 않아요. debug-console을 지우고 @apps-in-toss/debugger-client 0.3.2 이상을 설치해 다시 배포한 뒤 QR을 다시 스캔하세요.'
       : '이 미니앱의 @apps-in-toss/debugger-client가 디버거(@apps-in-toss/debugger)보다 오래돼서 연결하지 않았어요. debugger-client를 최신 버전으로 올려 다시 배포한 뒤 QR을 다시 스캔하세요.';
   }
-  return '디버거(@apps-in-toss/debugger)가 이 미니앱의 @apps-in-toss/debugger-client보다 오래돼서 연결하지 않았어요. 디버거를 0.3.1 이상 최신 버전으로 올려 다시 실행하세요.';
+  return '디버거(@apps-in-toss/debugger)가 이 미니앱의 @apps-in-toss/debugger-client보다 오래돼서 연결하지 않았어요. 디버거를 0.4.0 이상 최신 버전으로 올려 다시 실행하세요.';
 }
 
 export const UPDATE_REQUIRED_CONSOLE_WARNING =
-  '[ait-debugger] 디버거와 미니앱 쪽 패키지의 프로토콜이 달라서 연결하지 않았어요. @apps-in-toss/debugger와 @apps-in-toss/debugger-client를 0.3.1 이상으로 함께 맞추세요.';
+  '[ait-debugger] 디버거와 미니앱 쪽 패키지의 프로토콜이 달라서 연결하지 않았어요. @apps-in-toss/debugger는 0.4.0 이상, @apps-in-toss/debugger-client는 0.3.2 이상으로 함께 맞추세요.';
 
 /**
  * `target.js` 대신 내려주는 스크립트. 프로토콜이 다른 기기는 chii 코드를 받지 못하고, 화면 위쪽에
  * 업데이트 필요 막대만 그린다(탭하면 닫힘). 옛 debug-console도 `target.js`를 script 태그로
- * 실행하므로 이 막대는 어떤 버전에서도 보인다.
+ * 실행하므로 이 막대는 어떤 버전에서도 보인다. 옛 클라이언트가 이미 그려 둔 "연결하는 중이에요"
+ * 상태 막대(옛 클라이언트의 상태 배너 요소)는 막대를 그릴 때 지우고,
+ * 15초 동안은 다시 붙어도 지운다. 데몬 번들이 배너 호스트 id를 이름으로 들고 있지 않도록
+ * (`check:debug-surface-absent`) 스크립트 안에서 id를 두 조각으로 나눠 이어 붙인다.
  *
  * SECRET-HANDLING: 고정 문구와 프로토콜 번호만 들어 있다. `at=`·relay 호스트·페이지 URL은 없다.
  */
@@ -131,7 +134,10 @@ export function buildUpdateRequiredScript(
 var M=${safeJson(text)},W=${safeJson(UPDATE_REQUIRED_CONSOLE_WARNING)};
 try{var d=Object.getOwnPropertyDescriptor(window,'__ait_debug_status');if(!d||d.writable||d.set)window.__ait_debug_status='update-required'}catch(e){}
 try{console.warn(W)}catch(e){}
-function show(){try{
+var OLD=['__ait_status_'+'banner','__ait_debug_'+'status'];
+function clearOld(){for(var i=0;i<OLD.length;i++){try{var n=document.getElementById(OLD[i]);if(n&&n.parentNode)n.parentNode.removeChild(n)}catch(e){}}}
+function watchOld(){try{if(typeof MutationObserver!=='function')return;var t=document.body||document.documentElement;var mo=new MutationObserver(clearOld);mo.observe(t,{childList:true});setTimeout(function(){try{mo.disconnect()}catch(e){}},15000)}catch(e){}}
+function show(){clearOld();watchOld();try{
 var host=document.createElement('div');
 host.style.cssText='position:fixed;top:0;left:0;right:0;width:100%;z-index:2147483647;margin:0;padding:0;';
 var root=host.attachShadow?host.attachShadow({mode:'closed'}):host;

@@ -691,7 +691,7 @@ const SEAM_CMD_LINE_RE = /^\s*\/ait:[a-z][a-z0-9-]*/;
 // A2/docs-link-banned 검사가 전 skill 에 균일하게 적용된다.
 const DOCS_LINK_ALLOWLIST = new Set();
 
-// A2 docs-mcp-mention-required (positive) — docs GitBook MCP(`apps-in-toss-docs`,
+// A2 docs-mcp-mention-required (positive) — docs GitBook MCP(`ait-docs`,
 // searchDocumentation/getPage)가 manifest 기본 포함되면서, skill 말미의 문서
 // 안내는 docs.aitc.dev deep-link 대신 "docs MCP로 조회" 안내로 통일됐다
 // (harness — aitcc 전제 skill 제거와 함께 `docs` skill 자체도 제거: MCP tool이
@@ -1185,7 +1185,7 @@ function extractIconComponentBlock(tsxSrc, componentName) {
 // deploy-key·logs) 은 콘솔 MCP(`ait-console`) 기본 포함으로 제거됐다(등록=
 // miniapp_create, 번들 업로드=bundle_upload/bundle_upload_complete, 상태=
 // miniapp_get_status). 불필요 skill 3종(docs/auth-setup/changeset) + 대응 stub도
-// 함께 제거됐다 — docs 는 docs MCP(`apps-in-toss-docs`)가, auth-setup 은 oidc 제거
+// 함께 제거됐다 — docs 는 docs MCP(`ait-docs`)가, auth-setup 은 oidc 제거
 // 방침이, changeset 은 harness-external 메인테이너 도구 정리가 근거다(harness
 // aitcc 정리 — 19→10 command, 15→8 skill). 이후 polyfill facet 이 공식 harness
 // 스코프 밖 패키지(monorepo 에서 제거된 `polyfill`)를 안내한다는 이유로 제거되면서
@@ -1307,7 +1307,7 @@ function checkA2(root) {
 
     // docs.aitc.dev 링크 전면 금지 검출 (allowlist 제외) — 루트/intro 뿐
     // 아니라 주제별 deep-link 포함 어떤 docs.aitc.dev 언급도 금지. 문서
-    // 조회는 전부 docs MCP(`apps-in-toss-docs`)의 searchDocumentation/getPage
+    // 조회는 전부 docs MCP(`ait-docs`)의 searchDocumentation/getPage
     // 로 안내한다(아래 A2/docs-mcp-mention-required 와 짝).
     if (!DOCS_LINK_ALLOWLIST.has(skillName)) {
       for (let i = 0; i < srcLines.length; i++) {
@@ -1318,7 +1318,7 @@ function checkA2(root) {
               relFile,
               i + 1,
               'A2/docs-link-banned',
-              `docs.aitc.dev 링크 금지 — docs MCP(apps-in-toss-docs)의 searchDocumentation/getPage로 조회하도록 안내 (fix: 링크를 지우고 "docs MCP로 조회한다" 식 문구로 대체)`,
+              `docs.aitc.dev 링크 금지 — docs MCP(ait-docs)의 searchDocumentation/getPage로 조회하도록 안내 (fix: 링크를 지우고 "docs MCP로 조회한다" 식 문구로 대체)`,
             ),
           );
         }

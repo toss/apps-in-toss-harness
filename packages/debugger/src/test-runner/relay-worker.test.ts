@@ -304,7 +304,7 @@ describe('relay-worker — devtools#731: mid-run relay reconnect', () => {
 
   const WS_DEAD_ERROR = 'relay WebSocket 연결이 끊겼습니다';
   const WS_NOT_CONNECTED_ERROR =
-    'relay에 연결되어 있지 않습니다 (Runtime.evaluate). list_pages로 attach 상태를 확인하고 enableDomains()로 재연결하세요.';
+    'relay에 연결되어 있지 않습니다 (Runtime.evaluate). get_page로 attach 상태를 확인하고 enableDomains()로 재연결하세요.';
 
   /**
    * LOAD-BEARING (#731 regression test #3): a WS-dead-class error on file 1

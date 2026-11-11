@@ -12,20 +12,20 @@
  * the plugin options (see `src/unplugin/index.ts`).
  *
  * Phase 3 tool-surface alignment: dev mode and debug mode now expose the same
- * `AIT.*` tools (`AIT.getMockState`, `AIT.getOperationalEnvironment`,
- * `AIT.getSdkCallHistory`). In dev mode they are backed by the HTTP mock-state
+ * AIT-backed tools (`get_mock_state`, `get_sdk_environment`,
+ * `list_sdk_calls`). In dev mode they are backed by the HTTP mock-state
  * endpoint (see `HttpAitSource`); in debug mode by the Chii channel. So an AI
  * sees a coherent tool whether attached to a phone (debug) or a dev browser
  * (dev).
  *
  * Issue #305 (M2-1) — dev/debug tool-surface unification:
- * dev-mode now also exposes `list_pages`, `get_debug_status`, `measure_safe_area`,
+ * dev-mode now also exposes `get_page`, `get_status`, `measure_safe_area`,
  * and `call_sdk` so the docs/qa/scenarios.md acceptance sequence
- * `list_pages → measure_safe_area → call_sdk` works in dev mode without
+ * `get_page → measure_safe_area → call_sdk` works in dev mode without
  * "Unknown tool" failures.
  *
- * - `list_pages`       — shim: returns the Vite dev URL as a single-entry array.
- * - `get_debug_status`  — dumps dev-mode server state (endpoint URL, last fetch
+ * - `get_page`       — shim: returns the Vite dev URL as a single-entry array.
+ * - `get_status`  — dumps dev-mode server state (endpoint URL, last fetch
  *                        error, reachability, mode/environment metadata).
  * - `measure_safe_area`— reads safeAreaInsets from the mock state snapshot
  *                        (source: 'mock-vite').
@@ -33,13 +33,13 @@
  *                        using window.__ait.state for supported methods; returns
  *                        an explicit tier-filter error for methods that require
  *                        a live CDP bridge.
- * - CDP-only tools (`evaluate`, `take_screenshot`, `get_dom_document`,
- *                   `take_snapshot`, `list_console_messages`,
+ * - CDP-only tools (`run_script`, `take_screenshot`, `get_dom`,
+ *                   `get_dom_snapshot`, `list_console_messages`,
  *                   `list_network_requests`, `list_exceptions`) — return an
  *                   explicit tier-filter error explaining that CDP is unavailable
- *                   in dev-mode and pointing to the `debugger` daemon (start_debug / start_attach).
+ *                   in dev-mode and pointing to the `debugger` daemon (switch_environment / start_attach).
  *
- * This module has no CLI entry (the `--mode=dev` flag was removed in 0.3.1; the
+ * This module has no CLI entry (the `--mode=dev` flag was removed in 0.4.0; the
  * `debugger` bin is always the debug-mode CDP/Chii daemon). Start it
  * programmatically: `import { runDevServer } from '@apps-in-toss/debugger/mcp/server'`.
  */
@@ -64,7 +64,7 @@ import {
 const CDP_UNAVAILABLE_IN_DEV_MODE =
   'dev-mode에서는 CDP 연결이 없어 이 도구를 사용할 수 없습니다. ' +
   '실기기 또는 로컬 Chromium에 붙이려면 `debugger` 데몬(debug 모드)을 MCP 서버로 등록해 ' +
-  '`start_debug`/`start_attach`를 쓰세요.';
+  '`switch_environment`/`start_attach`를 쓰세요.';
 
 /**
  * Tool descriptors served by the dev-mode server.
@@ -82,7 +82,7 @@ const DEV_TOOL_DEFINITIONS = [
   /* AIT.* tools — HTTP mock-state backed                                */
   /* ------------------------------------------------------------------ */
   {
-    name: 'AIT.getMockState',
+    name: 'get_mock_state',
     description:
       'Returns the devtools mock state snapshot (window.__ait) from the running browser session — ' +
       'environment, permissions, location, auth, network, IAP, and more. Read-only. ' +
@@ -92,7 +92,7 @@ const DEV_TOOL_DEFINITIONS = [
     availableIn: 'both' as ToolAvailability,
   },
   {
-    name: 'AIT.getOperationalEnvironment',
+    name: 'get_sdk_environment',
     description:
       'Returns the operational environment + SDK/app version derived from the dev mock state. ' +
       'Read-only.',
@@ -100,7 +100,7 @@ const DEV_TOOL_DEFINITIONS = [
     availableIn: 'both' as ToolAvailability,
   },
   {
-    name: 'AIT.getSdkCallHistory',
+    name: 'list_sdk_calls',
     description:
       'Returns the SDK call trace. In dev mode the HTTP mock-state endpoint records no trace, so ' +
       'this returns an empty list; in debug mode it is populated over the AIT domain. Read-only.',
@@ -111,7 +111,7 @@ const DEV_TOOL_DEFINITIONS = [
   /* Unified surface — dev-mode shims (issue #305)                       */
   /* ------------------------------------------------------------------ */
   {
-    name: 'list_pages',
+    name: 'get_page',
     description:
       'dev-mode: returns the Vite dev server URL as a single-entry page list. ' +
       'No CDP relay is involved — `tunnel.up` is always false and `devMode: true` marks ' +
@@ -121,7 +121,7 @@ const DEV_TOOL_DEFINITIONS = [
     availableIn: 'both' as ToolAvailability,
   },
   {
-    name: 'get_debug_status',
+    name: 'get_status',
     description:
       'dev-mode: reports the current dev session state — Vite endpoint URL, last fetch ' +
       'timestamp/error, mock state endpoint reachability, mode ("dev"), and environment metadata — ' +
@@ -189,7 +189,7 @@ const DEV_TOOL_DEFINITIONS = [
       'To use this tool: register the `debugger` daemon as the MCP server (it is debug mode), then call ' +
       'start_attach({mode:"relay-staging", …}) to bring up the relay and generate the QR for ' +
       'phone scanning. No environment variable is involved. ' +
-      'See: docs MCP (apps-in-toss-docs) searchDocumentation for "debug relay".',
+      'See: docs MCP (ait-docs) searchDocumentation for "debug relay".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -207,7 +207,8 @@ const DEV_TOOL_DEFINITIONS = [
           type: 'number',
           description:
             'Maximum seconds to wait for a page to attach (default 60, range 1–600). ' +
-            'Invalid inputs fall back to default.',
+            '0 = do not wait: issue the QR and return at once (check with get_page / get_status ' +
+            'attachStages; calling start_attach again re-issues the QR). Negative or invalid inputs fall back to default.',
         },
       },
       required: [],
@@ -219,11 +220,11 @@ const DEV_TOOL_DEFINITIONS = [
   /* instead of "Unknown tool" (issue #305)                              */
   /* ------------------------------------------------------------------ */
   {
-    name: 'evaluate',
+    name: 'run_script',
     description:
       'Evaluates an arbitrary JavaScript expression via CDP Runtime.evaluate. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug) for CDP access.',
+      'Use the `debugger` daemon (switch_environment) for CDP access.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -238,25 +239,25 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Captures a PNG screenshot via CDP Page.captureScreenshot. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
   {
-    name: 'get_dom_document',
+    name: 'get_dom',
     description:
       'Returns the DOM tree via CDP DOM.getDocument. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
   {
-    name: 'take_snapshot',
+    name: 'get_dom_snapshot',
     description:
       'Captures a serialized page snapshot via CDP DOMSnapshot.captureSnapshot. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -265,7 +266,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Lists console messages captured via CDP Runtime.consoleAPICalled. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -274,7 +275,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Lists network requests captured via CDP Network events. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: { type: 'object', properties: {}, required: [] },
     availableIn: 'both' as ToolAvailability,
   },
@@ -283,7 +284,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Lists JS exceptions captured via CDP Runtime.exceptionThrown. ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -298,7 +299,7 @@ const DEV_TOOL_DEFINITIONS = [
     description:
       'Runs mini-app test files on the attached page over CDP (Runtime.evaluate). ' +
       'NOT available in dev-mode (no CDP connection). ' +
-      'Use the `debugger` daemon (start_debug).',
+      'Use the `debugger` daemon (switch_environment).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -322,10 +323,10 @@ const DEV_TOOL_NAMES = new Set<string>(DEV_TOOL_DEFINITIONS.map((t) => t.name));
 
 /** CDP-only tools — return a tier-filter error in dev-mode. */
 const CDP_ONLY_TOOL_NAMES = new Set<string>([
-  'evaluate',
+  'run_script',
   'take_screenshot',
-  'get_dom_document',
-  'take_snapshot',
+  'get_dom',
+  'get_dom_snapshot',
   'list_console_messages',
   'list_network_requests',
   'list_exceptions',
@@ -345,7 +346,7 @@ export interface CreateDevServerDeps {
 }
 
 /**
- * Builds the `list_pages` dev-mode shim response.
+ * Builds the `get_page` dev-mode shim response.
  * Returns the Vite dev URL as a single-entry page list with `devMode: true`.
  */
 function buildDevListPagesResult(devtoolsUrl: string) {
@@ -364,7 +365,7 @@ function buildDevListPagesResult(devtoolsUrl: string) {
 }
 
 /**
- * Builds the `get_debug_status` dev-mode response.
+ * Builds the `get_status` dev-mode response.
  * Probes the mock state endpoint reachability and returns server metadata.
  */
 async function buildDevDiagnostics(
@@ -533,11 +534,11 @@ export function createDevServer(deps: CreateDevServerDeps = {}): Server {
       // AIT.* tools backed by HTTP mock-state endpoint.
       if (isAitToolName(effective)) {
         switch (effective) {
-          case 'AIT.getMockState':
+          case 'get_mock_state':
             return jsonResult(await getMockState(aitSource));
-          case 'AIT.getOperationalEnvironment':
+          case 'get_sdk_environment':
             return jsonResult(await getOperationalEnvironment(aitSource));
-          case 'AIT.getSdkCallHistory':
+          case 'list_sdk_calls':
             return jsonResult(await getSdkCallHistory(aitSource));
           default:
             return mcpError(`알 수 없는 tool: ${name}`);
@@ -548,12 +549,12 @@ export function createDevServer(deps: CreateDevServerDeps = {}): Server {
       // Responses are wrapped in ToolEnvelope (issue #322) so agents use the
       // same {ok, data, meta} parser regardless of dev vs debug mode.
       switch (name) {
-        case 'list_pages':
-          return envelopeResult('list_pages', buildDevListPagesResult(devtoolsUrl));
+        case 'get_page':
+          return envelopeResult('get_page', buildDevListPagesResult(devtoolsUrl));
 
-        case 'get_debug_status':
+        case 'get_status':
           return envelopeResult(
-            'get_debug_status',
+            'get_status',
             await buildDevDiagnostics(devtoolsUrl, stateEndpoint, (url) => fetch(url)),
           );
 

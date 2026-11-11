@@ -200,17 +200,17 @@ describe('verifyTotp — constant-time comparison (timingSafeEqual path)', () =>
 // ---------------------------------------------------------------------------
 
 describe('RELAY_VERIFY_SKEW_STEPS', () => {
-  it('equals 6', () => {
-    expect(RELAY_VERIFY_SKEW_STEPS).toBe(6);
+  it('equals 24', () => {
+    expect(RELAY_VERIFY_SKEW_STEPS).toBe(24);
   });
 
-  it('keeps a fresh code accepted for 30 to 35 s, never longer', () => {
+  it('keeps a fresh code accepted for 120 to 125 s, never longer', () => {
     expect(RELAY_CODE_STEP_SECONDS).toBe(5);
-    expect(RELAY_CODE_MIN_AGE_SECONDS).toBe(30);
-    expect(RELAY_CODE_MAX_AGE_SECONDS).toBe(35);
+    expect(RELAY_CODE_MIN_AGE_SECONDS).toBe(120);
+    expect(RELAY_CODE_MAX_AGE_SECONDS).toBe(125);
   });
 
-  it('re-issues the QR once per step and a shown QR keeps at least 25 s of validity', () => {
+  it('re-issues the QR once per step and a shown QR keeps at least 115 s of validity', () => {
     expect(RELAY_QR_REFRESH_INTERVAL_MS).toBeLessThanOrEqual(RELAY_CODE_STEP_SECONDS * 1000);
     expect(START_ATTACH_SEGMENT_MS).toBeLessThanOrEqual(RELAY_CODE_STEP_SECONDS * 1000);
     const guaranteedMs = RELAY_CODE_MIN_AGE_SECONDS * 1000;
@@ -218,7 +218,7 @@ describe('RELAY_VERIFY_SKEW_STEPS', () => {
     // for the dashboard push and for the start_attach segment alike.
     const oldestShownMs = Math.max(RELAY_QR_REFRESH_INTERVAL_MS, START_ATTACH_SEGMENT_MS);
     expect(RELAY_QR_REFRESH_INTERVAL_MS).toBe(5_000);
-    expect(guaranteedMs - oldestShownMs).toBeGreaterThanOrEqual(25_000);
+    expect(guaranteedMs - oldestShownMs).toBeGreaterThanOrEqual(115_000);
   });
 });
 
@@ -270,8 +270,8 @@ describe('buildRelayVerifyAuth — RELAY_VERIFY_SKEW_STEPS window (#490)', () =>
     expect(predicate(makeReq(code))).toBe(true);
   });
 
-  it('rejects a code issued 70 s ago (outside the window)', () => {
-    const issuanceTime = Date.now() - 70_000; // 70 s ago = at least 2 steps back
+  it('rejects a code issued 130 s ago (outside the window)', () => {
+    const issuanceTime = Date.now() - 130_000; // 130 s ago = past the 125 s maximum
     const code = generateTotp(RELAY_TEST_SECRET, issuanceTime);
     const predicate = buildRelayVerifyAuth(
       { AIT_DEBUG_TOTP_SECRET: RELAY_TEST_SECRET },

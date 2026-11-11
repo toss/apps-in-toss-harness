@@ -11,7 +11,8 @@
     "./attach-handshake": "./src/attach-handshake.ts",
     "./relay-auth-code": "./src/relay-auth-code.ts",
     "./relay-signature": "./src/relay-signature.ts",
-    "./relay-origin-close": "./src/relay-origin-close.ts"
+    "./relay-origin-close": "./src/relay-origin-close.ts",
+    "./relay-session-close": "./src/relay-session-close.ts"
   },
   "license": "BSD-3-Clause"
 }

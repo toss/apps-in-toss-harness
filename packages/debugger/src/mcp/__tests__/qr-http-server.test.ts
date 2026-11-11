@@ -25,18 +25,24 @@ import { request as httpRequest } from 'node:http';
 import { createServer, Server } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DASHBOARD_TOKEN_PARAM,
   type DashboardState,
   isCurrentAttachUrl,
   MAX_SSE_CLIENTS,
+  PRESENCE_VISIBLE_WINDOW_MS,
+  REOPEN_BUDGET,
+  REOPEN_MIN_INTERVAL_MS,
   SSE_EVICTION_BUDGET,
   SSE_EVICTION_WINDOW_MS,
 } from '../qr-http-server.js';
-import { signRelay } from '../relay-signing.js';
+import { resetRelaySessionKey } from '../relay-signing.js';
 import {
   dashboardCookieForPort,
+  dashboardTokenOf,
   IDLE_DASHBOARD_STATE,
   startQrHttpServer,
 } from './dashboard-auth-helper.js';
+import { signRelay } from './relay-test-root.js';
 
 process.env.AIT_DEBUG_HTTP_PORT = '0';
 
@@ -138,7 +144,7 @@ describe('startQrHttpServer — GET / dashboard HTML', () => {
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('attach된 페이지 없음');
+      expect(html).toContain('연결된 페이지가 없어요');
     } finally {
       await srv.close();
     }
@@ -149,7 +155,10 @@ describe('startQrHttpServer — GET / dashboard HTML', () => {
     const srv = await startQrHttpServer(() => state);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
-      expect(html).toContain('start_attach');
+      // 개발자 용어(MCP tool 이름) 대신 다음 행동을 한 줄로 안내한다.
+      expect(html).toContain('<p class="hint">');
+      expect(html).toContain('Ask Claude');
+      expect(html).not.toContain('start_attach');
     } finally {
       await srv.close();
     }
@@ -185,7 +194,8 @@ describe('startQrHttpServer — GET / dashboard HTML', () => {
       //  죽은 QR 노출 여부는 인라인 base64 data-URL QR로 판별한다.)
       expect(html).not.toContain('src="data:image');
       // 에러 카피가 표시돼야 한다.
-      expect(html).toContain('relay 연결이 끊겼습니다');
+      expect(html).toContain('data-view="error"');
+      expect(html).toContain('연결 통로가 끊겼어요');
     } finally {
       await srv.close();
     }
@@ -311,7 +321,7 @@ describe('startQrHttpServer — 인스펙터 열기 링크 (#503)', () => {
       // pages.length === 0 → 대기 힌트
       expect(html).not.toContain('class="inspector-link"');
       expect(html).toContain('class="inspector-hint"');
-      expect(html).toContain('attach하면');
+      expect(html).toContain('연결되면');
     } finally {
       await srv.close();
     }
@@ -333,7 +343,7 @@ describe('startQrHttpServer — 인스펙터 열기 링크 (#503)', () => {
       expect(html).not.toContain('class="inspector-link"');
       expect(html).toContain('class="inspector-hint"');
       // 갱신된 i18n 텍스트 (#544)
-      expect(html).toContain('attach하면');
+      expect(html).toContain('연결되면');
     } finally {
       await srv.close();
     }
@@ -543,7 +553,7 @@ describe('startQrHttpServer — 연결된 Pages 섹션 토글 (#411)', () => {
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
       // 정적 렌더의 섹션 헤더·컨테이너·목록이 모두 사라진다 — 거짓 빈 목록 미표시.
-      // (참고: "attach된 페이지 없음" 문자열은 SSE 스크립트 안에도 있어 본문
+      // (참고: "연결된 페이지가 없어요" 문자열은 SSE 스크립트 안에도 있어 본문
       //  존재 여부로는 섹션 표시를 판별할 수 없다 → 정적 마커로 판별한다.)
       expect(html).not.toContain('연결된 Pages');
       expect(html).not.toContain('id="pages-section"');
@@ -564,9 +574,9 @@ describe('startQrHttpServer — 연결된 Pages 섹션 토글 (#411)', () => {
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('연결된 Pages');
+      expect(html).toContain('연결된 페이지');
       expect(html).toContain('id="pages-list"');
-      expect(html).toContain('attach된 페이지 없음');
+      expect(html).toContain('연결된 페이지가 없어요');
     } finally {
       await srv.close();
     }
@@ -583,7 +593,7 @@ describe('startQrHttpServer — 연결된 Pages 섹션 토글 (#411)', () => {
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('연결된 Pages');
+      expect(html).toContain('연결된 페이지');
       expect(html).toContain('target-7');
       expect(html).toContain('example.com/live');
     } finally {
@@ -799,8 +809,9 @@ describe('startQrHttpServer — 기존 라우트 공존 (getDashboardState 주�
       });
       expect(res.status).toBe(200);
       const html = await res.text();
-      // 루트 Dashboard HTML — "Attach QR" 섹션이 있음.
-      expect(html).toContain('Attach QR');
+      // 루트 Dashboard HTML — QR 스캔 안내가 첫 화면이다.
+      expect(html).toContain('data-view="wait"');
+      expect(html).toContain('id="attach-section"');
     } finally {
       await srv.close();
     }
@@ -954,7 +965,7 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
           headers: { 'Accept-Language': 'en-US' },
         })
       ).text();
-      expect(html).toContain('AIT 디버그 Dashboard');
+      expect(html).toContain('AIT 디버그');
     } finally {
       await srv.close();
     }
@@ -968,7 +979,7 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
           headers: { 'Accept-Language': 'ko-KR' },
         })
       ).text();
-      expect(html).toContain('AIT Debug Dashboard');
+      expect(html).toContain('AIT Debug');
     } finally {
       await srv.close();
     }
@@ -980,7 +991,7 @@ describe('startQrHttpServer — ?lang= override + lang switcher (#455)', () => {
     const srv = await startQrHttpServer(() => defaultState);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
-      expect(html).toContain('AIT 디버그 Dashboard');
+      expect(html).toContain('AIT 디버그');
     } finally {
       await srv.close();
     }
@@ -1088,9 +1099,11 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('class="url-row"');
-      expect(html).toContain('class="copy-btn"');
+      // 링크 문자열은 화면에 그리지 않는다 — 복사 버튼의 data-url에만 있다.
+      expect(html).not.toContain('class="url-row"');
+      expect(html).not.toContain('id="url-box"');
       expect(html).toContain('id="copy-btn"');
+      expect(html).toContain(`data-url="${attachUrlDummy.replaceAll('&', '&#38;')}"`);
     } finally {
       await srv.close();
     }
@@ -1107,7 +1120,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
       const html = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(html).toContain('>복사<');
+      expect(html).toContain('>링크 복사<');
     } finally {
       await srv.close();
     }
@@ -1126,7 +1139,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
           headers: { 'Accept-Language': 'en' },
         })
       ).text();
-      expect(html).toContain('>Copy<');
+      expect(html).toContain('>Copy link<');
     } finally {
       await srv.close();
     }
@@ -1158,7 +1171,7 @@ describe('startQrHttpServer — url-box click-to-copy + 복사 버튼 (#458)', (
     }));
     try {
       const koHtml = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
-      expect(koHtml).toContain('복사됨');
+      expect(koHtml).toContain('복사했어요');
 
       const enHtml = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=en`)).text();
       expect(enHtml).toContain('Copied');
@@ -1571,7 +1584,7 @@ describe('startQrHttpServer — /attach 페이지 inspector 버튼 (#544)', () =
       // 버튼 없이 대기 힌트
       expect(html).not.toContain('class="inspector-link"');
       expect(html).toContain('class="inspector-hint"');
-      expect(html).toContain('attach하면');
+      expect(html).toContain('연결되면');
     } finally {
       await srv.close();
     }
@@ -2026,6 +2039,9 @@ describe('startQrHttpServer — SSE watchdog 자동 닫기 (#681)', () => {
       expect(html).toContain('서버가 종료되었습니다');
       expect(html).toContain('이 탭을 닫아도 됩니다');
       expect(html).toContain('탭 닫기');
+      // 스크립트가 탭을 못 닫으면 직접 닫으라는 안내로 바뀐다.
+      expect(html).toContain('이 탭은 브라우저에서 직접 닫아 주세요');
+      expect(html).toContain('ait-close-tab');
       // watchdog 로직 확인
       expect(html).toContain('fireWatchdog');
       expect(html).toContain('showWatchdogFallback');
@@ -2710,7 +2726,8 @@ describe('startQrHttpServer — SSE onerror/phase 클라이언트 동작 시뮬�
             }),
           }),
         );
-        expect(document.getElementById('tunnel-status')?.textContent).toContain('연결됨');
+        // 터널만 살아 있고 폰이 안 붙었으면 중립 문구다 — 초록 "연결됨"은 폰이 붙었을 때만.
+        expect(document.getElementById('tunnel-status')?.textContent).toBe('연결 통로 준비됨');
       } finally {
         cleanup();
       }
@@ -2880,7 +2897,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
 // SSE 구독 상한 + 대시보드 탭 재사용 (연결 기아 방지)
 // ---------------------------------------------------------------------------
 
-describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
+describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
   const baseState: DashboardState = {
     tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
     pages: [],
@@ -2889,13 +2906,18 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
   };
 
   /** /events를 열고 지금까지 받은 텍스트를 모으는 리더. */
+  let cidSeq = 0;
   async function openSse(port: number): Promise<{
+    cid: string;
     text: () => string;
     ended: Promise<void>;
     abort: () => void;
   }> {
     const ctrl = new AbortController();
-    const res = await fetch(`http://127.0.0.1:${port}/events?v=2`, { signal: ctrl.signal });
+    const cid = (++cidSeq).toString(16).padStart(16, '0');
+    const res = await fetch(`http://127.0.0.1:${port}/events?v=2&cid=${cid}`, {
+      signal: ctrl.signal,
+    });
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -2914,8 +2936,16 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
     for (let i = 0; i < 100 && !buf.includes('\n\n'); i++) {
       await new Promise((r) => setTimeout(r, 10));
     }
-    return { text: () => buf, ended, abort: () => ctrl.abort() };
+    return { cid, text: () => buf, ended, abort: () => ctrl.abort() };
   }
+
+  /** 탭이 보내는 하트비트를 흉내 낸다. */
+  const presence = (port: number, cid: string, visible: boolean) =>
+    fetch(`http://127.0.0.1:${port}/presence`, {
+      method: 'POST',
+      headers: { 'X-Ait-Dash': '1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cid, visible }),
+    });
 
   async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
     const deadline = Date.now() + ms;
@@ -2924,15 +2954,99 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
     }
   }
 
-  it('구독 탭이 없으면 hasActiveClients()는 false, 연결하면 true, 끊으면 다시 false', async () => {
+  it('연결만으로는 보이는 탭이 아니고, 보임 하트비트가 있어야 true이며 숨김·끊김·만료에서 false로 돌아온다', async () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
-      expect(srv.hasActiveClients()).toBe(false);
+      expect(srv.hasVisibleClient()).toBe(false);
       const a = await openSse(srv.port);
-      expect(srv.hasActiveClients()).toBe(true);
+      expect(srv.hasVisibleClient()).toBe(false);
+      expect((await presence(srv.port, a.cid, true)).status).toBe(204);
+      expect(srv.hasVisibleClient()).toBe(true);
+      expect(srv.hasVisibleClient(0)).toBe(false);
+      await presence(srv.port, a.cid, false);
+      expect(srv.hasVisibleClient()).toBe(false);
+      await presence(srv.port, a.cid, true);
+      expect(srv.hasVisibleClient()).toBe(true);
       a.abort();
-      await waitFor(() => !srv.hasActiveClients());
-      expect(srv.hasActiveClients()).toBe(false);
+      await waitFor(() => !srv.hasVisibleClient());
+      expect(srv.hasVisibleClient()).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('보임 하트비트가 PRESENCE_VISIBLE_WINDOW_MS를 넘기면 보이는 탭으로 세지 않는다', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const srv = await startQrHttpServer(() => baseState);
+    let a: Awaited<ReturnType<typeof openSse>> | undefined;
+    try {
+      a = await openSse(srv.port);
+      await presence(srv.port, a.cid, true);
+      expect(srv.hasVisibleClient()).toBe(true);
+      vi.setSystemTime(Date.now() + PRESENCE_VISIBLE_WINDOW_MS + 1);
+      expect(srv.hasVisibleClient()).toBe(false);
+    } finally {
+      a?.abort();
+      await srv.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('/presence는 쿠키·X-Ait-Dash가 없으면 거절하고 낯선 cid는 무시한다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const a = await openSse(srv.port);
+      const noCookie = await fetch(`http://127.0.0.1:${srv.port}/presence`, {
+        method: 'POST',
+        headers: { 'x-test-no-auth': '1', 'X-Ait-Dash': '1' },
+        body: JSON.stringify({ cid: a.cid, visible: true }),
+      });
+      expect(noCookie.status).toBe(403);
+      const noHeader = await fetch(`http://127.0.0.1:${srv.port}/presence`, {
+        method: 'POST',
+        body: JSON.stringify({ cid: a.cid, visible: true }),
+      });
+      expect(noHeader.status).toBe(403);
+      await presence(srv.port, 'deadbeefdeadbeef', true);
+      expect(srv.hasVisibleClient()).toBe(false);
+      a.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it(`상한을 넘으면 보이는 탭보다 숨은 탭을 먼저 밀어낸다 (가장 오래된 탭이 보이는 탭이어도)`, async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
+      for (let i = 0; i < MAX_SSE_CLIENTS; i++) opened.push(await openSse(srv.port));
+      // 가장 오래된 탭만 보이는 탭이다. 그 다음으로 오래된 숨은 탭이 밀려나야 한다.
+      await presence(srv.port, opened[0]?.cid ?? '', true);
+      const newest = await openSse(srv.port);
+      await opened[1]?.ended;
+      expect(opened[1]?.text()).toContain('event: superseded');
+      expect(opened[0]?.text()).not.toContain('event: superseded');
+      expect(srv.hasVisibleClient()).toBe(true);
+      for (const c of [...opened, newest]) c.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('전부 보이는 탭이면 가장 오래된 탭을 밀어낸다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
+      for (let i = 0; i < MAX_SSE_CLIENTS; i++) {
+        const c = await openSse(srv.port);
+        await presence(srv.port, c.cid, true);
+        opened.push(c);
+      }
+      const newest = await openSse(srv.port);
+      await opened[0]?.ended;
+      expect(opened[0]?.text()).toContain('event: superseded');
+      expect(opened[1]?.text()).not.toContain('event: superseded');
+      for (const c of [...opened, newest]) c.abort();
     } finally {
       await srv.close();
     }
@@ -2955,7 +3069,6 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
       // 새 구독과 나머지 구독은 밀려나지 않는다.
       expect(newest.text()).not.toContain('event: superseded');
       expect(opened[1]?.text()).not.toContain('event: superseded');
-      expect(srv.hasActiveClients()).toBe(true);
 
       for (const c of [...opened, newest]) c.abort();
     } finally {
@@ -2963,7 +3076,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
     }
   });
 
-  it('프로토콜 표식(?v=2)이 없는 오래된 클라이언트는 204로 거절되고 슬롯·hasActiveClients에 영향이 없다', async () => {
+  it('프로토콜 표식(?v=2)이 없는 오래된 클라이언트는 204로 거절되고 슬롯·hasVisibleClient에 영향이 없다', async () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
       const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
@@ -2978,14 +3091,10 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
       for (const c of opened) {
         expect(c.text()).not.toContain('event: superseded');
       }
-      expect(srv.hasActiveClients()).toBe(true);
       for (const c of opened) c.abort();
-      await waitFor(() => !srv.hasActiveClients());
-      expect(srv.hasActiveClients()).toBe(false);
-      // 표식 없는 요청만 있으면 hasActiveClients는 계속 false다(start_attach가 새 탭을 연다).
       const stale = await fetch(`http://127.0.0.1:${srv.port}/events`);
       expect(stale.status).toBe(204);
-      expect(srv.hasActiveClients()).toBe(false);
+      expect(srv.hasVisibleClient()).toBe(false);
     } finally {
       await srv.close();
     }
@@ -2995,7 +3104,9 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
-      expect(html).toContain("new EventSource('/events?v=2')");
+      expect(html).toContain("new EventSource('/events?v=2&cid=' + CID)");
+      expect(html).toContain("fetch('/presence'");
+      expect(html).toContain("document.visibilityState === 'visible'");
     } finally {
       await srv.close();
     }
@@ -3032,7 +3143,6 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
       expect(res.status).toBe(429);
       expect(res.headers.get('retry-after')).toBe(String(SSE_EVICTION_WINDOW_MS / 1000));
       for (const c of alive) expect(c.text()).not.toContain('event: superseded');
-      expect(srv.hasActiveClients()).toBe(true);
 
       // 창이 지나면 다시 밀어낼 수 있다.
       vi.setSystemTime(Date.now() + SSE_EVICTION_WINDOW_MS + 1);
@@ -3053,7 +3163,8 @@ describe('startQrHttpServer — SSE 구독 상한과 hasActiveClients', () => {
       for (let i = 0; i < SSE_EVICTION_BUDGET + 3; i++) {
         const c = await openSse(srv.port);
         c.abort();
-        await waitFor(() => !srv.hasActiveClients());
+        await c.ended;
+        await new Promise((r) => setTimeout(r, 20));
         expect(c.text()).not.toContain('event: superseded');
       }
       const res = await fetch(`http://127.0.0.1:${srv.port}/events?v=2`);
@@ -3568,9 +3679,10 @@ describe('startQrHttpServer — attach 링크 검증', () => {
     }
   });
 
-  it('isCurrentAttachUrl: 데몬이 실제로 만든 sig(세션 인증서 형태)도 받아들인다', () => {
+  it('isCurrentAttachUrl: 데몬이 실제로 만든 sig(세션 인증서 형태)도 받아들인다', async () => {
     const base = 'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
-    const sig = signRelay('11'.repeat(32), 'wss://abc-def.trycloudflare.com', 'a'.repeat(32));
+    const sig = await signRelay('11'.repeat(32), 'wss://abc-def.trycloudflare.com', 'a'.repeat(32));
+    resetRelaySessionKey();
     expect(sig).toContain('.');
     const link = `${base}&at=${'a'.repeat(32)}&sig=${sig}`;
     expect(isCurrentAttachUrl(link, `${base}&at=${'b'.repeat(32)}&sig=x`)).toBe(true);
@@ -3585,6 +3697,18 @@ describe('startQrHttpServer — attach 링크 검증', () => {
     // 구분자가 섞인 sig, 중복 sig는 거절한다.
     expect(isCurrentAttachUrl(`${base}&sig=x%26relay%3Dy`, b)).toBe(false);
     expect(isCurrentAttachUrl(`${a}&sig=${'C'.repeat(86)}`, b)).toBe(false);
+  });
+
+  it('isCurrentAttachUrl: ahs= 호스트 서명도 코드마다 바뀌어도 같은 링크로 본다', () => {
+    const base = 'intoss-private://app?_deploymentId=test-uuid&debug=1&relay=wss%3A%2F%2Fx.tc.com';
+    const a = `${base}&at=${'a'.repeat(32)}&ahn=mac&ahs=${'A'.repeat(86)}`;
+    const b = `${base}&at=${'b'.repeat(32)}&ahn=mac&ahs=${'B'.repeat(86)}`;
+    expect(isCurrentAttachUrl(a, b)).toBe(true);
+    // 호스트 이름이 다르면 다른 링크다.
+    expect(isCurrentAttachUrl(a.replace('ahn=mac', 'ahn=other'), b)).toBe(false);
+    // 구분자가 섞이거나 중복된 ahs는 거절한다.
+    expect(isCurrentAttachUrl(`${base}&ahn=mac&ahs=x%26relay%3Dy`, b)).toBe(false);
+    expect(isCurrentAttachUrl(`${a}&ahs=${'C'.repeat(86)}`, b)).toBe(false);
   });
 
   it('isCurrentAttachUrl: at= 위치와 값이 달라도 같고, 그 밖의 차이는 다르다', () => {
@@ -3700,6 +3824,269 @@ describe('startQrHttpServer — 동시 세션의 대시보드', () => {
     } finally {
       await a.close();
       await b.close();
+    }
+  });
+});
+
+describe('startQrHttpServer — 쿠키 없는 요청의 403', () => {
+  const noAuth = (port: number, path: string, headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${port}${path}`, {
+      headers: { 'x-test-no-auth': '1', ...headers },
+      redirect: 'manual',
+    });
+  const state = (): DashboardState => ({
+    tunnel: { up: true, wssUrl: 'wss://relay.trycloudflare.com' },
+    pages: [],
+    attachUrl: 'https://x.example/?at=000000',
+    phase: 'active',
+  });
+
+  it('페이지 이동(Accept: text/html)은 토큰·상태 없는 HTML 안내 페이지로 403', async () => {
+    const srv = await startQrHttpServer(state);
+    try {
+      for (const path of ['/', '/attach', '/inspector']) {
+        const res = await noAuth(srv.port, path, {
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'ko-KR,ko',
+        });
+        expect(res.status).toBe(403);
+        expect(res.headers.get('content-type')).toContain('text/html');
+        const body = await res.text();
+        expect(body).toContain('이 탭은 접근 권한을 잃었어요');
+        expect(body).toContain('start_attach');
+        expect(body).not.toContain('000000');
+        expect(body).not.toContain('trycloudflare');
+        expect(body).not.toContain(dashboardTokenOf(srv));
+        expect(body).not.toContain('href=');
+        expect(body).toContain('새 대시보드 탭 열기');
+        expect(body).toContain("fetch('/reopen'");
+      }
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('Accept-Language가 영어면 영어 안내 페이지, ?lang=이 우선한다', async () => {
+    const srv = await startQrHttpServer(state);
+    try {
+      const en = await noAuth(srv.port, '/', { Accept: 'text/html', 'Accept-Language': 'en-US' });
+      expect(en.status).toBe(403);
+      const enBody = await en.text();
+      expect(enBody).toContain('This tab lost its access');
+      expect(enBody).toContain('Open a fresh dashboard tab');
+      const ko = await noAuth(srv.port, '/?lang=ko', {
+        Accept: 'text/html',
+        'Accept-Language': 'en-US',
+      });
+      expect(await ko.text()).toContain('이 탭은 접근 권한을 잃었어요');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('/qr.png·/events·/devtools/·/action·/unknown 과 Accept가 html이 아닌 요청은 일반 텍스트 403', async () => {
+    const srv = await startQrHttpServer(state);
+    try {
+      for (const path of ['/qr.png', '/events', '/devtools/', '/action', '/nope']) {
+        const res = await noAuth(srv.port, path, { Accept: 'text/html' });
+        expect(res.status).toBe(403);
+        expect(res.headers.get('content-type')).toContain('text/plain');
+        expect(await res.text()).toBe('Forbidden');
+      }
+      const json = await noAuth(srv.port, '/', { Accept: 'application/json' });
+      expect(json.status).toBe(403);
+      expect(await json.text()).toBe('Forbidden');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('낯선 Host는 페이지 이동이어도 일반 텍스트 403', async () => {
+    const srv = await startQrHttpServer(state);
+    try {
+      const res = await new Promise<{ status: number; type: string; body: string }>(
+        (resolve, reject) => {
+          const req = httpRequest(
+            {
+              host: '127.0.0.1',
+              port: srv.port,
+              path: '/',
+              headers: { Host: 'rebind.example', Accept: 'text/html' },
+            },
+            (r) => {
+              let body = '';
+              r.on('data', (c) => {
+                body += c;
+              });
+              r.on('end', () =>
+                resolve({
+                  status: r.statusCode ?? 0,
+                  type: String(r.headers['content-type']),
+                  body,
+                }),
+              );
+            },
+          );
+          req.on('error', reject);
+          req.end();
+        },
+      );
+      expect(res.status).toBe(403);
+      expect(res.type).toContain('text/plain');
+      expect(res.body).toBe('Forbidden');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('토큰으로 심는 쿠키에 Max-Age(데몬 최대 수명)가 붙는다', async () => {
+    const srv = await startQrHttpServer(state);
+    try {
+      const res = await noAuth(srv.port, `/?${DASHBOARD_TOKEN_PARAM}=${dashboardTokenOf(srv)}`);
+      expect(res.status).toBe(302);
+      const cookie = res.headers.get('set-cookie') ?? '';
+      expect(cookie).toContain('HttpOnly');
+      expect(cookie).toContain('SameSite=Strict');
+      expect(cookie).toContain(`Max-Age=${6 * 60 * 60}`);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe('startQrHttpServer — POST /reopen', () => {
+  const state = (): DashboardState => ({
+    tunnel: { up: true, wssUrl: 'wss://relay.trycloudflare.com' },
+    pages: [],
+    attachUrl: 'https://x.example/?at=000000',
+    phase: 'active',
+  });
+
+  /** 쿠키 없이 /reopen을 부른다. Origin·Host·헤더를 마음대로 줄 수 있어 http.request를 쓴다. */
+  const reopen = (port: number, headers: Record<string, string | undefined>) =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const h: Record<string, string> = {};
+      for (const [k, v] of Object.entries(headers)) if (v !== undefined) h[k] = v;
+      const req = httpRequest(
+        { host: '127.0.0.1', port, path: '/reopen', method: 'POST', headers: h },
+        (res) => {
+          let body = '';
+          res.on('data', (c) => {
+            body += c;
+          });
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  const good = (port: number) => ({
+    Origin: `http://127.0.0.1:${port}`,
+    'X-Ait-Dash': '1',
+  });
+
+  it('자기 Origin이면 토큰이 붙은 URL로 브라우저 열기 함수를 부르고, 응답에는 토큰이 없다', async () => {
+    const opener = vi.fn(async (_url: string) => true);
+    const srv = await startQrHttpServer(state, { openDashboardTab: opener });
+    try {
+      const res = await reopen(srv.port, good(srv.port));
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ ok: true, status: 'opened' });
+      expect(opener).toHaveBeenCalledTimes(1);
+      const url = opener.mock.calls[0]?.[0] ?? '';
+      expect(url).toContain(`${DASHBOARD_TOKEN_PARAM}=${dashboardTokenOf(srv)}`);
+      expect(url.startsWith(`http://127.0.0.1:${srv.port}/`)).toBe(true);
+      expect(res.body).not.toContain(dashboardTokenOf(srv));
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('Origin이 없거나 다른 출처이거나 X-Ait-Dash가 없으면 403이고 브라우저를 열지 않는다', async () => {
+    const opener = vi.fn(async (_url: string) => true);
+    const srv = await startQrHttpServer(state, { openDashboardTab: opener });
+    try {
+      const cases: Array<Record<string, string | undefined>> = [
+        { 'X-Ait-Dash': '1' },
+        { ...good(srv.port), Origin: 'http://evil.example' },
+        { ...good(srv.port), Origin: `http://127.0.0.1:${srv.port + 1}` },
+        { ...good(srv.port), Origin: 'null' },
+        { Origin: `http://127.0.0.1:${srv.port}` },
+        { ...good(srv.port), Host: 'rebind.example' },
+      ];
+      for (const headers of cases) {
+        const res = await reopen(srv.port, headers);
+        expect(res.status).toBe(403);
+        expect(res.body).toBe('Forbidden');
+      }
+      expect(opener).not.toHaveBeenCalled();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it(`${REOPEN_MIN_INTERVAL_MS}ms 안에 다시 부르면 429이고, 간격이 지나면 다시 열린다`, async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const opener = vi.fn(async (_url: string) => true);
+    const srv = await startQrHttpServer(state, { openDashboardTab: opener });
+    try {
+      expect((await reopen(srv.port, good(srv.port))).status).toBe(200);
+      const limited = await reopen(srv.port, good(srv.port));
+      expect(limited.status).toBe(429);
+      expect(JSON.parse(limited.body)).toEqual({ ok: false, status: 'rate-limited' });
+      expect(opener).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + REOPEN_MIN_INTERVAL_MS + 1);
+      expect((await reopen(srv.port, good(srv.port))).status).toBe(200);
+      expect(opener).toHaveBeenCalledTimes(2);
+    } finally {
+      await srv.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('창 안의 총 횟수가 REOPEN_BUDGET을 넘으면 간격이 지나도 429다', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const opener = vi.fn(async (_url: string) => true);
+    const srv = await startQrHttpServer(state, { openDashboardTab: opener });
+    try {
+      for (let i = 0; i < REOPEN_BUDGET; i++) {
+        expect((await reopen(srv.port, good(srv.port))).status).toBe(200);
+        vi.setSystemTime(Date.now() + REOPEN_MIN_INTERVAL_MS + 1);
+      }
+      expect((await reopen(srv.port, good(srv.port))).status).toBe(429);
+      expect(opener).toHaveBeenCalledTimes(REOPEN_BUDGET);
+    } finally {
+      await srv.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('열기 함수가 없으면 503, 실패하면 502이며 어느 응답에도 토큰이 없다', async () => {
+    const none = await startQrHttpServer(state);
+    const failing = await startQrHttpServer(state, { openDashboardTab: async () => false });
+    try {
+      const a = await reopen(none.port, good(none.port));
+      expect(a.status).toBe(503);
+      const b = await reopen(failing.port, good(failing.port));
+      expect(b.status).toBe(502);
+      expect(JSON.parse(b.body)).toEqual({ ok: false, status: 'failed' });
+      expect(b.body).not.toContain(dashboardTokenOf(failing));
+    } finally {
+      await none.close();
+      await failing.close();
+    }
+  });
+
+  it('GET /reopen은 페이지 이동이어도 일반 텍스트 403이다', async () => {
+    const srv = await startQrHttpServer(state, { openDashboardTab: async () => true });
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/reopen`, {
+        headers: { 'x-test-no-auth': '1', Accept: 'text/html' },
+      });
+      expect(res.status).toBe(403);
+      expect(res.headers.get('content-type')).toContain('text/plain');
+    } finally {
+      await srv.close();
     }
   });
 });

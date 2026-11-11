@@ -15,7 +15,7 @@
  *   see `cdp-connection.ts`). Authoritative, known before any target attaches,
  *   and swappable at runtime by pointing at a different connection.
  *
- * `McpEnvironment` survives as an OUTPUT-BOUNDARY type — `get_debug_status` and
+ * `McpEnvironment` survives as an OUTPUT-BOUNDARY type — `get_status` and
  * the envelope `meta.env` field still surface the precise two-value string —
  * but it is reconstructed from `connection.kind` via {@link deriveEnvironment},
  * never sniffed.
@@ -79,7 +79,7 @@ export function isRelayEnv(env: McpEnvironment): boolean {
  * `relay-live` (env 4) has been removed (#665); `relay-mobile` (env 2) has been
  * removed (#103), so the relay origin discriminator is gone too.
  *
- * Pure — used at every output boundary (envelope `meta.env`, `get_debug_status`,
+ * Pure — used at every output boundary (envelope `meta.env`, `get_status`,
  * `measure_safe_area` provenance) so the surface never sniffs a URL again.
  *
  * Written switch-style so a missing arm is a TS compile error (never falls

@@ -8,6 +8,8 @@
  * `start_attach` in the env-3 dog-food path.
  */
 
+import { RELAY_CERT_PARAM } from '@apps-in-toss/internal-protocol/relay-signature';
+
 /**
  * Build a self-attaching dog-food deep-link.
  *
@@ -28,7 +30,7 @@
  *   When a TOTP secret is active, `buildDeepLinkAttachUrl` accepts an optional
  *   `totpCode` argument and splices `at=<code>` alongside `debug` and `relay`.
  *   The code must be computed by the caller at call time — do NOT pre-compute
- *   and cache it, because the 30-35 second window expires quickly. The in-app gate
+ *   and cache it, because the 120-125 second window expires quickly. The in-app gate
  *   (`src/in-app/gate.ts` Layer C) validates this code against the baked secret.
  *
  * Why not `URL`/`URLSearchParams`: `intoss-private:` is a non-special scheme.
@@ -119,7 +121,12 @@ function stripExisting(query: string, key: string): string {
  * @param sig - Optional signature of the relay origin and `at` code (see
  *   `relay-signing.ts`), spliced as `sig=<sig>`. It belongs to one `at` code, so a
  *   caller that mints a new code passes the signature made for that code.
- * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&rid=<runId>]`
+ * @param host - Optional developer computer name and its signature (`ahn=<name>&ahs=<sig>`,
+ *   see `relay-signing.ts`). Clients that predate the name ignore both parameters.
+ * @param cert - Optional session certificate that signed `sig` (`arc=<cert>`, 180
+ *   characters, see `relay-signing.ts`). A client that predates it ignores the parameter;
+ *   the current client verifies the link with it and never asks the relay for a certificate.
+ * @returns The same URL with `debug=1&relay=<encoded wssUrl>&at=<totpCode>[&sig=<sig>][&ahn=<name>&ahs=<sig>][&arc=<cert>][&rid=<runId>]`
  *   appended.
  * @throws If `wssUrl` is not a `wss:` URL (the gate rejects anything else, so
  *   producing such a link would be a silent dead end), or if `totpCode` is empty.
@@ -130,6 +137,8 @@ export function buildDeepLinkAttachUrl(
   totpCode: string,
   runId?: string,
   sig?: string,
+  host?: { readonly name: string; readonly sig: string },
+  cert?: string,
 ): string {
   let relay: URL;
   try {
@@ -161,6 +170,12 @@ export function buildDeepLinkAttachUrl(
   if (sig !== undefined && sig !== '') {
     appended.push(['sig', sig]);
   }
+  if (host !== undefined && host.name !== '' && host.sig !== '') {
+    appended.push(['ahn', host.name], ['ahs', host.sig]);
+  }
+  if (cert !== undefined && cert !== '') {
+    appended.push([RELAY_CERT_PARAM, cert]);
+  }
   if (runId !== undefined && runId !== '') {
     appended.push(['rid', runId]);
   }
@@ -169,6 +184,9 @@ export function buildDeepLinkAttachUrl(
   // previous run is removed even when the caller does not provide a fresh one.
   // (`at` is always replaced below.)
   query = stripExisting(query, 'sig');
+  query = stripExisting(query, 'ahn');
+  query = stripExisting(query, 'ahs');
+  query = stripExisting(query, RELAY_CERT_PARAM);
   query = stripExisting(query, 'rid');
 
   for (const [key] of appended) {

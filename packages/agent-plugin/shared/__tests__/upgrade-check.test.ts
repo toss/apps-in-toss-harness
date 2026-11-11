@@ -61,13 +61,13 @@ describe('debugger upgrade-check 경로', () => {
     expect(ref.replace(/\s+/g, ' ')).toContain('"미설치"가 아니라 "업그레이드 필요"');
   });
 
-  it('최소 버전은 이름 변경 릴리스(0.3.1)다', () => {
+  it('debugger 최소 버전은 도구 이름 정리 릴리스(0.4.0), debugger-client는 이름 변경 첫 발행본(0.3.2)이다', () => {
     const mins = JSON.parse(read('setup-debugger/references/min-versions.json')) as Record<
       string,
       string
     >;
-    expect(mins['@apps-in-toss/debugger']).toBe('0.3.1');
-    expect(mins['@apps-in-toss/debugger-client']).toBe('0.3.1');
+    expect(mins['@apps-in-toss/debugger']).toBe('0.4.0');
+    expect(mins['@apps-in-toss/debugger-client']).toBe('0.3.2');
     expect(mins).not.toHaveProperty('@apps-in-toss/debug-console');
   });
 

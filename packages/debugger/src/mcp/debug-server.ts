@@ -31,7 +31,7 @@
  * Dynamic tool registration (issue #208):
  * The server advertises `listChanged: true` so MCP clients can subscribe to
  * `notifications/tools/list_changed`. Before any page attaches, only bootstrap
- * tools (`start_attach`, `list_pages`) are listed. Once a target appears,
+ * tools (`start_attach`, `get_page`) are listed. Once a target appears,
  * the full attach-dependent tool set is added and a `list_changed` notification
  * is sent — without requiring a session restart. `runDebugServer`
  * starts a polling watcher that detects the 0→N target
@@ -58,7 +58,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 // Test-runner core (#646): run_tests reuses the same orchestration the
 // `debugger-test` CLI uses. These imports are react-free (node:* + esbuild),
 // so they do not break the MCP-daemon react-free invariant.
-import { injectDebugIndicator, injectGlobals } from '../test-runner/cell.js';
+import { injectCell, injectDebugIndicator } from '../test-runner/cell.js';
 import { runWithConnection } from '../test-runner/cli.js';
 import {
   ALLOWED_TEST_FILE_SUFFIXES,
@@ -78,9 +78,12 @@ import {
   type AttachUrlParts,
   buildIndicatorRemovalExpression,
   isRelayPageFresh,
+  type McpResult,
   prepareAttach as prepareAttachCore,
   RELAY_STALE_PAGE_MS,
   renderAndMaybeWait as renderAndMaybeWaitCore,
+  START_ATTACH_SEGMENT_MS,
+  waitForAttachWithEvents,
   withCurrentRelay,
 } from './attach-orchestrator.js';
 import { type AttachProgressHandle, startAttachProgress } from './attach-progress.js';
@@ -95,6 +98,7 @@ import { type ChiiRelay, startChiiRelay } from './chii-relay.js';
 import { buildDeepLinkAttachUrl } from './deeplink.js';
 import { AutoDevtoolsOpener, buildChiiInspectorUrl } from './devtools-opener.js';
 import {
+  type EnvelopeExtraMeta,
   isCompatMode,
   isUntrustedDataTool,
   UNTRUSTED_DATA_NOTE,
@@ -114,6 +118,7 @@ import {
   sdkAbsentError,
   tierRejectionError,
 } from './errors.js';
+import { decideEvaluate, resolveEvaluatePolicy } from './evaluate-policy.js';
 import { installExitTriggers } from './exit-triggers.js';
 import { LocalCdpConnection } from './local-connection.js';
 import { launchChromium } from './local-launcher.js';
@@ -123,7 +128,21 @@ import {
   startMinVersionGate,
   updateRequiredMessage,
 } from './min-version-gate.js';
+import {
+  isRedactionEnabled,
+  type RedactionStats,
+  redactDeep,
+  totalRedactions,
+} from './page-redact.js';
 import { startMaxAgeWatchdog } from './parent-watcher.js';
+import {
+  CONFIRM_REFUSE_OVER,
+  type ConfirmCode,
+  confirmFailureMessage,
+  type PhoneConfirmDecision,
+  prepareCode,
+  requestPhoneConfirmation,
+} from './phone-confirm.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
 import {
   type DashboardState,
@@ -131,14 +150,18 @@ import {
   type QrHttpServerOptions,
   startQrHttpServer,
 } from './qr-http-server.js';
+import type { RelayClaimEvent } from './relay-arming.js';
 import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
-import { redactRelayText } from './relay-redact.js';
+import { activateRelayRoot, relayAuthSwitch } from './relay-root.js';
 import { relayRunId } from './relay-run-id.js';
-import { loadRelaySecretReadOnly } from './relay-secret-store.js';
-import { attachSignature, relayCertDocument } from './relay-signing.js';
-import { RESTART_CMD } from './restart-hint.js';
+import { relayCertDocument, signedLinkParams, signingHostName } from './relay-signing.js';
+import { appendRemoteLog } from './remote-log.js';
+import { describeTestFiles, hashTestFiles } from './run-tests-approval.js';
+import { classifySdkCall, parseSdkAllowlist } from './sdk-policy.js';
+import { createSessionGuard, type SessionGuard } from './session-guard.js';
+import type { SessionLifetimeOptions } from './session-lifetime.js';
 import { listOtherSessions, registerSession, type SessionsSnapshot } from './session-registry.js';
 import { redirectConsoleToStderr } from './stdout-guard.js';
 import { shouldRejectNewTarget } from './target-busy.js';
@@ -164,7 +187,9 @@ import {
   listNetworkRequests,
   listPages,
   measureSafeArea,
+  openQrInBrowser,
   readDevtoolsVersion,
+  TOOL_ANNOTATIONS,
   type TunnelStatus,
   takeScreenshot,
   takeSnapshot,
@@ -175,17 +200,14 @@ import {
   mintRelayCode,
   RELAY_QR_REFRESH_INTERVAL_MS,
 } from './totp.js';
-import {
-  makeTunnelStatus,
-  printAttachBanner,
-  type QuickTunnel,
-  startQuickTunnel,
-  startTunnelHealthProbe,
-} from './tunnel.js';
+import { printAttachBanner } from './tunnel.js';
+import { dnsResolvesTunnelHost } from './tunnel-dns.js';
+import { createTunnelLifecycle, type TunnelLifecycleOptions } from './tunnel-lifecycle.js';
 import { createTunnelRotationPolicy, type TunnelRotationOptions } from './tunnel-rotation.js';
+import { createTunnelSupervisor, type TunnelSupervisor } from './tunnel-supervisor.js';
 
 /**
- * The result of a `start_debug` mode switch (issue #348). Reported back to the
+ * The result of a `switch_environment` mode switch (issue #348). Reported back to the
  * agent so it knows the active mode, whether the LIVE guard is armed, and the
  * suggested next step — all without a Claude Code restart or MCP re-handshake.
  */
@@ -201,11 +223,11 @@ export interface ModeSwitchReport {
 }
 
 /**
- * The two canonical `start_debug` modes (issues #382, #398, #665, #103 — each
+ * The two canonical `switch_environment` modes (issues #382, #398, #665, #103 — each
  * names the environment fidelity ladder rung it attaches to):
  *
  *   - `local-browser`  → env 1: desktop Chromium with the MOCK SDK + local CDP
- *                 attach. Side-effect tools (call_sdk/evaluate) run unguarded
+ *                 attach. Side-effect tools (call_sdk/run_script) run unguarded
  *                 against the mock; nothing touches a real device or real users.
  *                 No prerequisites — the default, always-available environment.
  *
@@ -254,7 +276,7 @@ export function envForMode(mode: StartDebugMode): McpEnvironment {
 
 /**
  * Owns the two coexisting CDP connections (local + relay) and the `active`
- * pointer that `start_debug` flips (issue #348 — DUAL-CONNECTION-COEXIST).
+ * pointer that `switch_environment` flips (issue #348 — DUAL-CONNECTION-COEXIST).
  *
  * The MCP `Server` + transport are created once; the request handlers read the
  * connection through `active`, so swapping the pointer underneath is invisible
@@ -272,16 +294,22 @@ export interface ConnectionRouter {
    */
   readonly booted?: boolean;
   /**
+   * Attach window, session limits and phone controls of the relay family, or `null`
+   * (no relay family booted, or one booted without `guarded`). Omitted: none.
+   */
+  readonly sessionGuard?: SessionGuard | null;
+  /**
    * Switches the active connection to the family for `mode`, lazily booting
    * that family's infra if needed, re-arming the attach watcher, and emitting
    * `tools/list_changed`.
    *
    * `projectRoot` (issue #396) is the per-debug-session mini-app project root
-   * supplied by `start_debug`. When switching into a relay family the router
-   * loads the relay TOTP secret read-only from `<projectRoot>/.ait_relay` into
-   * `process.env` (via `loadRelaySecretReadOnly`) BEFORE the relay boots, so the
-   * `assertRelayAuthConfigured()` / `buildRelayVerifyAuth()` at the boot site see
-   * it. The daemon never mints — it only reads. Ignored for the local family.
+   * supplied by `switch_environment`. When switching into a relay family the router
+   * activates the project's relay root key (via `activateRelayRoot`: the key
+   * agent, else this process's memory; legacy `.ait_relay` files are imported and
+   * removed) BEFORE the relay boots, so the `assertRelayAuthConfigured()` /
+   * `buildRelayVerifyAuth()` at the boot site see a live key. Nothing is written
+   * to disk or to `process.env`. Ignored for the local family.
    *
    * Rejects (without swapping) when a swap is already in flight.
    * `relay-live` (env 4) is removed — `confirm` parameter is gone (#665).
@@ -294,9 +322,9 @@ export interface DebugServerDeps {
   connection: CdpConnection;
   /**
    * Dual-connection router (issue #348). When provided, the request handlers
-   * read the live connection through `router.active` and `start_debug` calls
+   * read the live connection through `router.active` and `switch_environment` calls
    * `router.switchMode()`. When omitted (the dominant test path), a trivial
-   * router pinned to `deps.connection` is synthesized and `start_debug` reports
+   * router pinned to `deps.connection` is synthesized and `switch_environment` reports
    * that dynamic switching is unavailable (single-connection tests).
    */
   router?: ConnectionRouter;
@@ -304,6 +332,21 @@ export interface DebugServerDeps {
   aitSource: AitSource;
   /** Returns current tunnel status (URL changes per spawn). */
   getTunnelStatus(): TunnelStatus;
+  /**
+   * Waits up to `maxMs` for the relay tunnel to come up when it is starting or a
+   * retry is about to run, then returns the status. Absent: `start_attach` does
+   * not wait.
+   */
+  waitForTunnel?(maxMs: number): Promise<TunnelStatus>;
+  /**
+   * Checks whether a tunnel hostname resolves in public DNS. When set, `start_attach` waits
+   * (up to 60 s) for a fresh tunnel host to resolve before it shows the QR. Production wires
+   * the real resolver; absent: no DNS wait.
+   */
+  resolveTunnelHost?: (host: string) => Promise<boolean>;
+  /** DNS check interval and cap in ms for `resolveTunnelHost` (tests use small values). */
+  tunnelDnsPollMs?: number;
+  tunnelDnsMaxMs?: number;
   /**
    * Maximum time in ms to wait for a page to attach when `wait_for_attach=true`.
    * Default 60 000 ms. Exposed for testing so tests can use a small value without
@@ -330,7 +373,7 @@ export interface DebugServerDeps {
   getEnvironmentReason?: () => string;
   /**
    * Diagnostics collector — records server-side errors, attach/detach events,
-   * and surfaces them via `get_debug_status`. When omitted a no-op collector is
+   * and surfaces them via `get_status`. When omitted a no-op collector is
    * used.
    */
   diagnosticsCollector?: DiagnosticsCollector;
@@ -354,7 +397,15 @@ export interface DebugServerDeps {
    */
   getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
   /**
-   * 원격 최소 버전 게이트 결과(min-version-gate.ts). `update-required`이면 `get_debug_status`를
+   * Whether the attached phone's client draws its own status chip (the version it announced
+   * on its handshake is at or above the one that understands close 4410, 0.3.2). Judged per
+   * attached phone connection, not by the most recent handshake. When it does the daemon
+   * injects no badge, so the person sees one indicator. Omitted or `false`: the daemon badge
+   * is injected as before (older clients, tests).
+   */
+  phoneHasStatusChip?: () => boolean;
+  /**
+   * 원격 최소 버전 게이트 결과(min-version-gate.ts). `update-required`이면 `get_status`를
    * 뺀 모든 도구가 업데이트 안내 에러를 돌려준다. 생략하면 게이트 없음(테스트 기본값).
    */
   getMinVersionGate?: () => Promise<MinVersionGateState>;
@@ -377,14 +428,12 @@ export interface DebugServerDeps {
    * Late-bound variant of {@link totpSecret}: read AT `start_attach` CALL
    * TIME rather than captured once at server construction (issue #396).
    *
-   * Why late-bound: since #396 the relay TOTP secret lives in a project-local
-   * `.ait_relay` file loaded read-only into `process.env.AIT_DEBUG_TOTP_SECRET`
-   * by `switchMode` BEFORE a relay family boots — which is AFTER the daemon
-   * (and thus `createDebugServer`) already started. Capturing the secret at
-   * construction would read an empty value on the all-lazy daemon, so
-   * `start_attach` would emit a QR with no `at=` code and every attach would
-   * be rejected by the relay gate. Reading it at call time makes the loaded
-   * secret visible.
+   * Why late-bound: the relay key is activated by `switchMode` BEFORE a relay
+   * family boots — which is AFTER the daemon (and thus `createDebugServer`)
+   * already started. Capturing the switch at construction would read an empty
+   * value on the all-lazy daemon, so `start_attach` would emit a QR with no
+   * `at=` code and every attach would be rejected by the relay gate. Reading it
+   * at call time sees the activated key.
    *
    * When omitted, `createDebugServer` falls back to the captured {@link totpSecret}
    * (preserving all existing test behavior).
@@ -392,8 +441,8 @@ export interface DebugServerDeps {
    * SECRET-HANDLING: same as {@link totpSecret} — the returned value MUST NOT be
    * logged or included in any output other than the `at=` param inside `attachUrl`.
    *
-   * Production: passed as `() => process.env.AIT_DEBUG_TOTP_SECRET` by the three
-   * run functions.
+   * Production: passed as `() => relayAuthSwitch()` by the run functions (a
+   * non-empty string while a live relay key is active).
    */
   getTotpSecret?: () => string | undefined;
   /**
@@ -403,7 +452,7 @@ export interface DebugServerDeps {
    *
    * 완성된 URL 문자열이 아니라 컴포넌트를 전달하는 이유: `getDashboardState`가
    * 호출될 때마다 최신 TOTP 코드를 freshly mint해 QR을 갱신하기 위함이다.
-   * 정적 URL에 구워진 코드는 30~35초 후 만료(RELAY_VERIFY_SKEW_STEPS=6 기준) → relay 401 reason:'auth' (Defect 1).
+   * 정적 URL에 구워진 코드는 120~125초 후 만료(RELAY_VERIFY_SKEW_STEPS=24 기준) → relay 401 reason:'auth' (Defect 1).
    * rebuildAttachUrl()이 매 호출 시 mintRelayCode()로 새 코드를 만든다.
    *
    * SECRET-HANDLING: 컴포넌트 안의 tunnel/scheme host와 wssUrl은 NEVER 로그 출력.
@@ -412,7 +461,7 @@ export interface DebugServerDeps {
   onAttachUrlBuilt?: (parts: AttachUrlParts) => void;
   /**
    * Returns the cloudflared child PID of the currently active tunnel.
-   * When provided, `get_debug_status` passes it to `getDiagnostics` as the
+   * When provided, `get_status` passes it to `getDiagnostics` as the
    * live in-memory source for FIX 2 (issue #571) — the PID is also picked up
    * from this daemon's own registry entry as a fallback, but the in-memory value
    * is preferred as it stays current across reissues.
@@ -456,6 +505,276 @@ export interface DebugServerDeps {
  */
 let runTestsInFlight = false;
 
+/** How long "1시간 동안 묻지 않기" lasts. */
+export const CONFIRM_GRANT_MS = 60 * 60 * 1000;
+
+/**
+ * "1시간 동안 묻지 않기": one grant for every phone confirmation except the always-ask
+ * tier (payments and points in `call_sdk`). It covers `run_script`, `run_tests` and
+ * `call_sdk` of the confirm tier together, because the developer asked to stop being
+ * asked for an hour, not tool by tool. It ends after an hour or when the attach session
+ * does, whichever is first (the key is the session start plus the attached target ids,
+ * and the target hooks clear it). Process-wide, like `runTestsInFlight`.
+ *
+ * `run_script` runs arbitrary code, and a payment inside such code cannot be told apart
+ * from the outside; the dialog note says so.
+ */
+let confirmGrant: { key: string; expiresAt: number } | null = null;
+
+/** Test hook (and session end): forget the grant. */
+export function resetConfirmGrant(): void {
+  confirmGrant = null;
+}
+
+const GRANT_NOTE = '결제·포인트 SDK 호출은 계속 물어요';
+
+function grantCovers(key: string | null): boolean {
+  if (confirmGrant === null) return false;
+  if (Date.now() >= confirmGrant.expiresAt) {
+    confirmGrant = null;
+    return false;
+  }
+  return key !== null && confirmGrant.key === key;
+}
+
+/**
+ * The allowance belongs to this phone connection: the session start plus the attached
+ * target ids. A different phone (or a reloaded page) has other target ids, so it never
+ * inherits an earlier grant. The target hooks also clear it outright.
+ */
+function currentSessionKey(router: ConnectionRouter, conn: CdpConnection): string | null {
+  const guard = router.sessionGuard ?? null;
+  const startedAt = guard === null ? 0 : guard.state().startedAt;
+  if (startedAt === null) return null;
+  const ids = conn
+    .listTargets()
+    .map((t) => t.id)
+    .sort();
+  if (ids.length === 0) return null;
+  return `${startedAt}:${ids.join(',')}`;
+}
+
+/** What `run_script`/`run_tests` need before they may act: the way it was allowed, or an error. */
+type ActionGate =
+  | { ok: true; policy: NonNullable<EnvelopeExtraMeta['policy']> }
+  | { ok: false; error: McpErrorResult };
+
+async function confirmOnPhone(
+  conn: CdpConnection,
+  tool: string,
+  req: Parameters<typeof requestPhoneConfirmation>[1],
+): Promise<{ decision: PhoneConfirmDecision; error?: McpErrorResult }> {
+  const decision = await requestPhoneConfirmation(conn, req);
+  if (decision === 'allow' || decision === 'allow-hour') return { decision };
+  return { decision, error: mcpError(confirmFailureMessage(tool, decision)) };
+}
+
+async function gateEvaluate(
+  router: ConnectionRouter,
+  conn: CdpConnection,
+  expression: string,
+): Promise<ActionGate> {
+  const policy = resolveEvaluatePolicy(
+    process.env.AIT_DEBUG_EVALUATE,
+    conn.kind === 'relay' ? 'relay' : 'local',
+  );
+  const decision = decideEvaluate(policy, expression);
+  if (decision === 'deny') {
+    return {
+      ok: false,
+      error: mcpError(
+        'run_script: 사용자 설정(AIT_DEBUG_EVALUATE=off)으로 꺼져 있습니다. 이 도구로 코드를 실행할 수 없습니다.',
+      ),
+    };
+  }
+  if (decision === 'allow') {
+    return {
+      ok: true,
+      policy: { decision: 'allow', via: policy === 'free' ? 'policy-free' : 'not-sensitive' },
+    };
+  }
+  const key = currentSessionKey(router, conn);
+  if (grantCovers(key)) return { ok: true, policy: { decision: 'allow', via: 'grant' } };
+  const view = prepareCode(expression);
+  if (view.tooLong) {
+    return {
+      ok: false,
+      error: mcpError(
+        `run_script: 코드가 ${CONFIRM_REFUSE_OVER}자보다 길어서 폰에서 확인할 수 없어 실행하지 않았습니다. 더 짧게 나눠서 요청하세요.`,
+      ),
+    };
+  }
+  const answer = await confirmOnPhone(conn, 'run_script', {
+    title: '에이전트가 폰에서 코드를 실행하려고 해요',
+    lines: [],
+    codes: [view.block],
+    offerGrant: key !== null,
+    grantNote: GRANT_NOTE,
+  });
+  if (answer.error !== undefined) return { ok: false, error: answer.error };
+  const granted = answer.decision === 'allow-hour' && key !== null;
+  if (granted) confirmGrant = { key, expiresAt: Date.now() + CONFIRM_GRANT_MS };
+  return {
+    ok: true,
+    policy: { decision: 'confirmed', via: granted ? 'grant' : 'phone' },
+  };
+}
+
+async function gateSdkCall(
+  router: ConnectionRouter,
+  conn: CdpConnection,
+  sdkName: string,
+  sdkArgs: unknown[],
+): Promise<ActionGate> {
+  const verdict = classifySdkCall(sdkName, parseSdkAllowlist(process.env.AIT_DEBUG_SDK_ALLOW));
+  if (verdict.decision === 'deny') {
+    return {
+      ok: false,
+      error: mcpError(
+        'call_sdk: name은 영문자로 시작하는 SDK 메서드 이름(영숫자)이거나 `Namespace.method` 한 단계 형태여야 합니다.',
+      ),
+    };
+  }
+  if (conn.kind !== 'relay') return { ok: true, policy: { decision: 'allow', via: 'local' } };
+  if (verdict.decision === 'allow') {
+    return {
+      ok: true,
+      policy: {
+        decision: 'allow',
+        via: verdict.via,
+        tier: 'free',
+      },
+    };
+  }
+  const always = verdict.tier === 'confirm-always';
+  const key = currentSessionKey(router, conn);
+  if (!always && grantCovers(key)) {
+    return { ok: true, policy: { decision: 'allow', via: 'grant', tier: 'confirm' } };
+  }
+  let argsText = '';
+  try {
+    argsText = sdkArgs.length === 0 ? '(인자 없음)' : JSON.stringify(sdkArgs, null, 2);
+  } catch {
+    argsText = '(인자를 표시할 수 없음)';
+  }
+  const argsView = prepareCode(argsText);
+  if (argsView.tooLong) {
+    return {
+      ok: false,
+      error: mcpError(
+        `call_sdk: 인자가 ${CONFIRM_REFUSE_OVER}자보다 길어서 폰에서 확인할 수 없어 실행하지 않았습니다. 인자를 줄여서 요청하세요.`,
+      ),
+    };
+  }
+  const canGrant = !always && key !== null;
+  const answer = await confirmOnPhone(conn, 'call_sdk', {
+    title: always
+      ? '에이전트가 결제 관련 SDK를 호출하려고 해요 (매번 확인)'
+      : '에이전트가 SDK 기능을 호출하려고 해요',
+    lines: [sdkName],
+    codes: [argsView.block],
+    offerGrant: canGrant,
+    grantNote: GRANT_NOTE,
+  });
+  if (answer.error !== undefined) return { ok: false, error: answer.error };
+  const granted = canGrant && answer.decision === 'allow-hour' && key !== null;
+  if (granted) confirmGrant = { key, expiresAt: Date.now() + CONFIRM_GRANT_MS };
+  return {
+    ok: true,
+    policy: {
+      decision: 'confirmed',
+      via: granted ? 'grant' : 'phone',
+      tier: verdict.tier,
+    },
+  };
+}
+
+/** Largest cell (as JSON) `run_tests` accepts: the phone dialog shows all of it. */
+const CELL_MAX_JSON = 300;
+
+/**
+ * The `cell` argument as one plain object, or `null` when there is none. The legacy
+ * wrapper `{ "__AIT_CELL__": { ... } }` is unwrapped; either way the values end up under
+ * the single page global `__AIT_CELL__`, never as page globals of their own.
+ */
+export function normalizeRunTestsCell(raw: unknown): Record<string, unknown> | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const inner = obj.__AIT_CELL__;
+  const cell =
+    inner !== null && typeof inner === 'object' && !Array.isArray(inner)
+      ? (inner as Record<string, unknown>)
+      : obj;
+  return Object.keys(cell).length === 0 ? null : cell;
+}
+
+/** Phone dialog code block for a cell: where it goes and its keys and values. */
+function describeCellCode(cell: Record<string, unknown> | null | undefined): ConfirmCode[] {
+  if (!cell) return [];
+  const view = prepareCode(JSON.stringify(cell, null, 2));
+  return [
+    {
+      label: `테스트에 넘기는 값 ${Object.keys(cell).length}개 (페이지의 __AIT_CELL__에만 저장) · ${view.block.label}`,
+      text: view.block.text,
+    },
+  ];
+}
+
+/** `run_tests` runs bundled files on the phone: on a real phone the developer approves the exact files. */
+export async function gateRunTests(
+  conn: CdpConnection,
+  files: string[],
+  root: string,
+  cell?: Record<string, unknown> | null,
+  router?: ConnectionRouter,
+): Promise<ActionGate> {
+  const policy = resolveEvaluatePolicy(
+    process.env.AIT_DEBUG_EVALUATE,
+    conn.kind === 'relay' ? 'relay' : 'local',
+  );
+  if (policy === 'off') {
+    return {
+      ok: false,
+      error: mcpError(
+        'run_tests: 사용자 설정(AIT_DEBUG_EVALUATE=off)으로 꺼져 있습니다. 이 도구로 코드를 실행할 수 없습니다.',
+      ),
+    };
+  }
+  if (policy === 'free') return { ok: true, policy: { decision: 'allow', via: 'policy-free' } };
+  const key = router === undefined ? null : currentSessionKey(router, conn);
+  if (grantCovers(key)) return { ok: true, policy: { decision: 'allow', via: 'grant' } };
+  const before = await hashTestFiles(files, root);
+  const answer = await confirmOnPhone(conn, 'run_tests', {
+    title: '에이전트가 폰에서 테스트를 실행하려고 해요',
+    lines: describeTestFiles(before),
+    codes: describeCellCode(cell),
+    offerGrant: key !== null,
+    grantNote: GRANT_NOTE,
+  });
+  if (answer.error !== undefined) return { ok: false, error: answer.error };
+  const after = await hashTestFiles(files, root);
+  if (after.digest !== before.digest) {
+    return {
+      ok: false,
+      error: mcpError(
+        'run_tests: 승인한 뒤 테스트 파일이 바뀌어 실행하지 않았습니다. 다시 요청하세요.',
+      ),
+    };
+  }
+  const granted = answer.decision === 'allow-hour' && key !== null;
+  if (granted) confirmGrant = { key, expiresAt: Date.now() + CONFIRM_GRANT_MS };
+  return { ok: true, policy: { decision: 'confirmed', via: granted ? 'grant' : 'phone' } };
+}
+
+/** Masks page-derived values (unless the developer turned it off) and reports the counts. */
+function redactedExtra(data: unknown): { data: unknown; extra?: EnvelopeExtraMeta } {
+  if (!isRedactionEnabled()) return { data };
+  const stats: RedactionStats = {};
+  const masked = redactDeep(data, stats);
+  if (totalRedactions(stats) === 0) return { data: masked };
+  return { data: masked, extra: { redactions: { ...stats } as Record<string, number> } };
+}
+
 // waitForAttachWithEvents moved to `attach-orchestrator.ts` (issue #684 PR1) —
 // it is the orchestrator's wait primitive (used by renderAndMaybeWait's
 // segmented wait). The `start_attach` handler no longer references it directly.
@@ -466,7 +785,7 @@ let runTestsInFlight = false;
  * tunnel, which is what makes the tool surface unit-testable.
  *
  * `tools/list` is two-tiered (issue #208):
- *   - bootstrap (always): `start_attach`, `list_pages`
+ *   - bootstrap (always): `start_attach`, `get_page`
  *   - attach-dependent (after `connection.listTargets().length > 0`): all others
  *
  * `CallTool` is NOT tiered — hidden tools still execute (attach errors surface
@@ -506,7 +825,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
 
   // Dual-connection router (issue #348). Production passes a real router that
   // holds both the local + relay connections and flips `active` on
-  // `start_debug`. Tests (and any single-connection caller) omit it — we
+  // `switch_environment`. Tests (and any single-connection caller) omit it — we
   // synthesize a trivial router pinned to `deps.connection` whose `switchMode`
   // reports that dynamic switching is unavailable. Either way the handlers read
   // the live connection through `router.active`, so per-call snapshots are
@@ -528,7 +847,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // is supplied so existing tests that don't inject one continue to work.
   const collector: DiagnosticsCollector = collectorDep ?? new InMemoryDiagnosticsCollector();
 
-  // attach 단계 기록기 — progress 알림·타임아웃 진단·get_debug_status·대시보드가 이 하나를
+  // attach 단계 기록기 — progress 알림·타임아웃 진단·get_status·대시보드가 이 하나를
   // 공유한다. 데몬은 relay 훅과 같은 인스턴스를 주입한다.
   const timeline: AttachTimeline = deps.attachTimeline ?? new AttachTimeline({ nowMs });
 
@@ -546,6 +865,53 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // 끊어(`superseded`) 두 대기가 같은 relay를 놓고 겹치지 않게 한다.
   let activeAttachController: AbortController | null = null;
 
+  /**
+   * `wait_timeout_seconds: 0` 호출 뒤에도 폰이 붙으면 기다리는 호출이 하던 마무리(도메인 활성화,
+   * 연결 배지, `matched` 단계 기록)를 이어서 한다. 최대 NO_WAIT_ATTACH_WINDOW_MS 동안만 보고,
+   * 컨트롤러가 abort되면(새 start_attach·stop_attach) 즉시 끝난다. 끝나면 자기 컨트롤러를 비운다.
+   */
+  const runNoWaitAttachFinisher = (opts: {
+    controller: AbortController;
+    conn: CdpConnection;
+    isMatchingPage: (targets: ReturnType<CdpConnection['listTargets']>) => boolean;
+    timeline: AttachTimeline;
+    controls: boolean;
+  }): void => {
+    const { controller, conn, isMatchingPage, timeline: tl, controls } = opts;
+    const deadline = nowMs() + NO_WAIT_ATTACH_WINDOW_MS;
+    void (async () => {
+      try {
+        let attached = false;
+        while (!controller.signal.aborted && !attached) {
+          const remaining = deadline - nowMs();
+          if (remaining <= 0) return;
+          try {
+            await waitForAttachWithEvents(
+              conn,
+              isMatchingPage,
+              Math.min(START_ATTACH_SEGMENT_MS, remaining),
+            );
+            attached = true;
+          } catch {
+            // 세그먼트 타임아웃(또는 일시 에러): 다음 세그먼트에서 다시 본다.
+          }
+        }
+        if (!attached || controller.signal.aborted) return;
+        tl.record('matched', 'ok');
+        try {
+          await conn.enableDomains();
+        } catch {
+          // injectDebugIndicator swallows the resulting send failure on its own.
+        }
+        if (deps.phoneHasStatusChip?.() !== true) await injectDebugIndicator(conn, { controls });
+      } catch {
+        // best-effort: 배지가 안 떠도 attach 자체는 유효하다.
+      } finally {
+        if (activeAttachController === controller) activeAttachController = null;
+      }
+    })();
+  };
+
   // ──────────────────────────────────────────────────────────────────────────
   // start_attach orchestration (issue #626 → extracted #684 PR1).
   //
@@ -561,14 +927,18 @@ export function createDebugServer(deps: DebugServerDeps): Server {
   // ──────────────────────────────────────────────────────────────────────────
   const attachDeps: AttachDeps = {
     getTunnelStatus,
+    waitForTunnel: deps.waitForTunnel,
     getTotpSecret,
     qrHttpServer,
     onAttachUrlBuilt,
     nowMs,
     timeline,
-    // 삼켜지던 대기 중 에러를 get_debug_status.recentErrors로 흘려보낸다(redact는 collector).
+    // 삼켜지던 대기 중 에러를 get_status.recentErrors로 흘려보낸다(redact는 collector).
     recordError: (message, category) => collector.recordError(message, category),
     getProtocolVersionSkew: deps.getProtocolVersionSkew,
+    resolveTunnelHost: deps.resolveTunnelHost,
+    tunnelDnsPollMs: deps.tunnelDnsPollMs,
+    tunnelDnsMaxMs: deps.tunnelDnsMaxMs,
   };
 
   const server = new Server(
@@ -592,15 +962,17 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     // Tier A/B filter first (env), then bootstrap tier (attach state). An
     // unbooted daemon has no env yet (the placeholder reads as `mock`), so the
     // env filter is skipped — otherwise the documented 1-call `start_attach`
-    // bootstrap would be hidden until the user already ran start_debug.
+    // bootstrap would be hidden until the user already ran switch_environment.
     const envFiltered = isUnbooted()
       ? [...DEBUG_TOOL_DEFINITIONS]
       : filterToolsByEnvironment(DEBUG_TOOL_DEFINITIONS, env);
+    const withAnnotations = (tool: (typeof envFiltered)[number]) => ({
+      ...tool,
+      annotations: TOOL_ANNOTATIONS[tool.name],
+    });
     const tools = attached
-      ? envFiltered.map((tool) => ({ ...tool }))
-      : envFiltered
-          .filter((tool) => BOOTSTRAP_TOOL_NAMES.has(tool.name))
-          .map((tool) => ({ ...tool }));
+      ? envFiltered.map(withAnnotations)
+      : envFiltered.filter((tool) => BOOTSTRAP_TOOL_NAMES.has(tool.name)).map(withAnnotations);
     return { tools };
   });
 
@@ -613,29 +985,32 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       };
     }
 
-    // 원격 최소 버전 게이트: 지원이 끝난 버전이면 get_debug_status 외 전부 막는다(fail-open).
+    // 도구 호출은 세션이 쓰이고 있다는 신호다(유휴 한도 갱신).
+    router.sessionGuard?.touch();
+
+    // 원격 최소 버전 게이트: 지원이 끝난 버전이면 get_status 외 전부 막는다(fail-open).
     const gate = (await deps.getMinVersionGate?.()) ?? null;
-    if (gate?.status === 'update-required' && name !== 'get_debug_status') {
+    if (gate?.status === 'update-required' && name !== 'get_status') {
       return mcpError(updateRequiredMessage(gate.current, gate.minimum));
     }
 
     // PER-CALL SNAPSHOT (issue #348). Capture the active connection exactly
     // once at handler entry and use ONLY `conn` for the rest of this call.
-    // `start_debug` may flip `router.active` mid-flight (and other concurrent
+    // `switch_environment` may flip `router.active` mid-flight (and other concurrent
     // requests too); re-reading `router.active` after an `await` would race the
     // swap. This is the hard-constraint that keeps a switch from corrupting an
     // in-flight tool call.
     const conn = router.active;
 
-    // start_debug — single entry to switch families (local ↔ relay) without a
+    // switch_environment — single entry to switch families (local ↔ relay) without a
     // Claude Code restart or MCP re-handshake. Always callable (Tier C /
     // bootstrap), so it is handled before the env-mismatch guard below.
-    if (name === 'start_debug') {
+    if (name === 'switch_environment') {
       const rawMode = request.params.arguments?.mode;
       const mode = normalizeStartDebugMode(rawMode);
       if (mode === null) {
         return mcpError(
-          'start_debug: mode가 올바르지 않습니다. ' +
+          'switch_environment: mode가 올바르지 않습니다. ' +
             "'local-browser' | 'relay-staging' 중 하나를 전달하세요. " +
             '(relay-live / env 4는 #665에서, relay-sandbox / env 2는 #103에서 제거됐습니다.)',
         );
@@ -655,9 +1030,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     }
 
     // start_attach — single entry to attach a real device (issue #626). Folds
-    // the old attach-URL + start_debug two-step into one call: optional
+    // the old attach-URL + switch_environment two-step into one call: optional
     // mode switch → QR synthesis → attach wait with in-call TOTP re-mint. Handled
-    // before the env-mismatch guard (like start_debug) because its `mode` arg can
+    // before the env-mismatch guard (like switch_environment) because its `mode` arg can
     // switch FROM mock INTO a relay family.
     if (name === 'start_attach') {
       const args = request.params.arguments;
@@ -710,14 +1085,18 @@ export function createDebugServer(deps: DebugServerDeps): Server {
 
       // wait defaults to true (#626 — behavior change from the old attach tool's
       // opt-in wait_for_attach). callTimeoutMs clamps wait_timeout_seconds to
-      // 1–600 s; invalid values fall back to the default.
-      const waitForAttach = true;
+      // 1–600 s; negative/NaN/non-number fall back to the default. Exactly 0 means
+      // "do not wait": issue the QR and return at once; a background finisher keeps
+      // watching for the phone for up to 600 s (NO_WAIT_ATTACH_WINDOW_MS).
       const rawWaitTimeout = args?.wait_timeout_seconds;
+      const noWait = typeof rawWaitTimeout === 'number' && rawWaitTimeout === 0;
+      const waitForAttach = !noWait;
       const callTimeoutMs = (() => {
+        if (noWait) return NO_WAIT_ATTACH_WINDOW_MS;
         if (typeof rawWaitTimeout !== 'number' || !Number.isFinite(rawWaitTimeout)) {
           return waitForAttachTimeoutMs;
         }
-        if (rawWaitTimeout <= 0) return waitForAttachTimeoutMs;
+        if (rawWaitTimeout < 0) return waitForAttachTimeoutMs;
         const clamped = Math.max(1, Math.min(600, rawWaitTimeout));
         return Math.round(clamped) * 1000;
       })();
@@ -727,6 +1106,19 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       try {
         const prep = await prepareAttachCore(attachDeps, attachEnv, args, attachConn);
         if (!prep.ok) return prep.error;
+        // QR을 보여 주기 전에 어태치 창을 연다: 이 창이 열려 있는 동안에만 새 폰이 터널로
+        // 붙을 수 있고, 첫 폰이 붙으면 닫힌다. 창은 대기 시간 + 1분(QR을 다시 볼 여유)이다.
+        const guard = router.sessionGuard ?? null;
+        const armedAt = Date.now();
+        guard?.arm(callTimeoutMs + ATTACH_WINDOW_GRACE_MS);
+        // 이 호출의 어태치 창으로 폰이 붙었는지: 창이 열린 뒤 첫 연결(claim)이 있어야 한다. 호출 전부터
+        // 붙어 있던 페이지는 URL(rid)이 같아 보여도 여기서 걸러진다. 창이 없는 모드(guard 없음)는
+        // 창을 쓰지 않아 옛 동작(URL 매칭)을 유지한다.
+        const attachedThroughThisCall =
+          guard === null
+            ? undefined
+            : (): boolean =>
+                guard.state().claims.some((c) => c.kind === 'claim' && c.at >= armedAt);
         // 새 start_attach가 이전 대기를 대체한다: 이전 호출은 "superseded"로 끝나고, 이 호출이
         // QR 발급과 대기를 이어받는다. prepare 검증을 통과한 뒤에 끊어, 잘못된 호출이 멀쩡한
         // 대기를 죽이지 않게 한다.
@@ -738,23 +1130,50 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           ? AbortSignal.any([attachController.signal, extra.signal])
           : attachController.signal;
         // progress 알림: 클라이언트가 progressToken을 보낸 경우에만 켠다. 같은 단계 기록을
-        // 구독할 뿐이라, 못 보는 클라이언트는 타임아웃 진단·get_debug_status로 같은 정보를 받는다.
-        progress = startAttachProgress({
-          timeline,
-          progressToken: extra?._meta?.progressToken,
-          sendNotification: (notification) => extra.sendNotification(notification),
-          signal: waitSignal,
-          totalSec: Math.round(callTimeoutMs / 1000),
-          nowMs,
-        });
+        // 구독할 뿐이라, 못 보는 클라이언트는 타임아웃 진단·get_status로 같은 정보를 받는다.
+        // no-wait 호출은 기다리지 않으므로 heartbeat/progress 타이머를 만들지 않는다.
+        progress = noWait
+          ? null
+          : startAttachProgress({
+              timeline,
+              progressToken: extra?._meta?.progressToken,
+              sendNotification: (notification) => extra.sendNotification(notification),
+              signal: waitSignal,
+              totalSec: Math.round(callTimeoutMs / 1000),
+              nowMs,
+            });
         const attachResult = await renderAndMaybeWaitCore(
           attachDeps,
           prep,
           waitForAttach,
           callTimeoutMs,
           attachConn,
-          { signal: waitSignal, onQrText: (text) => progress?.announce(text) },
+          {
+            signal: waitSignal,
+            onQrText: (text) => progress?.announce(text),
+            onNotice: (text) => progress?.announce(text),
+            ...(attachedThroughThisCall !== undefined ? { attachedThroughThisCall } : {}),
+          },
         );
+        if (noWait) {
+          // 기다리지 않는 호출: 컨트롤러와 마무리(배지 주입)는 백그라운드 finisher가 이어받는다.
+          // finally가 컨트롤러를 지우지 않게 넘기고, 새 start_attach/stop_attach의 abort가
+          // finisher를 끝낸다.
+          if (attachResult.isError) return attachResult;
+          const handedOver = attachController;
+          attachController = null;
+          runNoWaitAttachFinisher({
+            controller: handedOver,
+            conn: attachConn,
+            isMatchingPage:
+              attachedThroughThisCall === undefined
+                ? prep.isMatchingPage
+                : (pages) => attachedThroughThisCall() && prep.isMatchingPage(pages),
+            timeline,
+            controls: guard !== null,
+          });
+          return appendNoWaitNotice(attachResult);
+        }
         if (!attachResult.isError) {
           // The device reported its build version on the handshake path while
           // attaching. If it disagrees with ours, say so NOW: the attach
@@ -767,7 +1186,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           if (skew !== null) {
             return protocolVersionMismatchError(skew);
           }
-          // Debugger attached — show the on-phone "Debugger Connected" indicator.
+          // Debugger attached — show the on-phone "디버거 연결됨" indicator.
           // The attach wait resolves on the relay's /targets listing; the client
           // WebSocket that carries CDP commands is only opened by enableDomains()
           // (idempotent). Without this the badge's Runtime.evaluate hit
@@ -778,7 +1197,10 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           } catch {
             // injectDebugIndicator swallows the resulting send failure on its own.
           }
-          await injectDebugIndicator(attachConn);
+          if (deps.phoneHasStatusChip?.() !== true) {
+            await injectDebugIndicator(attachConn, { controls: guard !== null });
+          }
+          if (guard !== null) return withClaimNotice(attachResult, guard.state().claims, armedAt);
         }
         return attachResult;
       } catch (err) {
@@ -792,12 +1214,12 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     }
 
     // PER-CALL SNAPSHOT of the derived environment (issue #348 / #354 regression
-    // fix). Capture `env` + `envReason` exactly once, right after the start_debug
+    // fix). Capture `env` + `envReason` exactly once, right after the switch_environment
     // branch (so this call sees the post-switch env when it *is* a switch) and
     // before the first `await`. Every site below reuses these locals instead of
     // re-calling `resolveEnvironment()`/`resolveEnvironmentReason()` — those
     // closures re-read `router.active.kind` live, so a
-    // concurrent `start_debug` swap mid-await would otherwise corrupt the env
+    // concurrent `switch_environment` swap mid-await would otherwise corrupt the env
     // stamped into this call's envelope / provenance label.
     const env = resolveEnvironment();
     const envReason = resolveEnvironmentReason();
@@ -819,6 +1241,35 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       return tierRejectionError(name, requiredEnv, env, envReason);
     }
 
+    // stop_attach — ends the session on purpose. The attach window closes, the phone page
+    // is disconnected and the relay forgets every session, so the tunnel address serves
+    // nobody until the next start_attach.
+    if (name === 'stop_attach') {
+      const guard = router.sessionGuard ?? null;
+      if (guard === null) {
+        return envelopeResult(
+          { stopped: false, note: '이 세션에는 끊을 relay 세션이 없습니다.' },
+          name,
+          env,
+          false,
+        );
+      }
+      const before = guard.state();
+      activeAttachController?.abort(ATTACH_SUPERSEDED_REASON);
+      guard.end('user-stopped');
+      return envelopeResult(
+        {
+          stopped: true,
+          wasAttached: before.attached > 0,
+          wasArmed: before.armed,
+          note: '연결을 끊었습니다. 폰은 새 QR이 있어야 다시 붙습니다 (start_attach).',
+        },
+        name,
+        env,
+        false,
+      );
+    }
+
     // AIT.* tools are served by the AIT source. In production it rides the same
     // Chii websocket as CDP, so the connection must be attached first; the AIT
     // source's sendCommand rejects with a clear message if no page is attached.
@@ -827,11 +1278,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         await conn.enableDomains();
         const aitAttached = conn.listTargets().length > 0;
         switch (name) {
-          case 'AIT.getSdkCallHistory':
+          case 'list_sdk_calls':
             return envelopeResult(await getSdkCallHistory(aitSource), name, env, aitAttached);
-          case 'AIT.getMockState':
+          case 'get_mock_state':
             return envelopeResult(await getMockState(aitSource), name, env, aitAttached);
-          case 'AIT.getOperationalEnvironment':
+          case 'get_sdk_environment':
             return envelopeResult(
               await getOperationalEnvironment(aitSource),
               name,
@@ -842,14 +1293,14 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             return unknownTool(name);
         }
       } catch (err) {
-        return errorResult(err, name);
+        return errorResult(err, name, false, undefined, conn.listTargets().length > 0);
       }
     }
 
-    // get_debug_status is a bootstrap tool — it works before any page attaches
+    // get_status is a bootstrap tool — it works before any page attaches
     // and must not require enableDomains. It aggregates all server state into a
     // single response so the agent can diagnose session problems in one call.
-    if (name === 'get_debug_status') {
+    if (name === 'get_status') {
       try {
         const rawLimit = request.params.arguments?.recent_errors_limit;
         const recentErrorsLimit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : 10;
@@ -866,6 +1317,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           recentErrorsLimit,
           tunnelChildPid: getTunnelChildPid?.() ?? undefined,
           attachTimeline: timeline,
+          getProtocolVersionSkew: deps.getProtocolVersionSkew,
         });
         const attached = conn.listTargets().length > 0;
         const payload =
@@ -890,8 +1342,8 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       // throws a clear message while no page is attached yet.
       await conn.enableDomains();
     } catch (err) {
-      if (name === 'list_pages') {
-        // list_pages is still useful pre-attach: report tunnel + empty pages.
+      if (name === 'get_page') {
+        // get_page is still useful pre-attach: report tunnel + empty pages.
         // Refresh from relay first so evicted-then-reattached targets are not
         // served as stale empty (#281 — stale cache diagnosis).
         try {
@@ -899,9 +1351,15 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         } catch {
           // Ignore refresh errors — still return cached state.
         }
-        const pagesData = listPages(conn, getTunnelStatus());
+        const pagesMasked = redactedExtra(listPages(conn, getTunnelStatus()));
         const attached = conn.listTargets().length > 0;
-        return envelopeResult(pagesData, name, isUnbooted() ? 'none' : env, attached);
+        return envelopeResult(
+          pagesMasked.data,
+          name,
+          isUnbooted() ? 'none' : env,
+          attached,
+          pagesMasked.extra,
+        );
       }
       // 4상태 분류: page 미attach vs crash vs relay disconnect
       return classifyEnableDomainError(err, name, pageGoneContext());
@@ -910,44 +1368,48 @@ export function createDebugServer(deps: DebugServerDeps): Server {
     const pageAttached = (): boolean => conn.listTargets().length > 0;
     try {
       switch (name) {
-        case 'list_console_messages':
-          return envelopeResult(listConsoleMessages(conn), name, env, pageAttached());
+        case 'list_console_messages': {
+          const masked = redactedExtra(listConsoleMessages(conn));
+          return envelopeResult(masked.data, name, env, pageAttached(), masked.extra);
+        }
         case 'list_exceptions': {
           const rawLimit = request.params.arguments?.limit;
           const limit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : 50;
-          return envelopeResult(
-            { exceptions: listExceptions(conn, limit) },
-            name,
-            env,
-            pageAttached(),
-          );
+          const masked = redactedExtra({ exceptions: listExceptions(conn, limit) });
+          return envelopeResult(masked.data, name, env, pageAttached(), masked.extra);
         }
-        case 'list_network_requests':
-          return envelopeResult(listNetworkRequests(conn), name, env, pageAttached());
-        case 'list_pages': {
+        case 'list_network_requests': {
+          const masked = redactedExtra(listNetworkRequests(conn));
+          return envelopeResult(masked.data, name, env, pageAttached(), masked.extra);
+        }
+        case 'get_page': {
           // Refresh from relay so evict→reattach transitions are not served stale.
           try {
             await conn.refreshTargets?.();
           } catch {
             // Ignore refresh errors — still return cached state.
           }
-          const listPagesData = listPages(conn, getTunnelStatus());
+          const listPagesMasked = redactedExtra(listPages(conn, getTunnelStatus()));
           const listPagesAttached = conn.listTargets().length > 0;
           return envelopeResult(
-            listPagesData,
+            listPagesMasked.data,
             name,
             isUnbooted() ? 'none' : env,
             listPagesAttached,
+            listPagesMasked.extra,
           );
         }
-        case 'get_dom_document':
+        case 'get_dom':
           return envelopeResult(await getDomDocument(conn), name, env, pageAttached());
-        case 'take_snapshot':
+        case 'get_dom_snapshot':
           return envelopeResult(await takeSnapshot(conn), name, env, pageAttached());
         case 'take_screenshot': {
           const shot = await takeScreenshot(conn);
           return {
-            content: [{ type: 'image' as const, data: shot.data, mimeType: shot.mimeType }],
+            content: [
+              { type: 'image' as const, data: shot.data, mimeType: shot.mimeType },
+              { type: 'text' as const, text: UNTRUSTED_DATA_NOTE },
+            ],
           };
         }
         case 'measure_safe_area': {
@@ -961,11 +1423,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           const safeAreaAttached = conn.listTargets().length > 0;
           return envelopeResult(safeAreaData, name, env, safeAreaAttached);
         }
-        case 'evaluate': {
+        case 'run_script': {
           const expression = request.params.arguments?.expression;
           if (typeof expression !== 'string' || expression === '') {
             return mcpError(
-              'evaluate: expression 인자가 비어 있습니다. 평가할 JavaScript 표현식을 전달하세요.',
+              'run_script: expression 인자가 비어 있습니다. 평가할 JavaScript 표현식을 전달하세요.',
             );
           }
           // Host allowlist kill-switch (#665). Replaces the old LIVE guard.
@@ -974,12 +1436,23 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           // SECRET-HANDLING: hostname never logged — only the boolean.
           if (!connectionHostsAllowed(conn)) {
             return mcpError(
-              'evaluate: 현재 연결된 페이지는 debug 허용 호스트가 아닙니다 (#665). ' +
+              'run_script: 현재 연결된 페이지는 debug 허용 호스트가 아닙니다 (#665). ' +
                 '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
+          const evalGate = await gateEvaluate(router, conn, expression);
+          if (!evalGate.ok) return evalGate.error;
           // SECRET-HANDLING: do not log expression or result value.
-          return envelopeResult(await evaluate(conn, expression), name, env, pageAttached());
+          let evalOk = false;
+          try {
+            const evalResult = await evaluate(conn, expression);
+            evalOk = true;
+            return envelopeResult(evalResult, name, env, pageAttached(), {
+              policy: evalGate.policy,
+            });
+          } finally {
+            await appendRemoteLog(conn, 'run_script', expression.slice(0, 60), evalOk);
+          }
         }
         case 'call_sdk': {
           const sdkName = request.params.arguments?.name;
@@ -998,8 +1471,17 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 '허용 호스트: localhost, *.private-apps.tossmini.com, *.private-web.tossmini.com.',
             );
           }
+          const sdkGate = await gateSdkCall(router, conn, sdkName, sdkArgs);
+          if (!sdkGate.ok) return sdkGate.error;
           // SECRET-HANDLING: do not log name, args, or result value.
-          const sdkResult = await callSdk(conn, sdkName, sdkArgs);
+          let sdkResult: Awaited<ReturnType<typeof callSdk>>;
+          try {
+            sdkResult = await callSdk(conn, sdkName, sdkArgs);
+          } catch (err) {
+            await appendRemoteLog(conn, 'call_sdk', sdkName, false);
+            throw err;
+          }
+          await appendRemoteLog(conn, 'call_sdk', sdkName, sdkResult.ok);
           // 상태 4: SDK 부재 — ok:false + 'sdk-absent:' 패턴은 isError로 승격
           if (
             !sdkResult.ok &&
@@ -1011,7 +1493,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             return sdkAbsentError('call_sdk', conn.kind === 'local');
           }
           const callSdkAttached = conn.listTargets().length > 0;
-          return envelopeResult(sdkResult, name, env, callSdkAttached);
+          return envelopeResult(sdkResult, name, env, callSdkAttached, { policy: sdkGate.policy });
         }
         case 'run_tests': {
           const rawFiles = request.params.arguments?.files;
@@ -1069,6 +1551,20 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           // meaning the existing attached-page flow (4a) is completely unchanged.
           if (!hasLivePage && isRelayEnv(env)) {
             const autoAttachArgs = request.params.arguments as Record<string, unknown> | undefined;
+            const cell = normalizeRunTestsCell(autoAttachArgs?.cell);
+            if (cell !== null) {
+              let cellJson: string | undefined;
+              try {
+                cellJson = JSON.stringify(cell);
+              } catch {
+                cellJson = undefined;
+              }
+              if (cellJson === undefined || cellJson.length > CELL_MAX_JSON) {
+                return mcpError(
+                  `run_tests: cell은 JSON으로 직렬화되는 ${CELL_MAX_JSON}자 이하의 값이어야 합니다 (폰 확인 창에 전부 보여야 하기 때문입니다).`,
+                );
+              }
+            }
             const prep = await prepareAttachCore(attachDeps, env, autoAttachArgs, conn);
             if (!prep.ok) return prep.error;
 
@@ -1084,18 +1580,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             // If attach timed out or failed, surface the error — no tests to run.
             if (autoAttachResult.isError) return autoAttachResult;
 
-            // ── cell injection (설계 §4.2 — attach 직후, 첫 bundle inject 전) ─
-            // The caller may pass a `cell` argument — an arbitrary object to merge
-            // into globalThis BEFORE the first test bundle runs.
-            // devtools does NOT know the sdk-example shape of `__AIT_CELL__` —
-            // the caller wraps it: { "__AIT_CELL__": { sdkLine, platform } }.
-            // SECRET-HANDLING: cell values are informational (axes, not secrets);
-            // we log key names only.
-            const rawCell = autoAttachArgs?.cell;
-            if (rawCell !== null && typeof rawCell === 'object' && !Array.isArray(rawCell)) {
-              await injectGlobals(conn, rawCell as Record<string, unknown>);
-            }
-
+            // ── cell (설계 §4.2): the values land only in the page global `__AIT_CELL__`,
+            // and only after the host check and the phone approval below. Never as
+            // separate page globals. Cell values are axes, not secrets.
             // ── Host allowlist check (run only on allowed hosts) ────────────────
             if (!connectionHostsAllowed(conn)) {
               return mcpError(
@@ -1125,6 +1612,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
               if (conn.listTargets().length === 0) {
                 return pageMissingError('run_tests');
               }
+              const autoGate = await gateRunTests(conn, files, resolved.root, cell, router);
+              if (!autoGate.ok) return autoGate.error;
+              if (cell !== null) await injectCell(conn, cell);
               logInfo('run_tests.start', { fileCount: files.length, autoAttach: true });
               const report = await runWithConnection(conn, files, {
                 timeoutMs,
@@ -1139,8 +1629,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 failed: report.totals.failed,
                 skipped: report.totals.skipped,
               });
+              await appendRemoteLog(
+                conn,
+                'run_tests',
+                `${files.length} files`,
+                report.totals.failed === 0,
+              );
               const runAttached = conn.listTargets().length > 0;
-              return envelopeResult(toRunTestsResult(report), name, env, runAttached);
+              return envelopeResult(toRunTestsResult(report), name, env, runAttached, {
+                policy: autoGate.policy,
+              });
             } finally {
               runTestsInFlight = false;
             }
@@ -1151,7 +1649,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           if (!hasLivePage) {
             return mcpError(
               'run_tests: 연결된 페이지가 없습니다. mock(로컬) 환경에서는 auto-attach가 지원되지 않습니다. ' +
-                'list_pages로 연결 상태를 확인하고 페이지가 붙어 있는지 확인하세요.',
+                'get_page로 연결 상태를 확인하고 페이지가 붙어 있는지 확인하세요.',
             );
           }
 
@@ -1200,6 +1698,8 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             // no mid-call streaming). Log only counts, never file content/paths
             // as secrets / relay URLs. SECRET-HANDLING: do not log bundle code,
             // expression, or result values.
+            const runGate = await gateRunTests(conn, files, resolved.root, undefined, router);
+            if (!runGate.ok) return runGate.error;
             logInfo('run_tests.start', { fileCount: files.length });
             const report = await runWithConnection(conn, files, {
               timeoutMs,
@@ -1214,8 +1714,16 @@ export function createDebugServer(deps: DebugServerDeps): Server {
               failed: report.totals.failed,
               skipped: report.totals.skipped,
             });
+            await appendRemoteLog(
+              conn,
+              'run_tests',
+              `${files.length} files`,
+              report.totals.failed === 0,
+            );
             const runAttached = conn.listTargets().length > 0;
-            return envelopeResult(toRunTestsResult(report), name, env, runAttached);
+            return envelopeResult(toRunTestsResult(report), name, env, runAttached, {
+              policy: runGate.policy,
+            });
           } finally {
             runTestsInFlight = false;
           }
@@ -1227,7 +1735,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       // issue #360: sdk-absent 분류가 local 세션이면 로컬 dev 브리지 안내
       // (sdkAbsentError의 isLocal 분기, errors.ts)로 갈리도록 connection 종류를
       // 넘긴다. 다른 에러 분류에는 영향 없음(isLocal 미사용).
-      return errorResult(err, name, conn.kind === 'local', pageGoneContext());
+      return errorResult(err, name, conn.kind === 'local', pageGoneContext(), pageAttached());
     }
   });
 
@@ -1235,7 +1743,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
 }
 
 /**
- * Normalizes a raw `start_debug` `mode` argument to a `StartDebugMode`, or
+ * Normalizes a raw `switch_environment` `mode` argument to a `StartDebugMode`, or
  * `null` when the value is not one of the two accepted modes:
  *   'local-browser' | 'relay-staging'
  *
@@ -1307,7 +1815,7 @@ export function makeSingleConnectionRouter(connection: CdpConnection): Connectio
       if (wantRelay !== haveRelay) {
         return Promise.reject(
           new Error(
-            `start_debug: 이 세션은 단일 ${connection.kind} 연결만 보유합니다 — ` +
+            `switch_environment: 이 세션은 단일 ${connection.kind} 연결만 보유합니다 — ` +
               `'${mode}'로 동적 전환할 수 없습니다 (dual-connection 데몬에서만 지원). ` +
               'MCP 서버를 원하는 모드로 재시작하세요.',
           ),
@@ -1321,7 +1829,7 @@ export function makeSingleConnectionRouter(connection: CdpConnection): Connectio
         nextStep:
           connection.kind === 'relay'
             ? 'start_attach로 attach QR 생성 + 폰 attach까지 한 번에 진행하세요.'
-            : 'list_pages로 로컬 페이지 attach를 확인하세요.',
+            : 'get_page로 로컬 페이지 attach를 확인하세요.',
       });
     },
   };
@@ -1335,18 +1843,23 @@ export function makeSingleConnectionRouter(connection: CdpConnection): Connectio
  * never logged. mintRelayCode() relies on its Date.now() default.
  */
 export function rebuildAttachUrl(parts: AttachUrlParts, tunnel: TunnelStatus): string | null {
-  const secret = process.env.AIT_DEBUG_TOTP_SECRET;
-  // No relay secret loaded: there is no code-less link to show.
+  const secret = relayAuthSwitch();
+  // No live relay key: there is no code-less link to show.
   if (secret === undefined || secret === '') return null;
   const code = mintRelayCode();
   // 터널이 새로 발급됐으면 start_attach 때 잡아 둔 옛 주소 대신 지금 주소로 링크를 만든다.
   const current = withCurrentRelay(parts, tunnel);
+  // Same signing as start_attach (sig + arc + ahn/ahs): the dashboard QR is the one
+  // phones scan most, and debugger-client 0.3.2 refuses a link without `arc`.
+  const signed = signedLinkParams(secret, current.wssUrl, code, signingHostName());
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
     current.wssUrl,
     code,
     relayRunId(secret, current.wssUrl),
-    attachSignature(secret, current.wssUrl, code),
+    signed.sig,
+    signed.host,
+    signed.cert,
   );
 }
 
@@ -1399,8 +1912,9 @@ function envelopeResult(
   tool: string,
   env: McpEnvironment | UnbootedEnv,
   attached: boolean,
+  extra?: EnvelopeExtraMeta,
 ) {
-  const wrapped = wrapEnvelope(value, { tool, env, attached });
+  const wrapped = wrapEnvelope(value, { tool, env, attached, extra });
   const content: Array<{ type: 'text'; text: string }> = [
     { type: 'text' as const, text: JSON.stringify(wrapped, null, 2) },
   ];
@@ -1467,7 +1981,7 @@ function unknownTool(name: string) {
  * - "No mini-app page attached" → page 미attach (상태 2)
  * - crash/destroy/replaced 패턴 → page crash (상태 3)
  * - relay disconnect 패턴 → relay 연결 끊김
- * - 그 외 → 원본 메시지 + list_pages 안내
+ * - 그 외 → 원본 메시지 + get_page 안내
  */
 function classifyEnableDomainError(err: unknown, toolName: string, gone?: PageGoneContext) {
   const message = err instanceof Error ? err.message : String(err);
@@ -1504,8 +2018,14 @@ function classifyEnableDomainError(err: unknown, toolName: string, gone?: PageGo
  * CDP/AIT 명령 실행 중 catch된 에러를 4상태로 분류해 tool 결과로 반환한다.
  * debug-server 내부 try/catch 블록에서 공통으로 사용한다.
  */
-function errorResult(err: unknown, name: string, isLocal = false, gone?: PageGoneContext) {
-  return classifyToolError(err, name, isLocal, gone);
+function errorResult(
+  err: unknown,
+  name: string,
+  isLocal = false,
+  gone?: PageGoneContext,
+  attached = false,
+) {
+  return classifyToolError(err, name, isLocal, gone, attached);
 }
 
 /**
@@ -1641,8 +2161,63 @@ export function createDaemonAttachTimeline(notify: () => void): AttachTimeline {
   return timeline;
 }
 
+/** `start_attach`의 어태치 창이 대기 시간 뒤에도 열려 있는 여유(QR을 다시 볼 시간). */
+const ATTACH_WINDOW_GRACE_MS = 60_000;
+
+/** `wait_timeout_seconds: 0`(기다리지 않음)일 때 어태치 창과 백그라운드 감시의 길이(최대 대기와 같다). */
+const NO_WAIT_ATTACH_WINDOW_MS = 600_000;
+
+/** no-wait 결과 끝에 붙이는 안내: 확인은 get_page/get_status로, 재호출은 QR을 다시 발급한다. */
+function appendNoWaitNotice(result: McpResult): McpResult {
+  const note =
+    '\n\n기다리지 않고 QR만 발급했습니다 (wait_timeout_seconds: 0). 폰이 붙었는지는 `get_page` 또는 ' +
+    '`get_status`(attachStages)로 확인하세요 — `start_attach`를 다시 부르면 QR이 새로 발급됩니다.\n' +
+    'QR issued without waiting (wait_timeout_seconds: 0). Check attach with `get_page` or ' +
+    '`get_status` (attachStages); calling `start_attach` again re-issues the QR.';
+  const content = result.content.map((c, i, arr) =>
+    i === arr.length - 1 && c.type === 'text' ? { ...c, text: c.text + note } : c,
+  );
+  return { ...result, content };
+}
+
+/** 닫아 둔 터널을 "새 QR"이 다시 열 때 기다리는 최대 시간. */
+const ATTACH_TUNNEL_REOPEN_WAIT_MS = 60_000;
+
+/** 대시보드 "새 QR" 버튼이 여는 어태치 창의 길이. */
+const DASHBOARD_NEW_QR_WINDOW_MS = 5 * 60_000;
+
 /**
- * best-effort: 폰의 "Debugger Connected" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
+ * 어태치 창이 열린 뒤 다른 기기가 같은 QR을 쓰려 했거나 연결된 폰을 이어받았다면, 그 사실을
+ * 결과 맨 끝에 덧붙인다. 기기 지문·UA 계열·국가 코드뿐이고 URL·코드는 없다.
+ */
+function withClaimNotice(
+  result: McpResult,
+  claims: ReadonlyArray<RelayClaimEvent>,
+  sinceMs: number,
+): McpResult {
+  const lines: string[] = [];
+  for (const c of claims) {
+    if (c.at < sinceMs) continue;
+    if (c.kind === 'contested') {
+      lines.push(
+        `다른 기기(${c.ua}${c.country ? `, ${c.country}` : ''})가 같은 QR로 접속을 시도해 거부했습니다. ` +
+          'QR이 퍼졌을 수 있습니다 — 필요하면 stop_attach로 세션을 끊고 새 QR을 받으세요.',
+      );
+    } else if (c.kind === 'replaced') {
+      lines.push(
+        `연결돼 있던 폰을 다른 기기(${c.ua}${c.country ? `, ${c.country}` : ''})가 이어받았습니다.`,
+      );
+    }
+  }
+  if (lines.length === 0) return result;
+  return {
+    ...result,
+    content: [...result.content, { type: 'text', text: `⚠️  ${lines.join('\n⚠️  ')}` }],
+  };
+}
+
+/**
+ * best-effort: 폰의 "디버거 연결됨" 배지를 지우거나 끊김 상태로 바꾸는 식을 보낸다.
  * `console.debug`를 쓰는 cell.ts 헬퍼 대신 직접 보낸다 — 데몬에서는 stdout이 MCP stdio라
  * 로그 한 줄이 프로토콜을 깨뜨린다. 연결·타깃이 없거나 전송이 실패해도 조용히 끝난다.
  * 반환 Promise는 `Runtime.evaluate` 응답(= relay가 프레임을 폰으로 넘긴 뒤)에 풀리고 절대
@@ -1716,7 +2291,7 @@ export interface RunDebugServerOptions {
  * Introduced as a named seam so PR-2 (dual-connection, #348) can defer
  * construction to first-activation time by moving or replacing this call. Since
  * #396 every family (relay included) is constructed lazily on its first
- * `start_debug`, so this is always called from the lazy boot path.
+ * `switch_environment`, so this is always called from the lazy boot path.
  *
  * The relay base URL is only available after `startChiiRelay()` resolves, so
  * the factory is called right after that point (same as before this refactor).
@@ -1742,7 +2317,7 @@ function createRelayConnection(relayBaseUrl: string, timeline?: AttachTimeline):
  * AIT source that always forwards over the *currently active* connection
  * (issue #348). The single-connection `ChiiAitSource` binds one sender at
  * construction; in the dual-connection daemon the AIT.* domain must follow the
- * active connection across `start_debug` swaps, so this indirection reads
+ * active connection across `switch_environment` swaps, so this indirection reads
  * `getActive()` on every call.
  *
  * Both `ChiiCdpConnection` and `LocalCdpConnection` expose `sendCommand`, so
@@ -1764,7 +2339,7 @@ class RoutingAitSource extends ChiiAitSource {
  * A booted infra family the dual router can tear down at process exit.
  *
  * Direction-neutral (issue #356): any of the three families can be the first one
- * booted. Since #396 every family is lazy-booted on its first `start_debug`. The
+ * booted. Since #396 every family is lazy-booted on its first `switch_environment`. The
  * relay family additionally exposes its live tunnel status; the local family
  * leaves it `undefined` (a local browser has no relay tunnel), so the
  * router/handlers read the relay tunnel status from whichever family is the
@@ -1779,6 +2354,27 @@ export interface BootedFamily {
    * tunnel reissue). `undefined` on the local family.
    */
   getTunnelStatus?: () => TunnelStatus;
+  /**
+   * Whether the phone(s) attached to this family's relay draw their own status chip, judged
+   * per open phone connection from the version each one announced. Relay family only.
+   */
+  phoneHasStatusChip?: () => boolean;
+  /**
+   * Waits up to `maxMs` for the tunnel to come up (it is starting or a retry is
+   * about to run), then returns the status. Relay family only.
+   */
+  waitForTunnel?: (maxMs: number) => Promise<TunnelStatus>;
+  /**
+   * Told whether this family is the active one. The relay family stops retrying
+   * its tunnel while another family is active, so a session that left the relay
+   * environment does not keep calling Cloudflare. Relay family only.
+   */
+  setActive?: (active: boolean) => void;
+  /**
+   * Attach window, session limits and phone controls of this family (relay family
+   * started with `guarded: true` only). See session-guard.ts.
+   */
+  guard?: SessionGuard;
   /**
    * Local HTTP base URL of the Chii relay (e.g. `http://127.0.0.1:9100` for
    * the intoss relay). Used to build the Chii self-hosted inspector URL
@@ -1796,7 +2392,7 @@ export interface BootedFamily {
  * plus a `stop()` that kills both.
  *
  * Booted lazily via the dual router's `bootLazyFor('local-browser')` callback,
- * at most once on the first `start_debug({ mode: 'local-browser' })` (all-lazy,
+ * at most once on the first `switch_environment({ mode: 'local-browser' })` (all-lazy,
  * #396 — no run function boots a family at startup anymore).
  */
 export async function bootLocalFamily(): Promise<BootedFamily> {
@@ -1838,7 +2434,7 @@ export interface BootRelayFamilyOptions {
    * Secret-free observability callback for relay auth rejections (issue #467) —
    * forwarded to {@link startChiiRelay}'s `onAuthReject`. Receives only the
    * rejection kind; never the URL, query, code, or secret. Boot sites wire it
-   * to `DiagnosticsCollector.recordAuthReject()` so `get_debug_status` can
+   * to `DiagnosticsCollector.recordAuthReject()` so `get_status` can
    * surface silent 401s.
    */
   onAuthReject?: (event: import('./chii-relay.js').RelayAuthRejectEvent) => void;
@@ -1887,6 +2483,33 @@ export interface BootRelayFamilyOptions {
   /** Overrides the relay's code-check backoff. Tests only. */
   authThrottle?: RelayAuthThrottleOptions;
   /**
+   * Turns on the attach window, the session limits and the tunnel life cycle (the
+   * MCP daemon does; the `debugger-test` runner keeps its own one-shot flow). A phone
+   * can then start an attach through the tunnel only while `guard.arm()` has opened
+   * the window, a session ends after 15 idle / 60 total minutes (the phone is told a minute before),
+   * and the tunnel is replaced after the last phone left and closed while unused.
+   * Default `false`.
+   */
+  guarded?: boolean;
+  /**
+   * The attach window, a session or the tunnel's idle state changed — the caller
+   * refreshes the dashboard. No payload.
+   */
+  onSessionChange?: () => void;
+  /** A device claimed (or tried to claim) the attach window. Secret-free report. */
+  onClaim?: (event: RelayClaimEvent) => void;
+  /** Overrides for the session limits and the tunnel life cycle. Tests only. */
+  sessionTuning?: {
+    lifetime?: Pick<
+      SessionLifetimeOptions,
+      'idleMs' | 'maxMs' | 'warnMs' | 'now' | 'setTimer' | 'clearTimer'
+    >;
+    tunnel?: Pick<
+      TunnelLifecycleOptions,
+      'detachRotateGraceMs' | 'idleCloseMs' | 'minRotateGapMs' | 'now' | 'setTimer' | 'clearTimer'
+    >;
+  };
+  /**
    * attach 단계 기록기. 주면 relay 훅(스크립트 제공·WS 업그레이드·target 종료·인증 거부·
    * 핸드셰이크)과 터널 up/down 이벤트가 이 기록기에 단계로 남는다. 기록은 비밀 없이 단계
    * 이름·결과만 담는다.
@@ -1904,7 +2527,7 @@ export interface BootRelayFamilyOptions {
  *
  * Booted lazily via the dual router's `bootLazyFor('relay-intoss')` callback
  * (symmetry with {@link bootLocalFamily}), at most once on the first
- * `start_debug({ mode: 'relay-staging' })` (all-lazy, #396 — every relay boot now
+ * `switch_environment({ mode: 'relay-staging' })` (all-lazy, #396 — every relay boot now
  * flows through `switchMode` after the project-local secret load). `relay-live`
  * removed (#665).
  *
@@ -1935,21 +2558,49 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
   // URL and is guessing codes. See tunnel-rotation.ts for the policy.
   const rotationPolicy = createTunnelRotationPolicy(options.tunnelRotation);
   const relayRef: { current: ChiiRelay | null } = { current: null };
-  let tunnelProbe: { stop(): void; rotate(): Promise<boolean> } | null = null;
+  let supervisor: TunnelSupervisor | null = null;
   const rotateTunnel = async (): Promise<void> => {
-    if (tunnelProbe === null) return;
+    if (supervisor === null) return;
     logWarn('tunnel.rotation', { reason: 'rotate' });
-    await tunnelProbe.rotate();
+    await supervisor.rotate();
+  };
+  const guarded = options.guarded === true;
+  const guardRef: { current: SessionGuard | null } = { current: null };
+  const lifecycleRef: { current: ReturnType<typeof createTunnelLifecycle> | null } = {
+    current: null,
   };
 
   let lastOriginRejectLogAt = 0;
+  let authRejectLogWindowStart = 0;
+  let authRejectLogCount = 0;
   const relay = await startChiiRelay({
     port: relayPort,
     verifyAuth: options.verifyAuth,
     authThrottle: options.authThrottle,
     getAppName: options.getAppName,
+    requireArming: guarded,
+    onClaim: (event) => {
+      // Secret-free: a fingerprint, a coarse UA family and a country code.
+      logWarn('relay.claim', {
+        msg:
+          `kind=${event.kind} device=${event.device} ua=${event.ua}` +
+          `${event.country === undefined ? '' : ` country=${event.country}`}`,
+      });
+      options.onClaim?.(event);
+      options.onSessionChange?.();
+    },
+    onArmChange: (armed) => {
+      lifecycleRef.current?.noteArmChange(armed);
+      options.onSessionChange?.();
+    },
+    onTargetOpen: () => {
+      // A new phone connection never inherits an earlier grant.
+      resetConfirmGrant();
+      guardRef.current?.noteAttached();
+      lifecycleRef.current?.noteAttached();
+    },
     // Public certificates of this process's session keys (relay-signing.ts).
-    getRelayCertDocument: () => relayCertDocument(process.env.AIT_DEBUG_TOTP_SECRET),
+    getRelayCertDocument: () => relayCertDocument(),
     onOriginReject: (event) => {
       // Rate-limited: a flood of refused requests must not flood the log.
       const now = Date.now();
@@ -1958,6 +2609,21 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
       logWarn('relay.origin.reject', { reason: `${event.kind}:${event.reason}` });
     },
     onAuthReject: (event) => {
+      // Which rule turned the request away, so a phone that attached and could not come
+      // back shows why. Enum values and counts only. Capped per minute against floods.
+      const at = Date.now();
+      if (at - authRejectLogWindowStart >= 60_000) {
+        authRejectLogWindowStart = at;
+        authRejectLogCount = 0;
+      }
+      authRejectLogCount += 1;
+      if (authRejectLogCount <= 30) {
+        logWarn('relay.auth.reject', {
+          msg:
+            `surface=${event.kind} reason=${event.reason} ` +
+            `attached=${relayRef.current?.attachedTargetCount() ?? 0}`,
+        });
+      }
       stageHooks?.onAuthReject(event);
       options.onAuthReject?.(event);
     },
@@ -1979,6 +2645,9 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     onWsUpgrade: stageHooks?.onWsUpgrade,
     onTargetClose: () => {
       stageHooks?.onTargetClose();
+      resetConfirmGrant();
+      guardRef.current?.noteDetached();
+      lifecycleRef.current?.noteDetached();
       // A rotation held back while the phone was attached runs now.
       if (rotationPolicy.noteTargetDetached()) void rotateTunnel();
     },
@@ -1987,98 +2656,120 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
     onTargetRejectedBusy: stageHooks?.onTargetRejectedBusy,
   });
   relayRef.current = relay;
+  const sessionRelay = relay;
   // relay.port is the actual OS-assigned port (may differ from relayPort when 0).
   logInfo('server.start', { port: relay.port });
 
-  let tunnel: QuickTunnel | null = null;
-  let tunnelStatus: TunnelStatus = makeTunnelStatus(false, null);
   // Bring the cloudflared tunnel up in the background so the MCP stdio transport
   // can answer `initialize` immediately. cloudflared has to lazy-download a
   // ~38 MB binary on first run; awaiting it here pushes the initialize response
-  // past Claude Code's MCP connection timeout. Tools that need the tunnel
-  // (`start_attach`) already gate on `getTunnelStatus()` and return a clear
-  // "tunnel not up" message when it isn't ready yet, so dropping the await is
-  // safe — the agent retries once the banner prints.
-  const tunnelReady = startQuickTunnel(relay.port).then(
-    (t) => {
-      tunnel = t;
-      tunnelStatus = makeTunnelStatus(true, t.wssUrl);
+  // past Claude Code's MCP connection timeout. The supervisor retries failed
+  // attempts with a growing delay and `start_attach` waits for it (bounded), so
+  // a tunnel that is slow or rate limited does not need a daemon restart.
+  supervisor = createTunnelSupervisor({
+    localPort: relay.port,
+    onUp: (t, { reissued, reason }) => {
       options.onWssUrl?.(t.wssUrl);
-      // Notify the caller of the cloudflared child PID so it can be recorded in
-      // the session registry for orphan reaping.
+      // Record the cloudflared child PID (the reissued one after a reissue, not
+      // the dead original) so an orphan reaper later finds the right process.
       // childPid is a plain integer — not a secret.
       if (t.childPid !== undefined) {
         options.onTunnelChildPid?.(t.childPid);
       }
-      // SECRET-HANDLING: wssUrl contains the relay host — do not log it directly.
-      logInfo('tunnel.up', {});
       options.timeline?.record('tunnel', 'ok');
-
-      // Start the health probe now that the tunnel URL is known.
-      // The probe runs every 60 s and attempts up to 3 reissues on drop.
-      tunnelProbe = startTunnelHealthProbe(t, relay.port, {
-        onReissue: (newTunnel, reason) => {
-          tunnel = newTunnel;
-          tunnelStatus = makeTunnelStatus(true, newTunnel.wssUrl, null, 0);
-          options.onWssUrl?.(newTunnel.wssUrl);
-          options.timeline?.record('tunnel', 'ok');
-          // The failures came through a URL that no longer answers, whatever
-          // replaced it: a rotation or a drop. The new address starts clean.
-          relay.resetAuthLock('tunnel');
-          if (reason === 'rotation') {
-            options.onTunnelRotated?.();
-          }
-          // Record the reissued tunnel's child PID (not the original dead one) so an
-          // orphan reaper later finds the right process.
-          // childPid is a plain integer — not a secret.
-          if (newTunnel.childPid !== undefined) {
-            options.onTunnelChildPid?.(newTunnel.childPid);
-          }
-          // Reprint the notice; the new URL + QR come from start_attach / the dashboard.
-          void printAttachBanner().then(() => {
-            logInfo('tunnel.up', { reissued: true });
-          });
-        },
-        onPermanentDrop: (droppedAt) => {
-          tunnelStatus = makeTunnelStatus(false, null, droppedAt, 3);
-          options.timeline?.record('tunnel', 'down');
-          logError('tunnel.down', {
-            msg: `tunnel permanently dropped (${droppedAt}). Restart: ${RESTART_CMD}`,
-          });
-          // Wake open dashboard SSE clients immediately so the render gate
-          // swaps the now-dead QR for the tunnel-down error state (issue #631).
-          // Mirrors the onWssUrl path — without it the page shows a scannable
-          // dead QR until the next periodic refresh push (up to 10s later).
-          options.onTunnelDown?.();
-        },
+      lifecycleRef.current?.noteTunnelUp();
+      if (reissued) {
+        // The failures came through a URL that no longer answers, whatever
+        // replaced it: a rotation or a drop. The new address starts clean.
+        relay.resetAuthLock('tunnel');
+        if (reason === 'rotation') {
+          options.onTunnelRotated?.();
+        }
+      }
+      // SECRET-HANDLING: wssUrl contains the relay host — do not log it directly.
+      // The new URL + QR come from start_attach / the dashboard.
+      void printAttachBanner().then(() => {
+        logInfo('tunnel.up', reissued ? { reissued: true } : {});
       });
-
-      return printAttachBanner();
     },
-    (err) => {
-      const message = err instanceof Error ? err.message : String(err);
+    onFailure: (failure) => {
       options.timeline?.record('tunnel', 'down');
       logError('tunnel.down', {
-        msg: `Failed to open cloudflared quick tunnel: ${redactRelayText(message)}. The relay is up locally; attach over the public URL is unavailable until the tunnel starts.`,
+        msg:
+          `cloudflared tunnel ${failure.afterUp ? 'dropped' : 'failed to open'} ` +
+          `(${failure.kind}, attempt ${failure.attempts})` +
+          `${failure.message === '' ? '' : `: ${failure.message}`}. ` +
+          `Retrying in ${Math.round(failure.delayMs / 1000)}s; the relay is up locally, ` +
+          'attach over the public URL waits for the tunnel.',
       });
+      // Wake open dashboard SSE clients so the render gate swaps a dead QR for
+      // the tunnel-down state immediately (issue #631).
+      options.onTunnelDown?.();
     },
-  );
-  // Reference the promise to placate the linter — actual completion is observed
-  // via the side-effects on `tunnelStatus` from inside `.then`.
-  void tunnelReady;
+  });
+  supervisor.start();
+  const tunnelSupervisor = supervisor;
 
   const connection = createRelayConnection(relay.baseUrl, options.timeline);
 
+  if (guarded) {
+    guardRef.current = createSessionGuard({
+      control: {
+        arm: (ms) => sessionRelay.arm(ms),
+        disarm: () => sessionRelay.disarm(),
+        armState: () => sessionRelay.armState(),
+        revokeSessions: (reason) => sessionRelay.revokeSessions(reason),
+        recentClaims: () => sessionRelay.recentClaims(),
+        attachedTargetCount: () => sessionRelay.attachedTargetCount(),
+      },
+      getConnection: () => connection,
+      onChange: options.onSessionChange,
+      onEnd: (reason) => logInfo('session.end', { reason }),
+      onRescanNotice: ({ windowMs }) =>
+        logInfo('session.rescan-notice', { windowSec: Math.round(windowMs / 1000) }),
+      lifetime: options.sessionTuning?.lifetime,
+      now: options.sessionTuning?.lifetime?.now,
+      setTimer: options.sessionTuning?.lifetime?.setTimer,
+      clearTimer: options.sessionTuning?.lifetime?.clearTimer,
+    });
+    lifecycleRef.current = createTunnelLifecycle({
+      ...options.sessionTuning?.tunnel,
+      rotate: async () => {
+        await rotateTunnel();
+      },
+      closeIdle: () => {
+        if (tunnelSupervisor.closeIdle()) {
+          logInfo('tunnel.idle-closed', {});
+          options.onSessionChange?.();
+        }
+      },
+      attachedCount: () => sessionRelay.attachedTargetCount(),
+      isArmed: () => sessionRelay.armState().armed,
+    });
+    // The tunnel may have come up before the life cycle existed.
+    if (tunnelSupervisor.status().up) lifecycleRef.current.noteTunnelUp();
+  }
+
   return {
     connection,
+    guard: guardRef.current ?? undefined,
     // Local HTTP base of the Chii relay — used by AutoDevtoolsOpener to build
     // the self-hosted inspector URL. SECRET-HANDLING: not logged.
     relayHttpUrl: relay.baseUrl,
-    getTunnelStatus: () => tunnelStatus,
+    getTunnelStatus: () => tunnelSupervisor.status(),
+    phoneHasStatusChip: () => sessionRelay.attachedTargetsHaveStatusChip(),
+    waitForTunnel: (maxMs) => {
+      // A tunnel closed for being unused opens again when somebody needs it.
+      tunnelSupervisor.reopen();
+      return tunnelSupervisor.waitForUp(maxMs);
+    },
+    setActive: (active) => tunnelSupervisor.setRetryEnabled(active),
     stop() {
-      tunnelProbe?.stop();
-      // tunnel.stop() is synchronous (child process kill) — safe from exit handler.
-      tunnel?.stop();
+      guardRef.current?.stop();
+      lifecycleRef.current?.stop();
+      // Stops the retry timer, an attempt in flight and the live tunnel. All
+      // synchronous (child process kill) — safe from exit handler.
+      tunnelSupervisor.stop();
       connection.close();
       // relay.close() is async — fine for signal/exit handlers.
       void relay.close();
@@ -2089,7 +2780,7 @@ export async function bootRelayFamily(options: BootRelayFamilyOptions): Promise<
 /**
  * Identifies a booted family slot in the dual router (issue #378).
  *
- * Each exposed `start_debug` mode gets its own warm slot, so a hot switch leaves
+ * Each exposed `switch_environment` mode gets its own warm slot, so a hot switch leaves
  * the other family warm instead of tearing it down (2 exposed modes → 2 physical
  * slots, see {@link familyKeyForMode}). `relay-live` (env 4) removed in #665;
  * `relay-sandbox` (the env-2 external PWA relay) removed in #103:
@@ -2119,7 +2810,7 @@ export function familyKeyForMode(mode: StartDebugMode): FamilyKey {
  * DevTools after a swap (issues #348, #356, #378, #396).
  *
  * All-lazy (#396): NO family is booted at startup — every family boots lazily on
- * its first `start_debug` via `bootLazyFor(key)`. This routes EVERY relay boot
+ * its first `switch_environment` via `bootLazyFor(key)`. This routes EVERY relay boot
  * through `switchMode` (which runs `loadRelaySecretReadOnly` first), closing the
  * gap where an eager startup boot bypassed the project-local secret load. The
  * router is direction-neutral (#356): any of the three families can be the first
@@ -2128,12 +2819,12 @@ export function familyKeyForMode(mode: StartDebugMode): FamilyKey {
 export interface DualRouterDeps {
   /**
    * Lazy boot for the family identified by `key` — called at most once per key,
-   * on the first `start_debug` whose family key has not yet been booted (issue
+   * on the first `switch_environment` whose family key has not yet been booted (issue
    * #378 — keyed so each family keeps its own warm slot). Since #396 NO family
    * is booted eagerly, so this boots the family for either `FamilyKey` on first
    * use.
    *
-   * `projectRoot` is threaded from the per-session `start_debug` call (#424).
+   * `projectRoot` is threaded from the per-session `switch_environment` call (#424).
    */
   bootLazyFor: (key: FamilyKey, projectRoot?: string) => Promise<BootedFamily>;
   /** Diagnostics collector (re-armed watcher records attach there). */
@@ -2172,9 +2863,9 @@ export interface DualRouterDeps {
 
 /**
  * Sentinel connection returned by {@link DualConnectionRouter.active} before the
- * first `start_debug` boots a family (all-lazy, issue #396). It satisfies the
+ * first `switch_environment` boots a family (all-lazy, issue #396). It satisfies the
  * full {@link CdpConnection} interface but holds nothing: `listTargets()` is
- * empty, every command rejects with a clear "call start_debug first" message,
+ * empty, every command rejects with a clear "call switch_environment first" message,
  * and all event/teardown members are safe no-ops. Callers that read tools before
  * any switchMode therefore get an honest empty/down state instead of an NPE.
  */
@@ -2184,7 +2875,7 @@ const NULL_CDP_CONNECTION: CdpConnection = {
   listTargets: () => [],
   getBufferedEvents: () => [],
   on: () => () => {},
-  send: () => Promise.reject(new Error('no family booted yet — call start_debug first')),
+  send: () => Promise.reject(new Error('no family booted yet — call switch_environment first')),
   close: () => {},
 };
 
@@ -2193,7 +2884,7 @@ const NULL_CDP_CONNECTION: CdpConnection = {
  *
  * Holds a keyed set of lazily-booted families ({@link FamilyKey} →
  * `BootedFamily`, issue #378) with NO family active at startup (issue #396); the
- * first `start_debug` boots and activates one. Plus an `active` pointer and the
+ * first `switch_environment` boots and activates one. Plus an `active` pointer and the
  * single attach watcher armed on the active connection. The router is
  * **direction-neutral** (#356): any family can be the first one booted, so a
  * `local-browser` session can hot-switch into relay (and vice versa) without
@@ -2230,7 +2921,7 @@ export class DualConnectionRouter implements ConnectionRouter {
   private readonly deps: DualRouterDeps;
   /** Families, booted lazily and warm-kept per {@link FamilyKey} (#378, #396). */
   private readonly lazyFamilies = new Map<FamilyKey, BootedFamily>();
-  /** `null` until the first `start_debug` boots a family (all-lazy, #396). */
+  /** `null` until the first `switch_environment` boots a family (all-lazy, #396). */
   private activeFamily: BootedFamily | null = null;
   private server: Server | null = null;
   private attachWatcher: { stop(): void } | null = null;
@@ -2246,6 +2937,15 @@ export class DualConnectionRouter implements ConnectionRouter {
 
   get active(): CdpConnection {
     return this.activeFamily ? this.activeFamily.connection : NULL_CDP_CONNECTION;
+  }
+
+  /** The guard of the active relay family, else of any booted relay family. */
+  get sessionGuard(): SessionGuard | null {
+    if (this.activeFamily?.guard !== undefined) return this.activeFamily.guard;
+    for (const family of this.bootedFamilies()) {
+      if (family.guard !== undefined) return family.guard;
+    }
+    return null;
   }
 
   /**
@@ -2271,8 +2971,26 @@ export class DualConnectionRouter implements ConnectionRouter {
    * intoss relay wss); otherwise falls back to the first booted family that has
    * a tunnel. Returns "down"
    * until any relay family is booted (any session before the first relay
-   * start_debug) — the correct signal for `start_attach` (no tunnel yet).
+   * switch_environment) — the correct signal for `start_attach` (no tunnel yet).
    */
+  /** Waits for the relay tunnel like {@link BootedFamily.waitForTunnel}; the status as is when none is booted. */
+  async waitForRelayTunnel(maxMs: number): Promise<TunnelStatus> {
+    const family =
+      this.activeFamily?.waitForTunnel !== undefined
+        ? this.activeFamily
+        : this.bootedFamilies().find((f) => f.waitForTunnel !== undefined);
+    return family?.waitForTunnel ? family.waitForTunnel(maxMs) : this.relayTunnelStatus();
+  }
+
+  /** Whether the phone attached to the relay draws its own status chip (see {@link BootedFamily.phoneHasStatusChip}). */
+  phoneHasStatusChip(): boolean {
+    if (this.activeFamily?.phoneHasStatusChip) return this.activeFamily.phoneHasStatusChip();
+    for (const family of this.bootedFamilies()) {
+      if (family.phoneHasStatusChip) return family.phoneHasStatusChip();
+    }
+    return false;
+  }
+
   relayTunnelStatus(): TunnelStatus {
     if (this.activeFamily?.getTunnelStatus) return this.activeFamily.getTunnelStatus();
     for (const family of this.bootedFamilies()) {
@@ -2283,7 +3001,7 @@ export class DualConnectionRouter implements ConnectionRouter {
 
   /**
    * Binds the MCP `Server`; the attach watcher is armed by the first
-   * `start_debug` since no family is active at startup (all-lazy, #396). Called
+   * `switch_environment` since no family is active at startup (all-lazy, #396). Called
    * once after `createDebugServer` + `connect`.
    */
   start(server: Server): void {
@@ -2302,7 +3020,7 @@ export class DualConnectionRouter implements ConnectionRouter {
     const server = this.server;
     if (!server) return;
     // No family active yet (all-lazy, #396) — nothing to watch until the first
-    // `start_debug` boots one and re-arms the watcher.
+    // `switch_environment` boots one and re-arms the watcher.
     const activeFamily = this.activeFamily;
     if (!activeFamily) return;
     this.attachWatcher = startAttachWatcher(
@@ -2369,7 +3087,9 @@ export class DualConnectionRouter implements ConnectionRouter {
 
   async switchMode(mode: StartDebugMode, projectRoot?: string): Promise<ModeSwitchReport> {
     if (this.swapInFlight) {
-      throw new Error('start_debug: 이전 전환이 아직 진행 중입니다 — 잠시 후 다시 호출하세요.');
+      throw new Error(
+        'switch_environment: 이전 전환이 아직 진행 중입니다 — 잠시 후 다시 호출하세요.',
+      );
     }
     // relay-live (env 4) removed (#665) — confirm parameter and gate gone.
 
@@ -2384,7 +3104,7 @@ export class DualConnectionRouter implements ConnectionRouter {
       // single #250 fail-fast. Local switches need no secret, so skip the load.
       // SECRET-HANDLING: loadRelaySecretReadOnly never logs the value or path.
       if (isRelayMode(mode)) {
-        await loadRelaySecretReadOnly({
+        await activateRelayRoot({
           projectRoot,
           onKeyAge: (age) => this.deps.diagnosticsCollector.recordRelayKeyAge?.(age),
         });
@@ -2398,6 +3118,8 @@ export class DualConnectionRouter implements ConnectionRouter {
       // (3) Flip the active pointer. The MCP Server reads through `active` per
       // request, so no re-handshake / restart is needed.
       this.activeFamily = target;
+      // Only the active family keeps retrying its tunnel.
+      for (const family of this.bootedFamilies()) family.setActive?.(family === target);
 
       // (4) Re-arm the attach watcher on the new connection (self-clearing).
       this.stopWatcher();
@@ -2414,7 +3136,7 @@ export class DualConnectionRouter implements ConnectionRouter {
         kind: target.connection.kind,
         nextStep: wantRelay
           ? 'start_attach로 attach QR 생성 + 폰 attach까지 한 번에 진행하세요 (relay 세션).'
-          : 'list_pages로 로컬 Chromium 페이지 attach를 확인하세요.',
+          : 'get_page로 로컬 Chromium 페이지 attach를 확인하세요.',
       };
     } finally {
       this.swapInFlight = false;
@@ -2435,25 +3157,25 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   redirectConsoleToStderr();
   // Every MCP client session runs its own daemon (own relay, tunnel, dashboard,
   // ports). The registry only cleans up what a dead or same-client predecessor
-  // left behind and lets get_debug_status name the other running sessions; it
+  // left behind and lets get_status name the other running sessions; it
   // never blocks startup and never touches another client's daemon.
   const session = registerSession({ takeover: options.force ?? false });
 
   // Dual-connection router (issues #348, #356, #378, #396): ALL families are
-  // lazy-booted on the first matching `start_debug`. Nothing boots at startup —
+  // lazy-booted on the first matching `switch_environment`. Nothing boots at startup —
   // every relay boot flows through `switchMode → loadRelaySecretReadOnly` first,
   // so the project-local `.ait_relay` secret is always loaded before the relay
   // boot's assertRelayAuthConfigured() / buildRelayVerifyAuth() read the env.
   const devtoolsOpener = new AutoDevtoolsOpener();
   // Diagnostics collector — records server-side errors and attach/detach events
-  // so `get_debug_status` can surface them in a single call.
+  // so `get_status` can surface them in a single call.
   const diagnosticsCollector = new InMemoryDiagnosticsCollector();
   // Host half of the attach protocol handshake. Compares the device's
   // `PROTOCOL_VERSION` with this daemon's; package versions are never compared
   // (the two packages are versioned independently).
   const protocolVersionMonitor = createProtocolVersionMonitor();
   // attach 단계 기록기 — relay 훅·오케스트레이터·터널 이벤트가 쓰고, progress 알림·
-  // get_debug_status·대시보드·구조화 로그가 읽는다.
+  // get_status·대시보드·구조화 로그가 읽는다.
   const attachTimeline = createDaemonAttachTimeline(() => qrServer?.notifyStateChange());
   const sessionStartedAt = new Date().toISOString();
   // 원격 최소 버전 게이트: 시작만 하고 기다리지 않는다. 도구 호출이 결과를 기다린다.
@@ -2468,7 +3190,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   });
 
   // FIX (issue #572 review): track the live cloudflared child PID in memory so
-  // get_debug_status can pass it to getDiagnostics as source (a). Updated by
+  // get_status can pass it to getDiagnostics as source (a). Updated by
   // onTunnelChildPid on initial boot and on every reissue.
   let activeTunnelChildPid: number | null = null;
 
@@ -2498,7 +3220,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
               session.updateTunnelChildPid(pid);
             },
             // Issue #467: count relay TOTP 401s (secret-free) so
-            // get_debug_status can distinguish "phone never arrived" from
+            // get_status can distinguish "phone never arrived" from
             // "phone arrived but was rejected".
             onAuthReject: () => diagnosticsCollector.recordAuthReject(),
             // The tunnel was reissued to cut off a caller that held the old URL.
@@ -2519,6 +3241,9 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
             // state (mirror of onWssUrl's notifyStateChange).
             onTunnelDown: () => qrServer?.notifyStateChange(),
             timeline: attachTimeline,
+            // Attach window, session limits and tunnel life cycle (QR leaks, forgotten sessions).
+            guarded: true,
+            onSessionChange: () => qrServer?.notifyStateChange(),
           }),
     diagnosticsCollector,
     devtoolsOpener,
@@ -2537,7 +3262,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   });
 
   // AIT.* methods ride the *active* connection's command channel (relay Chii or
-  // local CDP), so the AIT source follows `start_debug` swaps.
+  // local CDP), so the AIT source follows `switch_environment` swaps.
   const aitSource = new RoutingAitSource(() => {
     const active = router.active as CdpConnection & {
       sendCommand(method: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -2564,15 +3289,37 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // 클릭 시점에 TOTP를 mint하고 302 redirect하므로 stale 문제가 없다.
     // SECRET-HANDLING: /inspector URL에는 relay 시크릿도 접근 토큰도 없다 — 출력 가능.
     const inspectorUrl = qrServer?.inspectorStableUrl ?? null;
+    const guardState = router.sessionGuard?.state() ?? null;
     return {
       tunnel: { up: router.relayTunnelStatus().up, wssUrl: router.relayTunnelStatus().wssUrl },
       pages: targets.map((t) => ({ id: t.id, url: t.url })),
-      attachUrl: lastAttachParts
-        ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
-        : null,
+      // 어태치 창이 닫혀 있으면 QR을 그리지 않는다(쓸 수 없는 QR을 보여 주지 않는다).
+      attachUrl:
+        lastAttachParts && (guardState === null || guardState.armed)
+          ? rebuildAttachUrl(lastAttachParts, router.relayTunnelStatus())
+          : null,
+      control:
+        guardState === null
+          ? null
+          : {
+              armed: guardState.armed,
+              armedUntil: guardState.armedUntil,
+              attached: guardState.attached,
+              expiresAt: guardState.expiresAt,
+              warning: guardState.warning,
+              lastEnd: guardState.lastEnd,
+              claims: guardState.claims.map((c) => ({
+                kind: c.kind,
+                at: c.at,
+                device: c.device,
+                ua: c.ua,
+                ...(c.country !== undefined ? { country: c.country } : {}),
+              })),
+              tunnelIdleClosed: router.relayTunnelStatus().idleClosed === true,
+            },
       inspectorUrl,
       // 현재 active connection에서 매 호출마다 파생한 env — /attach 카피·환경 라벨
-      // 분기(#468). start_debug family swap을 따라가도록 저장하지 않고 파생한다.
+      // 분기(#468). switch_environment family swap을 따라가도록 저장하지 않고 파생한다.
       mode: deriveEnvironment(router.active.kind),
       phase: currentPhase, // #730
       ...buildDashboardTimelineState(attachTimeline, sessionStartedAt),
@@ -2594,8 +3341,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     if (targets.length === 0) {
       return { ok: false, reason: 'noTarget' };
     }
-    const totpSecret = process.env.AIT_DEBUG_TOTP_SECRET;
-    if (!totpSecret) {
+    if (!relayAuthSwitch()) {
       return { ok: false, reason: 'totpUnavailable' };
     }
     const url = buildChiiInspectorUrl(relayHttpUrl, targets[0].id, () => mintRelayCode(Date.now()));
@@ -2613,6 +3359,27 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     qrServer = await startQrHttpServer(getDashboardState, {
       getDirectInspectorUrl,
       projectLabel: session.entry.project,
+      openDashboardTab: async (tokenizedUrl) => {
+        // 토큰이 붙은 URL은 브라우저 실행에만 쓴다. 결과·로그에 싣지 않는다.
+        const base = tokenizedUrl.split('?')[0] ?? tokenizedUrl;
+        const opened = await openQrInBrowser(base, `${base}qr.png`, tokenizedUrl);
+        return opened.opened;
+      },
+      onAction: (action) => {
+        const guard = router.sessionGuard ?? null;
+        if (guard === null) return { ok: false, reason: 'failed' };
+        if (action === 'kill') {
+          guard.end('user-stopped');
+          return { ok: true };
+        }
+        // 새 QR: 앞서 start_attach가 받은 앱 주소로 어태치 창을 다시 연다. 주소가 없으면 못 한다.
+        if (lastAttachParts === null) return { ok: false, reason: 'no-scheme' };
+        guard.arm(DASHBOARD_NEW_QR_WINDOW_MS);
+        void router
+          .waitForRelayTunnel(ATTACH_TUNNEL_REOPEN_WAIT_MS)
+          .then(() => qrServer?.notifyStateChange());
+        return { ok: true };
+      },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -2620,7 +3387,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   }
 
   // TOTP 주기 갱신 타이머 — 이벤트 없이 페이지가 방치될 때 at= 코드가 stale되는 갭 수정 (#445).
-  // TOTP step은 5초이고 코드는 30~35초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
+  // TOTP step은 5초이고 코드는 120~125초만 통하므로, 열린 대시보드의 QR이 단계마다 바뀌도록
   // RELAY_QR_REFRESH_INTERVAL_MS(5초) 주기로 push한다.
   // SECRET-HANDLING: 콜백은 단순 trigger만 — TOTP 값·at= 코드는 절대 로그/stdout에 출력 금지.
   const TOTP_REFRESH_INTERVAL_MS = RELAY_QR_REFRESH_INTERVAL_MS;
@@ -2640,8 +3407,10 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     aitSource,
     // Tunnel status follows the active relay family once one is lazy-booted (#356).
     getTunnelStatus: () => router.relayTunnelStatus(),
+    waitForTunnel: (maxMs) => router.waitForRelayTunnel(maxMs),
+    resolveTunnelHost: dnsResolvesTunnelHost,
     // FIX (issue #572 review): expose the live cloudflared child PID (source a)
-    // so get_debug_status can feed it into getDiagnostics for the FIX 2 probe.
+    // so get_status can feed it into getDiagnostics for the FIX 2 probe.
     getTunnelChildPid: () => activeTunnelChildPid,
     readSessions: () => session.snapshot(),
     get qrHttpServer() {
@@ -2652,12 +3421,15 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
     // Device↔host version skew, or null. Read at call time so a device that
     // reports after the server was built is still seen.
     getProtocolVersionSkew: () => protocolVersionMonitor.getMismatch(),
+    // Same version gate as close 4410 (0.3.2+ draws the status chip), but read per open phone
+    // connection from the relay, not from whichever handshake arrived last.
+    phoneHasStatusChip: () => router.phoneHasStatusChip(),
     getMinVersionGate,
     // SECRET-HANDLING: the TOTP secret is read from env AT CALL TIME (inside
     // start_attach) so the project-local .ait_relay secret loaded by
     // switchMode (#396) is visible. It is used only to generate the at= code and
     // is never logged or surfaced in any output.
-    getTotpSecret: () => process.env.AIT_DEBUG_TOTP_SECRET,
+    getTotpSecret: () => relayAuthSwitch(),
     // dashboard 갱신 콜백 — URL 컴포넌트 저장 후 SSE push.
     // 컴포넌트를 저장해 getDashboardState가 fresh TOTP로 URL을 재빌드 (Defect 1).
     onAttachUrlBuilt: (parts) => {
@@ -2675,7 +3447,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // Chromium). Each family's `stop()` owns its own infra teardown — the relay
   // family stops its tunnel + probe, the local family kills its Chromium.
   // Inactive infra is left warm during the session and only collected here —
-  // that is what preserves a warm attach across `start_debug` swaps.
+  // that is what preserves a warm attach across `switch_environment` swaps.
   //
   // SIGKILL cannot be intercepted — cloudflared may remain orphaned (PPID 1).
   // Port 0 makes such orphans harmless: the next startup gets a fresh port.
@@ -2763,7 +3535,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   await server.connect(transport);
 
   // Bind the server to the router. No family is active yet (all-lazy, #396) —
-  // the attach watcher is armed by the first `start_debug` and re-armed on every
+  // the attach watcher is armed by the first `switch_environment` and re-armed on every
   // swap.
   router.start(server);
 

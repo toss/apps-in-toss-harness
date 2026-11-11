@@ -3,26 +3,26 @@
  * The phone asks before a debugger attaches (consent.ts), on a QR test page
  * with the real attach.ts. Nothing reaches the network before "연결"; "취소"
  * leaves no request, no banner and no attach values behind. The answer is
- * remembered per relay origin for a day.
+ * remembered per verified developer computer (pinned root key + signed host
+ * name, not the tunnel host) for a day.
  */
 
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  relayCertDocument,
-  relayPublicKey,
-  resetRelaySessionKey,
-  signRelay,
-} from '../../../debugger/src/mcp/relay-signing.js';
-import {
-  CONSENT_MAX_ORIGINS,
+  CONSENT_MAX_COMPUTERS,
   CONSENT_STORAGE_KEY,
   CONSENT_TTL_MS,
+  computerConsentId,
   consentBody,
-  isRelayOriginConsented,
-  rememberRelayOriginConsent,
+  forgetAllComputerConsent,
+  forgetComputerConsent,
+  isComputerConsented,
+  listRememberedComputers,
+  rememberComputerConsent,
 } from '../consent.js';
-import type { GateResult } from '../index.js';
+import type { GateResult, RelayPublicKeyPin } from '../index.js';
+import { attachSignatures, relayPublicKey, resetRelaySessionKey } from './legacy-relay-signing.js';
 
 vi.mock('@apps-in-toss/web-framework', () => ({
   setScreenAwakeMode: vi.fn(() => Promise.resolve({ enabled: true })),
@@ -30,6 +30,9 @@ vi.mock('@apps-in-toss/web-framework', () => ({
 
 const SECRET = '11'.repeat(32);
 const KEY = relayPublicKey(SECRET);
+/** A pinned key as the bundle carries it: the key and a far-off expiry (Unix seconds). */
+const FAR = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
+const KEY_PIN = { publicKey: KEY, notAfter: FAR };
 const AT = '0123456789abcdef0123456789abcdef';
 const RELAY = 'wss://abc-def.trycloudflare.com';
 const OTHER_RELAY = 'wss://other-one.trycloudflare.com';
@@ -49,12 +52,31 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 let originalWebSocket: typeof WebSocket;
 
 function setPage(): void {
-  const sig = signRelay(SECRET, RELAY, AT);
+  const signed = attachSignatures(SECRET, RELAY, AT);
   window.history.replaceState(
     null,
     '',
-    `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${sig}&keep=1#h`,
+    `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&arc=${signed?.cert}&keep=1#h`,
   );
+}
+
+/** A signed link whose host-name signature verifies, for any tunnel host. */
+function setNamedLink(relay: string = RELAY, name = 'dev-mac', secret: string = SECRET): void {
+  const signed = attachSignatures(secret, relay, AT, name);
+  const q = new URLSearchParams({
+    debug: '1',
+    relay,
+    at: AT,
+    sig: signed?.sig ?? '',
+    ahn: name,
+    ahs: signed?.hostSig ?? '',
+    arc: signed?.cert ?? '',
+  });
+  window.history.replaceState(null, '', `/p?${q.toString()}`);
+}
+
+function gateFor(relay: string): GateResult {
+  return { attach: true, relayUrl: `${relay}/`, deploymentId: '' };
 }
 
 function dialogRoot(): ShadowRoot | null {
@@ -69,17 +91,32 @@ function button(action: 'connect' | 'cancel'): HTMLButtonElement {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** Starts an attach; the pending promise is wrapped so `await` does not wait for it. */
-async function start(): Promise<{ pending: Promise<void> | undefined }> {
+/**
+ * Starts an attach; the pending promise is wrapped so `await` does not wait for it.
+ * Verification is real async crypto, so wait (a bounded number of ticks) for the dialog.
+ */
+async function start(
+  keys: RelayPublicKeyPin[] = [KEY_PIN],
+  gate: GateResult = GATE,
+): Promise<{ pending: Promise<void> | undefined }> {
   const { maybeAttach } = await import('../attach.js');
-  const pending = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-  await flush();
+  const pending = maybeAttach(gate, { relayPublicKeys: keys });
+  for (let i = 0; i < 50 && dialogRoot() === null; i++) await flush();
   return { pending };
+}
+
+let xhrOpenSpy: ReturnType<typeof vi.spyOn>;
+let appendSpy: ReturnType<typeof vi.spyOn>;
+
+function scriptAppends(): number {
+  return appendSpy.mock.calls.filter((c: unknown[]) => c[0] instanceof HTMLScriptElement).length;
 }
 
 function expectNothingSent(): void {
   expect(fetchSpy).not.toHaveBeenCalled();
+  expect(xhrOpenSpy).not.toHaveBeenCalled();
   expect(SpyWebSocket.calls).toBe(0);
+  expect(scriptAppends()).toBe(0);
   expect(document.head.querySelector('script')).toBeNull();
 }
 
@@ -92,17 +129,10 @@ beforeEach(() => {
   delete (window as unknown as Record<string, unknown>).__ait_debug_status;
   delete (window as unknown as Record<string, unknown>).__ait_relay_ws_observed;
   vi.stubGlobal('crypto', webcrypto);
-  fetchSpy = vi.fn((url: unknown) =>
-    String(url).endsWith('/relay-cert')
-      ? Promise.resolve({
-          status: 200,
-          redirected: false,
-          headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(relayCertDocument(SECRET))),
-        })
-      : Promise.resolve({ status: 200 }),
-  );
+  fetchSpy = vi.fn(() => Promise.resolve({ status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
+  xhrOpenSpy = vi.spyOn(XMLHttpRequest.prototype, 'open');
+  appendSpy = vi.spyOn(Node.prototype, 'appendChild');
   SpyWebSocket.calls = 0;
   originalWebSocket = window.WebSocket;
   window.WebSocket = SpyWebSocket as unknown as typeof WebSocket;
@@ -150,20 +180,36 @@ describe('consent dialog before a first attach', () => {
     await pending;
   });
 
-  it('"연결" verifies and attaches, then remembers only the relay origin and time', async () => {
+  it('"연결" on a verified link remembers only a digest, the name and the time', async () => {
+    setNamedLink();
     const { pending } = await start();
     button('connect').click();
     await pending;
     expect(dialogRoot()).toBeNull();
     expect(document.head.querySelector('script')).not.toBeNull();
-    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/relay-cert'))).toBe(true);
-    const stored = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '[]');
-    expect(stored).toHaveLength(1);
-    expect(Object.keys(stored[0]).sort()).toEqual(['o', 't']);
-    expect(stored[0].o).toBe(RELAY);
+    // The certificate came with the link: the relay was never asked for it.
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/relay-cert'))).toBe(false);
     const text = window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '';
-    expect(text).not.toContain(AT);
-    expect(text).not.toContain('sig');
+    const stored = JSON.parse(text);
+    expect(stored.v).toBe(2);
+    expect(stored.e).toHaveLength(1);
+    expect(Object.keys(stored.e[0]).sort()).toEqual(['k', 'n', 't']);
+    expect(stored.e[0].k).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.e[0].n).toBe('dev-mac');
+    expect(stored.e[0].k).toBe(
+      await computerConsentId(new Uint8Array(Buffer.from(KEY, 'base64url')), 'dev-mac'),
+    );
+    for (const secret of [AT, 'sig', 'trycloudflare', 'abc-def', 'wss:']) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it('"연결" on an unsigned link attaches but remembers nothing', async () => {
+    const { pending } = await start();
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
 
   it('shows the host through textContent, never as markup', async () => {
@@ -187,35 +233,40 @@ describe('consent dialog before a first attach', () => {
     expect(consentBody('wss://127.0.0.1:8443')).toContain('(127.0.0.1:8443)');
   });
 
-  it('"연결" on a link that fails verification remembers nothing', async () => {
+  it('a link that fails verification never shows the dialog, sends nothing and remembers nothing', async () => {
     window.history.replaceState(
       null,
       '',
-      `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${'A'.repeat(8)}.${'A'.repeat(86)}`,
+      `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${'A'.repeat(8)}.${'A'.repeat(86)}&arc=${attachSignatures(SECRET, RELAY, AT)?.cert}&keep=1`,
     );
     const { pending } = await start();
-    button('connect').click();
     await pending;
-    expect(document.head.querySelector('script')).toBeNull();
+    expect(dialogRoot()).toBeNull();
+    expectNothingSent();
+    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
     expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
     // The refused attach leaves no credential in the URL or on the history entry.
     const params = new URLSearchParams(window.location.search);
-    expect(params.has('at')).toBe(false);
-    expect(params.has('sig')).toBe(false);
-    expect(params.has('relay')).toBe(false);
+    for (const name of ['at', 'sig', 'relay', 'arc']) expect(params.has(name)).toBe(false);
     expect(params.get('debug')).toBe('1');
     expect(window.history.state?.__ait_debug_attach).toBeUndefined();
   });
 
-  it('"연결" on a link whose certificate cannot be fetched leaves no at or sig behind', async () => {
-    fetchSpy.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
+  it('a link without a certificate (a debugger older than 0.3.2) asks for an update, no dialog, no request', async () => {
+    const signed = attachSignatures(SECRET, RELAY, AT);
+    window.history.replaceState(
+      null,
+      '',
+      `/p?debug=1&relay=${encodeURIComponent(RELAY)}&at=${AT}&sig=${signed?.sig}&keep=1#h`,
+    );
     const { pending } = await start();
-    button('connect').click();
     await pending;
-    expect(document.head.querySelector('script')).toBeNull();
+    expect(dialogRoot()).toBeNull();
+    expectNothingSent();
+    expect(window.__ait_debug_status).toBe('blocked-debugger-update');
     expect(window.location.search).toBe('?debug=1&keep=1');
-    expect(window.location.hash).toBe('#h');
     expect(window.history.state?.__ait_debug_attach).toBeUndefined();
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
 
   it('a verified attach still keeps the values on the history entry for a reload', async () => {
@@ -252,7 +303,7 @@ describe('consent dialog before a first attach', () => {
     // A reload after declining has nothing to attach with.
     vi.resetModules();
     const { maybeAttach } = await import('../attach.js');
-    const again = maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    const again = maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     await again;
     expect(dialogRoot()).toBeNull();
     expectNothingSent();
@@ -267,7 +318,7 @@ describe('consent dialog before a first attach', () => {
     fetchSpy.mockClear();
     vi.resetModules();
     const { maybeAttach } = await import('../attach.js');
-    const pending = maybeAttach(undefined, { relayPublicKeys: [KEY] });
+    const pending = maybeAttach(undefined, { relayPublicKeys: [KEY_PIN] });
     await flush();
     expect(dialogRoot()).toBeNull();
     await pending;
@@ -276,9 +327,9 @@ describe('consent dialog before a first attach', () => {
 
   it('asks only once for two rapid calls', async () => {
     const { maybeAttach } = await import('../attach.js');
-    const a = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-    const b = maybeAttach(GATE, { relayPublicKeys: [KEY] });
-    await flush();
+    const a = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
+    const b = maybeAttach(GATE, { relayPublicKeys: [KEY_PIN] });
+    for (let i = 0; i < 50 && dialogRoot() === null; i++) await flush();
     expect(b).toBeUndefined();
     expect(document.querySelectorAll('#__ait_debug_consent')).toHaveLength(1);
     button('cancel').click();
@@ -291,7 +342,7 @@ describe('gate refusals', () => {
     'a %s refusal drops at, sig and relay from the URL',
     async (reason) => {
       const { maybeAttach } = await import('../attach.js');
-      const result = maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY] });
+      const result = maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY_PIN] });
       expect(result).toBeUndefined();
       expect(window.location.search).toBe('?debug=1&keep=1');
       expect(window.location.hash).toBe('#h');
@@ -303,22 +354,93 @@ describe('gate refusals', () => {
   it.each(['host', 'opt-in'] as const)('a %s refusal leaves the URL alone', async (reason) => {
     const before = window.location.search;
     const { maybeAttach } = await import('../attach.js');
-    maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY] });
+    maybeAttach({ attach: false, reason }, { relayPublicKeys: [KEY_PIN] });
     expect(window.location.search).toBe(before);
   });
 });
 
-describe('remembered relay origins', () => {
-  it('skips the dialog for a remembered, unexpired origin', async () => {
-    rememberRelayOriginConsent(RELAY);
-    const { pending } = await start();
+describe('remembered computers', () => {
+  const ROOT = new Uint8Array(65).fill(4);
+  let ID: string;
+  let OTHER_ID: string;
+  beforeEach(async () => {
+    ID = (await computerConsentId(ROOT, 'dev-mac')) as string;
+    OTHER_ID = (await computerConsentId(ROOT, 'other-pc')) as string;
+  });
+
+  it('the same computer skips the dialog on a different tunnel host', async () => {
+    setNamedLink(RELAY);
+    let { pending } = await start();
+    button('connect').click();
+    await pending;
+    expect(listRememberedComputers()).toHaveLength(1);
+
+    // Daemon restarted: new tunnel host, same root key and computer name.
+    vi.resetModules();
+    document.head.innerHTML = '';
+    fetchSpy.mockClear();
+    setNamedLink(OTHER_RELAY);
+    ({ pending } = await start([KEY_PIN], gateFor(OTHER_RELAY)));
+    await flush();
     expect(dialogRoot()).toBeNull();
     await pending;
     expect(document.head.querySelector('script')).not.toBeNull();
+    expect(listRememberedComputers()).toHaveLength(1);
   });
 
-  it('asks again for another relay origin (a new tunnel)', async () => {
-    rememberRelayOriginConsent(OTHER_RELAY);
+  it('asks again for another computer name', async () => {
+    setNamedLink(RELAY, 'dev-mac');
+    let { pending } = await start();
+    button('connect').click();
+    await pending;
+    vi.resetModules();
+    document.head.innerHTML = '';
+    setNamedLink(RELAY, 'other-pc');
+    ({ pending } = await start());
+    expect(dialogRoot()).not.toBeNull();
+    button('cancel').click();
+    await pending;
+  });
+
+  it('asks again under another pinned root key (a rotated key)', async () => {
+    setNamedLink(RELAY, 'dev-mac');
+    let { pending } = await start();
+    button('connect').click();
+    await pending;
+    vi.resetModules();
+    document.head.innerHTML = '';
+    const other = '22'.repeat(32);
+    setNamedLink(RELAY, 'dev-mac', other);
+    ({ pending } = await start([{ publicKey: relayPublicKey(other), notAfter: FAR }]));
+    expect(dialogRoot()).not.toBeNull();
+    button('cancel').click();
+    await pending;
+  });
+
+  it('an unverified name always asks and is never remembered, even beside a remembered one', async () => {
+    setNamedLink(RELAY, 'dev-mac');
+    let { pending } = await start();
+    button('connect').click();
+    await pending;
+    const before = window.localStorage.getItem(CONSENT_STORAGE_KEY);
+    vi.resetModules();
+    document.head.innerHTML = '';
+    // Same name, but the signature belongs to another name.
+    const other = attachSignatures(SECRET, RELAY, AT, 'other-pc');
+    setNamedLink(RELAY, 'dev-mac');
+    const q = new URLSearchParams(window.location.search);
+    q.set('ahs', other?.hostSig ?? '');
+    window.history.replaceState(null, '', `/p?${q.toString()}`);
+    ({ pending } = await start());
+    expect(dialogRoot()).not.toBeNull();
+    button('connect').click();
+    await pending;
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBe(before);
+    expect(listRememberedComputers()).toHaveLength(1);
+  });
+
+  it('an unsigned link asks every time', async () => {
+    rememberComputerConsent(ID, 'dev-mac');
     const { pending } = await start();
     expect(dialogRoot()).not.toBeNull();
     expectNothingSent();
@@ -326,25 +448,28 @@ describe('remembered relay origins', () => {
     await pending;
   });
 
-  it('asks again once the answer is a day old', async () => {
-    rememberRelayOriginConsent(RELAY, Date.now() - CONSENT_TTL_MS);
-    expect(isRelayOriginConsented(RELAY)).toBe(false);
-    rememberRelayOriginConsent(OTHER_RELAY, Date.now() - CONSENT_TTL_MS + 60_000);
-    expect(isRelayOriginConsented(OTHER_RELAY)).toBe(true);
-    const { pending } = await start();
-    expect(dialogRoot()).not.toBeNull();
-    button('cancel').click();
-    await pending;
+  it('asks again once the answer is a day old', () => {
+    const now = Date.now();
+    rememberComputerConsent(ID, 'dev-mac', now - CONSENT_TTL_MS);
+    expect(isComputerConsented(ID, now)).toBe(false);
+    rememberComputerConsent(OTHER_ID, 'other-pc', now - CONSENT_TTL_MS + 60_000);
+    expect(isComputerConsented(OTHER_ID, now)).toBe(true);
+    expect(isComputerConsented(OTHER_ID, now + 120_000)).toBe(false);
+    expect(listRememberedComputers(now).map((c) => c.name)).toEqual(['other-pc']);
+    expect(listRememberedComputers(now)[0]?.expiresAt).toBe(
+      now - CONSENT_TTL_MS + 60_000 + CONSENT_TTL_MS,
+    );
   });
 
   it('asks every time when storage throws, and still attaches after "연결"', async () => {
-    rememberRelayOriginConsent(RELAY);
+    rememberComputerConsent(ID, 'dev-mac');
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('SecurityError');
     });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('SecurityError');
     });
+    setNamedLink();
     const { pending } = await start();
     expect(dialogRoot()).not.toBeNull();
     button('connect').click();
@@ -352,30 +477,323 @@ describe('remembered relay origins', () => {
     expect(document.head.querySelector('script')).not.toBeNull();
   });
 
-  it('ignores malformed or future entries', () => {
+  it('discards the old origin-keyed entries and ignores malformed ones', () => {
     const now = Date.now();
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify([{ o: RELAY, t: now }]));
+    expect(listRememberedComputers(now)).toEqual([]);
+    rememberComputerConsent(ID, 'dev-mac', now);
+    expect(JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '{}').v).toBe(2);
     window.localStorage.setItem(
       CONSENT_STORAGE_KEY,
-      JSON.stringify([
-        { o: RELAY, t: now + 60_000 },
-        { o: 'https://abc-def.trycloudflare.com', t: now },
-        { o: `${RELAY}/path`, t: now },
-        { o: RELAY, t: 'yesterday' },
-      ]),
+      JSON.stringify({
+        v: 2,
+        e: [
+          { k: ID, n: 'dev-mac', t: now + 60_000 },
+          { k: 'xyz', n: 'dev-mac', t: now },
+          { k: ID, n: '<b>x</b>', t: now },
+          { k: ID, n: 'dev-mac', t: 'yesterday' },
+        ],
+      }),
     );
-    expect(isRelayOriginConsented(RELAY, now)).toBe(false);
+    expect(isComputerConsented(ID, now)).toBe(false);
     window.localStorage.setItem(CONSENT_STORAGE_KEY, '{not json');
-    expect(isRelayOriginConsented(RELAY, now)).toBe(false);
+    expect(isComputerConsented(ID, now)).toBe(false);
   });
 
-  it(`keeps at most ${CONSENT_MAX_ORIGINS} origins, newest first`, () => {
+  it(`keeps at most ${CONSENT_MAX_COMPUTERS} computers, newest first`, async () => {
     const now = Date.now();
-    for (let i = 0; i < 8; i++)
-      rememberRelayOriginConsent(`wss://t${i}.trycloudflare.com`, now + i);
-    const stored = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '[]');
-    expect(stored).toHaveLength(CONSENT_MAX_ORIGINS);
-    expect(stored[0].o).toBe('wss://t7.trycloudflare.com');
-    expect(isRelayOriginConsented('wss://t0.trycloudflare.com', now + 8)).toBe(false);
-    expect(isRelayOriginConsented('wss://t7.trycloudflare.com', now + 8)).toBe(true);
+    const ids: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const id = (await computerConsentId(ROOT, `pc-${i}`)) as string;
+      ids.push(id);
+      rememberComputerConsent(id, `pc-${i}`, now + i);
+    }
+    const list = listRememberedComputers(now + 8);
+    expect(list).toHaveLength(CONSENT_MAX_COMPUTERS);
+    expect(list[0]?.name).toBe('pc-7');
+    expect(isComputerConsented(ids[0] as string, now + 8)).toBe(false);
+    expect(isComputerConsented(ids[7] as string, now + 8)).toBe(true);
+  });
+
+  it('forgets one computer or all of them', () => {
+    rememberComputerConsent(ID, 'dev-mac');
+    rememberComputerConsent(OTHER_ID, 'other-pc');
+    forgetComputerConsent(ID);
+    expect(listRememberedComputers().map((c) => c.name)).toEqual(['other-pc']);
+    forgetAllComputerConsent();
+    expect(listRememberedComputers()).toEqual([]);
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it('끊기 keeps the remembered computer (only the tab list removes it)', async () => {
+    setNamedLink();
+    const { pending } = await start();
+    button('connect').click();
+    await pending;
+    expect(listRememberedComputers()).toHaveLength(1);
+    const { disconnectDebugger } = await import('../attach.js');
+    disconnectDebugger();
+    expect(listRememberedComputers()).toHaveLength(1);
+  });
+
+  it('a digest depends on the key and the name', async () => {
+    const other = new Uint8Array(65).fill(5);
+    expect(await computerConsentId(ROOT, 'dev-mac')).toBe(ID);
+    expect(await computerConsentId(other, 'dev-mac')).not.toBe(ID);
+    expect(await computerConsentId(ROOT, 'bad name')).toBeNull();
+  });
+});
+
+describe('developer computer name in the dialog', () => {
+  const NAME_BODY =
+    '개발자 컴퓨터(dev-mac)가 이 앱을 원격으로 조작하고 앱 안의 데이터를 볼 수 있게 돼요. 내가 띄운 QR이 맞을 때만 연결하세요.';
+  const TUNNEL_BODY =
+    '개발자 컴퓨터(abc-def.trycloudflare.com)가 이 앱을 원격으로 조작하고 앱 안의 데이터를 볼 수 있게 돼요. 내가 띄운 QR이 맞을 때만 연결하세요.';
+
+  function setNamedPage(edit?: (q: URLSearchParams) => void, name = 'dev-mac'): void {
+    const signed = attachSignatures(SECRET, RELAY, AT, name);
+    const q = new URLSearchParams({
+      debug: '1',
+      relay: RELAY,
+      at: AT,
+      sig: signed?.sig ?? '',
+      ahn: name,
+      ahs: signed?.hostSig ?? '',
+      arc: signed?.cert ?? '',
+    });
+    edit?.(q);
+    window.history.replaceState(null, '', `/p?${q.toString()}`);
+  }
+
+  /** Like `start`, but waits for the dialog: verifying the name takes real async crypto. */
+  async function startAndWait(
+    keys: RelayPublicKeyPin[] = [KEY_PIN],
+  ): Promise<{ pending: Promise<void> | undefined }> {
+    const { maybeAttach } = await import('../attach.js');
+    const pending = maybeAttach(GATE, { relayPublicKeys: keys });
+    for (let i = 0; i < 100 && dialogRoot() === null; i++) await flush();
+    return { pending };
+  }
+
+  const bodyText = () => dialogRoot()?.getElementById('body')?.textContent;
+
+  it('shows the verified name instead of the tunnel host, then attaches', async () => {
+    setNamedPage();
+    const { pending } = await startAndWait();
+    expect(bodyText()).toBe(NAME_BODY);
+    // The name is verified against the certificate in the link: nothing was requested.
+    expectNothingSent();
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+    // Only the version handshake went out, after "연결"; never a certificate request.
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/relay-cert'))).toBe(false);
+    // Remembered per computer: the verified name is kept for display, the tunnel host is not.
+    const text = window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? '';
+    expect(JSON.parse(text).e[0].n).toBe('dev-mac');
+    expect(text).not.toContain('trycloudflare');
+  });
+
+  it.each([
+    ['an edited name', (q: URLSearchParams) => q.set('ahn', 'evil-pc')],
+    ['a missing signature', (q: URLSearchParams) => q.delete('ahs')],
+    ['a missing name', (q: URLSearchParams) => q.delete('ahn')],
+    ['a malformed signature', (q: URLSearchParams) => q.set('ahs', 'short')],
+    ['a name with markup', (q: URLSearchParams) => q.set('ahn', '<b>x</b>')],
+    [
+      'the link signature in place of the name signature',
+      (q: URLSearchParams) => q.set('ahs', (q.get('sig') ?? '').split('.')[1] ?? ''),
+    ],
+  ])('falls back to the tunnel host for %s, and still attaches', async (_n, edit) => {
+    setNamedPage(edit);
+    const { pending } = await startAndWait();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+  });
+
+  it('does not accept a name signed for another code or another relay', async () => {
+    const other = attachSignatures(SECRET, OTHER_RELAY, AT, 'dev-mac');
+    setNamedPage((q) => q.set('ahs', other?.hostSig ?? ''));
+    let { pending } = await startAndWait();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+    vi.resetModules();
+    const otherCode = attachSignatures(SECRET, RELAY, 'f'.repeat(32), 'dev-mac');
+    setNamedPage((q) => q.set('ahs', otherCode?.hostSig ?? ''));
+    ({ pending } = await startAndWait());
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+  });
+
+  it('a link signed under a different root key never reaches the dialog', async () => {
+    setNamedPage();
+    const { pending } = await start([
+      { publicKey: relayPublicKey('22'.repeat(32)), notAfter: FAR },
+    ]);
+    await pending;
+    expect(dialogRoot()).toBeNull();
+    expectNothingSent();
+    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
+  });
+
+  it('an old-daemon link (no name) is unchanged: nothing is requested before the answer', async () => {
+    const { pending } = await startAndWait();
+    expectNothingSent();
+    expect(bodyText()).toBe(TUNNEL_BODY);
+    button('cancel').click();
+    await pending;
+  });
+
+  it('a link that carries the name keeps the sig the 0.3.1 client checks', async () => {
+    // The old client ignores ahn / ahs: its signed payload is unchanged.
+    setNamedPage();
+    const q = new URLSearchParams(window.location.search);
+    const { sig } = attachSignatures(SECRET, RELAY, AT) ?? { sig: '' };
+    expect(q.get('sig')).not.toBe(sig); // fresh ECDSA, but same key id and message
+    expect(q.get('sig')?.split('.')[0]).toBe(sig.split('.')[0]);
+    const { pending } = await startAndWait();
+    button('connect').click();
+    await pending;
+    expect(document.head.querySelector('script')).not.toBeNull();
+  });
+
+  it('consentBody shows the name when given, the relay host otherwise', () => {
+    expect(consentBody('wss://abc.trycloudflare.com', 'dev-mac')).toContain('(dev-mac)');
+    expect(consentBody('wss://abc.trycloudflare.com', null)).toContain('(abc.trycloudflare.com)');
+    expect(consentBody(null, 'dev-mac')).toContain('(dev-mac)');
+  });
+});
+
+describe('nothing leaves for the relay before "연결"', () => {
+  const HOUR = 3_600_000;
+
+  /** Page URL of a daemon link; `edit` can break one part of it. */
+  function setLink(
+    edit?: (q: URLSearchParams) => void,
+    signedWith: { secret?: string; relay?: string; at?: string; now?: number } = {},
+  ): void {
+    const signed = attachSignatures(
+      signedWith.secret ?? SECRET,
+      signedWith.relay ?? RELAY,
+      signedWith.at ?? AT,
+      'dev-mac',
+      signedWith.now ?? Date.now(),
+    );
+    const q = new URLSearchParams({
+      debug: '1',
+      relay: RELAY,
+      at: AT,
+      sig: signed?.sig ?? '',
+      ahn: 'dev-mac',
+      ahs: signed?.hostSig ?? '',
+      arc: signed?.cert ?? '',
+    });
+    edit?.(q);
+    window.history.replaceState(null, '', `/p?${q.toString()}`);
+  }
+
+  it('a valid link: the dialog appears with zero fetch, XHR, WebSocket or script injection', async () => {
+    setLink();
+    const { pending } = await start();
+    expect(dialogRoot()).not.toBeNull();
+    expectNothingSent();
+    // Still nothing a moment later, while the person reads the dialog.
+    await flush();
+    await flush();
+    expectNothingSent();
+    button('connect').click();
+    await pending;
+    expect(scriptAppends()).toBe(1);
+  });
+
+  const invalid: Array<[string, () => void, string]> = [
+    [
+      'tampered link signature',
+      () =>
+        setLink((q) =>
+          q.set(
+            'sig',
+            `${(q.get('sig') ?? '').slice(0, 20)}${'A'.repeat(5)}${(q.get('sig') ?? '').slice(25)}`,
+          ),
+        ),
+      'blocked-relay-signature',
+    ],
+    [
+      'link signed for another code',
+      () => setLink(undefined, { at: 'f'.repeat(32) }),
+      'blocked-relay-signature',
+    ],
+    [
+      'link signed for another relay',
+      () => setLink(undefined, { relay: OTHER_RELAY }),
+      'blocked-relay-signature',
+    ],
+    [
+      'certificate under another root',
+      () => setLink(undefined, { secret: '22'.repeat(32) }),
+      'blocked-relay-signature',
+    ],
+    [
+      'expired certificate',
+      () => setLink(undefined, { now: Date.now() - 2 * HOUR }),
+      'blocked-relay-signature',
+    ],
+    [
+      'malformed certificate',
+      () => setLink((q) => q.set('arc', 'AAAA')),
+      'blocked-relay-signature',
+    ],
+    ['missing certificate', () => setLink((q) => q.delete('arc')), 'blocked-debugger-update'],
+    ['missing sig', () => setLink((q) => q.delete('sig')), 'blocked-relay-signature'],
+  ];
+
+  it.each(invalid)(
+    'an invalid link (%s): no dialog, and zero fetch, XHR, WebSocket or script',
+    async (_n, make, status) => {
+      make();
+      const { pending } = await start();
+      await pending;
+      expect(dialogRoot()).toBeNull();
+      expectNothingSent();
+      expect(window.__ait_debug_status).toBe(status);
+      expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+    },
+  );
+
+  it('declining a valid link also sends nothing, ever', async () => {
+    setLink();
+    const { pending } = await start();
+    button('cancel').click();
+    await pending;
+    await flush();
+    expectNothingSent();
+  });
+});
+
+describe('debugger-client 0.3.1 compatibility (daemon side)', () => {
+  it('a new daemon link still carries the 0.3.1 shape: sig unchanged in form, extra params only added', async () => {
+    const { buildDeepLinkAttachUrl } = await import('../../../debugger/src/mcp/deeplink.js');
+    const signed = attachSignatures(SECRET, RELAY, AT, 'dev-mac');
+    const url = buildDeepLinkAttachUrl(
+      'intoss-private://app?_deploymentId=abc',
+      RELAY,
+      AT,
+      undefined,
+      signed?.sig,
+      { name: 'dev-mac', sig: signed?.hostSig ?? '' },
+      signed?.cert,
+    );
+    const q = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+    // What a 0.3.1 client reads.
+    expect(q.get('relay')).toBe(RELAY);
+    expect(q.get('at')).toBe(AT);
+    expect(q.get('sig')).toMatch(/^[A-Za-z0-9_-]{8}\.[A-Za-z0-9_-]{86}$/);
+    // What it ignores.
+    expect(q.get('arc')).toHaveLength(180);
+    expect(q.get('ahn')).toBe('dev-mac');
   });
 });

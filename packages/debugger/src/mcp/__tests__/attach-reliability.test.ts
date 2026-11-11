@@ -2,7 +2,7 @@
  * Tests for attach reliability improvements (#281):
  *
  *   1. ChiiCdpConnection.waitForFirstTarget() — event-driven attach detection.
- *   2. list_pages stale cache — refreshTargets after evict/reattach cycle.
+ *   2. get_page stale cache — refreshTargets after evict/reattach cycle.
  *   3. MCP server disconnect error — relay disconnect is identified correctly.
  */
 
@@ -200,9 +200,9 @@ describe('ChiiCdpConnection.waitForFirstTarget()', () => {
   });
 });
 
-// ---- list_pages stale cache -------------------------------------------------
+// ---- get_page stale cache -------------------------------------------------
 
-describe('list_pages stale cache — refreshTargets after evict/reattach', () => {
+describe('get_page stale cache — refreshTargets after evict/reattach', () => {
   it('returns the fresh target after evict→reattach cycle', async () => {
     const relay = await createFakeRelay();
     const conn = new ChiiCdpConnection({

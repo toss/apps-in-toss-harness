@@ -36,7 +36,7 @@
   "skills": "./shared/skills/",
   "commands": "./shared/commands/",
   "mcpServers": {
-    "apps-in-toss-docs": {
+    "ait-docs": {
       "type": "http",
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },

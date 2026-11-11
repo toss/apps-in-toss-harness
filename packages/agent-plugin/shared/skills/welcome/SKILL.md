@@ -85,11 +85,11 @@ Node/npm/npx 존재, cwd가 빈 디렉토리인지/기존 프로젝트인지, do
 
 Claude Code:
 
-- 에이전트 자신에게 노출된 도구 목록을 훑어 서버 키 `apps-in-toss-docs`·
+- 에이전트 자신에게 노출된 도구 목록을 훑어 서버 키 `ait-docs`·
   `ait-console`이 포함된 도구가 보이는지 확인한다 — 직접 등록 형태
-  (`mcp__apps-in-toss-docs__searchDocumentation` 등)와 이 플러그인의 정규
+  (`mcp__ait-docs__searchDocumentation` 등)와 이 플러그인의 정규
   설치 경로(`/plugin install`)에서 실제로 뜨는 플러그인 경유 형태
-  (`mcp__plugin_<pluginName>_apps-in-toss-docs__searchDocumentation`,
+  (`mcp__plugin_<pluginName>_ait-docs__searchDocumentation`,
   `mcp__plugin_<pluginName>_ait-console__miniapp_create` 등 — 이
   플러그인의 manifest 등록 이름은 `ait`) **둘 다** 서버 키 부분 문자열로
   잡는다(plugin 세그먼트는 마켓플레이스 설치명에 따라 달라질 수 있어 고정하지
@@ -116,7 +116,7 @@ Cursor:
 
 - 도구 이름에 서버 접두사가 없을 수 있다(실측: marketplace 설치분은
   `searchDocumentation` 등 bare 이름으로 노출) — 개별 도구명 대조 대신, 도구
-  목록에서 `apps-in-toss-docs` 서버에서 온 도구가 **하나라도** 보이면 docs
+  목록에서 `ait-docs` 서버에서 온 도구가 **하나라도** 보이면 docs
   MCP 연결로 본다. 콘솔 MCP도 같은 방식으로 `ait-console` 서버 도구
   존재 여부만 확인한다 — 미인가 상태에서는 그 서버 도구가 `mcp_auth` 1종뿐이다
   (그게 미인가 신호다).
@@ -166,7 +166,7 @@ skill §5 adapter-note와 동일 패턴).
   ✅ 현재 디렉토리: 기존 프로젝트(웹 번들러 기반 / Unity / 엔진 빌드 중 관측된 것)
   ⚠️ 콘솔 MCP(ait-console) 도구가 안 보입니다 — 1회 인가가 필요합니다:
      /mcp   # 말로: "콘솔 MCP 인가 화면을 열어줘"
-  ✅ 문서 MCP(apps-in-toss-docs) 연결됨
+  ✅ 문서 MCP(ait-docs) 연결됨
   ⚠️ 이 프로젝트 .mcp.json에 ait-debugger 배선이 없습니다 — 온디바이스 디버깅이
      필요하면:
      /ait:setup-debugger
@@ -175,7 +175,7 @@ skill §5 adapter-note와 동일 패턴).
      여부를 확인하려면:
      /ait:setup-debugger
   ⚠️ 이 프로젝트는 옛 이름(ait-devtools 키 또는 @apps-in-toss/debug-console)으로 배선돼 있습니다 —
-     0.3.1부터 ait-debugger·@apps-in-toss/debugger-client로 바뀌었고, 한쪽만 올리면 연결되지 않습니다.
+     debugger 0.4.0·debugger-client 0.3.2부터 ait-debugger·@apps-in-toss/debugger-client로 바뀌었고, 한쪽만 올리면 연결되지 않습니다.
      한꺼번에 옮기려면:
      /ait:setup-debugger
   ⚠️ 플러그인 설치 상태가 온전하지 않습니다 — 설치 문제 해결 가이드를 보세요:

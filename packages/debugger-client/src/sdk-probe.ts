@@ -25,6 +25,8 @@
  * prefixed debug line naming the API that was unavailable.
  */
 
+import { runAsOwnSdkCall } from './bridge-observer.js';
+
 /**
  * Resolved SDK namespace, `null` once a probe has established the SDK is
  * absent, `undefined` while no probe has run yet. Module-scoped, so a
@@ -100,7 +102,8 @@ export async function callTossSdk(name: string, ...args: unknown[]): Promise<boo
     // differently than expected" into an exception in the host app.
     const fn = pickExport(sdk, name);
     if (fn === null) return false;
-    await fn(...args);
+    // Marked as our own call so the bridge observer never counts it as the app's.
+    await runAsOwnSdkCall(() => fn(...args));
     return true;
   } catch (err) {
     console.debug(`[@apps-in-toss/debugger-client] ${name} failed:`, err);
@@ -125,7 +128,7 @@ export function callTossSdkNow(name: string, ...args: unknown[]): boolean {
   try {
     const fn = pickExport(sdk, name);
     if (fn === null) return false;
-    const result: unknown = fn(...args);
+    const result: unknown = runAsOwnSdkCall(() => fn(...args));
     if (result instanceof Promise) {
       result.catch((err: unknown) => {
         console.debug(`[@apps-in-toss/debugger-client] ${name} failed:`, err);

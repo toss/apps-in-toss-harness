@@ -4,7 +4,7 @@
  * `initialize`, both serve their tools (real answers, not a blocked-mode error), both stay alive, and each reports
  * the other as a separate session.
  *
- * No tunnel and no network: the daemons start nothing at launch (`start_debug` boots
+ * No tunnel and no network: the daemons start nothing at launch (`switch_environment` boots
  * a connection later), so only the stdio server and the loopback dashboard run. Each parent is a tiny
  * script that spawns the daemon on the inherited stdio pipes, so the daemon's
  * MCP client (found by walking up the process tree) is that parent, a different
@@ -131,7 +131,7 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
     process: { pid: number };
     otherSessions: { count: number; sessions: Array<{ project: string; startedAt: string }> };
   }> {
-    const res = await s.client.callTool({ name: 'get_debug_status', arguments: {} });
+    const res = await s.client.callTool({ name: 'get_status', arguments: {} });
     const text = (res.content as Array<{ type: string; text: string }>)[0]?.text ?? '';
     const parsed = JSON.parse(text) as Record<string, unknown>;
     return (parsed.data ?? parsed) as never;
@@ -144,9 +144,15 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
     const namesA = toolsA.tools.map((t) => t.name).sort();
     const namesB = toolsB.tools.map((t) => t.name).sort();
     // Before an environment is booted a daemon advertises the four bootstrap
-    // tools (the rest appear after start_debug / start_attach). The blocked mode
+    // tools plus stop_attach (the rest appear after switch_environment / start_attach). The blocked mode
     // of 0.3.0 advertised the same four but answered every call with an error.
-    expect(namesA).toEqual(['get_debug_status', 'list_pages', 'start_attach', 'start_debug']);
+    expect(namesA).toEqual([
+      'get_page',
+      'get_status',
+      'start_attach',
+      'stop_attach',
+      'switch_environment',
+    ]);
     expect(namesB).toEqual(namesA);
 
     // Each daemon wrote its own entry, recorded its own client, and nothing else.
@@ -163,7 +169,7 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
     // Each sees the other as a separate session, by label and start time only.
     const [statusA, statusB] = await Promise.all([statusOf(a), statusOf(b)]);
     for (const s of [a, b]) {
-      const res = await s.client.callTool({ name: 'get_debug_status', arguments: {} });
+      const res = await s.client.callTool({ name: 'get_status', arguments: {} });
       expect(res.isError).not.toBe(true);
     }
     expect(statusA.otherSessions.sessions.map((s) => s.project)).toEqual(['proj-b']);
@@ -192,10 +198,11 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
     const names = await Promise.all([a, b, c].map((s) => s.client.listTools()));
     for (const t of names) {
       expect(t.tools.map((x) => x.name).sort()).toEqual([
-        'get_debug_status',
-        'list_pages',
+        'get_page',
+        'get_status',
         'start_attach',
-        'start_debug',
+        'stop_attach',
+        'switch_environment',
       ]);
     }
 

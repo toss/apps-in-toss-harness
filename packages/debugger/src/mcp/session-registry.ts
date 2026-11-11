@@ -580,7 +580,7 @@ export function listOtherSessions(options: ListSessionsOptions = {}): OtherSessi
   return out;
 }
 
-/** The most sessions `get_debug_status` lists by name; the count covers all. */
+/** The most sessions `get_status` lists by name; the count covers all. */
 export const MAX_LISTED_OTHER_SESSIONS = MAX_LISTED_SESSIONS;
 
 // ---------------------------------------------------------------------------

@@ -30,7 +30,9 @@
  * Node-only.
  */
 
+import { hostname } from 'node:os';
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { sanitizeRelayHostName } from '@apps-in-toss/internal-protocol/relay-signature';
 import {
   AttachTimeline,
   type AttachTimelineSnapshot,
@@ -44,14 +46,15 @@ import type { McpEnvironment } from './environment.js';
 import {
   attachSupersededError,
   attachTimeoutMessage,
-  classifyToolError,
   mcpError,
   protocolVersionMismatchError,
+  tunnelUnavailableError,
 } from './errors.js';
 import { logInfo } from './log.js';
+import { PHONE_CONTROL_TAG } from './phone-control.js';
 import type { QrHttpServer } from './qr-http-server.js';
 import { relayRunId } from './relay-run-id.js';
-import { attachSignature } from './relay-signing.js';
+import { signedLinkParams } from './relay-signing.js';
 import {
   canOpenBrowser as defaultCanOpenBrowser,
   listPages,
@@ -66,6 +69,14 @@ import {
   relayCodeStep,
 } from './totp.js';
 import { renderQr } from './tunnel.js';
+import { waitForTunnelDns } from './tunnel-dns.js';
+import { ATTACH_TUNNEL_WAIT_MS } from './tunnel-supervisor.js';
+
+/** 호출 전부터 붙어 있던 페이지가 있을 때 결과에 덧붙이는 안내. URL·코드는 담지 않는다. */
+export const PREVIOUS_PAGE_NOTICE_KO =
+  '\n⚠️  이 호출 전에 이미 연결된 페이지가 있습니다(이전 번들일 수 있음). 그 페이지는 이번 연결로 치지 않고, ' +
+  '이번 QR로 새로 붙은 페이지만 성공으로 보고합니다. 이전 페이지는 stop_attach로 세션을 끊거나 폰에서 ' +
+  '미니앱을 닫으면 정리됩니다.\n';
 
 /**
  * Why a QR scan can silently do nothing: when the mini-app is ALREADY open in
@@ -101,7 +112,7 @@ export const RELAY_STALE_PAGE_MS = 5 * 60 * 1_000; // 5 minutes
  * SEGMENT_MS slices so it can detect an aging code between slices and re-mint a
  * fresh one without the agent re-calling the tool. The slice is
  * {@link RELAY_QR_REFRESH_INTERVAL_MS} (5 s): the relay gate accepts a code for
- * 30 to 35 s (`RELAY_VERIFY_SKEW_STEPS` = 6 past steps of `RELAY_CODE_STEP_SECONDS`
+ * 120 to 125 s (`RELAY_VERIFY_SKEW_STEPS` = 24 past steps of `RELAY_CODE_STEP_SECONDS`
  * = 5 s), and the code changes on every step, so checking every 5 s re-issues
  * the QR once per step, keeps it at most 5 s behind the current step, and a
  * scan always has 25 s or more left.
@@ -143,6 +154,11 @@ export function isRelayPageFresh(
     if (seenMs === null) return true;
     return nowMs - seenMs <= stalePageThresholdMs;
   });
+}
+
+/** Whether a scheme URL is an `intoss-private://` link (the only kind that may carry a relay). */
+export function isPrivateSchemeUrl(schemeUrl: string): boolean {
+  return /^intoss-private:\/\//i.test(schemeUrl);
 }
 
 /**
@@ -273,6 +289,17 @@ export interface RenderAndWaitOptions {
    * tool, like the final result.
    */
   onQrText?: (text: string) => void;
+  /**
+   * 대기 상태를 알리는 한 줄(진행 알림 채널). 터널 호스트가 아직 DNS에서 안 풀려 QR을 미루는
+   * 동안 한 번 불린다. 호스트·URL은 담기지 않는다.
+   */
+  onNotice?: (text: string) => void;
+  /**
+   * 이 호출의 어태치 창으로 폰이 붙었는지. 주어지면 이 호출은 이 조건이 참일 때만 페이지를 매칭한다.
+   * 호출 전부터 붙어 있던 페이지(이전 번들의 것 포함)는 URL이 같아 보여도 매칭되지 않는다.
+   * 주어지지 않으면 URL 매칭만 쓴다(옛 동작).
+   */
+  attachedThroughThisCall?: () => boolean;
 }
 
 /**
@@ -310,6 +337,11 @@ export interface AttachDeps {
   /** relay 터널 up/wssUrl. CLI는 bootRelayFamily().getTunnelStatus를 그대로 넘긴다. */
   getTunnelStatus(): TunnelStatus;
   /**
+   * 터널이 뜨는 중이거나 곧 재시도될 때 최대 `maxMs`까지 기다린 뒤 상태를 돌려준다.
+   * 없으면 기다리지 않는다.
+   */
+  waitForTunnel?(maxMs: number): Promise<TunnelStatus>;
+  /**
    * Late-bound TOTP secret accessor (issue #396) — read from env AT CALL TIME so
    * the project-local `.ait_relay` secret loaded by `switchMode` is visible.
    * SECRET-HANDLING: the returned value is used only for the `at=` code, never logged.
@@ -328,6 +360,11 @@ export interface AttachDeps {
   /** 테스트 시계 주입. 기본 () => Date.now(). */
   nowMs?: () => number;
   /**
+   * 폰 동의 창에 보일 이 컴퓨터 이름 override(테스트용). 기본은 `os.hostname()`.
+   * `sanitizeRelayHostName`을 거쳐 링크에 서명돼 실리고, 비면 링크에 싣지 않는다.
+   */
+  getHostName?: () => string | undefined;
+  /**
    * GUI 감지 override (테스트/headless/CLI `--headless`). 기본 `canOpenBrowser`.
    * `renderAndMaybeWait`이 브라우저 자동 열기 가능 여부 판정에 사용한다.
    */
@@ -340,7 +377,7 @@ export interface AttachDeps {
    */
   timeline?: AttachTimeline;
   /**
-   * 삼켜지던 대기 중 에러를 `get_debug_status`의 recentErrors로 흘려보내는 콜백(선택).
+   * 삼켜지던 대기 중 에러를 `get_status`의 recentErrors로 흘려보내는 콜백(선택).
    * 메시지는 호출 전에 redact된다.
    */
   recordError?: (message: string, category?: string) => void;
@@ -348,6 +385,15 @@ export interface AttachDeps {
    * 기기↔호스트 프로토콜 불일치 조회(선택). 타임아웃 진단에 원인 후보로 함께 싣는다.
    */
   getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
+  /**
+   * 터널 호스트가 공개 DNS에서 풀리는지 확인하는 함수(선택). 주면 QR을 내기 전에 풀릴 때까지
+   * (최대 60초) 기다린다. 없으면 기다리지 않는다. 호스트 이름은 비밀이라 반환값은 불리언뿐이다.
+   */
+  resolveTunnelHost?: (host: string) => Promise<boolean>;
+  /** DNS 확인 간격(ms). 테스트용. */
+  tunnelDnsPollMs?: number;
+  /** DNS 대기 상한(ms). 테스트용. */
+  tunnelDnsMaxMs?: number;
 }
 
 /** Resolves `deps.nowMs` to its default (`Date.now`). */
@@ -421,7 +467,15 @@ export function waitForAttachWithEvents(
 }
 
 const NO_RELAY_SECRET_MESSAGE =
-  'relay auth secret is not loaded — no attach code can be minted (the relay never runs without one)';
+  'relay key is not live — no attach code can be minted (the relay never runs without one)';
+
+function safeOsHostname(): string | undefined {
+  try {
+    return hostname();
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Synthesizes an attach URL from stored components with a FRESHLY-minted TOTP
@@ -436,12 +490,18 @@ export function mintAttachUrl(deps: AttachDeps, parts: AttachUrlParts): string {
   if (secret === undefined || secret === '') throw new Error(NO_RELAY_SECRET_MESSAGE);
   const code = mintRelayCode(resolveNowMs(deps)());
   const current = withCurrentRelay(parts, deps.getTunnelStatus());
+  const hostName = sanitizeRelayHostName(
+    deps.getHostName !== undefined ? deps.getHostName() : safeOsHostname(),
+  );
+  const signed = signedLinkParams(secret, current.wssUrl, code, hostName);
   return buildDeepLinkAttachUrl(
     current.schemeUrl,
     current.wssUrl,
     code,
     relayRunId(secret, current.wssUrl),
-    attachSignature(secret, current.wssUrl, code),
+    signed.sig,
+    signed.host,
+    signed.cert,
   );
 }
 
@@ -486,6 +546,19 @@ export async function prepareAttach(
     };
   }
 
+  // Remote debugging is for the intoss-private (dog-food) build only. A production
+  // `intoss://` link, or any other scheme, never gets a relay spliced into it.
+  if (!isPrivateSchemeUrl(schemeUrl)) {
+    return {
+      ok: false,
+      error: mcpError(
+        'start_attach: scheme_url은 intoss-private:// 로 시작하는 URL만 쓸 수 있습니다. ' +
+          '원격 디버깅은 intoss-private(테스트) 빌드에서만 동작합니다. ' +
+          '`ait deploy --scheme-only`가 출력하는 URL을 그대로 전달하세요.',
+      ),
+    };
+  }
+
   // Defense-in-depth (#452): relay-dev mode requires TOTP auth.
   // SECRET-HANDLING: error message names the requirement only.
   {
@@ -494,8 +567,9 @@ export async function prepareAttach(
       return {
         ok: false,
         error: mcpError(
-          'start_attach(relay): TOTP secret(AIT_DEBUG_TOTP_SECRET)이 설정되지 않았습니다. ' +
-            'relay 환경은 TOTP 인증이 필수입니다 — relay를 secret과 함께 재기동하세요.',
+          'start_attach(relay): relay 키가 없거나 만료됐습니다. ' +
+            'relay 환경은 코드 인증이 필수입니다 — switch_environment(mode: relay-staging, projectRoot)를 다시 호출하고 ' +
+            '디버그 번들을 다시 빌드해 업로드하세요(번들은 이전 공개 키를 박고 있습니다).',
         ),
       };
     }
@@ -503,9 +577,18 @@ export async function prepareAttach(
 
   // Tunnel-down check (the old buildAttachUrl threw here; we fail-fast with a
   // structured error to keep prepareAttach side-effect-free).
-  const tunnelForBuild = getTunnelStatus();
+  // 터널이 막 뜨는 중이거나(첫 실행이면 바이너리를 내려받느라 20~30초) 곧 재시도될 때는
+  // 바로 실패시키지 않고 정해진 시간까지 기다린다.
+  let tunnelForBuild = getTunnelStatus();
+  const waitStartedAt = Date.now();
+  if ((!tunnelForBuild.up || tunnelForBuild.wssUrl === null) && deps.waitForTunnel !== undefined) {
+    tunnelForBuild = await deps.waitForTunnel(ATTACH_TUNNEL_WAIT_MS);
+  }
   if (!tunnelForBuild.up || tunnelForBuild.wssUrl === null) {
-    return { ok: false, error: classifyToolError(new Error('tunnel-down:'), 'start_attach') };
+    return {
+      ok: false,
+      error: tunnelUnavailableError(tunnelForBuild, Date.now(), Date.now() - waitStartedAt),
+    };
   }
   const authorityWarning = validateSchemeAuthority(schemeUrl) ?? undefined;
 
@@ -559,7 +642,7 @@ export async function prepareAttach(
     observed: ReturnType<CdpConnection['listTargets']>,
     ctx: TimeoutContext = {},
   ): string => {
-    // 진단은 `diagnoseAttach` 하나가 맡는다 — get_debug_status와 같은 분류기다.
+    // 진단은 `diagnoseAttach` 하나가 맡는다 — get_status와 같은 분류기다.
     const snapshot: AttachTimelineSnapshot = ctx.snapshot ?? {
       attempt: 0,
       attemptStartedAt: null,
@@ -630,17 +713,47 @@ export async function renderAndMaybeWait(
   options: RenderAndWaitOptions = {},
 ): Promise<McpResult> {
   const { getTunnelStatus, qrHttpServer, onAttachUrlBuilt } = deps;
-  const { signal, onQrText } = options;
+  const { signal, onQrText, onNotice, attachedThroughThisCall } = options;
   const nowMs = resolveNowMs(deps);
+  // 이 호출 전에 이미 붙어 있던 페이지가 있는지: 있으면 그 페이지는 성공으로 치지 않는다.
+  const previousPageCount = attachedThroughThisCall === undefined ? 0 : conn.listTargets().length;
   // attach 단계 기록: 이 호출이 새 시도를 연다. 기록기가 주입되지 않았으면 이 호출 전용
   // 임시 기록기를 쓴다 — 타임아웃 진단은 QR 발급 이후 단계까지만 알게 된다.
   const timeline = deps.timeline ?? new AttachTimeline({ nowMs });
   timeline.beginAttempt();
+  // 호출 전에 붙어 있던 페이지에는 매칭되지 않게, 이 호출의 어태치 창으로 붙은 경우만 통과시킨다.
+  const isMatchingPage: typeof prep.isMatchingPage =
+    attachedThroughThisCall === undefined
+      ? prep.isMatchingPage
+      : (pages) => attachedThroughThisCall() && prep.isMatchingPage(pages);
   timeline.setPageMatcher(prep.isMatchingPage);
   // 대기 중 삼켜지던 비-타임아웃 에러(redact됨). 타임아웃 진단과 recentErrors에 싣는다.
   let waitError: string | undefined;
   const canOpenBrowserFn = resolveCanOpenBrowser(deps);
-  const { parts, isMatchingPage, buildTimeoutError, authorityWarning, totpMeta } = prep;
+  const { parts, buildTimeoutError, authorityWarning, totpMeta } = prep;
+
+  // 막 만든 터널 호스트는 폰이 쓰는 DNS에서 15~60초 동안 안 풀릴 수 있다. QR을 내고 대기 시간을
+  // 재기 전에 호스트가 풀리는지 본다. 한도에 닿으면 풀리지 않은 채로 진행한다.
+  // SECRET-HANDLING: 호스트는 어디에도 싣지 않는다.
+  if (deps.resolveTunnelHost !== undefined) {
+    const wss = withCurrentRelay(parts, getTunnelStatus()).wssUrl;
+    await waitForTunnelDns(wss, {
+      resolveHost: deps.resolveTunnelHost,
+      signal,
+      nowMs,
+      ...(deps.tunnelDnsPollMs !== undefined ? { pollMs: deps.tunnelDnsPollMs } : {}),
+      ...(deps.tunnelDnsMaxMs !== undefined ? { maxMs: deps.tunnelDnsMaxMs } : {}),
+      onWaiting: () =>
+        onNotice?.(
+          '새 터널 주소가 아직 DNS에 퍼지는 중이에요 (보통 15~60초). 폰이 닿을 수 있을 때까지 기다린 뒤 QR을 보여 드릴게요.',
+        ),
+    });
+    if (signal?.aborted) {
+      return signal.reason === ATTACH_SUPERSEDED_REASON
+        ? attachSupersededError()
+        : mcpError('start_attach: 호출이 취소됐습니다.');
+    }
+  }
 
   // Initial mint + dashboard notify (components, not a finished URL, so
   // getDashboardState re-mints on every SSE push — Defect 1).
@@ -677,7 +790,8 @@ export async function renderAndMaybeWait(
   const header =
     'This tool result is shown to the user directly — do NOT re-print the QR below in your reply (it wastes output tokens). Just tell the user to scan the QR in this output (Ctrl+O to expand if collapsed).\n\n' +
     '테스트가 끝날 때까지 앱을 화면 앞에 유지하세요 — 백그라운드로 전환하면 디버그 세션이 끊어집니다.\n' +
-    ALREADY_OPEN_NOTICE_KO;
+    ALREADY_OPEN_NOTICE_KO +
+    (previousPageCount > 0 ? PREVIOUS_PAGE_NOTICE_KO : '');
   const authorityNotice = authorityWarning ? `⚠️  scheme_url 경고: ${authorityWarning}\n\n` : '';
   const warningPrefix = authorityNotice;
   const guiAvailable = canOpenBrowserFn();
@@ -844,7 +958,7 @@ export async function renderAndMaybeWait(
     // persistent connections per host at 6, so a new tab per call starves
     // `/qr.png` and the SSE streams. Push a state refresh to the open tab(s)
     // instead (the fresh attach URL is already in getDashboardState()).
-    if (qrHttpServer.hasActiveClients()) {
+    if (qrHttpServer.hasVisibleClient()) {
       qrHttpServer.notifyStateChange();
       const openResult = { attempted: false, succeeded: true, reusedExistingTab: true };
       const shortText =
@@ -933,6 +1047,9 @@ const INDICATOR_HEARTBEAT_MS = 1000;
  */
 const INDICATOR_PENDING_STALE_MS = 120_000;
 
+/** Default attached-state badge text, worded like the debugger-client banner. */
+export const DEFAULT_CONNECTED_LABEL = '디버거 연결됨';
+
 /**
  * Default disconnected-state badge text. A badge still on screen means the page
  * was NOT reloaded by the last QR scan (Toss only brings an already-open
@@ -943,7 +1060,7 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
 
 /**
  * Builds a self-contained IIFE DOM expression that renders a LIVE
- * "Debugger Connected" / disconnected badge on the bottom-left of the phone
+ * "디버거 연결됨" / disconnected badge on the top-left of the phone
  * screen (#730), with a graceful self-dismiss on disconnect (#748).
  *
  * **Pure function** — returns a JS expression string; does NOT inject it.
@@ -956,8 +1073,12 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  *      the existing badge's state/label in place — it never duplicates the
  *      `<div>` or stacks a second observer.
  *   2. Renders a fixed-position `<div id="__ait_debug_indicator">` at the
- *      bottom-left, accounting for safe-area insets. Background/text flip
- *      between the attached (red) and disconnected (grey) visuals.
+ *      top-left inside the safe area: the offset is the larger of CSS
+ *      `env(safe-area-inset-*)` and the SDK insets (`window.__sdk`, the source
+ *      `measure_safe_area` reads), re-evaluated on every heartbeat, resize and
+ *      orientation change. The Toss WebView reports `env()` as 0 while the SDK
+ *      reports the real insets. Background/text flip
+ *      between the attached (green) and disconnected (grey) visuals.
  *   3. A `pointerdown` listener dismisses (hides) the badge on tap — dismiss
  *      is NON-terminal: a later state transition un-dismisses it, so a
  *      genuine disconnect after a dismissed tap is still visible.
@@ -966,7 +1087,7 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  *      never absorb a tap) and SELF-DISMISSING (it fades and detaches itself
  *      after {@link INDICATOR_SELF_DISMISS_MS}). This is why a run that ends
  *      with `close()` injecting `{ state: 'disconnected' }` no longer leaves a
- *      permanent grey "Debugger Disconnected" element on the phone. A reconnect
+ *      permanent grey disconnected-notice element on the phone. A reconnect
  *      (`setState(c, 'attached')`) cancels the pending self-dismiss and
  *      re-mounts the badge if it had already detached — transient tunnel blips
  *      do not flash-remove it, and a genuine re-attach restores it. The
@@ -1008,7 +1129,7 @@ export const DEFAULT_DISCONNECTED_LABEL = '디버거 연결 끊김 — 앱을 �
  * addresses, or TOTP codes whatsoever — DOM label text + a structural
  * pathname match (`/target/`) only.
  *
- * @param opts.label - Attached-state badge text (default: `'Debugger Connected'`).
+ * @param opts.label - Attached-state badge text (default: {@link DEFAULT_CONNECTED_LABEL}).
  * @param opts.disconnectedLabel - Disconnected-state badge text. Default is the
  *   Korean notice {@link DEFAULT_DISCONNECTED_LABEL} (ko-primary in-app string
  *   convention) — shown briefly then self-dismissed. It also tells the user how
@@ -1021,14 +1142,22 @@ export function buildIndicatorExpression(opts?: {
   label?: string;
   disconnectedLabel?: string;
   state?: 'attached' | 'disconnected';
+  /**
+   * Tap on the badge opens a small menu with 끊기 (end the debug session) and 숨기기 (hide
+   * the badge) instead of hiding it right away. 끊기 reports `console.debug('ait:ctl',
+   * 'kill')`, which the daemon reads (see phone-control.ts). Default `false`.
+   */
+  controls?: boolean;
 }): string {
-  const label = opts?.label ?? 'Debugger Connected';
+  const label = opts?.label ?? DEFAULT_CONNECTED_LABEL;
   const disconnectedLabel = opts?.disconnectedLabel ?? DEFAULT_DISCONNECTED_LABEL;
   // JSON.stringify ensures the labels/state are safely embedded even if they
   // contain quotes or backslashes.
   const safeLabel = JSON.stringify(label);
   const safeDisconnectedLabel = JSON.stringify(disconnectedLabel);
   const safeState = JSON.stringify(opts?.state ?? 'attached');
+  const safeControls = opts?.controls === true ? 'true' : 'false';
+  const safeCtlTag = JSON.stringify(PHONE_CONTROL_TAG);
   // Freeze/spinner triage legend (#749), ko-primary. Shown as the badge's
   // `title` so the ⏳/♥ mapping is discoverable. Contains no secrets.
   const safeTriageTitle = JSON.stringify(
@@ -1064,6 +1193,77 @@ export function buildIndicatorExpression(opts?: {
     `}` +
     `c.detailEl.textContent = lines.join('\\n');` +
     `}` +
+    // dropClientBanner() — once the daemon badge is up, the debugger-client's own
+    // "connected" confirmation banner is redundant; remove it so only one
+    // indicator remains. Only the connected confirmation is removed: an error or
+    // connecting banner (any other window.__ait_debug_status) is left alone. The
+    // host id is split so the daemon bundle never carries the client marker
+    // string (check:debug-surface-absent), same approach as target-guard.ts.
+    `function dropClientBanner() {` +
+    `try {` +
+    `if (W.__ait_debug_status !== 'connected') { return; }` +
+    `var h = document.getElementById('__ait_status_' + 'banner');` +
+    `if (h && h.parentNode) { h.parentNode.removeChild(h); }` +
+    `} catch (_) {}` +
+    `}` +
+    // sdkInset() — the SDK's safe-area insets, read the same way as the
+    // `measure_safe_area` probe (tools.ts): window.__sdk SafeAreaInsets.get() /
+    // getSafeAreaInsets() on a real device, window.__ait.state.safeAreaInsets in
+    // the mock. In the Toss WebView env(safe-area-inset-*) is 0 while the SDK
+    // reports the real values, so the badge takes the larger of the two. Any
+    // failure or a non-number reads as 0 (CSS env() alone then decides).
+    `function sdkInset() {` +
+    `var r = { top: 0, left: 0 };` +
+    `try {` +
+    `var sdk = W.__sdk; var ait = W.__ait; var v = null;` +
+    `if (sdk && sdk.SafeAreaInsets && typeof sdk.SafeAreaInsets.get === 'function') { v = sdk.SafeAreaInsets.get(); }` +
+    `else if (sdk && typeof sdk.getSafeAreaInsets === 'function') { v = sdk.getSafeAreaInsets(); }` +
+    `else if (ait && ait.state && ait.state.safeAreaInsets) { v = ait.state.safeAreaInsets; }` +
+    `if (v && typeof v.top === 'number' && isFinite(v.top) && v.top > 0) { r.top = v.top; }` +
+    `if (v && typeof v.left === 'number' && isFinite(v.left) && v.left > 0) { r.left = v.left; }` +
+    `} catch (_) {}` +
+    `return r;` +
+    `}` +
+    // place(c) — positions the badge inside the safe area. Re-run on every
+    // render, heartbeat tick, resize and orientation change, so a late SDK init
+    // or a rotation moves it. The style is rewritten only when the SDK offset
+    // changed. The CSS env() term stays in the expression as the fallback.
+    `function place(c) {` +
+    `var i = sdkInset();` +
+    `var t = Math.round(i.top) + 8; var l = Math.round(i.left) + 8;` +
+    `if (c.topPx === t && c.leftPx === l) { return; }` +
+    `c.topPx = t; c.leftPx = l;` +
+    `try {` +
+    `c.el.style.setProperty('top', 'max(12px,calc(env(safe-area-inset-top,0px) + 8px),' + t + 'px)');` +
+    `c.el.style.setProperty('left', 'max(12px,calc(env(safe-area-inset-left,0px) + 8px),' + l + 'px)');` +
+    `} catch (_) {}` +
+    `}` +
+    // ensureMenu(c) — builds the 끊기/배지 숨기기 menu the first time controls are on. 끊기 reports
+    // the tap through the page console (the daemon reads it, see phone-control.ts); 숨기기 hides
+    // the badge. Only a tap by the user counts (isTrusted).
+    `function ensureMenu(c) {` +
+    `if (c.menuEl) { return; }` +
+    `var menuEl = document.createElement('div');` +
+    `menuEl.style.cssText = 'display:none;flex-wrap:wrap;gap:6px;margin-top:6px';` +
+    `var killBtn = document.createElement('button'); killBtn.type = 'button'; killBtn.textContent = '끊기';` +
+    `var hideBtn = document.createElement('button'); hideBtn.type = 'button'; hideBtn.textContent = '배지 숨기기';` +
+    `var btnCss = 'min-width:56px;min-height:32px;border:0;border-radius:6px;font:bold 12px system-ui,sans-serif;background:#fff;color:#0f7b4d';` +
+    `killBtn.style.cssText = btnCss.replace('#0f7b4d', '#b3261e'); hideBtn.style.cssText = btnCss;` +
+    `killBtn.addEventListener('click', function (e) {` +
+    `if (!e.isTrusted) { return; }` +
+    `c.menu = false;` +
+    `try { console.debug(${safeCtlTag}, 'kill'); } catch (_) {}` +
+    `render(c);` +
+    `});` +
+    `hideBtn.addEventListener('click', function (e) {` +
+    `if (!e.isTrusted) { return; }` +
+    `c.menu = false; c.dismissed = true; render(c);` +
+    `});` +
+    `var noteEl = document.createElement('div'); noteEl.textContent = '배지만 숨겨요. 연결은 유지돼요';` +
+    `noteEl.style.cssText = 'flex-basis:100%;font:12px system-ui,sans-serif;opacity:.9';` +
+    `menuEl.appendChild(killBtn); menuEl.appendChild(hideBtn); menuEl.appendChild(noteEl);` +
+    `c.el.appendChild(menuEl); c.menuEl = menuEl;` +
+    `}` +
     // mount(c) — (re-)attach the badge node to <body> if it is not connected.
     // A self-dismissed badge detaches itself; a later 'attached' re-mounts it.
     `function mount(c) { if (!c.el.isConnected && document.body) { document.body.appendChild(c.el); } }` +
@@ -1076,14 +1276,18 @@ export function buildIndicatorExpression(opts?: {
     `if (c.dismissed) { c.el.style.display = 'none'; return; }` +
     `c.el.style.display = 'block';` +
     `c.el.style.opacity = '1';` +
+    `place(c);` +
     `var up = c.state !== 'disconnected';` +
-    `c.el.style.background = up ? '#e5484d' : '#8a8f98';` +
+    `c.el.style.background = up ? '#0f7b4d' : '#8a8f98';` +
+    `if (up) { dropClientBanner(); }` +
     // Disconnected badge is non-blocking — it can never absorb a tap (#748).
     `c.el.style.pointerEvents = up ? 'auto' : 'none';` +
     `c.labelEl.textContent = up ? ${safeLabel} : ${safeDisconnectedLabel};` +
     `c.dotEl.style.display = up ? 'inline-block' : 'none';` +
     `c.beatEl.style.display = up ? 'inline' : 'none';` +
     `c.detailEl.style.display = up ? 'block' : 'none';` +
+    `if (c.controls) { ensureMenu(c); }` +
+    `if (c.menuEl) { c.menuEl.style.display = (up && c.controls && c.menu) ? 'flex' : 'none'; }` +
     `if (up) { renderDetail(c); } else { c.beatEl.textContent = ''; c.detailEl.textContent = ''; }` +
     `}` +
     // clearTimers(c) — cancel any pending self-dismiss fade/remove timers.
@@ -1115,11 +1319,13 @@ export function buildIndicatorExpression(opts?: {
     `var el = document.createElement('div');` +
     `el.id = '__ait_debug_indicator';` +
     `try { el.title = ${safeTriageTitle}; } catch (_) {}` +
-    // Position: fixed, bottom-left with safe-area inset support.
+    // Position: fixed, TOP-left below the safe-area inset. The debugger-client
+    // status banner owns the bottom edge (full width, safe-area aware), so the
+    // badge lives at the opposite edge and the two can never overlap.
     `el.style.cssText = [` +
     `'position:fixed',` +
     `'left:max(12px,calc(env(safe-area-inset-left,0px) + 8px))',` +
-    `'bottom:max(12px,calc(env(safe-area-inset-bottom,0px) + 8px))',` +
+    `'top:max(12px,calc(env(safe-area-inset-top,0px) + 8px))',` +
     `'z-index:2147483647',` +
     `'color:#fff',` +
     `'font:bold 11px/1.2 system-ui,sans-serif',` +
@@ -1142,7 +1348,7 @@ export function buildIndicatorExpression(opts?: {
     `detailEl.style.cssText = 'font-weight:normal;font-size:10px;line-height:1.35;margin-top:3px;white-space:pre-line;opacity:0.95';` +
     `el.appendChild(dotEl); el.appendChild(labelEl); el.appendChild(beatEl); el.appendChild(detailEl);` +
     `document.body.appendChild(el);` +
-    `c = { el: el, dotEl: dotEl, labelEl: labelEl, beatEl: beatEl, detailEl: detailEl, state: 'attached', dismissed: false, removed: false, beats: 0, t1: 0, t2: 0, hb: 0 };` +
+    `c = { el: el, dotEl: dotEl, labelEl: labelEl, beatEl: beatEl, detailEl: detailEl, menuEl: null, controls: false, menu: false, state: 'attached', dismissed: false, removed: false, beats: 0, t1: 0, t2: 0, hb: 0, topPx: -1, leftPx: -1 };` +
     // Compositor-driven pulse (opacity animation runs off the main thread) — it
     // keeps pulsing even while the JS main thread is wedged, so a frozen
     // ♥<beats> next to a still-pulsing dot reads as a JS wedge at a glance.
@@ -1153,17 +1359,27 @@ export function buildIndicatorExpression(opts?: {
     `c.hb = (typeof setInterval !== 'undefined') ? setInterval(function () {` +
     `if (c.removed || !c.el.isConnected) { if (c.hb) { clearInterval(c.hb); c.hb = 0; } return; }` +
     `c.beats = (c.beats || 0) + 1;` +
+    `place(c);` +
+    `if (c.state !== 'disconnected') { dropClientBanner(); }` +
     `if (c.state !== 'disconnected' && !c.dismissed) { renderDetail(c); }` +
     `}, ${INDICATOR_HEARTBEAT_MS}) : 0;` +
     // stop() — teardown hook called by detachDebugSurface (src/in-app/attach.ts)
     // so the interval never outlives the debug session.
     `c.stop = function () { clearTimers(c); if (c.hb) { clearInterval(c.hb); c.hb = 0; } };` +
     // One-tap dismiss — hides the badge; NOT terminal, `setState` re-shows it.
-    `el.addEventListener('pointerdown', function () { c.dismissed = true; render(c); }, { passive: true });` +
+    // With controls on, a tap opens the 끊기/숨기기 menu instead (the buttons handle their own taps).
+    `el.addEventListener('pointerdown', function (e) {` +
+    `if (e.target && e.target.tagName === 'BUTTON') { return; }` +
+    `if (c.controls && c.state !== 'disconnected') { c.menu = !c.menu; render(c); return; }` +
+    `c.dismissed = true; render(c);` +
+    `}, { passive: true });` +
     // Re-render promptly on every bridge call start/settle (#749) — additive to
     // the 1 Hz tick so a new pending call or a settle shows without a 1 s wait.
     `W.addEventListener('ait:bridge-call', function () { if (c.state !== 'disconnected' && !c.dismissed && !c.removed) { renderDetail(c); } });` +
     `W.__ait_indicator = c;` +
+    // A rotation or a viewport change can change the insets before the next tick.
+    `W.addEventListener('resize', function () { if (!c.removed) { place(c); } });` +
+    `W.addEventListener('orientationchange', function () { if (!c.removed) { place(c); } });` +
     // Observe relay-socket lifecycle without opening a new connection.
     `if (W.__ait_relay_ws_observed) {` +
     // Preferred: the in-app observer (src/in-app/attach.ts) already wraps
@@ -1196,6 +1412,7 @@ export function buildIndicatorExpression(opts?: {
     `}` +
     `}` +
     // Apply THIS injection call's requested state (default 'attached').
+    `c.controls = ${safeControls};` +
     `setState(c, ${safeState});` +
     `})()`
   );
