@@ -20,9 +20,9 @@
     "typecheck:shared": "tsc --noEmit -p shared/internal-protocol/tsconfig.json"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "@types/node": "^26.6.5",
+    "@biomejs/biome": "2.6.4",
+    "@types/node": "^26.6.6",
     "typescript": "~7.0.2",
-    "vitest": "^5.0.4"
+    "vitest": "^5.1.0"
   }
 }
