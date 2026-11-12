@@ -23,7 +23,8 @@
       "bundleVersion": "<versionName 또는 빌드 응답의 버전>",
       "appName": "<appName>",
       "recordedAt": "2026-01-01T00:00:00Z",
-      "source": "test-on-device"
+      "source": "test-on-device",
+      "debuggerClient": { "name": "@apps-in-toss/debugger-client", "version": "0.4.0" }
     }
   ]
 }
@@ -32,6 +33,14 @@
 `source`는 기록한 skill 이름(`test-on-device` 또는 `debug`)이다. 값을 모르는 필드는 `""`로
 적는다. 시크릿, 서명 URL, 링크 전문은 넣지 않는다.
 
+`debuggerClient`는 이 디버그 빌드를 만들 때 프로젝트에 설치돼 있던 클라이언트 패키지다.
+`name`은 `@apps-in-toss/debugger-client` 또는 옛 이름 `@apps-in-toss/debug-console`, `version`은
+`node_modules/<name>/package.json`의 `version`이다(빌드 직전에 읽는다. `node_modules`가 없으면
+`package.json`에 적힌 버전). 어느 쪽도 읽지 못하면 이 필드를 생략한다. 필드는 선택이고 `version`은
+그대로 1이다. 읽는 쪽은 이 필드가 없는 옛 기록도 받아야 한다. `start_attach`가 QR을 발급하기 전에
+이 필드로 "마지막에 올린 디버그 빌드에 거부되는 클라이언트가 들어 있는가"를 확인한다. 필드가 없는
+기록은 `node_modules`의 클라이언트가 기록 시각보다 새로우면 클라이언트를 올리기 전에 만든 빌드로 본다.
+
 ## 기록 절차
 
 디버그 빌드를 올렸을 때만 한다(릴리즈 빌드는 기록하지 않는다).
@@ -39,6 +48,7 @@
 1. `bundle_upload_complete` 이후 `deploymentId`와 번들 버전이 확정되면, 파일이 있으면
    읽고 없으면 `{"version": 1, "deployments": []}`로 시작한다. 파일이 깨졌으면 덮어쓰지 말고
    사용자에게 알린다.
+   항목에는 `debuggerClient`를 함께 적는다(위). 클라이언트를 올리거나 옮긴 직후라면 올린 뒤의 버전이어야 한다.
 2. 같은 `deploymentId`가 이미 있으면 건너뛴다. 없으면 `deployments`에 항목을 더하고
    저장한다(`Write`/`Edit`).
 3. `.gitignore` 줄을 확인한다(위).

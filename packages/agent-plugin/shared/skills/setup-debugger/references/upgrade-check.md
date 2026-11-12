@@ -166,7 +166,9 @@ debugger와 debugger-client이 둘 다 낮으면 한 번에 묶어 묻되, 항�
 - 열려 있는 세션은 옛 키의 서버를 계속 붙들고 있다. `/mcp`에서 `ait-debugger`를 승인·연결하고(Cursor는
   MCP 목록에서 껐다 켠다) 옛 `ait-devtools`는 끄거나, 세션을 다시 시작한다.
 - 폰에 올라간 기존 디버그 번들은 옛 `debug-console` 그대로라 새 debugger가 연결을 받지 않는다.
-  디버그 빌드(`AIT_DEBUG_BUILD=1`)를 다시 만들어 올려야 한다.
+  규칙: 옮기거나 올린 직후 다음 단계는 `/ait:test-on-device`(디버그 빌드 `AIT_DEBUG_BUILD=1`)로 다시 빌드해 올리는 것이고,
+  `start_attach`는 그다음에 부른다. 올리기 전에 부르면 `start_attach`가 빌드 산출물과 마지막 디버그 빌드 기록에서
+  옛 클라이언트를 찾아 QR을 발급하지 않는다.
 - 거절하면 그대로 두고, 이번 세션에서는 다시 묻지 않는다. 옛 이름이 남아 있는 동안 환경 3 attach는
   "업데이트가 필요합니다" 응답으로 끝난다고 알린다.
 

@@ -21,6 +21,9 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./browser": {
+      "default": "./dist/browser.js"
+    },
     "./auto": {
       "import": {
         "types": "./dist/auto.d.ts",

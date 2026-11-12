@@ -75,4 +75,23 @@ export default defineConfig([
     entry: { auto: 'src/auto.ts' },
     format: ['esm', 'cjs'],
   },
+  {
+    ...common,
+    // Plain-script build of the `/auto` entry for pages without a bundler
+    // (`debugger inject-client` builds the same source into its own dist). The
+    // entry is `auto.ts` itself: a re-export file with only a side-effect import
+    // is dropped by tree-shaking. No declarations, no other format: it is loaded
+    // with a <script> tag, not imported. Read the keys from
+    // `globalThis.__AIT_DEBUG_RELAY_KEYS__`, exactly like `/auto`.
+    entry: { browser: 'src/auto.ts' },
+    // The plain script must not decide "DEV build" for itself: without this the IIFE
+    // build folds `process.env.NODE_ENV === 'development'` to true. Activation stays
+    // `?debug=1` / `?relay=` on an allowed host.
+    define: { ...define, 'process.env.NODE_ENV': JSON.stringify('production') },
+    outputOptions: { entryFileNames: '[name].js' },
+    format: ['iife'],
+    platform: 'browser',
+    dts: false,
+    clean: false,
+  },
 ]);

@@ -242,6 +242,37 @@ export const ATTACH_SUPERSEDED_REASON = 'superseded';
 /** The device that scanned the QR speaks another protocol; waiting longer cannot help. */
 class ProtocolSkewError extends Error {}
 
+/** How often the wait looks for a device that spoke another protocol. */
+export const SKEW_POLL_MS = 500;
+
+/**
+ * Rejects with {@link ProtocolSkewError} as soon as the daemon records a protocol
+ * mismatch that was not there when the wait began. Never resolves.
+ */
+function watchProtocolSkew(
+  deps: Pick<AttachDeps, 'getProtocolVersionSkew'>,
+  skewAtStart: unknown,
+): { promise: Promise<never>; stop: () => void } {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const promise = new Promise<never>((_resolve, reject) => {
+    if (deps.getProtocolVersionSkew === undefined) return;
+    timer = setInterval(() => {
+      const now = deps.getProtocolVersionSkew?.() ?? null;
+      if (now !== null && now !== skewAtStart) {
+        if (timer !== undefined) clearInterval(timer);
+        reject(new ProtocolSkewError());
+      }
+    }, SKEW_POLL_MS);
+  });
+  promise.catch(() => {});
+  return {
+    promise,
+    stop: () => {
+      if (timer !== undefined) clearInterval(timer);
+    },
+  };
+}
+
 /** 대기가 `AbortSignal`로 끊겼음을 알리는 내부 에러. */
 class AttachAbortedError extends Error {
   constructor(readonly reason: unknown) {
@@ -830,10 +861,17 @@ export async function renderAndMaybeWait(
       try {
         // 페이지 쪽 wait에는 취소 수단이 없다(세그먼트 ≤5초라 늦은 정리는 감수) — 취소는
         // abort와의 경주로 처리한다.
-        return await raceWithAbort(
-          waitForAttachWithEvents(conn, isMatchingPage, segmentMs),
-          signal,
-        );
+        // 같은 경주에 "옛 기기가 relay에 닿았는가" 확인을 넣어, 세그먼트가 끝나길 기다리지 않고
+        // 곧바로(SKEW_POLL_MS 안에) 거부 사유로 끝낸다.
+        const skew = watchProtocolSkew(deps, skewAtStart);
+        try {
+          return await raceWithAbort(
+            Promise.race([waitForAttachWithEvents(conn, isMatchingPage, segmentMs), skew.promise]),
+            signal,
+          );
+        } finally {
+          skew.stop();
+        }
       } catch (err) {
         if (err instanceof AttachAbortedError) throw err;
         // 세그먼트 타임아웃은 정상 흐름이고, 그 밖의 에러는 진단 재료라 버리지 않는다.

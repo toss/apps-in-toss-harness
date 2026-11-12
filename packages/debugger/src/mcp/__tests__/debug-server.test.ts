@@ -34,6 +34,9 @@ import { relayRunId } from '../relay-run-id.js';
 import type { TunnelStatus } from '../tools.js';
 import { BOOTSTRAP_TOOL_NAMES, DEBUG_TOOL_DEFINITIONS } from '../tools.js';
 import { fakeChild } from './fake-spawn.js';
+import { isolateProjectCwd } from './no-project-cwd.js';
+
+isolateProjectCwd();
 
 /** Fake of QrHttpServer.tokenizeUrl: appends a recognisable dashboard token. */
 const FAKE_DASH_TOKEN = 'd'.repeat(64);
@@ -146,6 +149,10 @@ interface MakeClientOptions {
     | null;
   /** Whether the attached phone's client draws its own status chip (no daemon badge then). */
   phoneHasStatusChip?: () => boolean;
+  /** Live relay keys the key agent holds (test seam; default asks the real agent). */
+  readLiveRelayKeys?: (
+    root: string,
+  ) => Promise<readonly { publicKey: string; notAfter: number }[] | null>;
 }
 
 /**
@@ -165,6 +172,7 @@ async function makeClient({
   totpSecret = DUMMY_SECRET_FOR_TESTS,
   getProtocolVersionSkew,
   phoneHasStatusChip,
+  readLiveRelayKeys,
 }: MakeClientOptions): Promise<Client> {
   const server = createDebugServer({
     connection: connection ?? new FakeCdpConnection(),
@@ -174,6 +182,7 @@ async function makeClient({
     qrHttpServer,
     getProtocolVersionSkew,
     phoneHasStatusChip,
+    ...(readLiveRelayKeys !== undefined ? { readLiveRelayKeys } : {}),
     getEnvironment: () => env,
     getEnvironmentReason: () => `test-pinned-${env}`,
     // null = caller explicitly wants no secret (for fail-closed tests).
@@ -430,6 +439,133 @@ describe('start_attach — client compatibility', () => {
     expect(content[0]!.text!).toContain('do NOT re-print the QR');
   });
 
+  const recordFile = (debuggerClient?: Record<string, string>) => ({
+    version: 1,
+    deployments: [
+      {
+        deploymentId: 'secret-id-must-not-leak',
+        bundleVersion: '7',
+        appName: 'x',
+        recordedAt: '2026-01-01T00:00:00Z',
+        source: 'test-on-device',
+        ...(debuggerClient ? { debuggerClient } : {}),
+      },
+    ],
+  });
+
+  it('issues no QR when the last uploaded debug build holds debug-console, unless skipped', async () => {
+    const root = project({
+      'package.json': { name: 'migrated' },
+      'node_modules/@apps-in-toss/debugger-client/package.json': { version: '0.4.0' },
+      '.ait-debug-deployments.json': recordFile({
+        name: '@apps-in-toss/debug-console',
+        version: '0.2.0',
+      }),
+    });
+    const result = await attach(root);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('QR을 발급하지 않았습니다');
+    expect(text).toContain('번들 7');
+    expect(text).toContain('@apps-in-toss/debug-console 0.2.0');
+    expect(text).toContain('skipBundleCheck: true');
+    expect(text).not.toContain('secret-id-must-not-leak');
+    expect(text).not.toContain(root);
+
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: attachedConn(schemeUrl),
+    });
+    const skipped = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: schemeUrl, projectRoot: root, skipBundleCheck: true },
+    });
+    expect(skipped.isError).toBeFalsy();
+  });
+
+  it('issues no QR when the project holds a legacy client in its built output', async () => {
+    const root = project({
+      'package.json': { name: 'unity-build' },
+      'dist/web/main.js': 'var a="__ait_debug_status";var u="?p=1&v="+"0.2.0";',
+    });
+    const result = await attach(root);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('빌드 산출물(dist/web/main.js)');
+    expect(text).toContain('debug-console 0.2.0');
+    expect(text).toContain('skipBundleCheck: true');
+  });
+
+  describe('keys pinned in the built bundle', () => {
+    const KEY = 'A'.repeat(87);
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    const clientJs = 'var a="__ait_debug_status";var u="?p=3&v="+"0.4.0";';
+    const withKeys = (keys: string) =>
+      project({
+        'package.json': { name: 'keyed' },
+        'dist/web/main.js': clientJs,
+        'dist/web/index.html': keys,
+      });
+    async function attachWithLive(
+      root: string,
+      live: { publicKey: string; notAfter: number }[] | null,
+    ) {
+      const client = await makeClient({
+        getTunnelStatus: () => tunnelUp,
+        connection: attachedConn(schemeUrl),
+        readLiveRelayKeys: async () => live,
+      });
+      return client.callTool({
+        name: 'start_attach',
+        arguments: { scheme_url: schemeUrl, projectRoot: root },
+      });
+    }
+
+    it('issues no QR when the bundle has a client but no key', async () => {
+      const result = await attachWithLive(withKeys('<html></html>'), [
+        { publicKey: KEY, notAfter: future },
+      ]);
+      expect(result.isError).toBe(true);
+      const text = getContent(result)[0]!.text!;
+      expect(text).toContain('debugger 키가 들어 있지 않아');
+      expect(text).toContain('debugger inject-client');
+    });
+
+    it('issues no QR when the pinned key is not the one the key agent holds', async () => {
+      const root = withKeys(`{publicKey:"${'B'.repeat(87)}",notAfter:${future}}`);
+      const result = await attachWithLive(root, [{ publicKey: KEY, notAfter: future }]);
+      expect(result.isError).toBe(true);
+      const text = getContent(result)[0]!.text!;
+      expect(text).toContain('이전 키 에이전트');
+      expect(text).not.toContain('B'.repeat(87));
+    });
+
+    it('issues no QR for an expired key and issues it for a matching key', async () => {
+      const expired = withKeys(
+        `{publicKey:"${KEY}",notAfter:${Math.floor(Date.now() / 1000) - 7200}}`,
+      );
+      expect((await attachWithLive(expired, [{ publicKey: KEY, notAfter: future }])).isError).toBe(
+        true,
+      );
+      const good = withKeys(`{publicKey:"${KEY}",notAfter:${future}}`);
+      expect(
+        (await attachWithLive(good, [{ publicKey: KEY, notAfter: future }])).isError,
+      ).toBeFalsy();
+    });
+  });
+
+  it('issues the QR when the record is consistent with the installed client', async () => {
+    const root = project({
+      'package.json': { name: 'fine' },
+      'node_modules/@apps-in-toss/debugger-client/package.json': { version: '0.4.0' },
+      '.ait-debug-deployments.json': recordFile({
+        name: '@apps-in-toss/debugger-client',
+        version: '0.4.0',
+      }),
+    });
+    expect((await attach(root)).isError).toBeFalsy();
+  });
+
   it('proceeds with one definitive rule sentence when the project cannot be checked', async () => {
     const root = project({ 'package.json': { name: 'bare' } });
     const result = await attach(root);
@@ -512,6 +648,36 @@ describe('start_attach — protocol version skew', () => {
     const text = getContent(result)[0]!.text!;
     expect(text).toContain('업데이트가 필요합니다');
     expect(text).toContain('연결하지 않았습니다');
+    expect(text).not.toContain('타임아웃');
+  });
+
+  it('ends a long wait within seconds once a legacy device reaches the relay', async () => {
+    const skew = {
+      match: false,
+      deviceProtocol: 1,
+      hostProtocol: 3,
+      deviceVersion: '0.2.0',
+    } as const;
+    let refused = false;
+    setTimeout(() => {
+      refused = true;
+    }, 100);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: new FakeCdpConnection([]),
+      waitForAttachTimeoutMs: 120_000,
+      getProtocolVersionSkew: () => (refused ? skew : null),
+    });
+    const started = Date.now();
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: schemeUrl, wait_timeout_seconds: 300 },
+    });
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('debug-console');
+    expect(text).toContain('/ait:test-on-device');
     expect(text).not.toContain('타임아웃');
   });
 

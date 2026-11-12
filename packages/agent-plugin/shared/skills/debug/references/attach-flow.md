@@ -11,7 +11,12 @@
    0.4.0 미만 debugger-client가 든 번들은 항상 거부되므로 QR을 보이기 전에 고친다. 데몬이 `start_attach` 안에서
    `node_modules`와 `package.json`을 읽어 같은 검사를 하고, 걸리면 QR 없이 "QR을 발급하지 않았습니다" 오류와 순서
    (`/ait:setup-debugger` → 번들 재빌드·재업로드 → `start_attach`)를 돌려준다. 그 오류를 사용자에게 그대로 전하고
-   먼저 처리한다. "실패할 수 있다"며 QR을 먼저 보이지 않는다. 버전 기준과 이전 절차는
+   먼저 처리한다. "실패할 수 있다"며 QR을 먼저 보이지 않는다. 같은 검사가 빌드 산출물(`dist/`, `*.ait`)과 마지막 디버그 빌드 기록
+(`.ait-debug-deployments.json`)에도 걸린다. 클라이언트를 옮기거나 올렸다면 `start_attach` 전에 `/ait:test-on-device`로
+디버그 빌드를 다시 올리는 것이 규칙이다. 폰 번들이 이미 최신임을 알 때만 `skipBundleCheck: true`를 쓴다. 번들 안에 debugger 키가 없거나 만료됐거나
+이 debugger의 키와 다르면 같은 방식으로 QR 없이 끝난다. 번들러가 없는 빌드(Unity WebGL 출력 등)는 클라이언트를
+손으로 복사하지 말고 `debugger inject-client <웹 폴더>`로 키와 클라이언트를 넣은 뒤 다시 올린다
+(`../../inject/references/debugger-client.md` 6-B절). 버전 기준과 이전 절차는
    `../../setup-debugger/references/upgrade-check.md`를 따른다.
 
 1. **`start_attach({mode: 'relay-staging', scheme_url, projectRoot})`** 도구를 호출한다

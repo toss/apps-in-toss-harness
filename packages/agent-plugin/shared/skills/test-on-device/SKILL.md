@@ -140,8 +140,10 @@ API 문서의 CORS 절을 getPage로 읽어 맞춘다. 서버 코드 자체를 �
   단정하지 않는다. 세부와 근거는 `stack-pitfalls.md`의 Unity 절 "명령줄 빌드"에 있다.
   Unity 경로에는 `AIT_DEBUG_BUILD`나 `/ait:inject-debugger-client`에 해당하는 디버그 빌드 절차가
   repo에 없다. 그래서 이 경로로 올리는 번들은 릴리즈 빌드로 다루고, `.ait-debug-deployments.json`에
-  기록하지 않는다. 사용자가 Unity 앱을 실기기에서 CDP로 디버깅하겠다고 하면 디버그 빌드를 만들 수
-  없다고 알리고, 플래그를 지어내지 않는다.
+  기록하지 않는다. 사용자가 Unity 앱을 실기기에서 CDP로 디버깅하겠다고 하면 `AIT_DEBUG_BUILD`는 없다고
+  알리고 플래그를 지어내지 않는다. 번들러가 없는 웹 출력(WebGL 출력 폴더 등)은 `debugger inject-client`로
+  키와 클라이언트를 넣는 길이 있다(`../inject/references/debugger-client.md` 6-B절). 그렇게 만든 번들은
+  디버그 빌드라서 `.ait-debug-deployments.json`에 기록하고 검수에 제출하지 않는다.
 
 **단독 실행 가능 여부는 web-framework 형상마다 다르다** (CLI `2.10.8`·`3.0.5`
 소스 확인):
@@ -182,7 +184,8 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 - **디버그 빌드**: 사용자가 실기기에서 CDP attach로 디버깅하겠다고 한 경우에만, 프로젝트에
   `/ait:inject-debugger-client` 배선이 돼 있을 때 `AIT_DEBUG_BUILD=1`을 붙여 빌드한다
   (프로젝트 build 스크립트 앞에 환경 변수로 준다). 배선이 없으면 `/ait:inject-debugger-client`을
-  먼저 안내한다. 사용자가 디버깅을 말하지 않았는데 이 변형으로 빌드하지 않는다.
+  먼저 안내한다. 번들러가 없는 출력(직접 패키징한 `dist/` 등)은 `debugger inject-client`로 만든다
+  (`../inject/references/debugger-client.md` 6-B절). 사용자가 디버깅을 말하지 않았는데 이 변형으로 빌드하지 않는다.
   디버그 도구 버전이 `../setup-debugger/references/min-versions.json`의 최소 버전보다 낮은지도
   이 빌드 전에 확인한다(`references/debug-builds.md` 끝 절). 프로젝트에 옛 이름
   `@apps-in-toss/debug-console`이나 `.mcp.json`의 `ait-devtools`가 남아 있으면 "배선 없음"이 아니라
@@ -235,7 +238,8 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 ### 5-B. 디버그 빌드였다면 기록하고 알린다
 
 방금 올린 번들이 디버그 빌드(`AIT_DEBUG_BUILD=1`)였다면 `bundle_upload_complete`로 `deploymentId`가
-정해지는 즉시(컴파일 결과를 기다리지 않는다) `deploymentId`와 번들 버전을 프로젝트 루트의 `.ait-debug-deployments.json`에 기록한다.
+정해지는 즉시(컴파일 결과를 기다리지 않는다) `deploymentId`와 번들 버전, 빌드 때 설치돼 있던 클라이언트(`debuggerClient`의
+패키지 이름과 `node_modules`에서 읽은 버전)를 프로젝트 루트의 `.ait-debug-deployments.json`에 기록한다.
 형식, `.gitignore` 줄 추가, 사용자 안내 문구는 **Read
 `<이 skill의 base directory>/references/debug-builds.md`**. 사용자에게는 "이 배포는 디버그
 빌드라 검수에 제출하면 안 됩니다"를 반드시 전한다. 릴리즈 빌드는 기록하지 않는다.

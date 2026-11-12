@@ -199,6 +199,22 @@ esbuild·Rollup은 `process.env.NODE_ENV`를 직접 define(replace)해야 한다
 Rollup은 자체 define이 없어 `@rollup/plugin-replace`가 필요하다. 프로젝트에 없으면
 추가해도 되는지 사용자에게 묻고, 거절하면 배선을 중단한다.
 
+## 6-B. 번들러 없는 빌드 (Unity WebGL·엔진 HTML5 출력·직접 패키징)
+
+위 5·6절은 번들러의 `define`으로 키와 게이트를 넣는 길이라, 번들러가 없는 출력에는 쓸 수 없다.
+이런 빌드에 `debugger-client`를 손으로 복사하지 않는다(키가 없으면 폰이 "이 번들에는 디버거 키가 없어요"로
+막는다). `debugger`가 가진 명령이 이 경우의 지원 경로다.
+
+```
+npx -y -p <setup-debugger 4단계의 debugger URL> debugger inject-client <빌드된 웹 폴더> [--html index.html]
+```
+
+debugger가 같은 버전의 `ait-debugger-client.js`를 페이지 옆에 복사하고, 실행 중인 key agent의 현재
+공개키를 읽어 페이지의 첫 `<script>` 앞에 `__AIT_DEBUG_RELAY_KEYS__`와 `<script src>`를 넣는다. 다시 실행하면
+앞의 주입을 바꿔 넣는다. 키가 없으면(debugger가 안 떠 있음) 멈추니 debugger를 먼저 띄운다. 결과는 디버그
+빌드라서 `.ait`로 묶어 올릴 때 `.ait-debug-deployments.json`에 기록하고 검수에 제출하지 않는다. 키는 약 24시간 뒤
+만료되므로 그때는 다시 실행하고 다시 올린다. 릴리즈 빌드에는 이 단계를 하지 않는다.
+
 ## 7. 검증
 
 빌드를 두 번 돌려 확인한다. 빌드 스크립트는 프로젝트의 `build`(웹 빌드와 `ait build`를 모두

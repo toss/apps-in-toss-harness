@@ -19,6 +19,9 @@ import type {
 } from '../cdp-connection.js';
 import { createDebugServer } from '../debug-server.js';
 import type { TunnelStatus } from '../tools.js';
+import { isolateProjectCwd } from './no-project-cwd.js';
+
+isolateProjectCwd();
 
 vi.mock('qrcode', () => ({
   default: {

@@ -22,6 +22,7 @@ const STDERR_ALLOWED: Record<string, string> = {
   'mcp/sdk-policy.ts': 'one-time warning for a payment name in AIT_DEBUG_SDK_ALLOW',
   'mcp/qr-http-server.ts': 'prints the dashboard address on start',
   'mcp/debug-server.ts': 'startup and shutdown notices',
+  'mcp/inject-client.ts': 'inject-client CLI output',
   'mcp/tunnel.ts': 'attach banner',
   'mcp/cloudflared-binary.ts': 'binary download progress',
   'mcp/devtools-opener.ts': 'browser-open notices',

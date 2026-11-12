@@ -98,6 +98,10 @@ npx -p <tgz URL> debugger relay-key --rotate   # 이 프로젝트의 키를 버�
 - 파일이 git에 추적되고 있었거나 동기화 폴더(iCloud Drive, Dropbox, Google Drive, OneDrive) 안에 있었다면 복사본이 남았을 수 있다고 경고한다. 그때는 `debugger relay-key --rotate`로 새 키를 만들고 번들을 다시 빌드하는 것을 권한다.
 - 파일 삭제(unlink)는 **안전 삭제(secure wipe)가 아니다**. SSD·APFS(copy-on-write, 스냅샷, Time Machine)와 백업에는 옛 값이 남을 수 있다. 값이 이미 다른 곳에 있었을 가능성이 있으면 키를 교체하는 쪽이 확실하다.
 
+### 번들러 없는 빌드 (`debugger inject-client`)
+
+Unity WebGL 출력, 엔진 HTML5 출력, 직접 패키징한 `dist/`처럼 번들러가 없는 빌드에는 `define`으로 키를 넣을 곳이 없다. `debugger inject-client <빌드된 웹 폴더> [--html index.html] [--project <dir>]`가 이 경우를 맡는다. 이 debugger 릴리스에 들어 있는 `@apps-in-toss/debugger-client`의 브라우저용 스크립트(`ait-debugger-client.js`)를 페이지 옆에 복사하고, 실행 중인 key agent에서 현재 relay 공개키를 읽어 페이지의 첫 `<script>` 앞에 `globalThis.__AIT_DEBUG_RELAY_KEYS__=[…]`와 `<script src="ait-debugger-client.js">`를 넣는다. 다시 실행하면 앞의 주입을 바꿔 넣는다. 사용할 수 있는 키가 없으면(debugger가 안 떠 있음) 멈춘다. 결과는 디버그 빌드이므로 검수에 제출하면 안 되고, 키는 약 24시간 뒤 만료되니 그때는 다시 실행해 다시 올린다. 출력에는 키의 짧은 지문만 나온다.
+
 ### Test runner (`debugger-test`)
 
 실기기 토스 앱 WebView에서 테스트 파일을 실행한다. `--scheme-url`은 `ait deploy --scheme-only`(별개 CLI, 아래 참조)가 출력하는 `intoss-private://` URL을 그대로 받는다:
@@ -128,7 +132,7 @@ debugger와 debugger-client는 프로토콜 번호가 같을 때만 연결된다
 | 0.4.x (프로토콜 3) | `@apps-in-toss/debug-console` 0.3.0 이하 | 항상 거부 |
 | 0.3.0 이하 | `@apps-in-toss/debugger-client` | 연결되지 않음(프로토콜 불일치) |
 
-`start_attach`는 QR을 발급하기 전에 프로젝트(데몬의 작업 폴더, 또는 `projectRoot` 인자)의 `node_modules/@apps-in-toss/debugger-client`·`debug-console`과 `package.json`의 의존성 선언(버전 또는 릴리스 tarball URL)을 읽는다. `debug-console`만 있거나 `debugger-client`가 최소 버전보다 낮으면 QR을 발급하지 않고 `/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach` 순서를 알려 주는 오류를 돌려준다. 호환되는 버전이 설치돼 있으면 QR을 발급하고, 폰에 올린 번들도 업그레이드한 뒤에 빌드한 것이어야 한다는 안내를 붙인다. 아무것도 확인할 수 없으면(`node_modules`가 없는 등) QR을 발급하고 위 규칙을 한 문장으로 붙인다. 폰 쪽에서 거부될 때(close 4426, `update-required`)도 같은 조치를 안내한다.
+`start_attach`는 QR을 발급하기 전에 프로젝트(데몬의 작업 폴더, 또는 `projectRoot` 인자)의 `node_modules/@apps-in-toss/debugger-client`·`debug-console`과 `package.json`의 의존성 선언(버전 또는 릴리스 tarball URL)을 읽는다. `debug-console`만 있거나 `debugger-client`가 최소 버전보다 낮으면 QR을 발급하지 않고 `/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach` 순서를 알려 주는 오류를 돌려준다. 호환되는 버전이 설치돼 있으면 QR을 발급하고, 폰에 올린 번들도 업그레이드한 뒤에 빌드한 것이어야 한다는 안내를 붙인다. 아무것도 확인할 수 없으면(`node_modules`가 없는 등) QR을 발급하고 위 규칙을 한 문장으로 붙인다. 폰 쪽에서 거부될 때(close 4426, `update-required`)도 같은 조치를 안내한다. 설치된 패키지뿐 아니라 프로젝트의 빌드 산출물(`dist/`·`build/`·`out/`·`.granite/`와 루트의 `*.ait`)과 `.ait-debug-deployments.json`에 기록된 마지막 디버그 빌드도 확인해, 거부되는 클라이언트가 든 번들이 폰에 있을 것으로 보이면 QR을 발급하지 않는다. 폰의 번들이 이미 최신임을 알면(다른 PC에서 올린 경우 등) `start_attach`에 `skipBundleCheck: true`를 줘 이 확인만 건너뛴다. 옛 기기가 relay에 닿으면 대기 시간을 다 쓰지 않고 몇 초 안에 같은 안내로 끝난다. 호환되는 클라이언트가 든 번들이면 그 번들에 박힌 debugger 키도 본다: 키가 없거나, 만료됐거나(약 24시간), 이 debugger의 key agent가 가진 키와 다르면 QR을 발급하지 않고 다시 빌드(번들러 빌드는 `AIT_DEBUG_BUILD=1`, 번들러가 없는 출력은 `debugger inject-client`)하라고 안내한다. 키는 짧은 지문만 보여 준다.
 
 ## 최소 버전 확인
 
@@ -148,6 +152,8 @@ debugger와 debugger-client는 프로토콜 번호가 같을 때만 연결된다
 |---|---|
 | `debugger` | MCP 디버깅 데몬 (`switch_environment`로 로컬 브라우저·실기기 선택) |
 | `debugger-test` | on-device WebView test runner CLI |
+
+`debugger`의 하위 명령은 `relay-key`, `key-agent`, `inject-client`다.
 
 ## `@apps-in-toss/devtools`와의 관계
 
@@ -221,6 +227,7 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 | relay 인증(TOTP) 거부, close 4401 | 다른 디버거 프로세스가 띄운 relay에 붙으려 함 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 디버거를 다시 시작하고 시스템 시계 동기화 |
 | 대시보드 탭이 여러 개라 어느 세션인지 모름 | 세션마다 대시보드가 따로 뜨고 포트는 시작 순서대로 잡힌다(8317, 8318, …) | 탭 제목과 머리 아래 줄의 앱 이름·폴더 이름으로 구분하고, `get_status`의 `project`와 `otherSessions`에서 세션별 대시보드 포트를 확인 |
 | `start_attach`가 QR 없이 "QR을 발급하지 않았습니다"로 끝남 | 프로젝트에 `debug-console`만 있거나 `debugger-client`가 0.4.0 미만이라 이 데몬이 항상 거부함 | `/ait:setup-debugger`로 `debugger-client`로 옮기고, 번들을 다시 빌드해 올린 뒤 `start_attach` |
+| `start_attach`가 "빌드 산출물(…)에 … 이 들어 있어" 또는 "가장 최근에 올린 디버그 빌드"로 QR 없이 끝남 | 클라이언트는 올렸지만 폰에 올라간(또는 올릴) 번들은 옛 클라이언트로 만든 것 | `/ait:test-on-device`의 디버그 빌드로 다시 빌드해 올린 뒤 `start_attach`. 폰의 번들이 이미 최신이면 `skipBundleCheck: true` |
 
 `start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. `wait_timeout_seconds: 0`을 주면 기다리지 않고 QR만 발급한 뒤 바로 돌아온다(연결 창은 최대 600초 + 1분 열려 있다). 붙었는지는 `get_page`나 `get_status`의 `attachStages`로 확인하고, 다시 부르면 QR이 새로 발급된다. 음수·잘못된 값은 기본 60초 대기다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
 
