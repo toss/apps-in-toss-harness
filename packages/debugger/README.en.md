@@ -14,14 +14,14 @@ Remote-debugging infrastructure for Apps in Toss mini-apps — the MCP debugging
 Not published to npm — installed from a version-pinned GitHub Releases asset URL instead.
 
 ```sh
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz"
 ```
 
 To run without installing, use `npx`. **The package name (`@apps-in-toss/debugger`) and the bin name (`debugger`) differ, so you must call it in `-p` form** — a bare `npx <URL>` will not work:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger-test --help
 ```
 
 ## Usage
@@ -35,7 +35,7 @@ Register it in your agent's MCP client config. The server id is fixed at `ait-de
   "mcpServers": {
     "ait-debugger": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz", "debugger"]
     }
   }
 }
@@ -50,7 +50,7 @@ Session records live in `~/.ait-debugger/sessions/<daemon PID>.json` (directory 
 The daemon starts nothing at launch. Inside the session, `switch_environment` picks the local browser (`local-browser`) or the real-device relay (`relay-staging`), and you can switch between them without a restart. The `--mode` and `--target` start flags of 0.3.0 and earlier were removed in 0.4.0; passing them is an error. The dev server address the local browser opens comes from the daemon's `AIT_DEVTOOLS_URL` environment variable (default `http://localhost:5173`); use a loopback address only:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz debugger
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger
 ```
 
 ### The relay key and its public key (`debugger relay-key`, `readRelayPublicKeys`)
@@ -103,7 +103,7 @@ Up to 0.3.0 the secret lived in `.ait_relay` (and `.ait_relay.meta`). Now, when 
 Runs test files against a real device's Toss app WebView. `--scheme-url` takes the `intoss-private://` URL printed by `ait deploy --scheme-only` (a different CLI — see below) as-is:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 Import the `test-runner` config helper via its subpath:

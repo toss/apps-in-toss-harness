@@ -98,10 +98,10 @@ debugger와 debugger-client 0.4.0에서 세 가지가 한꺼번에 바뀌었다(
 설정 파일 경로, 현재 버전, 기준 버전을 그대로 보여 준다(옛 이름이 걸린 프로젝트는 2-B의 안내를 쓴다). 예:
 
 ```
-.mcp.json의 ait-debugger가 debugger <현재 버전>에 고정돼 있습니다. 이 플러그인이 쓰는 버전은 0.4.0입니다.
+.mcp.json의 ait-debugger가 debugger <현재 버전>에 고정돼 있습니다. 이 플러그인이 쓰는 버전은 0.4.1입니다.
 바꿀 항목은 args의 URL 하나입니다.
   - .../debugger-v<현재 버전>/apps-in-toss-debugger-<현재 버전>.tgz
-  + .../debugger-v0.4.0/apps-in-toss-debugger-0.4.0.tgz
+  + .../debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz
 다른 서버 항목은 건드리지 않습니다. 업데이트할까요?
 ```
 
@@ -132,7 +132,7 @@ debugger와 debugger-client이 둘 다 낮으면 한 번에 묶어 묻되, 항�
 ```
 이 프로젝트는 0.3.0 이하 이름으로 배선돼 있습니다. debugger와 debugger-client 0.4.0부터 이름이 바뀌어, 한쪽만 올리면 연결되지 않습니다.
 바꿀 항목은 네 가지입니다.
-  1. .mcp.json: "ait-devtools" 키를 "ait-debugger"로 바꾸고 args의 URL을 debugger-v0.4.0로 올립니다. (둘 다 있으면 "ait-debugger"를 두고 옛 "ait-devtools" 항목만 지우자고 제안합니다.)
+  1. .mcp.json: "ait-devtools" 키를 "ait-debugger"로 바꾸고 args의 URL을 debugger-v0.4.1로 올립니다. (둘 다 있으면 "ait-debugger"를 두고 옛 "ait-devtools" 항목만 지우자고 제안합니다.)
   2. package.json: @apps-in-toss/debug-console을 @apps-in-toss/debugger-client로 바꾸고 URL을 debugger-client-v0.4.0으로 올립니다.
   3. 소스 import: '@apps-in-toss/debug-console' 2곳을 '@apps-in-toss/debugger-client'로 바꿉니다. (src/main.ts:12, vite.config.ts:5)
   4. 권한 규칙: mcp__ait-devtools__* 를 쓰고 있다면 mcp__ait-debugger__* 로 옮기고, 도구 하나를 지목한 규칙(예: mcp__ait-devtools__evaluate)은 도구 이름도 새 이름(mcp__ait-debugger__run_script)으로 바꿔야 합니다. (설정 파일은 직접 고치지 않고 안내만 합니다)
