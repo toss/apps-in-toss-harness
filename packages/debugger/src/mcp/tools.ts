@@ -317,6 +317,13 @@ export const DEBUG_TOOL_DEFINITIONS = [
             '(a re-call re-issues the QR). Negative or invalid inputs (NaN, non-number) fall back to the default silently. ' +
             'During the wait the TOTP code is auto re-minted as needed, so a single call covers the whole window.',
         },
+        skipBundleCheck: {
+          type: 'boolean',
+          description:
+            'Skip the check that the debug build uploaded last (recorded in .ait-debug-deployments.json) ' +
+            'was built with a compatible debugger-client. Pass true only when the phone bundle is known to be ' +
+            'current (e.g. uploaded from another machine). Default false.',
+        },
         projectRoot: {
           type: 'string',
           description:

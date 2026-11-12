@@ -210,6 +210,13 @@ const DEV_TOOL_DEFINITIONS = [
             '0 = do not wait: issue the QR and return at once (check with get_page / get_status ' +
             'attachStages; calling start_attach again re-issues the QR). Negative or invalid inputs fall back to default.',
         },
+        skipBundleCheck: {
+          type: 'boolean',
+          description:
+            'Skip the check that the debug build uploaded last (recorded in .ait-debug-deployments.json) ' +
+            'was built with a compatible debugger-client. Pass true only when the phone bundle is known to be ' +
+            'current (e.g. uploaded from another machine). Default false.',
+        },
       },
       required: [],
     },

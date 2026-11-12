@@ -93,6 +93,13 @@ import {
   buildDashboardTimelineState,
   createRelayStageHooks,
 } from './attach-timeline.js';
+import { builtOutputRefusedMessage, scanBuiltOutput } from './built-output.js';
+import {
+  BUNDLE_REBUILD_STEPS,
+  CLIENT_UPDATE_STEPS_WITH_SKIP,
+  inspectDebugBundle,
+  staleBundleMessage,
+} from './bundle-check.js';
 import type { CdpConnection } from './cdp-connection.js';
 import { ChiiCdpConnection } from './chii-connection.js';
 import { type ChiiRelay, startChiiRelay } from './chii-relay.js';
@@ -1135,6 +1142,33 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       );
       if (compat.status === 'incompatible') {
         return mcpError(incompatibleClientMessage(compat, __VERSION__));
+      }
+      // 프로젝트 안의 빌드 산출물(dist 등, *.ait)이나 올려 둔 디버그 빌드의 기록이 거부되는 클라이언트를
+      // 담고 있으면 마찬가지로 QR을 발급하지 않는다. 폰이 여는 것은 설치된 패키지가 아니라 그 번들이다.
+      if (args?.skipBundleCheck !== true) {
+        const bundleRoot = findProjectRoot(
+          typeof rawCompatRoot === 'string' && isAbsolute(rawCompatRoot)
+            ? rawCompatRoot
+            : process.cwd(),
+        );
+        const built = scanBuiltOutput(bundleRoot);
+        if (built.status === 'refused') {
+          return mcpError(
+            builtOutputRefusedMessage(
+              built,
+              __VERSION__,
+              compat.status === 'compatible' ? BUNDLE_REBUILD_STEPS : CLIENT_UPDATE_STEPS_WITH_SKIP,
+            ),
+          );
+        }
+        const identity = resolveProjectIdentity(bundleRoot);
+        const bundle = inspectDebugBundle(
+          bundleRoot,
+          identity.source === 'granite' ? identity.label : null,
+        );
+        if (bundle.status === 'stale') {
+          return mcpError(staleBundleMessage(bundle, __VERSION__));
+        }
       }
       const compatNote =
         compat.status === 'compatible'

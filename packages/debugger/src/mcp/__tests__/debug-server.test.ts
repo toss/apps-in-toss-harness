@@ -430,6 +430,75 @@ describe('start_attach — client compatibility', () => {
     expect(content[0]!.text!).toContain('do NOT re-print the QR');
   });
 
+  const recordFile = (debuggerClient?: Record<string, string>) => ({
+    version: 1,
+    deployments: [
+      {
+        deploymentId: 'secret-id-must-not-leak',
+        bundleVersion: '7',
+        appName: 'x',
+        recordedAt: '2026-01-01T00:00:00Z',
+        source: 'test-on-device',
+        ...(debuggerClient ? { debuggerClient } : {}),
+      },
+    ],
+  });
+
+  it('issues no QR when the last uploaded debug build holds debug-console, unless skipped', async () => {
+    const root = project({
+      'package.json': { name: 'migrated' },
+      'node_modules/@apps-in-toss/debugger-client/package.json': { version: '0.4.0' },
+      '.ait-debug-deployments.json': recordFile({
+        name: '@apps-in-toss/debug-console',
+        version: '0.2.0',
+      }),
+    });
+    const result = await attach(root);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('QR을 발급하지 않았습니다');
+    expect(text).toContain('번들 7');
+    expect(text).toContain('@apps-in-toss/debug-console 0.2.0');
+    expect(text).toContain('skipBundleCheck: true');
+    expect(text).not.toContain('secret-id-must-not-leak');
+    expect(text).not.toContain(root);
+
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: attachedConn(schemeUrl),
+    });
+    const skipped = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: schemeUrl, projectRoot: root, skipBundleCheck: true },
+    });
+    expect(skipped.isError).toBeFalsy();
+  });
+
+  it('issues no QR when the project holds a legacy client in its built output', async () => {
+    const root = project({
+      'package.json': { name: 'unity-build' },
+      'dist/web/main.js': 'var a="__ait_debug_status";var u="?p=1&v="+"0.2.0";',
+    });
+    const result = await attach(root);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('빌드 산출물(dist/web/main.js)');
+    expect(text).toContain('debug-console 0.2.0');
+    expect(text).toContain('skipBundleCheck: true');
+  });
+
+  it('issues the QR when the record is consistent with the installed client', async () => {
+    const root = project({
+      'package.json': { name: 'fine' },
+      'node_modules/@apps-in-toss/debugger-client/package.json': { version: '0.4.0' },
+      '.ait-debug-deployments.json': recordFile({
+        name: '@apps-in-toss/debugger-client',
+        version: '0.4.0',
+      }),
+    });
+    expect((await attach(root)).isError).toBeFalsy();
+  });
+
   it('proceeds with one definitive rule sentence when the project cannot be checked', async () => {
     const root = project({ 'package.json': { name: 'bare' } });
     const result = await attach(root);
@@ -512,6 +581,36 @@ describe('start_attach — protocol version skew', () => {
     const text = getContent(result)[0]!.text!;
     expect(text).toContain('업데이트가 필요합니다');
     expect(text).toContain('연결하지 않았습니다');
+    expect(text).not.toContain('타임아웃');
+  });
+
+  it('ends a long wait within seconds once a legacy device reaches the relay', async () => {
+    const skew = {
+      match: false,
+      deviceProtocol: 1,
+      hostProtocol: 3,
+      deviceVersion: '0.2.0',
+    } as const;
+    let refused = false;
+    setTimeout(() => {
+      refused = true;
+    }, 100);
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: new FakeCdpConnection([]),
+      waitForAttachTimeoutMs: 120_000,
+      getProtocolVersionSkew: () => (refused ? skew : null),
+    });
+    const started = Date.now();
+    const result = await client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: schemeUrl, wait_timeout_seconds: 300 },
+    });
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('debug-console');
+    expect(text).toContain('/ait:test-on-device');
     expect(text).not.toContain('타임아웃');
   });
 

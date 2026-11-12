@@ -255,7 +255,8 @@ candidate scheme URL이 없으면 에이전트는 이 자리에서 직접 후보
    `appName`은 콘솔 appName과 같아야 한다.
 3. console MCP `bundle_upload` → `bundle_upload_complete`로 번들을 업로드한다.
 4. 업로드 완료 응답에서 `intoss-private://…?_deploymentId=<uuid>` scheme URL을 받는다.
-   바로 이어서 그 `deploymentId`와 번들 버전을 프로젝트의 `.ait-debug-deployments.json`에
+   바로 이어서 그 `deploymentId`와 번들 버전, 빌드 때 설치돼 있던 클라이언트(`debuggerClient`: 패키지 이름과
+   `node_modules`에서 읽은 버전)를 프로젝트의 `.ait-debug-deployments.json`에
    기록하고(`../test-on-device/references/debug-builds.md`의 절차 — 파일 형식, `.gitignore`
    줄 포함), 사용자에게 "이 배포는 디버그 빌드라 검수에 제출하면 안 됩니다. 검수에는 값 없이
    다시 빌드해 올린 배포를 쓰세요"라고 알린다.
@@ -286,7 +287,11 @@ WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 `debug-console`이 있거나 debugger-client가 0.4.0보다 낮으면 `start_attach`는 QR을 발급하지 않고 오류로
 끝난다. 이 오류가 나오면 "실패할 수 있다", "그때 다시 시도하겠다"고 말하지 말고 오류의 순서대로
 `/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach`를 먼저 처리한다.
-호환되는 버전이어도 폰에 올린 번들은 업그레이드한 뒤에 빌드한 것이어야 한다. 옛 항목을 옮기는 절차와
+호환되는 버전이어도 폰에 올린 번들은 업그레이드한 뒤에 빌드한 것이어야 한다. `start_attach`는 프로젝트의
+빌드 산출물(`dist/` 등과 `*.ait`)과 `.ait-debug-deployments.json`의 마지막 디버그 빌드 기록도 읽어, 거부되는 클라이언트가
+들어 있으면 같은 방식으로 QR을 발급하지 않는다. **클라이언트 패키지를 옮기거나 올린 뒤에는 `start_attach` 전에 반드시
+`/ait:test-on-device`(디버그 빌드)로 다시 빌드해 올린다.** 폰의 번들이 이미 최신임을 아는 경우(다른 PC에서 올림 등)에만
+`start_attach`에 `skipBundleCheck: true`를 준다. 옛 항목을 옮기는 절차와
 버전 기준은 `../setup-debugger/references/upgrade-check.md`(0절·2-B절)를 따른다.
 
 세션마다 데몬과 대시보드가 따로 뜬다. 대시보드는 `127.0.0.1`의 8317부터 비어 있는 포트(최대 20개, 그다음은

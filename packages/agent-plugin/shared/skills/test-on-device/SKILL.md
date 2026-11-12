@@ -235,7 +235,8 @@ find . -maxdepth 4 \( -name node_modules -o -name .git -o -name Library -o -name
 ### 5-B. 디버그 빌드였다면 기록하고 알린다
 
 방금 올린 번들이 디버그 빌드(`AIT_DEBUG_BUILD=1`)였다면 `bundle_upload_complete`로 `deploymentId`가
-정해지는 즉시(컴파일 결과를 기다리지 않는다) `deploymentId`와 번들 버전을 프로젝트 루트의 `.ait-debug-deployments.json`에 기록한다.
+정해지는 즉시(컴파일 결과를 기다리지 않는다) `deploymentId`와 번들 버전, 빌드 때 설치돼 있던 클라이언트(`debuggerClient`의
+패키지 이름과 `node_modules`에서 읽은 버전)를 프로젝트 루트의 `.ait-debug-deployments.json`에 기록한다.
 형식, `.gitignore` 줄 추가, 사용자 안내 문구는 **Read
 `<이 skill의 base directory>/references/debug-builds.md`**. 사용자에게는 "이 배포는 디버그
 빌드라 검수에 제출하면 안 됩니다"를 반드시 전한다. 릴리즈 빌드는 기록하지 않는다.
