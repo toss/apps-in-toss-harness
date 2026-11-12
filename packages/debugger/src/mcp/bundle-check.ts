@@ -194,10 +194,12 @@ export function inspectDebugBundle(
 }
 
 /** The fix, in order, for a stale bundle. */
+export const SKIP_BUNDLE_CHECK_CLAUSE =
+  '폰의 번들이 이미 최신이면(다른 PC에서 올린 경우 등) `skipBundleCheck: true`로 이 검사를 건너뛸 수 있습니다.';
+
 export const BUNDLE_REBUILD_STEPS =
   '1) 디버그 빌드(`AIT_DEBUG_BUILD=1`)를 다시 빌드해 올리고(`/ait:test-on-device`의 디버그 빌드), ' +
-  '2) 그다음 `start_attach`를 다시 호출하세요. ' +
-  '폰의 번들이 이미 최신이면(다른 PC에서 올린 경우 등) `skipBundleCheck: true`로 이 검사를 건너뛸 수 있습니다.';
+  `2) 그다음 \`start_attach\`를 다시 호출하세요. ${SKIP_BUNDLE_CHECK_CLAUSE}`;
 
 /** {@link CLIENT_UPDATE_STEPS} plus the escape hatch, for refusals the setup step has not yet been done for. */
 export const CLIENT_UPDATE_STEPS_WITH_SKIP = `${CLIENT_UPDATE_STEPS} 폰의 번들이 이미 최신이면(다른 PC에서 올린 경우 등) \`skipBundleCheck: true\`로 이 검사를 건너뛸 수 있습니다.`;

@@ -3,7 +3,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
-import { builtOutputRefusedMessage, readClientEvidence, scanBuiltOutput } from '../built-output.js';
+import {
+  bakedKeyRefusedMessage,
+  builtOutputRefusedMessage,
+  judgeBakedKeys,
+  keyFingerprint,
+  readBakedKeys,
+  readClientEvidence,
+  scanBuiltOutput,
+} from '../built-output.js';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -120,6 +128,7 @@ describe('scanBuiltOutput', () => {
       status: 'ok',
       path: 'dist/web/a.js',
       version: '0.4.0',
+      keys: [],
     });
   });
 
@@ -185,5 +194,117 @@ describe('builtOutputRefusedMessage', () => {
     expect(text).toContain('@apps-in-toss/debug-console 0.2.0');
     expect(text).toContain('STEPS');
     expect(text).not.toContain(tmpdir());
+  });
+});
+
+const KEY_A = 'A'.repeat(87);
+const KEY_B = 'B'.repeat(87);
+const NOW = 1_800_000_000;
+
+describe('readBakedKeys', () => {
+  it('reads literals in object, JSON and escaped-JSON form, in either field order', () => {
+    expect(readBakedKeys(`x=[{publicKey:"${KEY_A}",notAfter:1800000500}]`)).toEqual([
+      { publicKey: KEY_A, notAfter: 1_800_000_500 },
+    ]);
+    expect(readBakedKeys(`{"publicKey":"${KEY_A}","notAfter":1800000500}`)).toEqual([
+      { publicKey: KEY_A, notAfter: 1_800_000_500 },
+    ]);
+    expect(
+      readBakedKeys(`JSON.parse('[{\\"publicKey\\":\\"${KEY_B}\\",\\"notAfter\\":1800000600}]')`),
+    ).toEqual([{ publicKey: KEY_B, notAfter: 1_800_000_600 }]);
+    expect(readBakedKeys(`{notAfter:1800000700,publicKey:"${KEY_A}"}`)).toEqual([
+      { publicKey: KEY_A, notAfter: 1_800_000_700 },
+    ]);
+  });
+  it('finds nothing in plain code', () => {
+    expect(readBakedKeys('var publicKey = "short"; notAfter: 5')).toEqual([]);
+  });
+});
+
+describe('scanBuiltOutput keys', () => {
+  it('returns the keys of the same output as the newest client', () => {
+    const root = project({
+      'dist/web/a.js': CURRENT_JS,
+      'dist/web/index.html': `<script>globalThis.__AIT_DEBUG_RELAY_KEYS__=[{"publicKey":"${KEY_A}","notAfter":1800000500}]</script>`,
+    });
+    expect(scanBuiltOutput(root)).toMatchObject({
+      status: 'ok',
+      keys: [{ publicKey: KEY_A, notAfter: 1_800_000_500 }],
+    });
+  });
+  it('reads keys inside a .ait and keeps them apart from the directories', () => {
+    const root = project(
+      {
+        'g.ait': zip({
+          'web/a.js': CURRENT_JS,
+          'web/index.html': `{publicKey:"${KEY_B}",notAfter:1800000900}`,
+        }),
+        'dist/old.html': `{publicKey:"${KEY_A}",notAfter:1800000500}`,
+      },
+      { 'g.ait': 1_800_000_000 },
+    );
+    expect(scanBuiltOutput(root)).toMatchObject({
+      status: 'ok',
+      path: 'g.ait',
+      keys: [{ publicKey: KEY_B }],
+    });
+  });
+  it('has no keys when none are pinned', () => {
+    expect(scanBuiltOutput(project({ 'dist/a.js': CURRENT_JS }))).toMatchObject({ keys: [] });
+  });
+});
+
+describe('judgeBakedKeys', () => {
+  const live = [{ publicKey: KEY_A, notAfter: NOW + 3600 }];
+  it('refuses a bundle without keys', () => {
+    expect(judgeBakedKeys([], live, NOW)).toEqual({ status: 'no-keys' });
+  });
+  it('refuses expired keys, allowing the 300 s skew', () => {
+    expect(judgeBakedKeys([{ publicKey: KEY_A, notAfter: NOW - 301 }], live, NOW).status).toBe(
+      'expired',
+    );
+    expect(judgeBakedKeys([{ publicKey: KEY_A, notAfter: NOW - 299 }], live, NOW).status).toBe(
+      'ok',
+    );
+  });
+  it('refuses keys the key agent does not hold', () => {
+    const v = judgeBakedKeys([{ publicKey: KEY_B, notAfter: NOW + 100 }], live, NOW);
+    expect(v).toEqual({
+      status: 'mismatch',
+      baked: [keyFingerprint(KEY_B)],
+      live: [keyFingerprint(KEY_A)],
+    });
+  });
+  it('accepts a match, and skips the match when the agent cannot be asked', () => {
+    expect(judgeBakedKeys([{ publicKey: KEY_A, notAfter: NOW + 100 }], live, NOW)).toEqual({
+      status: 'ok',
+    });
+    expect(judgeBakedKeys([{ publicKey: KEY_B, notAfter: NOW + 100 }], null, NOW)).toEqual({
+      status: 'ok',
+    });
+    expect(judgeBakedKeys([{ publicKey: KEY_B, notAfter: NOW + 100 }], [], NOW)).toEqual({
+      status: 'ok',
+    });
+  });
+});
+
+describe('bakedKeyRefusedMessage', () => {
+  it('prints fingerprints only, never key material', () => {
+    for (const verdict of <Parameters<typeof bakedKeyRefusedMessage>[0][]>[
+      { status: 'no-keys' } as const,
+      { status: 'expired', fingerprints: [keyFingerprint(KEY_A)] } as const,
+      {
+        status: 'mismatch',
+        baked: [keyFingerprint(KEY_B)],
+        live: [keyFingerprint(KEY_A)],
+      } as const,
+    ]) {
+      const text = bakedKeyRefusedMessage(verdict, 'dist/web/a.js', '0.4.0', '0.4.2', 'SKIP');
+      expect(text).toContain('QR을 발급하지 않았습니다');
+      expect(text).toContain('debugger inject-client');
+      expect(text).toContain('SKIP');
+      expect(text).not.toContain(KEY_A);
+      expect(text).not.toContain(KEY_B);
+    }
   });
 });

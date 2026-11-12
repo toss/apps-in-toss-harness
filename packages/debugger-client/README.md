@@ -166,6 +166,7 @@ attach가 `at=`와 `relay=`를 읽으면 곧바로 두 파라미터를 페이지
 |---|---|
 | `@apps-in-toss/debugger-client` | `checkDebugGate`, `maybeAttach`, `startDebugConsole`, `detachDebugSurface`, `disconnectDebugger`, gate·`DebugStatus`·`RelayPublicKeyPin` 타입/헬퍼 등 전체 API |
 | `@apps-in-toss/debugger-client/auto` | side-effect 전용 자동 게이팅 엔트리 (위 사용 예시) |
+| `@apps-in-toss/debugger-client/browser` | 번들러 없는 페이지용 단일 스크립트(`dist/browser.js`, `/auto`와 같은 동작, 키는 `globalThis.__AIT_DEBUG_RELAY_KEYS__`에서 읽음). 직접 쓰기보다 `debugger inject-client`가 키와 함께 넣어 준다 |
 
 bin은 없다.
 

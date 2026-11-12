@@ -166,6 +166,7 @@ The previous eruda console (`mountEruda` / `unmountEruda`) is removed. To inspec
 |---|---|
 | `@apps-in-toss/debugger-client` | full API — `checkDebugGate`, `maybeAttach`, `startDebugConsole`, `detachDebugSurface`, `disconnectDebugger`, gate, `DebugStatus` and `RelayPublicKeyPin` types/helpers |
 | `@apps-in-toss/debugger-client/auto` | side-effect-only self-gating entry (usage example above) |
+| `@apps-in-toss/debugger-client/browser` | single plain script for pages without a bundler (`dist/browser.js`; behaves like `/auto` and reads the keys from `globalThis.__AIT_DEBUG_RELAY_KEYS__`). Prefer `debugger inject-client`, which adds it together with the keys |
 
 No bins are shipped.
 

@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { defineConfig, type Options } from 'tsdown';
+import clientPkg from '../debugger-client/package.json' with { type: 'json' };
 import pkg from './package.json' with { type: 'json' };
 
 // `@modelcontextprotocol/sdk` exposes NEITHER `.` (the bare main entry) NOR
@@ -143,5 +144,26 @@ export default defineConfig([
     // otherwise defeats the self-invoke guard silently).
     entry: { 'test-runner/bin': 'src/test-runner/bin.ts' },
     banner: { js: '#!/usr/bin/env node' },
+  },
+  {
+    ...common,
+    // `debugger inject-client` copies this file next to a hand-packaged web build
+    // (Unity WebGL, engine HTML5 export). It is the `@apps-in-toss/debugger-client`
+    // `/auto` entry built from the sibling package's source as one plain script, so the
+    // copy always matches the client version this debugger release was cut with; its
+    // `__VERSION__` label is the client's own version, not this package's. It never
+    // enters `dist/mcp/*` (check-debug-surface-absent still greps those two bundles).
+    entry: { 'inject/ait-debugger-client': '../debugger-client/src/auto.ts' },
+    format: ['iife'],
+    platform: 'browser',
+    dts: false,
+    clean: false,
+    sourcemap: false,
+    define: {
+      __VERSION__: JSON.stringify(clientPkg.version),
+      // Activation stays `?debug=1` / `?relay=` on an allowed host (see debugger-client's browser build).
+      'process.env.NODE_ENV': JSON.stringify('production'),
+    },
+    outputOptions: { entryFileNames: '[name].js' },
   },
 ]);

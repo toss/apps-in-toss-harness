@@ -20,6 +20,7 @@
  * Node-only.
  */
 
+import { createHash } from 'node:crypto';
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -46,9 +47,22 @@ const SCRIPT_EXT = /\.(?:m?js|cjs|html?)$/i;
  */
 const CLIENT_MARKERS = ['__ait_debug_status', 'startDebugConsole'];
 
+/** One relay public key pinned in a bundle. Never printed beyond {@link keyFingerprint}. */
+export interface BakedKey {
+  publicKey: string;
+  /** Unix seconds, `null` when the pin carries none. */
+  notAfter: number | null;
+}
+
 export type BuiltOutputScan =
   | { status: 'unknown' }
-  | { status: 'ok'; path: string; version: string | null }
+  | {
+      status: 'ok';
+      path: string;
+      version: string | null;
+      /** Relay public keys pinned in the same bundle (the `.ait` or the output directories). */
+      keys: BakedKey[];
+    }
   | {
       status: 'refused';
       /** Relative to the project root, `/`-separated. */
@@ -59,6 +73,8 @@ export type BuiltOutputScan =
     };
 
 interface Hit {
+  /** Which bundle the file belongs to: an `.ait` path, or `''` for the output directories. */
+  unit: string;
   mtimeMs: number;
   path: string;
   protocol: number;
@@ -76,6 +92,39 @@ export function readClientEvidence(
   const after = text.slice(m.index + m[0].length, m.index + m[0].length + 80);
   const v = /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/.exec(after);
   return { protocol: Number(m[1]), version: v?.[1] ?? null };
+}
+
+const KEY_RE =
+  /\\?["']?publicKey\\?["']?\s*:\s*\\?["']([A-Za-z0-9_-]{86,88})\\?["']([^{}]{0,160})/g;
+const NOT_AFTER_RE = /notAfter\\?["']?\s*:\s*(\d{9,11})/;
+
+/** The relay public key pins written into `text` (`{ publicKey, notAfter }` literals). */
+export function readBakedKeys(text: string): BakedKey[] {
+  const out: BakedKey[] = [];
+  for (const m of text.matchAll(KEY_RE)) {
+    const near = NOT_AFTER_RE.exec(m[2] ?? '');
+    out.push({ publicKey: m[1] as string, notAfter: near === null ? null : Number(near[1]) });
+  }
+  // `{ notAfter, publicKey }` order
+  for (const m of text.matchAll(
+    /notAfter\\?["']?\s*:\s*(\d{9,11})[^{}]{0,40}?publicKey\\?["']?\s*:\s*\\?["']([A-Za-z0-9_-]{86,88})\\?["']/g,
+  )) {
+    out.push({ publicKey: m[2] as string, notAfter: Number(m[1]) });
+  }
+  // The two forms can read the same literal: keep one entry per key, with its expiry when known.
+  const byKey = new Map<string, BakedKey>();
+  for (const k of out) {
+    const prev = byKey.get(k.publicKey);
+    if (prev === undefined || (prev.notAfter === null && k.notAfter !== null)) {
+      byKey.set(k.publicKey, k);
+    }
+  }
+  return [...byKey.values()];
+}
+
+/** Short, non-reversible label for a key, safe to print. */
+export function keyFingerprint(publicKey: string): string {
+  return createHash('sha256').update(publicKey).digest('hex').slice(0, 8);
 }
 
 interface Budget {
@@ -215,19 +264,24 @@ export function scanBuiltOutput(root: string): BuiltOutputScan {
   const base = resolve(root);
   const budget: Budget = { files: 0, bytes: 0 };
   const hits: Hit[] = [];
+  const keysByUnit = new Map<string, BakedKey[]>();
   let aitSeen = 0;
-  const consider = (path: string, mtimeMs: number, text: string): void => {
+  const consider = (path: string, mtimeMs: number, text: string, unit: string): void => {
+    const found = readBakedKeys(text);
+    if (found.length > 0) keysByUnit.set(unit, [...(keysByUnit.get(unit) ?? []), ...found]);
     const ev = readClientEvidence(text);
-    if (ev !== null) hits.push({ mtimeMs, path, ...ev });
+    if (ev !== null) hits.push({ unit, mtimeMs, path, ...ev });
   };
   const visit = (abs: string, relPath: string, size: number, mtimeMs: number): void => {
     if (relPath.toLowerCase().endsWith('.ait')) {
       if (aitSeen >= MAX_AIT_FILES) return;
       aitSeen += 1;
-      for (const text of readZipScripts(abs, size, budget)) consider(relPath, mtimeMs, text);
+      for (const text of readZipScripts(abs, size, budget)) {
+        consider(relPath, mtimeMs, text, relPath);
+      }
     } else if (SCRIPT_EXT.test(relPath)) {
       const text = readCapped(abs, size, budget);
-      if (text !== null) consider(relPath, mtimeMs, text);
+      if (text !== null) consider(relPath, mtimeMs, text, '');
     }
   };
   // `.ait` archives at the root itself (one level), then the output directories.
@@ -265,7 +319,12 @@ export function scanBuiltOutput(root: string): BuiltOutputScan {
       };
     }
   }
-  return { status: 'ok', path: top.path, version: top.version };
+  return {
+    status: 'ok',
+    path: top.path,
+    version: top.version,
+    keys: keysByUnit.get(top.unit) ?? [],
+  };
 }
 
 /** Error text for `start_attach` when the built output holds a refused client. No QR was issued. */
@@ -280,4 +339,72 @@ export function builtOutputRefusedMessage(
     `빌드 산출물(${scan.path})에 ${scan.client}${label}이 들어 있어 ` +
     `debugger ${debuggerVersion}에 연결되지 않고 폰에서 거부됩니다. 먼저 고치세요: ${steps}`
   );
+}
+
+/** A pinned key is rejected by the client this long after `notAfter` (clock skew allowance). */
+const KEY_SKEW_SECONDS = 300;
+
+export type BakedKeyVerdict =
+  | { status: 'ok' }
+  | { status: 'no-keys' }
+  | { status: 'expired'; fingerprints: string[] }
+  | { status: 'mismatch'; baked: string[]; live: string[] };
+
+/**
+ * Whether the keys pinned in a bundle can still verify this daemon's relay.
+ *
+ * - none pinned: `no-keys`
+ * - every pin past `notAfter` (plus the skew the client allows): `expired`
+ * - the agent's live keys known, and no usable pin is one of them: `mismatch`
+ *
+ * `live` is `null` when the key agent could not be asked; then only the first two apply.
+ */
+export function judgeBakedKeys(
+  baked: readonly BakedKey[],
+  live: readonly { publicKey: string; notAfter: number }[] | null,
+  nowSeconds: number,
+): BakedKeyVerdict {
+  if (baked.length === 0) return { status: 'no-keys' };
+  const usable = baked.filter(
+    (k) => k.notAfter === null || k.notAfter + KEY_SKEW_SECONDS >= nowSeconds,
+  );
+  if (usable.length === 0) {
+    return { status: 'expired', fingerprints: baked.map((k) => keyFingerprint(k.publicKey)) };
+  }
+  if (live !== null && live.length > 0) {
+    const liveKeys = new Set(live.map((k) => k.publicKey));
+    if (!usable.some((k) => liveKeys.has(k.publicKey))) {
+      return {
+        status: 'mismatch',
+        baked: usable.map((k) => keyFingerprint(k.publicKey)),
+        live: live.map((k) => keyFingerprint(k.publicKey)),
+      };
+    }
+  }
+  return { status: 'ok' };
+}
+
+/** Error text for `start_attach` when the bundle's pinned keys cannot verify this daemon. No QR was issued. */
+export function bakedKeyRefusedMessage(
+  verdict: Exclude<BakedKeyVerdict, { status: 'ok' }>,
+  path: string,
+  clientVersion: string | null,
+  debuggerVersion: string,
+  skipClause: string,
+): string {
+  const client = `debugger-client${clientVersion === null ? '' : ` ${clientVersion}`}`;
+  const rebuild =
+    '1) 키를 넣어 다시 빌드하고(번들러 빌드는 `AIT_DEBUG_BUILD=1`, 번들러가 없는 출력은 `debugger inject-client <빌드 폴더>`), ' +
+    '2) 다시 올리고(`/ait:test-on-device`), 3) 그다음 `start_attach`를 다시 호출하세요.';
+  let found: string;
+  if (verdict.status === 'no-keys') {
+    found = `빌드 산출물(${path})의 ${client}에는 debugger 키가 들어 있지 않아 폰이 "이 번들에는 디버거 키가 없어요"로 막습니다.`;
+  } else if (verdict.status === 'expired') {
+    found = `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.fingerprints.join(', ')})는 유효 시간(약 24시간)이 지나 폰이 받지 않습니다.`;
+  } else {
+    found =
+      `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.baked.join(', ')})는 이전 키 에이전트의 것이거나 ` +
+      `지금 debugger ${debuggerVersion}이 쓰는 키(지문 ${verdict.live.join(', ')})와 달라 폰이 relay 주소를 검증하지 못합니다.`;
+  }
+  return `start_attach: QR을 발급하지 않았습니다. ${found} 먼저 고치세요: ${rebuild} ${skipClause}`;
 }

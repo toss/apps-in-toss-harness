@@ -18,6 +18,7 @@ import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { runKeyAgent } from '../agent/main.js';
 import { runDebugServer } from './debug-server.js';
+import { runInjectClient } from './inject-client.js';
 import { runRelayKey } from './relay-key.js';
 import { readDevtoolsVersion } from './tools.js';
 
@@ -34,6 +35,7 @@ debugger — MCP debugging daemon (CDP/Chii relay) for Apps in Toss mini-apps
 USAGE
   debugger [options]
   debugger relay-key [--project <dir>] [--rotate] [--json]
+  debugger inject-client <built-web-dir> [--html <file>] [--project <dir>]
   debugger key-agent
 
 OPTIONS
@@ -59,6 +61,11 @@ SUBCOMMANDS
                           relay address in a QR link. It lives in memory only,
                           in the key agent. \`--rotate\` replaces the key with a
                           new one. Run \`debugger relay-key --help\`.
+  inject-client           For builds without a bundler (Unity WebGL, engine HTML5
+                          output, hand-packaged dist): copies the on-device debugger
+                          script next to the page and writes the relay public keys
+                          and a <script> tag into the HTML. The result is a debug
+                          build, never for review. Run \`debugger inject-client --help\`.
   key-agent               The resident process that holds relay keys in memory.
                           It starts on demand; you rarely run it yourself.
 
@@ -158,6 +165,11 @@ async function main(): Promise<void> {
 
   if (args[0] === 'key-agent') {
     process.exitCode = await runKeyAgent();
+    return;
+  }
+
+  if (args[0] === 'inject-client') {
+    process.exitCode = await runInjectClient(args.slice(1));
     return;
   }
 

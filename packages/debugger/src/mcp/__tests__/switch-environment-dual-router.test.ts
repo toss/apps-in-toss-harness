@@ -38,6 +38,9 @@ import {
 } from '../debug-server.js';
 import { deriveEnvironment } from '../environment.js';
 import type { TunnelStatus } from '../tools.js';
+import { isolateProjectCwd } from './no-project-cwd.js';
+
+isolateProjectCwd();
 
 // ---- Fakes -----------------------------------------------------------------
 

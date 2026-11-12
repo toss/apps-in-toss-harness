@@ -23,6 +23,9 @@ import {
 import type { RelayClaimEvent } from '../relay-arming.js';
 import { createSessionGuard, type RelayControl, type SessionGuard } from '../session-guard.js';
 import type { TunnelStatus } from '../tools.js';
+import { isolateProjectCwd } from './no-project-cwd.js';
+
+isolateProjectCwd();
 
 const SECRET = 'cafebabe'.repeat(8);
 const SCHEME = 'intoss-private://app';

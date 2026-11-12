@@ -93,11 +93,17 @@ import {
   buildDashboardTimelineState,
   createRelayStageHooks,
 } from './attach-timeline.js';
-import { builtOutputRefusedMessage, scanBuiltOutput } from './built-output.js';
+import {
+  bakedKeyRefusedMessage,
+  builtOutputRefusedMessage,
+  judgeBakedKeys,
+  scanBuiltOutput,
+} from './built-output.js';
 import {
   BUNDLE_REBUILD_STEPS,
   CLIENT_UPDATE_STEPS_WITH_SKIP,
   inspectDebugBundle,
+  SKIP_BUNDLE_CHECK_CLAUSE,
   staleBundleMessage,
 } from './bundle-check.js';
 import type { CdpConnection } from './cdp-connection.js';
@@ -168,6 +174,7 @@ import {
 import type { RelayClaimEvent } from './relay-arming.js';
 import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
 import { relayCodeSecret } from './relay-code-secret.js';
+import { readRelayPublicKeys } from './relay-keys.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
 import { activateRelayRoot, relayAuthSwitch } from './relay-root.js';
 import { relayRunId } from './relay-run-id.js';
@@ -398,6 +405,15 @@ export interface DebugServerDeps {
    * 남기는 QR 발급·매칭 단계만 기록된다).
    */
   attachTimeline?: AttachTimeline;
+  /**
+   * The relay public keys this daemon's key agent holds for the project at `root`, or `null`
+   * when they cannot be read. `start_attach` compares them with the keys pinned in the built
+   * bundle before it issues a QR. Default: {@link readRelayPublicKeys} with a short timeout.
+   * Tests inject a fake so no key agent is started.
+   */
+  readLiveRelayKeys?: (
+    root: string,
+  ) => Promise<readonly { publicKey: string; notAfter: number }[] | null>;
   /**
    * Returns the device↔host protocol version skew observed on the attach
    * handshake, or `null` when the two halves agree (or no device has reported
@@ -826,6 +842,27 @@ function redactedExtra(data: unknown): { data: unknown; extra?: EnvelopeExtraMet
 // it is the orchestrator's wait primitive (used by renderAndMaybeWait's
 // segmented wait). The `start_attach` handler no longer references it directly.
 
+const LIVE_KEYS_TIMEOUT_MS = 3000;
+
+/** Asks the key agent for the project's live relay public keys; `null` when it cannot answer in time. */
+async function defaultReadLiveRelayKeys(
+  root: string,
+): Promise<readonly { publicKey: string; notAfter: number }[] | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      readRelayPublicKeys(root, { log: () => {} }),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), LIVE_KEYS_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /**
  * Builds the debug-mode MCP server around an injected CDP connection + AIT
  * source + tunnel status getter. Pure wiring — does not start a relay or
@@ -1160,6 +1197,21 @@ export function createDebugServer(deps: DebugServerDeps): Server {
               compat.status === 'compatible' ? BUNDLE_REBUILD_STEPS : CLIENT_UPDATE_STEPS_WITH_SKIP,
             ),
           );
+        }
+        if (built.status === 'ok') {
+          const live = await (deps.readLiveRelayKeys ?? defaultReadLiveRelayKeys)(bundleRoot);
+          const verdict = judgeBakedKeys(built.keys, live, Math.floor(Date.now() / 1000));
+          if (verdict.status !== 'ok') {
+            return mcpError(
+              bakedKeyRefusedMessage(
+                verdict,
+                built.path,
+                built.version,
+                __VERSION__,
+                SKIP_BUNDLE_CHECK_CLAUSE,
+              ),
+            );
+          }
         }
         const identity = resolveProjectIdentity(bundleRoot);
         const bundle = inspectDebugBundle(

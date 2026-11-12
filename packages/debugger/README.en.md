@@ -98,6 +98,10 @@ Up to 0.3.0 the secret lived in `.ait_relay` (and `.ait_relay.meta`). Now, when 
 - If the file was tracked by git, or sat in a sync folder (iCloud Drive, Dropbox, Google Drive, OneDrive), copies may persist; you get a warning and the advice to run `debugger relay-key --rotate` and rebuild bundles with the fresh key.
 - Deleting a file (unlink) is **not a secure wipe**. On an SSD or APFS (copy-on-write, snapshots, Time Machine) and in backups the old value can survive. If the value may have been copied elsewhere, rotating the key is the reliable fix.
 
+### Builds without a bundler (`debugger inject-client`)
+
+Unity WebGL exports, engine HTML5 outputs and hand-packaged `dist/` folders have no bundler to put keys in through `define`. `debugger inject-client <built web dir> [--html index.html] [--project <dir>]` covers them. It copies the browser script of the `@apps-in-toss/debugger-client` that ships inside this debugger release (`ait-debugger-client.js`) next to the page, reads the current relay public keys from the running key agent, and writes `globalThis.__AIT_DEBUG_RELAY_KEYS__=[…]` plus `<script src="ait-debugger-client.js">` before the page's first `<script>`. Running it again replaces the earlier injection. It stops when no usable key exists (the debugger is not running). The result is a debug build and must not be submitted for review; the keys expire after about 24 hours, so run it again and re-upload then. Only a short fingerprint of each key is printed.
+
 ### Test runner (`debugger-test`)
 
 Runs test files against a real device's Toss app WebView. `--scheme-url` takes the `intoss-private://` URL printed by `ait deploy --scheme-only` (a different CLI — see below) as-is:
@@ -128,7 +132,7 @@ The debugger and debugger-client connect only when their protocol numbers match.
 | 0.4.x (protocol 3) | `@apps-in-toss/debug-console` 0.3.0 or earlier | Always refused |
 | 0.3.0 or earlier | `@apps-in-toss/debugger-client` | Does not connect (protocol mismatch) |
 
-Before issuing a QR, `start_attach` reads the project (the daemon's working directory, or the `projectRoot` argument): `node_modules/@apps-in-toss/debugger-client` and `debug-console`, and the dependency declarations in `package.json` (a version or a release tarball URL). If only `debug-console` is present, or `debugger-client` is below the minimum, it issues no QR and returns an error that gives the order `/ait:setup-debugger`, rebuild and re-upload the bundle (`/ait:test-on-device`), then `start_attach`. If a compatible version is installed it issues the QR and adds a note that the bundle on the phone must have been built after the upgrade. If nothing can be determined (no `node_modules`, for example) it issues the QR and adds the rule above as one sentence. When the phone side refuses (close 4426, `update-required`), the same fix is given. Besides the installed packages it also checks the project's built output (`dist/`, `build/`, `out/`, `.granite/` and `*.ait` at the root) and the last debug build recorded in `.ait-debug-deployments.json`; if the bundle on the phone is likely to hold a refused client, it issues no QR. When you know the phone's bundle is current (uploaded from another machine, for example), pass `skipBundleCheck: true` to `start_attach` to skip only this check. If an old device does reach the relay, the wait ends within seconds with the same guidance instead of running out its timeout.
+Before issuing a QR, `start_attach` reads the project (the daemon's working directory, or the `projectRoot` argument): `node_modules/@apps-in-toss/debugger-client` and `debug-console`, and the dependency declarations in `package.json` (a version or a release tarball URL). If only `debug-console` is present, or `debugger-client` is below the minimum, it issues no QR and returns an error that gives the order `/ait:setup-debugger`, rebuild and re-upload the bundle (`/ait:test-on-device`), then `start_attach`. If a compatible version is installed it issues the QR and adds a note that the bundle on the phone must have been built after the upgrade. If nothing can be determined (no `node_modules`, for example) it issues the QR and adds the rule above as one sentence. When the phone side refuses (close 4426, `update-required`), the same fix is given. Besides the installed packages it also checks the project's built output (`dist/`, `build/`, `out/`, `.granite/` and `*.ait` at the root) and the last debug build recorded in `.ait-debug-deployments.json`; if the bundle on the phone is likely to hold a refused client, it issues no QR. When you know the phone's bundle is current (uploaded from another machine, for example), pass `skipBundleCheck: true` to `start_attach` to skip only this check. If an old device does reach the relay, the wait ends within seconds with the same guidance instead of running out its timeout. When the bundle holds a compatible client, the debugger key pinned in it is checked as well: if the key is missing, expired (about 24 hours), or not one the debugger's key agent holds, no QR is issued and you are told to rebuild (`AIT_DEBUG_BUILD=1` for bundler builds, `debugger inject-client` for output without a bundler). Only a short fingerprint of a key is shown.
 
 ## Minimum version check
 
@@ -148,6 +152,8 @@ There is deliberately no root (`.`) export — this package is always reached th
 |---|---|
 | `debugger` | MCP debugging daemon (`switch_environment` picks local browser or real device) |
 | `debugger-test` | on-device WebView test runner CLI |
+
+Subcommands of `debugger`: `relay-key`, `key-agent`, `inject-client`.
 
 ## Relationship with `@apps-in-toss/devtools`
 
