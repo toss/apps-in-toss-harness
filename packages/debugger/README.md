@@ -14,14 +14,14 @@
 npm에는 발행하지 않는다 — GitHub Releases 에셋을 버전 고정 URL로 설치한다.
 
 ```sh
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz"
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.2/apps-in-toss-debugger-0.4.2.tgz"
 ```
 
 설치 없이 바로 실행하려면 `npx`를 쓴다. **패키지 이름(`@apps-in-toss/debugger`)과 bin 이름(`debugger`)이 다르므로 반드시 `-p` 형태로 호출한다** — bare `npx <URL>`은 동작하지 않는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger-test --help
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.2/apps-in-toss-debugger-0.4.2.tgz debugger
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.2/apps-in-toss-debugger-0.4.2.tgz debugger-test --help
 ```
 
 ## 사용
@@ -35,7 +35,7 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
   "mcpServers": {
     "ait-debugger": {
       "command": "npx",
-      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz", "debugger"]
+      "args": ["-p", "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.2/apps-in-toss-debugger-0.4.2.tgz", "debugger"]
     }
   }
 }
@@ -50,7 +50,7 @@ MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고
 데몬은 시작할 때 아무것도 띄우지 않는다. 세션 안에서 `switch_environment`로 로컬 브라우저(`local-browser`)나 실기기 relay(`relay-staging`)를 고르고, 재시작 없이 서로 전환한다. 0.3.0 이하의 `--mode`·`--target` 시작 플래그는 0.4.0에서 없어졌고, 넘기면 오류로 끝난다. 로컬 브라우저가 열 dev 서버 주소는 데몬의 환경 변수 `AIT_DEVTOOLS_URL`(기본 `http://localhost:5173`)로 정하며, 로컬 루프백 주소만 쓴다:
 
 ```sh
-AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger
+AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.2/apps-in-toss-debugger-0.4.2.tgz debugger
 ```
 
 ### relay 키와 공개키 (`debugger relay-key`, `readRelayPublicKeys`)
@@ -107,7 +107,7 @@ Unity WebGL 출력, 엔진 HTML5 출력, 직접 패키징한 `dist/`처럼 번�
 실기기 토스 앱 WebView에서 테스트 파일을 실행한다. `--scheme-url`은 `ait deploy --scheme-only`(별개 CLI, 아래 참조)가 출력하는 `intoss-private://` URL을 그대로 받는다:
 
 ```sh
-npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.1/apps-in-toss-debugger-0.4.1.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
+npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v0.4.2/apps-in-toss-debugger-0.4.2.tgz debugger-test 'tests/**/*.ait.test.ts' --scheme-url <scheme-url-from-ait-deploy>
 ```
 
 `test-runner` 설정 헬퍼는 서브패스로 import한다:

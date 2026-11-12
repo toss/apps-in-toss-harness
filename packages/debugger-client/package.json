@@ -1,6 +1,6 @@
 {
   "name": "@apps-in-toss/debugger-client",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "On-device attach + status banner for Apps in Toss mini-apps — the only package in this split that can enter a production bundle",
   "type": "module",
   "engines": {

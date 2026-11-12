@@ -94,10 +94,10 @@ GitHub Release tarball URL을 설치 스펙으로 준다 — 설치 후 `package
 `devDependencies` 키는 `@apps-in-toss/debugger-client`, 값은 이 URL이 된다:
 
 ```bash
-npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"   # npm (기본)
-pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"      # pnpm
-yarn add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"       # yarn
-bun add -d "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.0/apps-in-toss-debugger-client-0.4.0.tgz"        # bun
+npm install -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.1/apps-in-toss-debugger-client-0.4.1.tgz"   # npm (기본)
+pnpm add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.1/apps-in-toss-debugger-client-0.4.1.tgz"      # pnpm
+yarn add -D "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.1/apps-in-toss-debugger-client-0.4.1.tgz"       # yarn
+bun add -d "https://github.com/toss/apps-in-toss-harness/releases/download/debugger-client-v0.4.1/apps-in-toss-debugger-client-0.4.1.tgz"        # bun
 ```
 
 ※ **설치 스펙(위 URL)과 import specifier(아래 §5)는 다르다.** URL은 "어디서 받는가"를
