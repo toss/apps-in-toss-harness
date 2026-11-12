@@ -1,5 +1,19 @@
 # @apps-in-toss/agent-plugin
 
+## 0.4.1
+
+### Patch Changes
+
+- 디버그 빌드 기록(`.ait-debug-deployments.json`)에 빌드 때 설치돼 있던 클라이언트(`debuggerClient`의 패키지 이름과 버전)를 선택 필드로 더했다. `test-on-device`와 `debug` 5-B가 기록하고, 필드가 없는 옛 기록도 그대로 읽힌다. `setup-debugger`의 마이그레이션 안내와 `debug`·`attach-flow`는 클라이언트를 옮기거나 올린 직후 `start_attach` 전에 `/ait:test-on-device`(디버그 빌드)로 다시 올리는 것을 규칙으로 적었고, 폰 번들이 이미 최신일 때만 쓰는 `skipBundleCheck: true`도 안내한다.
+  
+  번들러가 없는 빌드(Unity WebGL 출력 등)에는 `debugger inject-client`로 키와 클라이언트를 넣는 길을 `inject`(`references/debugger-client.md` 6-B절), `test-on-device`, `debug`에 적었다. 손으로 클라이언트를 복사한 번들은 키가 없어 폰이 막는다.
+- debug skill과 `references/attach-flow.md`에 호환 규칙을 넣었다. debugger 0.4.x는 debugger-client 0.4.0 이상(프로토콜 3)이 든 번들만 연결하고 `debug-console` 0.3.0 이하가 든 번들은 항상 거부하므로, QR을 보이기 전에 고치고 "실패할 수 있다"고 말하며 QR을 먼저 보이지 않는다. 대시보드 포트(8317부터, 세션별), 탭 제목과 머리 줄의 앱 이름, `get_status`의 `project`·`otherSessions`로 세션을 구분하는 방법도 적었다. 이전 절차와 버전 기준은 `setup-debugger/references/upgrade-check.md`를 가리킨다.
+- `new-miniapp` 자산 폴백이 디자인 가이드 마커를 `v2`로 기록하던 것을 현행 `v3`로 고쳤다. 폴백으로 만든 프로젝트가 다음 `/ait:design` 주입에서 불필요한 버전 불일치 승인을 요청하던 문제가 사라진다. 버그 리포트 템플릿의 "관련 skill / 명령" 드롭다운에 빠져 있던 명령(`inject-tossface`·`test-on-device`·`launch`·`server`·`feature`·`ux-writing`)을 추가했다.
+- feature skill에 토스페이 결제 생성·승인·환불은 서버가 mTLS로 처리하므로 `/ait:server`로 넘긴다는 안내를 더했다. "결제 붙여줘" 요청이 클라이언트 코드만 쓰고 끝나던 빈틈을 막는다. 인앱 결제(IAP) 처리와 skill description은 그대로다.
+- server skill이 읽는 server-runtime.md에 토스페이 결제 절을 추가한다. 테스트 결제와 실결제를 가르는 isTestPayment를 결제 건마다 저장해 승인·조회·환불에 같은 값으로 쓰는 것, 승인이 멱등이 아니라 재시도 전에 상태를 조회하는 것, 부분 환불과 환불 오류 코드를 다룬다. server skill description에는 토스페이 결제 서버 트리거를 더한다. 실측에 맞춰 청약 전 실결제 호출의 5001 응답, 테스트 건 확인용 `mode: TEST`, 음수로 오는 환불 금액, Workers에서 인증서 없이 부를 때의 520을 적고, Supabase Edge Functions·Firebase Cloud Functions에서 클라이언트 인증서를 싣는 방법을 BaaS 절에 더한다.
+- `test-on-device`에 Unity 명령줄 빌드 판정 규칙을 더했다. 공개 batch 진입점이 없다는 사실과 선택지, 성공 판정(종료 코드·완료 문구·`ait-build` 아래 `.ait`), 무시해도 되는 로그, 같은 프로젝트 동시 실행 lock(종료 코드 134), 첫 빌드 소요 시간을 `stack-pitfalls.md` Unity 절에 근거와 함께 두고 skill 본문은 확인 절차만 가리킨다.
+- welcome skill이 자동 업데이트 여부를 `~/.claude/plugins/known_marketplaces.json`의 `apps-in-toss` 항목에서 읽는다(Claude Code 전용, 읽기만 하고 파일은 쓰지 않는다). `autoUpdate: true`가 있으면 켜진 것으로 보고, 키가 없거나 파일·항목이 없거나 읽히지 않으면 `/plugin` → Marketplaces → apps-in-toss → Enable auto-update 안내를 인쇄한다. settings.json의 `extraKnownMarketplaces["apps-in-toss"].autoUpdate`가 `true`인 경우도 켜진 것으로 본다. 루트 README ko/en의 해당 문장을 이에 맞춘다.
+
 ## 0.4.0
 
 ### Minor Changes
