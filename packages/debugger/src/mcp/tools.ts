@@ -614,8 +614,10 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'attachDiagnosis ({kind, lastStage, summary, actions[]} — where the latest attempt stopped and what the user should do, or null before any attempt), ' +
       'environment (kind: mock|relay-dev|none, reason; ' +
       'switch_environment mode→kind mapping: relay-staging→relay-dev, local-browser→mock), ' +
-      'otherSessions ({count, sessions[{project, startedAt}]} — other debugger sessions running on this machine, each with its own relay and dashboard; ' +
-      'never interferes with this session, informational only; no hosts, URLs or PIDs), ' +
+      'project ({label, folder, dashboardPort} — the project this session serves: mini-app appName, else package name, else folder name; ' +
+      'its local dashboard is http://127.0.0.1:<dashboardPort>/), ' +
+      'otherSessions ({count, sessions[{project, label, dashboardPort, startedAt}]} — other debugger sessions running on this machine, each with its own relay and dashboard ' +
+      '(http://127.0.0.1:<dashboardPort>/); never interferes with this session, informational only; no hosts, tunnel URLs or PIDs), ' +
       'nextRecommendedAction ({tool, reason} or null — the single next tool to call; ' +
       'in local-target mode tunnel.up=false is normal so "restart" is never recommended). ' +
       'All fields are nullable — missing data is null, not an error. ' +
@@ -2088,7 +2090,27 @@ export interface DiagnosticsOtherSessions {
   /** How many other sessions are running. */
   count: number;
   /** Up to {@link MAX_LISTED_OTHER_SESSIONS} of them, oldest first. */
-  sessions: Array<{ project: string; startedAt: string }>;
+  sessions: Array<{
+    project: string;
+    /** Name the other session's dashboard shows (app name, package name or folder). */
+    label?: string;
+    /** Its local dashboard is at `http://127.0.0.1:<dashboardPort>/`. */
+    dashboardPort?: number;
+    startedAt: string;
+  }>;
+}
+
+/**
+ * Which project this session serves and where its local dashboard is.
+ * SECRET-HANDLING: names, folder basename and a loopback port only.
+ */
+export interface DiagnosticsProject {
+  /** App name (granite config), else package name, else folder name. */
+  label: string;
+  /** Project folder basename (never a full path). */
+  folder: string;
+  /** Local dashboard port (`http://127.0.0.1:<port>/`), `null` before it is bound. */
+  dashboardPort: number | null;
 }
 
 /**
@@ -2210,6 +2232,8 @@ export interface DiagnosticsResult {
    * dashboard tabs apart.
    */
   otherSessions: DiagnosticsOtherSessions;
+  /** The project this session serves and its local dashboard port; `null` when unknown. */
+  project: DiagnosticsProject | null;
   /**
    * Basic process identity for the running MCP server daemon.
    * Useful for diagnosing orphaned daemons and stale parent associations.
@@ -2720,9 +2744,12 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
   const others = sessions?.others ?? [];
   const otherSessions: DiagnosticsOtherSessions = {
     count: others.length,
-    sessions: others
-      .slice(0, MAX_LISTED_OTHER_SESSIONS)
-      .map((o) => ({ project: o.project, startedAt: o.startedAt })),
+    sessions: others.slice(0, MAX_LISTED_OTHER_SESSIONS).map((o) => ({
+      project: o.project,
+      ...(o.label !== undefined ? { label: o.label } : {}),
+      ...(typeof o.dashboardPort === 'number' ? { dashboardPort: o.dashboardPort } : {}),
+      startedAt: o.startedAt,
+    })),
   };
 
   // FIX 2 (issue #571): if the cloudflared child PID is known, perform a live
@@ -2853,6 +2880,14 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
         }
       : { kind: 'none', reason: UNBOOTED_ENV_REASON },
     otherSessions,
+    project:
+      selfEntry === null
+        ? null
+        : {
+            label: selfEntry.label ?? selfEntry.project,
+            folder: selfEntry.project,
+            dashboardPort: selfEntry.dashboardPort ?? null,
+          },
     process: {
       pid: process.pid,
       ppid: process.ppid,

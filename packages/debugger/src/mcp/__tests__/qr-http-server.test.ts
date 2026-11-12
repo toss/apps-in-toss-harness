@@ -3773,26 +3773,55 @@ describe('startQrHttpServer — 동시 세션의 대시보드', () => {
       const dash = await (
         await fetch(`http://127.0.0.1:${srv.port}/`, { headers: { 'Accept-Language': 'ko' } })
       ).text();
-      expect(dash).toMatch(/<title>[^<]*· shop-app<\/title>/);
+      expect(dash).toMatch(/<title>shop-app · AIT 디버그[^<]*<\/title>/);
       const attach = await (
         await fetch(`http://127.0.0.1:${srv.port}/attach?u=${encodeURIComponent(attachUrl)}`, {
           headers: { 'Accept-Language': 'ko' },
         })
       ).text();
-      expect(attach).toMatch(/<title>[^<]*· shop-app<\/title>/);
+      expect(attach).toMatch(/<title>shop-app · [^<]*<\/title>/);
     } finally {
       await srv.close();
     }
   });
 
   it('라벨을 HTML로 이스케이프하고 `$` 치환 패턴을 해석하지 않는다', async () => {
-    const srv = await startQrHttpServer(() => state, { projectLabel: '<b>$&app' });
+    const srv = await startQrHttpServer(() => state, {
+      projectLabel: '<b>$&app',
+      projectFolder: '<i>dir',
+    });
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
-      expect(html).toContain('· &#60;b&#62;$&#38;app</title>');
+      expect(html).toContain('<title>&#60;b&#62;$&#38;app · ');
+      expect(html).toContain('&#60;b&#62;$&#38;app · &#60;i&#62;dir</p>');
       expect(html).not.toContain('<b>$&app');
+      expect(html).not.toContain('<i>dir');
     } finally {
       await srv.close();
+    }
+  });
+
+  it('눈에 보이는 프로젝트 줄에 라벨과 폴더 이름이 함께 나온다', async () => {
+    const srv = await startQrHttpServer(() => state, {
+      projectLabel: 'shop-app',
+      projectFolder: 'shop-web',
+    });
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
+      expect(html).toMatch(/<p class="ait-project"[^>]*>shop-app · shop-web<\/p>/);
+    } finally {
+      await srv.close();
+    }
+    // 폴더가 라벨과 같으면 한 번만 보인다.
+    const same = await startQrHttpServer(() => state, {
+      projectLabel: 'shop-app',
+      projectFolder: 'shop-app',
+    });
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${same.port}/`)).text();
+      expect(html).toMatch(/<p class="ait-project"[^>]*>shop-app<\/p>/);
+    } finally {
+      await same.close();
     }
   });
 
@@ -3800,6 +3829,7 @@ describe('startQrHttpServer — 동시 세션의 대시보드', () => {
     const srv = await startQrHttpServer(() => state);
     try {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
+      expect(html).not.toContain('ait-project');
       expect(html).not.toMatch(/<title>[^<]*·[^<]*<\/title>/);
     } finally {
       await srv.close();

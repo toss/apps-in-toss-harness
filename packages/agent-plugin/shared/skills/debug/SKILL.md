@@ -281,6 +281,18 @@ URL을 복사·재입력하게 하지 않는다.**
 deep-link 합성 + QR 발급, attach까지 최대 60s 폴링) → 사용자가 폰 카메라로 QR 스캔 → 토스 앱
 WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 
+**호환 규칙 (QR을 보여 주기 전에 지킨다)**: debugger 0.4.x는 debugger-client 0.4.x(프로토콜 3)가 든
+번들만 연결하고, `@apps-in-toss/debug-console` 0.3.0 이하가 든 번들은 항상 거부한다. 그래서 프로젝트에
+`debug-console`이 있거나 debugger-client가 0.4.0보다 낮으면 `start_attach`는 QR을 발급하지 않고 오류로
+끝난다. 이 오류가 나오면 "실패할 수 있다", "그때 다시 시도하겠다"고 말하지 말고 오류의 순서대로
+`/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach`를 먼저 처리한다.
+호환되는 버전이어도 폰에 올린 번들은 업그레이드한 뒤에 빌드한 것이어야 한다. 옛 항목을 옮기는 절차와
+버전 기준은 `../setup-debugger/references/upgrade-check.md`(0절·2-B절)를 따른다.
+
+세션마다 데몬과 대시보드가 따로 뜬다. 대시보드는 `127.0.0.1`의 8317부터 비어 있는 포트(최대 20개, 그다음은
+임의 포트, `AIT_DEBUG_HTTP_PORT`로 시작 포트 변경)를 쓰므로 포트 번호만으로 프로젝트를 알 수 없다. 탭 제목과
+머리 아래 줄의 앱 이름(`appName`)·폴더 이름, `get_status`의 `project`·`otherSessions`로 구분한다.
+
 `start_attach`가 "device↔host 프로토콜 버전 불일치"를 반환하면 에러 문구의 조치를
 따르기 전에 `../setup-debugger/references/upgrade-check.md` 4단계로 설정된 debugger
 버전부터 확인한다. 0.2.2·0.2.3이면 그 버전의 알려진 버그(0.2.4에서 수정)이므로

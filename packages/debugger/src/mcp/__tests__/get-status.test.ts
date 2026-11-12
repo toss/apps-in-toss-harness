@@ -356,7 +356,12 @@ describe('getDiagnostics helper', () => {
         self: null,
         others: [
           { project: 'shop-app', startedAt: '2026-01-01T00:00:00.000Z' },
-          { project: 'game-app', startedAt: '2026-01-01T01:00:00.000Z' },
+          {
+            project: 'game-dir',
+            label: 'game-app',
+            dashboardPort: 8319,
+            startedAt: '2026-01-01T01:00:00.000Z',
+          },
         ],
       }),
     });
@@ -365,12 +370,54 @@ describe('getDiagnostics helper', () => {
       count: 2,
       sessions: [
         { project: 'shop-app', startedAt: '2026-01-01T00:00:00.000Z' },
-        { project: 'game-app', startedAt: '2026-01-01T01:00:00.000Z' },
+        {
+          project: 'game-dir',
+          label: 'game-app',
+          dashboardPort: 8319,
+          startedAt: '2026-01-01T01:00:00.000Z',
+        },
       ],
     });
     // Nothing that identifies a process or an address.
     const text = JSON.stringify(result.otherSessions);
     expect(text).not.toMatch(/pid|wss|trycloudflare|https?:/i);
+  });
+
+  it("reports this session's project label, folder and dashboard port", async () => {
+    const result = await getDiagnostics({
+      tunnel: tunnelUp,
+      env: 'relay-dev',
+      envReason: 'env-var-relay-dev',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => ({
+        self: {
+          pid: 1,
+          clientPid: null,
+          ppid: null,
+          procStart: null,
+          startedAt: '2026-01-01T00:00:00.000Z',
+          tunnelChildPid: null,
+          tunnelChildStart: null,
+          project: 'shop-web',
+          label: 'shop-app',
+          dashboardPort: 8318,
+        },
+        others: [],
+      }),
+    });
+    expect(result.project).toEqual({ label: 'shop-app', folder: 'shop-web', dashboardPort: 8318 });
+    expect(JSON.stringify(result.project)).not.toMatch(/wss|trycloudflare|\//);
+  });
+
+  it('has no project block when the registry is unavailable', async () => {
+    const result = await getDiagnostics({
+      tunnel: tunnelUp,
+      env: 'relay-dev',
+      envReason: 'env-var-relay-dev',
+      collector: new InMemoryDiagnosticsCollector(),
+      readSessions: () => ({ self: null, others: [] }),
+    });
+    expect(result.project).toBeNull();
   });
 
   it('caps the named sessions but counts all of them', async () => {
@@ -894,6 +941,8 @@ describe('get_status MCP tool', () => {
           tunnelChildPid: deadChildPid,
           tunnelChildStart: null,
           project: 'test-app',
+          label: 'test-label',
+          dashboardPort: 8318,
         },
         others: [],
       }),

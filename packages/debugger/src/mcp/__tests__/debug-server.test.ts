@@ -10,9 +10,13 @@
  * (including the async QR generation) is exercised without a real phone or
  * cloudflared binary.
  */
+
+import type * as NodeFs from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { AitMethodMap, AitMethodName, AitSource } from '../ait-source.js';
 import { type AttachUrlParts, START_ATTACH_SEGMENT_MS } from '../attach-orchestrator.js';
 import type {
@@ -337,6 +341,103 @@ describe('start_attach — response includes unicode QR', () => {
     const content = getContent(result);
     // 터널 미가동 에러는 한국어 "cloudflared 터널이 안 떠 있습니다" 메시지를 포함한다.
     expect(content[0]!.text).toContain('터널');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// start_attach — project-side client compatibility, checked before a QR is issued
+// ---------------------------------------------------------------------------
+
+// `node:fs` is stubbed above for the HTML path; the compatibility check reads real files.
+const realFs = await vi.importActual<typeof NodeFs>('node:fs');
+const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = realFs;
+
+describe('start_attach — client compatibility', () => {
+  const tunnelUp: TunnelStatus = { up: true, wssUrl: 'wss://abc123.trycloudflare.com' };
+  const schemeUrl = 'intoss-private://miniapp?_deploymentId=compat-test';
+  const dirs: string[] = [];
+
+  function project(files: Record<string, unknown>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'ait-compat-'));
+    dirs.push(dir);
+    for (const [rel, json] of Object.entries(files)) {
+      const path = join(dir, rel);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, JSON.stringify(json));
+    }
+    return dir;
+  }
+
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  async function attach(projectRoot: string) {
+    const client = await makeClient({
+      getTunnelStatus: () => tunnelUp,
+      connection: attachedConn(schemeUrl),
+    });
+    return client.callTool({
+      name: 'start_attach',
+      arguments: { scheme_url: schemeUrl, projectRoot },
+    });
+  }
+
+  it('issues no QR for a project that only has debug-console, and says attach always fails', async () => {
+    const root = project({
+      'package.json': {
+        name: 'legacy',
+        devDependencies: { '@apps-in-toss/debug-console': '^0.2.0' },
+      },
+      'node_modules/@apps-in-toss/debug-console/package.json': { version: '0.2.0' },
+    });
+    const result = await attach(root);
+    expect(result.isError).toBe(true);
+    const text = getContent(result)[0]!.text!;
+    expect(text).toContain('QR을 발급하지 않았습니다');
+    expect(text).toContain('debug-console 0.2.0');
+    expect(text).toContain('attach는 매번 실패합니다');
+    expect(text).toContain('/ait:setup-debugger');
+    expect(text).toContain('/ait:test-on-device');
+    expect(text).not.toMatch(/실패할 수|may fail/);
+    expect(text).not.toContain('wss://');
+    expect(text).not.toContain(root);
+  });
+
+  it('issues no QR for a debugger-client below the minimum', async () => {
+    const root = project({
+      'package.json': {
+        name: 'old',
+        devDependencies: { '@apps-in-toss/debugger-client': '0.3.0' },
+      },
+    });
+    const result = await attach(root);
+    expect(result.isError).toBe(true);
+    expect(getContent(result)[0]!.text!).toContain('debugger-client 0.3.0');
+  });
+
+  it('proceeds with the bundle-order note when the installed client is compatible', async () => {
+    const root = project({
+      'package.json': { name: 'ok' },
+      'node_modules/@apps-in-toss/debugger-client/package.json': { version: '0.4.0' },
+    });
+    const result = await attach(root);
+    expect(result.isError).toBeFalsy();
+    const content = getContent(result);
+    expect(content).toHaveLength(1);
+    expect(content[0]!.text!).toContain('debugger-client 0.4.0은');
+    expect(content[0]!.text!).toContain('빌드해 올린 것이어야');
+    expect(content[0]!.text!).toContain('do NOT re-print the QR');
+  });
+
+  it('proceeds with one definitive rule sentence when the project cannot be checked', async () => {
+    const root = project({ 'package.json': { name: 'bare' } });
+    const result = await attach(root);
+    expect(result.isError).toBeFalsy();
+    const text = getContent(result).at(-1)!.text!;
+    expect(text).toContain('호환 규칙: debugger');
+    expect(text).toContain('항상 거부합니다');
+    expect(text).not.toMatch(/실패할 수|may fail/);
   });
 });
 
