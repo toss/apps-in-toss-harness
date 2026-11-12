@@ -194,6 +194,10 @@ Release 자산은 바꿀 수 없으므로(잠긴 릴리스) 이미 받은 옛 �
 
 ## 4. 증상으로 들어온 경우 (start_attach 프로토콜 불일치)
 
+데몬은 QR을 발급하기 전에 프로젝트의 `debug-console`·`debugger-client` 설치 상태를 먼저 보고, `debug-console`만 있거나
+debugger-client가 0.4.0 미만이면 QR 없이 "QR을 발급하지 않았습니다" 오류를 돌려준다. 이 경우도 아래와 같이 0절·2-B절로
+옮긴 뒤 번들을 다시 올린다.
+
 `start_attach`가 "device↔host 프로토콜 버전 불일치"를 반환하면, 에러 문구의 안내를
 따르기 전에 먼저 0절과 1절로 설정된 debugger와 프로젝트의 디버그 패키지를 확인한다.
 

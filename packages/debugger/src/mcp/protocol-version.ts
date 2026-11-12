@@ -23,9 +23,11 @@
 import {
   compareProtocolVersions,
   isPreRenameDeviceProtocol,
+  MIN_DEBUGGER_CLIENT_VERSION,
   PROTOCOL_VERSION,
   type ProtocolVersionCheck,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { CLIENT_UPDATE_STEPS } from './client-compat.js';
 
 /** Records device version reports and reports any skew against the host. */
 export interface ProtocolVersionMonitor {
@@ -93,11 +95,9 @@ export function protocolSkewParts(check: ProtocolVersionCheck): { detail: string
         `기기에 들어 있는 것은 프로토콜 ${device}인 옛 @apps-in-toss/debug-console${label}이고, ` +
         `데몬의 @apps-in-toss/debugger는 프로토콜 ${check.hostProtocol}입니다. ` +
         'debugger와 debugger-client 0.4.0부터 두 패키지는 같은 프로토콜로만 연결되고, debug-console은 ' +
-        '@apps-in-toss/debugger-client로 이름이 바뀌었습니다. 이 기기는 연결하지 않았습니다.',
-      action:
-        '미니앱에서 @apps-in-toss/debug-console을 지우고 @apps-in-toss/debugger-client 0.4.0 이상을 ' +
-        '설치해 재배포하세요(설치 명령은 debugger-client README 참고). ' +
-        '데몬은 @apps-in-toss/debugger 0.4.0 이상이어야 합니다.',
+        '@apps-in-toss/debugger-client로 이름이 바뀌었습니다. 이 기기는 연결하지 않았습니다. ' +
+        '같은 번들로는 attach가 매번 실패합니다.',
+      action: `먼저 고치세요: ${CLIENT_UPDATE_STEPS}`,
     };
   }
   const detail =
@@ -108,12 +108,11 @@ export function protocolSkewParts(check: ProtocolVersionCheck): { detail: string
     return {
       detail,
       action:
-        '미니앱의 @apps-in-toss/debugger-client를 최신 릴리스로 올려 재배포하세요(설치 명령은 debugger-client README 참고).',
+        '미니앱의 @apps-in-toss/debugger-client를 최신 릴리스로 올려 번들을 다시 빌드해 올리세요(설치 명령은 debugger-client README 참고).',
     };
   }
   return {
     detail,
-    action:
-      '데몬의 @apps-in-toss/debugger를 0.4.0 이상 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).',
+    action: `데몬의 @apps-in-toss/debugger를 ${MIN_DEBUGGER_CLIENT_VERSION} 이상 최신 릴리스로 올려 다시 실행하세요(설치 명령은 debugger README 참고).`,
   };
 }

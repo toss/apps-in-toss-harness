@@ -326,15 +326,39 @@ const NO_FRAME_HEADERS = {
   'X-Frame-Options': 'DENY',
 } as const;
 
-/** HTML 특수문자를 이스케이프한다. */
 /**
- * 페이지 `<title>` 뒤에 프로젝트 라벨을 붙인다. 세션마다 대시보드가 따로 뜨므로 탭 제목으로
- * 어느 세션인지 구분한다. 라벨은 프로젝트 루트의 basename뿐이다(전체 경로·relay host 없음).
- * 라벨이 없으면 HTML을 그대로 돌려준다.
+ * 페이지에 프로젝트 이름을 붙인다. 탭 제목은 "<라벨> · <기존 제목>"이 되고, 페이지 머리 아래에
+ * 눈에 보이는 프로젝트 줄이 한 줄 들어간다. 세션마다 대시보드가 따로 뜨므로 어느 프로젝트의
+ * 것인지 이름으로 구분한다. 라벨은 앱 이름(`appName`)·패키지 이름·폴더 이름 중 하나이고 폴더는
+ * basename뿐이다(전체 경로·relay host 없음). 둘 다 이스케이프한다. 라벨이 없으면 HTML을 그대로
+ * 돌려준다.
  */
-function withProjectLabel(html: string, label: string | null | undefined): string {
+function withProjectLabel(
+  html: string,
+  label: string | null | undefined,
+  folder?: string | null,
+): string {
   if (label === undefined || label === null || label === '') return html;
-  return html.replace('</title>', () => ` · ${escapeHtml(label)}</title>`);
+  const safe = escapeHtml(label);
+  // 탭 제목: "<라벨> · <기존 제목>". 함수 치환이라 라벨의 `$&` 같은 패턴은 해석되지 않는다.
+  let out = html.replace(/<title>([^<]*)<\/title>/, (_m, title: string) => {
+    return `<title>${safe} · ${title}</title>`;
+  });
+  // 페이지 머리의 눈에 보이는 프로젝트 줄: "<라벨> (폴더: <폴더 basename>)". 폴더가 라벨과
+  // 같으면 폴더는 생략한다.
+  const showFolder = folder !== undefined && folder !== null && folder !== '' && folder !== label;
+  const text = showFolder ? `${safe} · ${escapeHtml(folder)}` : safe;
+  const line =
+    '<p class="ait-project" style="margin:4px 16px 0;font-size:13px;opacity:.8;' +
+    `overflow-wrap:anywhere">${text}</p>`;
+  const headerEnd = out.indexOf('</header>');
+  if (headerEnd !== -1) {
+    const at = headerEnd + '</header>'.length;
+    out = out.slice(0, at) + line + out.slice(at);
+  } else {
+    out = out.replace(/<body[^>]*>/, (m) => m + line);
+  }
+  return out;
 }
 
 /** 대시보드가 받는 Host 헤더의 호스트명. 포트는 보지 않는다(포트 포워딩된 탭도 정상 사용). */
@@ -1709,6 +1733,8 @@ export interface QrHttpServerOptions {
    * 붙어 동시에 떠 있는 세션을 구분하게 한다. 미지정이면 제목은 그대로다.
    */
   projectLabel?: string | null;
+  /** 프로젝트 폴더 이름(basename). 페이지 머리의 프로젝트 줄에 라벨과 함께 보인다. 전체 경로는 받지 않는다. */
+  projectFolder?: string | null;
   /**
    * bind 재시도 스캔 폭 (테스트 전용 주입). 미지정 시 {@link PORT_SCAN_RANGE}.
    * 20개 실 소켓을 점유하지 않고 "범위 소진 → ephemeral fallback" 경로를
@@ -2064,7 +2090,7 @@ export async function startQrHttpServer(
         'Cache-Control': 'no-store',
         ...NO_FRAME_HEADERS,
       });
-      res.end(withProjectLabel(html, options?.projectLabel));
+      res.end(withProjectLabel(html, options?.projectLabel, options?.projectFolder));
       return;
     }
 
@@ -2286,7 +2312,7 @@ export async function startQrHttpServer(
             'Cache-Control': 'no-store',
             ...NO_FRAME_HEADERS,
           });
-          res.end(withProjectLabel(html, options?.projectLabel));
+          res.end(withProjectLabel(html, options?.projectLabel, options?.projectFolder));
         })
         .catch(() => {
           res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });

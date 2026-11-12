@@ -20,7 +20,11 @@
  *   "tunnelChildStart": "Thu Jan  1 09:00:05 2026", "project": "my-app" }
  * ```
  *
- * `project` is the basename of the project root, nothing more. The relay host,
+ * `project` is the basename of the project root, nothing more. `label` is the
+ * name the dashboard shows (mini-app `appName`, `package.json` name or the
+ * folder name) and `dashboardPort` the local dashboard port, so a second
+ * session can tell which dashboard belongs to which project. Files from before
+ * 0.4.1 have neither; readers fall back to `project` and no port. The relay host,
  * tunnel URL and any secret never enter a registry file. `procStart` and
  * `tunnelChildStart` are the OS start times of the two processes: a PID is
  * judged recycled only when its start time differs from the recorded one, never
@@ -105,11 +109,21 @@ export interface SessionEntry {
   tunnelChildStart: string | null;
   /** Basename of the project root. */
   project: string;
+  /**
+   * Name shown for the project (mini-app `appName`, else the `package.json`
+   * name, else the folder name). Missing in files written before 0.4.1; readers
+   * fall back to {@link SessionEntry.project}.
+   */
+  label?: string;
+  /** Local dashboard port once bound, `null` until then or in older files. */
+  dashboardPort?: number | null;
 }
 
-/** What one session may learn about another: label and start time only. */
+/** What one session may learn about another: label, folder, dashboard port and start time. */
 export interface OtherSession {
   project: string;
+  label?: string;
+  dashboardPort?: number | null;
   startedAt: string;
 }
 
@@ -124,6 +138,8 @@ export interface SessionHandle {
   readonly entry: Readonly<SessionEntry>;
   /** Records the cloudflared child PID (or `null` after the tunnel is gone). */
   updateTunnelChildPid(pid: number | null): void;
+  /** Records the local dashboard port once it is bound. */
+  updateDashboardPort(port: number | null): void;
   /** This session plus the other live sessions. */
   snapshot(): SessionsSnapshot;
   /** Removes this daemon's file. Idempotent. */
@@ -156,8 +172,10 @@ export interface RegisterSessionOptions {
   pid?: number;
   /** This daemon's client PID (default: found by walking the process tree). */
   clientPid?: number | null;
-  /** Project label (default: basename of the project root). */
+  /** Project folder name (default: basename of the project root). */
   project?: string;
+  /** Project label shown to the person (default: same as `project`). */
+  label?: string;
   /** Diagnostics sink (default stderr). */
   log?: (message: string) => void;
   /** Clock (default `new Date()`). */
@@ -386,10 +404,18 @@ function readEntry(dir: string, pid: number): SessionEntry | null {
       tunnelChildPid: positivePid(p.tunnelChildPid),
       tunnelChildStart: typeof p.tunnelChildStart === 'string' ? p.tunnelChildStart : null,
       project: sanitizeProjectLabel(p.project),
+      label: sanitizeProjectLabel(p.label ?? p.project),
+      dashboardPort: validPort(p.dashboardPort),
     };
   } catch {
     return null;
   }
+}
+
+function validPort(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 65535
+    ? value
+    : null;
 }
 
 /** PIDs that have a `<pid>.json` in `dir`. */
@@ -574,7 +600,12 @@ export function listOtherSessions(options: ListSessionsOptions = {}): OtherSessi
     if (entry.clientPid !== null && !insp.isAlive(entry.clientPid)) continue;
     const state = holderState(entry, insp);
     if (state === 'dead' || state === 'recycled') continue;
-    out.push({ project: entry.project, startedAt: entry.startedAt });
+    out.push({
+      project: entry.project,
+      label: entry.label,
+      dashboardPort: entry.dashboardPort,
+      startedAt: entry.startedAt,
+    });
   }
   out.sort((a, b) => (a.startedAt < b.startedAt ? -1 : a.startedAt > b.startedAt ? 1 : 0));
   return out;
@@ -609,6 +640,8 @@ export function registerSession(options: RegisterSessionOptions = {}): SessionHa
     tunnelChildPid: null,
     tunnelChildStart: null,
     project: sanitizeProjectLabel(options.project ?? projectLabel()),
+    label: sanitizeProjectLabel(options.label ?? options.project ?? projectLabel()),
+    dashboardPort: null,
   };
 
   let usable = true;
@@ -654,6 +687,11 @@ export function registerSession(options: RegisterSessionOptions = {}): SessionHa
       if (released) return;
       entry.tunnelChildPid = pid;
       entry.tunnelChildStart = pid === null ? null : insp.startOf(pid);
+      persist();
+    },
+    updateDashboardPort(port: number | null): void {
+      if (released) return;
+      entry.dashboardPort = validPort(port);
       persist();
     },
     snapshot(): SessionsSnapshot {

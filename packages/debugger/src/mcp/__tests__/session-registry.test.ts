@@ -196,12 +196,22 @@ describe('registerSession — different clients coexist', () => {
     const seen = handles[0]?.snapshot().others;
     expect(seen).toEqual(
       [
-        { project: 'app-300', startedAt: '2026-01-01T02:00:00.000Z' },
-        { project: 'app-200', startedAt: '2026-01-01T01:00:00.000Z' },
+        {
+          project: 'app-300',
+          label: 'app-300',
+          dashboardPort: null,
+          startedAt: '2026-01-01T02:00:00.000Z',
+        },
+        {
+          project: 'app-200',
+          label: 'app-200',
+          dashboardPort: null,
+          startedAt: '2026-01-01T01:00:00.000Z',
+        },
       ].sort((x, y) => (x.startedAt < y.startedAt ? -1 : 1)),
     );
     for (const other of seen ?? [])
-      expect(Object.keys(other).sort()).toEqual(['project', 'startedAt']);
+      expect(Object.keys(other).sort()).toEqual(['dashboardPort', 'label', 'project', 'startedAt']);
   });
 
   it('never touches a live daemon of a different client, whatever its tunnel looks like', () => {
@@ -574,12 +584,54 @@ describe('SessionHandle', () => {
     expect(readEntryFile(dir, 100)).toMatchObject({ tunnelChildPid: null, tunnelChildStart: null });
   });
 
+  it('records the project label and, once bound, the dashboard port', () => {
+    addDaemon(procs, 100, 10);
+    const h = registerSession({
+      ...base(),
+      pid: 100,
+      clientPid: 10,
+      project: 'shop-folder',
+      label: 'shop-app',
+    });
+    expect(readEntryFile(dir, 100)).toMatchObject({
+      project: 'shop-folder',
+      label: 'shop-app',
+      dashboardPort: null,
+    });
+    h.updateDashboardPort(8318);
+    expect(readEntryFile(dir, 100)).toMatchObject({ dashboardPort: 8318 });
+    expect(h.snapshot().self).toMatchObject({ label: 'shop-app', dashboardPort: 8318 });
+  });
+
+  it('lists another session with its label and dashboard port, and reads files without the new fields', () => {
+    addDaemon(procs, 100, 10);
+    addDaemon(procs, 200, 20);
+    registerSession({
+      ...base(),
+      pid: 200,
+      clientPid: 20,
+      project: 'game-folder',
+      label: 'game',
+    }).updateDashboardPort(8319);
+    const a = registerSession({ ...base(), pid: 100, clientPid: 10, project: 'shop-app' });
+    expect(a.snapshot().others).toEqual([
+      expect.objectContaining({ project: 'game-folder', label: 'game', dashboardPort: 8319 }),
+    ]);
+    // A file written before 0.4.1 has neither field.
+    writeEntryFile(dir, { pid: 200, clientPid: 20, project: 'old-app' });
+    expect(a.snapshot().others).toEqual([
+      expect.objectContaining({ project: 'old-app', label: 'old-app', dashboardPort: null }),
+    ]);
+  });
+
   it('never stores a host, URL or full path', () => {
     addDaemon(procs, 100, 10);
     registerSession({ ...base(), pid: 100, clientPid: 10, project: 'shop-app' });
     const raw = readFileSync(entryPath(dir, 100), 'utf8');
     expect(Object.keys(JSON.parse(raw) as object).sort()).toEqual([
       'clientPid',
+      'dashboardPort',
+      'label',
       'pid',
       'ppid',
       'procStart',

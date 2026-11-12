@@ -50,6 +50,7 @@
 // it would put the device-side runtime's dependencies in the daemon's install
 // graph while the bundle grep still passed. The predicate lives in the shared protocol package instead and
 // is inlined into both bundles at build time.
+import { isAbsolute } from 'node:path';
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
 import { isDebugAllowedHost } from '@apps-in-toss/internal-protocol/debug-host';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -95,6 +96,12 @@ import {
 import type { CdpConnection } from './cdp-connection.js';
 import { ChiiCdpConnection } from './chii-connection.js';
 import { type ChiiRelay, startChiiRelay } from './chii-relay.js';
+import {
+  compatibleClientNote,
+  compatRuleSentence,
+  incompatibleClientMessage,
+  inspectClientCompat,
+} from './client-compat.js';
 import { buildDeepLinkAttachUrl } from './deeplink.js';
 import { AutoDevtoolsOpener, buildChiiInspectorUrl } from './devtools-opener.js';
 import {
@@ -143,6 +150,7 @@ import {
   prepareCode,
   requestPhoneConfirmation,
 } from './phone-confirm.js';
+import { findProjectRoot, resolveProjectIdentity } from './project-label.js';
 import { createProtocolVersionMonitor } from './protocol-version.js';
 import {
   type DashboardState,
@@ -1115,6 +1123,36 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         );
       }
 
+      // 프로젝트가 이 데몬과 attach할 수 없는 클라이언트(debug-console 또는 낮은 debugger-client)를
+      // 쓰면 QR을 발급하지 않는다: 스캔해도 매번 거부된다. 확인할 수 없으면 규칙 한 문장만 결과에 싣는다.
+      const rawCompatRoot = args?.projectRoot;
+      const compat = inspectClientCompat(
+        findProjectRoot(
+          typeof rawCompatRoot === 'string' && isAbsolute(rawCompatRoot)
+            ? rawCompatRoot
+            : process.cwd(),
+        ),
+      );
+      if (compat.status === 'incompatible') {
+        return mcpError(incompatibleClientMessage(compat, __VERSION__));
+      }
+      const compatNote =
+        compat.status === 'compatible'
+          ? compatibleClientNote(compat.version, __VERSION__)
+          : compatRuleSentence(__VERSION__);
+      // 마지막 텍스트 블록 끝에 붙인다(블록 수는 그대로).
+      const withCompatNote = (result: McpResult): McpResult => {
+        let lastText = -1;
+        result.content.forEach((c, i) => {
+          if (c.type === 'text') lastText = i;
+        });
+        if (lastText === -1) return result;
+        const content = result.content.map((c, i) =>
+          i === lastText && c.type === 'text' ? { ...c, text: `${c.text}\n\n${compatNote}` } : c,
+        );
+        return { ...result, content };
+      };
+
       // wait defaults to true (#626 — behavior change from the old attach tool's
       // opt-in wait_for_attach). callTimeoutMs clamps wait_timeout_seconds to
       // 1–600 s; negative/NaN/non-number fall back to the default. Exactly 0 means
@@ -1191,7 +1229,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           // 기다리지 않는 호출: 컨트롤러와 마무리(배지 주입)는 백그라운드 finisher가 이어받는다.
           // finally가 컨트롤러를 지우지 않게 넘기고, 새 start_attach/stop_attach의 abort가
           // finisher를 끝낸다.
-          if (attachResult.isError) return attachResult;
+          if (attachResult.isError) return withCompatNote(attachResult);
           const handedOver = attachController;
           attachController = null;
           runNoWaitAttachFinisher({
@@ -1204,7 +1242,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
             timeline,
             controls: guard !== null,
           });
-          return appendNoWaitNotice(attachResult);
+          return withCompatNote(appendNoWaitNotice(attachResult));
         }
         if (!attachResult.isError) {
           // The device reported its build version on the handshake path while
@@ -1232,9 +1270,11 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           if (deps.phoneHasStatusChip?.() !== true) {
             await injectDebugIndicator(attachConn, { controls: guard !== null });
           }
-          if (guard !== null) return withClaimNotice(attachResult, guard.state().claims, armedAt);
+          if (guard !== null) {
+            return withCompatNote(withClaimNotice(attachResult, guard.state().claims, armedAt));
+          }
         }
-        return attachResult;
+        return withCompatNote(attachResult);
       } catch (err) {
         return errorResult(err, name);
       } finally {
@@ -3191,7 +3231,13 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   // ports). The registry only cleans up what a dead or same-client predecessor
   // left behind and lets get_status name the other running sessions; it
   // never blocks startup and never touches another client's daemon.
-  const session = registerSession({ takeover: options.force ?? false });
+  // The project's display name is resolved once, here, from the daemon's cwd.
+  const projectIdentity = resolveProjectIdentity();
+  const session = registerSession({
+    takeover: options.force ?? false,
+    project: projectIdentity.folder,
+    label: projectIdentity.label,
+  });
 
   // Dual-connection router (issues #348, #356, #378, #396): ALL families are
   // lazy-booted on the first matching `switch_environment`. Nothing boots at startup —
@@ -3390,7 +3436,8 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
   try {
     qrServer = await startQrHttpServer(getDashboardState, {
       getDirectInspectorUrl,
-      projectLabel: session.entry.project,
+      projectLabel: projectIdentity.label,
+      projectFolder: projectIdentity.folder,
       openDashboardTab: async (tokenizedUrl) => {
         // 토큰이 붙은 URL은 브라우저 실행에만 쓴다. 결과·로그에 싣지 않는다.
         const base = tokenizedUrl.split('?')[0] ?? tokenizedUrl;
@@ -3413,6 +3460,7 @@ export async function runDebugServer(options: RunDebugServerOptions = {}): Promi
         return { ok: true };
       },
     });
+    session.updateDashboardPort(qrServer.port);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     logWarn('server.start', { msg: `QR HTTP 서버 시작 실패 (text QR fallback 사용): ${message}` });

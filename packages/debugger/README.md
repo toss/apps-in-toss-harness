@@ -41,9 +41,11 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
 }
 ```
 
-MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고, 데몬마다 relay·cloudflared 터널·대시보드·포트가 독립이다. 세션을 여러 개 동시에 써도 서로 막거나 끊지 않고, 도구도 모두 쓸 수 있다. relay 하나는 계속 미니앱 하나만 받으므로(close 4409) 세션마다 미니앱 하나씩 붙는다. 대시보드는 기본 포트 8317부터 비어 있는 포트를 찾고, 탭 제목 끝에 프로젝트 이름이 붙는다. 같은 프로젝트의 세션들은 `.ait_relay` 키를 읽기 전용으로 함께 쓴다. `get_status`의 `otherSessions`는 다른 세션의 프로젝트 이름과 시작 시각만 알려 준다(PID·주소 없음).
+MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고, 데몬마다 relay·cloudflared 터널·대시보드·포트가 독립이다. 세션을 여러 개 동시에 써도 서로 막거나 끊지 않고, 도구도 모두 쓸 수 있다. relay 하나는 계속 미니앱 하나만 받으므로(close 4409) 세션마다 미니앱 하나씩 붙는다. 같은 프로젝트의 세션들은 `.ait_relay` 키를 읽기 전용으로 함께 쓴다. 머신 전체에서 디버거 세션을 하나만 허용하는 잠금은 없다.
 
-세션 기록은 `~/.ait-debugger/sessions/<데몬 PID>.json`(폴더 0700, 파일 0600)에 있고 프로젝트 이름, 시작 시각, 클라이언트 PID, 데몬과 cloudflared의 PID·프로세스 시작 시각만 담는다. 새 데몬은 PID가 없어졌거나 프로세스 시작 시각이 기록과 다른 데몬의 기록과 남은 cloudflared를 치우고, 같은 클라이언트가 같은 프로젝트에 남겼고 이미 부모를 잃은 이전 데몬(재연결 뒤 남은 것)을 종료한다. 부모가 살아 있는 데몬이나 다른 클라이언트의 데몬은 건드리지 않는다. `--force`(`--takeover`)는 같은 클라이언트가 다른 프로젝트에 남긴 데몬까지 종료한다. 0.3.0 데몬이 쓰던 `~/.ait-devtools/server.lock`은 읽지 않으며, 떠 있는 0.3.0 데몬은 종료하지 않고 그대로 둔다.
+프로젝트를 여러 개 열면 대시보드가 세션마다 따로 뜬다. 대시보드는 `127.0.0.1`에만 열리고, 기본 포트 8317부터 시작해 쓰는 중이면 1씩 올려 최대 20개까지 비어 있는 포트를 찾고(8317~8336), 그래도 없으면 OS가 고른 임의 포트를 쓴다. 시작 포트는 환경 변수 `AIT_DEBUG_HTTP_PORT`로 바꾸고, `0`이면 항상 임의 포트다. 먼저 뜬 세션이 8317, 다음 세션이 8318처럼 시작 순서대로 잡히므로 포트 번호만으로는 프로젝트를 알 수 없다. 그래서 대시보드는 탭 제목을 `<앱 이름> · AIT 디버그`로 쓰고 머리 아래에 `<앱 이름> · <프로젝트 폴더 이름>` 줄을 보여 준다. 앱 이름은 `granite.config.{ts,js,mts,mjs}`의 `appName`(파일을 실행하지 않고 글자만 읽는다), 없으면 `package.json`의 `name`, 그것도 없으면 폴더 이름이다. 폴더는 이름만 보이고 전체 경로는 나오지 않는다. `get_status`의 `project`는 이 세션의 이름·폴더·대시보드 포트를, `otherSessions`는 다른 세션의 이름·폴더·대시보드 포트·시작 시각을 알려 준다(대시보드 주소는 `http://127.0.0.1:<포트>/`, PID·터널 주소 없음).
+
+세션 기록은 `~/.ait-debugger/sessions/<데몬 PID>.json`(폴더 0700, 파일 0600)에 있고 프로젝트 폴더 이름과 표시 이름, 대시보드 포트, 시작 시각, 클라이언트 PID, 데몬과 cloudflared의 PID·프로세스 시작 시각만 담는다. 새 데몬은 PID가 없어졌거나 프로세스 시작 시각이 기록과 다른 데몬의 기록과 남은 cloudflared를 치우고, 같은 클라이언트가 같은 프로젝트에 남겼고 이미 부모를 잃은 이전 데몬(재연결 뒤 남은 것)을 종료한다. 부모가 살아 있는 데몬이나 다른 클라이언트의 데몬은 건드리지 않는다. `--force`(`--takeover`)는 같은 클라이언트가 다른 프로젝트에 남긴 데몬까지 종료한다. 0.3.0 데몬이 쓰던 `~/.ait-devtools/server.lock`은 읽지 않으며, 떠 있는 0.3.0 데몬은 종료하지 않고 그대로 둔다.
 
 데몬은 시작할 때 아무것도 띄우지 않는다. 세션 안에서 `switch_environment`로 로컬 브라우저(`local-browser`)나 실기기 relay(`relay-staging`)를 고르고, 재시작 없이 서로 전환한다. 0.3.0 이하의 `--mode`·`--target` 시작 플래그는 0.4.0에서 없어졌고, 넘기면 오류로 끝난다. 로컬 브라우저가 열 dev 서버 주소는 데몬의 환경 변수 `AIT_DEVTOOLS_URL`(기본 `http://localhost:5173`)로 정하며, 로컬 루프백 주소만 쓴다:
 
@@ -114,6 +116,19 @@ export default definePhoneTestConfig({
   include: ['**/*.ait.test.ts'],
 });
 ```
+
+## 호환 버전
+
+debugger와 debugger-client는 프로토콜 번호가 같을 때만 연결된다. 프로토콜 3은 이름 변경 릴리스(0.4.0)이고, 프로토콜 2 이하인 `@apps-in-toss/debug-console`(0.3.0까지)은 어떤 버전 조합에서도 거부된다.
+
+| 데몬 `@apps-in-toss/debugger` | 폰 번들 안의 패키지 | 결과 |
+|---|---|---|
+| 0.4.x (프로토콜 3) | `@apps-in-toss/debugger-client` 0.4.0 이상 | 연결 |
+| 0.4.x (프로토콜 3) | `@apps-in-toss/debugger-client` 0.4.0 미만 | 항상 거부 |
+| 0.4.x (프로토콜 3) | `@apps-in-toss/debug-console` 0.3.0 이하 | 항상 거부 |
+| 0.3.0 이하 | `@apps-in-toss/debugger-client` | 연결되지 않음(프로토콜 불일치) |
+
+`start_attach`는 QR을 발급하기 전에 프로젝트(데몬의 작업 폴더, 또는 `projectRoot` 인자)의 `node_modules/@apps-in-toss/debugger-client`·`debug-console`과 `package.json`의 의존성 선언(버전 또는 릴리스 tarball URL)을 읽는다. `debug-console`만 있거나 `debugger-client`가 최소 버전보다 낮으면 QR을 발급하지 않고 `/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach` 순서를 알려 주는 오류를 돌려준다. 호환되는 버전이 설치돼 있으면 QR을 발급하고, 폰에 올린 번들도 업그레이드한 뒤에 빌드한 것이어야 한다는 안내를 붙인다. 아무것도 확인할 수 없으면(`node_modules`가 없는 등) QR을 발급하고 위 규칙을 한 문장으로 붙인다. 폰 쪽에서 거부될 때(close 4426, `update-required`)도 같은 조치를 안내한다.
 
 ## 최소 버전 확인
 
@@ -204,7 +219,8 @@ relay에는 `/proxy` 경로가 없고, 호출자를 대신해 무언가를 가�
 | 터널이 안 뜸·끊김 | cloudflared가 종료됐거나 Cloudflare가 요청 한도(429)로 막음. 데몬이 5초, 15초, 30초, 60초 간격으로 다시 시도하고 이후 120초마다 시도한다(429면 60초부터). `start_attach`는 터널이 뜨는 중이면 최대 45초 기다리고, 새 터널 주소가 DNS에 퍼질 때까지(보통 15~60초, 최대 60초) QR을 미룬 뒤 그때부터 attach 대기 시간을 센다 | 서버 재시작 없이 `start_attach`를 다시 호출. `get_status`의 `tunnel.state`·`nextRetryAt`·`lastErrorKind`로 상태 확인 |
 | QR 이미지가 안 뜨고 터널이 "연결 끊김"으로 보임 | 대시보드 탭이 쌓여 브라우저 호스트당 연결 한도(Firefox 6개)에 걸림 | 대시보드 탭을 하나만 남기고 새로고침 |
 | relay 인증(TOTP) 거부, close 4401 | 다른 디버거 프로세스가 띄운 relay에 붙으려 함 또는 PC 시계 어긋남 | `start_attach`를 다시 호출, 반복되면 디버거를 다시 시작하고 시스템 시계 동기화 |
-| 대시보드 탭이 여러 개라 어느 세션인지 모름 | 세션마다 대시보드가 따로 뜬다 | 탭 제목 끝의 프로젝트 이름(프로젝트 폴더 이름)으로 구분하고, `get_status`의 `otherSessions`로 다른 세션을 확인 |
+| 대시보드 탭이 여러 개라 어느 세션인지 모름 | 세션마다 대시보드가 따로 뜨고 포트는 시작 순서대로 잡힌다(8317, 8318, …) | 탭 제목과 머리 아래 줄의 앱 이름·폴더 이름으로 구분하고, `get_status`의 `project`와 `otherSessions`에서 세션별 대시보드 포트를 확인 |
+| `start_attach`가 QR 없이 "QR을 발급하지 않았습니다"로 끝남 | 프로젝트에 `debug-console`만 있거나 `debugger-client`가 0.4.0 미만이라 이 데몬이 항상 거부함 | `/ait:setup-debugger`로 `debugger-client`로 옮기고, 번들을 다시 빌드해 올린 뒤 `start_attach` |
 
 `start_attach`를 다시 부르면 이전 대기는 "superseded"로 끝나고 새 호출이 이어받는다. `wait_timeout_seconds: 0`을 주면 기다리지 않고 QR만 발급한 뒤 바로 돌아온다(연결 창은 최대 600초 + 1분 열려 있다). 붙었는지는 `get_page`나 `get_status`의 `attachStages`로 확인하고, 다시 부르면 QR이 새로 발급된다. 음수·잘못된 값은 기본 60초 대기다. 진행 알림(progress)은 클라이언트가 `progressToken`을 보낼 때만 가며, 못 받아도 타임아웃 에러와 `get_status`에 같은 내용이 담긴다. 폰 안 콘솔이 필요하면 앱인토스 공식 웹 디버그 툴즈(더보기 메뉴)를 쓴다.
 

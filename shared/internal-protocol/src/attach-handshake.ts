@@ -73,6 +73,15 @@ export const PROTOCOL_VERSION = 3;
  */
 export const LAST_PRE_RENAME_PROTOCOL = 2;
 
+/**
+ * Lowest `@apps-in-toss/debugger-client` version that speaks {@link PROTOCOL_VERSION}.
+ * The daemon refuses every older client (and every `@apps-in-toss/debug-console`,
+ * which stops at 0.3.0) on each attach, so the project check in front of a QR and
+ * the update messages derive their number from this one constant. Raise it together
+ * with {@link PROTOCOL_VERSION}.
+ */
+export const MIN_DEBUGGER_CLIENT_VERSION = '0.4.0';
+
 /** Whether a device's protocol (`null` = none sent) is the pre-rename package's. */
 export function isPreRenameDeviceProtocol(protocol: number | null): boolean {
   return protocol === null || protocol <= LAST_PRE_RENAME_PROTOCOL;

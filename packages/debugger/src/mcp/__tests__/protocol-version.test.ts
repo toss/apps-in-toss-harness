@@ -136,9 +136,10 @@ describe('protocolVersionMismatchError', () => {
 
   it('tells a pre-rename device to switch to the renamed package at debugger and debugger-client 0.4.0 or later', () => {
     expect(olderText).toContain('이름이 바뀌었습니다');
-    expect(olderText).toContain('@apps-in-toss/debug-console을 지우고');
+    expect(olderText).toContain('/ait:setup-debugger');
+    expect(olderText).toContain('/ait:test-on-device');
+    expect(olderText).toContain('attach가 매번 실패합니다');
     expect(olderText).toContain('@apps-in-toss/debugger-client 0.4.0 이상');
-    expect(olderText).toContain('@apps-in-toss/debugger 0.4.0 이상');
   });
 
   it('treats a device without a protocol number as the older side', () => {

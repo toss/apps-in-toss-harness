@@ -7,6 +7,13 @@
    `AIT_DEBUG_BUILD=1`로 만들어 그 값이 `true`여야 attach 표면이 남는다. 없으면 **환경 3 attach 표면이 아직 설치되지
    않았습니다. 먼저 `/ait:inject-debugger-client`을 실행하세요.** 여기서 중단.
 
+   **호환 규칙**: debugger 0.4.x ↔ debugger-client 0.4.0 이상(프로토콜 3). `@apps-in-toss/debug-console`(0.3.0 이하)과
+   0.4.0 미만 debugger-client가 든 번들은 항상 거부되므로 QR을 보이기 전에 고친다. 데몬이 `start_attach` 안에서
+   `node_modules`와 `package.json`을 읽어 같은 검사를 하고, 걸리면 QR 없이 "QR을 발급하지 않았습니다" 오류와 순서
+   (`/ait:setup-debugger` → 번들 재빌드·재업로드 → `start_attach`)를 돌려준다. 그 오류를 사용자에게 그대로 전하고
+   먼저 처리한다. "실패할 수 있다"며 QR을 먼저 보이지 않는다. 버전 기준과 이전 절차는
+   `../../setup-debugger/references/upgrade-check.md`를 따른다.
+
 1. **`start_attach({mode: 'relay-staging', scheme_url, projectRoot})`** 도구를 호출한다
    (5-B에서 `ait build` → console MCP `bundle_upload_complete`가 돌려준 scheme URL을
    에이전트가 그대로 `scheme_url`로 전달 — 사용자 복사 없음).
@@ -77,6 +84,6 @@ relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데�
 - 대시보드 주소는 `start_attach`가 알려 주는 것을 그대로 쓴다. 데몬이 뜰 때마다 바뀌는 접근 토큰(`dashtoken=`)이 붙어 있고, 토큰 없이 `http://127.0.0.1:<포트>/`만 열면 403이다. 이 주소를 로그나 이슈에 붙이지 않는다(데몬을 다시 띄우면 무효가 된다). 데몬을 재시작했다면 이전 탭이 아니라 새 주소를 쓴다.
 - 대시보드 탭은 **하나만** 쓴다. `start_attach`는 이미 연결된 탭이 있으면 새 탭을 열지 않고 그 탭의 QR을 갱신한다. 탭이 쌓이면 브라우저 호스트당 연결 한도(Firefox 6개)에 걸려 QR 이미지가 안 뜨고 "연결 끊김"으로 보일 수 있다. SSE 구독은 2개까지만 유지되고 초과분은 "다른 탭에서 대시보드가 열려 있어요" 안내만 남는다.
 - 토스 앱에 같은 미니앱이 이미 열려 있으면 QR을 스캔해도 새 relay로 붙지 않는다. **미니앱을 X 버튼으로 먼저 닫은 뒤** 스캔하게 한다.
-- Claude Code 세션마다 데몬이 따로 뜬다. relay, 터널, 대시보드, 포트가 세션별로 독립이라 창을 여러 개 열어도 서로 막지 않고 끊지 않는다. 대시보드 탭 제목 끝에 프로젝트 이름이 붙으므로 탭이 여러 개면 그 이름으로 구분하고, 폰은 이 세션의 `start_attach`가 보여 준 QR만 스캔한다. `get_status`의 `otherSessions`에 다른 세션의 프로젝트 이름과 시작 시각이 나온다. 정보일 뿐이고 이 세션의 도구는 그대로 쓴다.
+- Claude Code 세션마다 데몬이 따로 뜬다. relay, 터널, 대시보드, 포트가 세션별로 독립이라 창을 여러 개 열어도 서로 막지 않고 끊지 않는다. 대시보드는 `127.0.0.1`의 8317부터 비어 있는 포트(최대 20개, 그다음은 임의 포트)를 시작 순서대로 쓴다. 탭 제목이 `<앱 이름> · AIT 디버그`이고 머리 아래에 앱 이름·폴더 이름 줄이 있으므로 탭이 여러 개면 그 이름으로 구분하고, 폰은 이 세션의 `start_attach`가 보여 준 QR만 스캔한다. `get_status`의 `project`는 이 세션의 이름과 대시보드 포트를, `otherSessions`는 다른 세션의 이름·대시보드 포트·시작 시각을 알려 준다. 정보일 뿐이고 이 세션의 도구는 그대로 쓴다.
 - relay 하나는 미니앱 하나만 받는다(거부 4409). 세션이 둘이면 relay도 둘이므로 세션마다 미니앱 하나씩 붙일 수 있다.
 - `debugger-test`(터미널 test runner)와 MCP 데몬도 relay를 따로 쓰고, 서로 막지 않는다. 같은 테스트는 attach된 세션에서 `run_tests` 도구로 돌려도 된다(5-E). 폰이 어느 QR에 붙는지는 대시보드 탭 제목의 프로젝트 이름으로 확인한다.
