@@ -100,8 +100,8 @@ npm registry 응답을 고쳐 쓰는 프록시 뒤에서는 pnpm 11.x가 12.10.1
 | 패키지 | 하는 일 | 배포 |
 |---|---|---|
 | `packages/agent-plugin` | 플러그인 본체. 명령, skill, MCP 설정 | 플러그인 마켓플레이스 |
-| `packages/debugger` | 디버그 MCP 서버, 폰 연결 relay, 테스트 러너. 개발할 때만 씁니다. | GitHub Releases(`debugger-v0.4.1`) |
-| `packages/debugger-client` | 폰 안에서 디버거와 연결하는 런타임. 프로덕션 번들에 들어갈 수 있는 유일한 패키지입니다. | GitHub Releases(`debugger-client-v0.4.0`) |
+| `packages/debugger` | 디버그 MCP 서버, 폰 연결 relay, 테스트 러너. 개발할 때만 씁니다. | GitHub Releases(`debugger-v0.4.2`) |
+| `packages/debugger-client` | 폰 안에서 디버거와 연결하는 런타임. 프로덕션 번들에 들어갈 수 있는 유일한 패키지입니다. | GitHub Releases(`debugger-client-v0.4.1`) |
 
 `debugger`와 `debugger-client`는 npm에 올리지 않고 GitHub Releases로만 배포하며 인증 없이 내려받을 수 있습니다. 두 패키지가 함께 쓰는 통신 규약 소스는 workspace 밖 `shared/internal-protocol`에 있습니다.
 

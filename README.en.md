@@ -100,8 +100,8 @@ Behind a proxy that rewrites npm registry responses, pnpm 11.x can fail to switc
 | Package | What it does | Distribution |
 |---|---|---|
 | `packages/agent-plugin` | The plugin itself: commands, skills, MCP config | Plugin marketplace |
-| `packages/debugger` | Debug MCP server, phone relay, test runner. Development only. | GitHub Releases (`debugger-v0.4.1`) |
-| `packages/debugger-client` | Runtime inside the phone that connects to the debugger. The only package that can ship in a production bundle. | GitHub Releases (`debugger-client-v0.4.0`) |
+| `packages/debugger` | Debug MCP server, phone relay, test runner. Development only. | GitHub Releases (`debugger-v0.4.2`) |
+| `packages/debugger-client` | Runtime inside the phone that connects to the debugger. The only package that can ship in a production bundle. | GitHub Releases (`debugger-client-v0.4.1`) |
 
 `debugger` and `debugger-client` aren't published to npm. They ship only through GitHub Releases and download without authentication. The wire-protocol source they share lives outside the workspace in `shared/internal-protocol`.
 
