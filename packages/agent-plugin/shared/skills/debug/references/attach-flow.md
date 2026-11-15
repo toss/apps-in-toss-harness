@@ -74,8 +74,10 @@ relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데�
 
 | 막대 문구 | 가능한 상태 값 | 원인을 가르는 법과 조치 |
 |---|---|---|
-| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 키가 만료됐을 수도 있으니 `npx debugger relay-key`로 만료 시각과 키 지문을 확인하고(어느 폴더에서 실행해도 같은 키다), 디버그 번들을 다시 빌드해 업로드한다 |
+| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 폰 시계가 몇 분 이상 틀렸거나 링크가 손상된 것일 수 있다. 번들 키가 디버거 키와 다르거나 만료된 경우는 debugger-client 0.4.2부터 아래 두 줄의 문구로 따로 나온다(그 전 버전은 이 문구로 나온다) |
 | 디버거를 0.4.0 이상으로 업데이트한 뒤 새 QR을 스캔하세요. | `blocked-debugger-update` | QR 링크에 세션 인증서(`arc`)가 없다. 0.4.0 미만 디버거가 만든 QR이다. 디버거를 0.4.0 이상으로 올리고 새 QR을 스캔 |
+| 이 디버그 번들의 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요. | `blocked-relay-key-expired` | 번들에 고정된 키가 모두 만료됐다(기본 약 24시간). 디버그 번들을 다시 빌드해 업로드한다. 키는 기기 단위라 어느 폴더에서 빌드해도 같은 키가 들어간다 |
+| 이 번들의 디버거 키(지문 xxxxxxxx)가 지금 디버거의 키와 달라요. 이 기기에서 디버그 번들을 다시 빌드하세요. | `blocked-relay-key-mismatch` | 번들 키가 QR을 서명한 디버거의 키와 다르다. 다른 기기·다른 사용자 계정에서 빌드했거나 `relay-key --rotate` 전에 빌드한 번들이다. 막대의 지문을 `start_attach` 결과나 `npx debugger relay-key`의 지문과 대조하고, 이 기기에서 다시 빌드해 업로드한다 |
 | 이 번들에 디버거 키가 없어요. | `blocked-relay-key` | define의 `readRelayPublicKeys`(`@apps-in-toss/debugger/relay-keys`)가 빈 배열을 줬거나 키가 만료된 것이다. 디버그 번들을 다시 빌드해 업로드 |
 | 이 화면에서는 디버거를 쓸 수 없어요. / 디버거와 debugger-client 버전이 맞지 않아요. | `relay-origin-rejected` / `relay-version-mismatch` | relay가 연결을 거부했다(close 4403 / 4426). 4426은 디버거와 debugger-client 중 오래된 쪽을 올리고 새 QR을 스캔 |
 | 디버거에 연결하는 중이에요… / 디버거에 연결됐어요. | `connecting` / `connected` | 잠시 기다린다(`connected`는 3초 뒤 자동 숨김) |

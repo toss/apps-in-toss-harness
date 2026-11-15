@@ -19,7 +19,7 @@ import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentClient, AgentUnavailableError } from './client.js';
-import { type AgentPaths, resolveAgentPaths } from './paths.js';
+import { type AgentPaths, resolveAgentPaths, SUN_PATH_MAX_BYTES } from './paths.js';
 import { ensureSecureDir, readAgentToken } from './secure-dir.js';
 
 export const DEFAULT_START_TIMEOUT_MS = 8_000;
@@ -50,6 +50,8 @@ export interface EnsureAgentDeps {
   readonly prepareDir?: (dir: string) => void;
 }
 
+let warnedOverrideTooLong = false;
+
 export function defaultAgentPaths(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -60,13 +62,25 @@ export function defaultAgentPaths(
   } catch {
     // keep the placeholder
   }
-  return resolveAgentPaths({
+  const paths = resolveAgentPaths({
     platform,
     env,
     homedir: homedir(),
     uid: process.getuid?.(),
     username,
   });
+  if (paths.overrideIgnoredBytes !== undefined && !warnedOverrideTooLong) {
+    warnedOverrideTooLong = true;
+    process.stderr.write(
+      `[@apps-in-toss/debugger] AIT_DEBUGGER_KEY_AGENT_DIR의 소켓 경로가 너무 길어(${paths.overrideIgnoredBytes}바이트, 한도 ${SUN_PATH_MAX_BYTES}) 기본 위치를 씁니다. 더 짧은 디렉터리를 지정하세요.\n`,
+    );
+  }
+  return paths;
+}
+
+/** Test seam: lets a test see the once-per-process warning again. */
+export function resetOverrideWarningForTest(): void {
+  warnedOverrideTooLong = false;
 }
 
 /**

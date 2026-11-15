@@ -213,6 +213,46 @@ describe('fallback mode (no agent)', () => {
 });
 
 describe('build helper', () => {
+  function providerWith(getOrCreate: (id: string) => Promise<never> | Promise<unknown>) {
+    const real = new LocalKeyProvider(new KeyStore());
+    return {
+      real,
+      provider: {
+        kind: real.kind,
+        status: () => real.status(),
+        importLegacy: real.importLegacy.bind(real),
+        rotate: real.rotate.bind(real),
+        signSessionCert: real.signSessionCert.bind(real),
+        getOrCreate,
+      } as unknown as import('../../agent/provider.js').KeyProvider,
+    };
+  }
+
+  it('throws instead of returning zero keys when the agent gives none', async () => {
+    const real = new LocalKeyProvider(new KeyStore());
+    const { provider } = providerWith(async (id) => ({
+      ...(await real.getOrCreate(id)),
+      keys: [],
+    }));
+    const error = await readRelayPublicKeys(dir, { provider, log }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(KeyAgentRequiredError);
+    expect((error as KeyAgentRequiredError).reason).toBe('no-keys');
+    expect((error as Error).message).toContain('키 0개');
+  });
+
+  it('turns a getOrCreate timeout into the guided error when the agent is required', async () => {
+    const { provider } = providerWith(async () => {
+      throw new AgentUnavailableError('timeout');
+    });
+    await expect(
+      prepareRelayKeys({ projectRoot: dir, requireAgent: true, provider, log }),
+    ).rejects.toBeInstanceOf(KeyAgentRequiredError);
+    // The daemon path keeps the raw error.
+    await expect(
+      prepareRelayKeys({ projectRoot: dir, requireAgent: false, provider, log }),
+    ).rejects.toBeInstanceOf(AgentUnavailableError);
+  });
+
   it('returns only { publicKey, notAfter } for every live key', async () => {
     const provider = new LocalKeyProvider(new KeyStore());
     writeFileSync(join(dir, '.ait_relay'), SECRET, { mode: 0o600 });

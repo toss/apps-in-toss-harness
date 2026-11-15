@@ -13,6 +13,7 @@ const SRC = join(__dirname, '../..');
 
 /** Files that may write to stderr directly, and why. */
 const STDERR_ALLOWED: Record<string, string> = {
+  'agent/launcher.ts': 'one-time warning when AIT_DEBUGGER_KEY_AGENT_DIR is too long and ignored',
   'mcp/log.ts': 'the log wrapper itself',
   'mcp/stdout-guard.ts': 'redirects stray stdout writes to stderr',
   'mcp/cli.ts': 'CLI entry: startup and fatal messages',

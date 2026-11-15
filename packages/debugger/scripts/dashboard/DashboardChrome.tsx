@@ -116,7 +116,7 @@ const CSS = `
   }
 }
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: var(--font); font-size: 16px; line-height: 1.5;

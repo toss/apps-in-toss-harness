@@ -241,7 +241,7 @@ describe('maybeAttach — relay signature on a QR test page', () => {
     await reloaded.maybeAttach(undefined, { relayPublicKeys: [OTHER_PIN] });
     expect(document.head.querySelector('script')).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-mismatch');
   });
 });
 
@@ -250,7 +250,7 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
     name: string;
     sig: () => string | null;
     keys: readonly RelayPublicKeyPin[] | undefined;
-    status: 'blocked-relay-key' | 'blocked-relay-signature';
+    status: 'blocked-relay-key' | 'blocked-relay-signature' | 'blocked-relay-key-mismatch';
     prepare?: () => void;
     at?: string;
   };
@@ -274,9 +274,9 @@ describe('maybeAttach — fails closed with zero relay activity', () => {
       sig: good,
       // Canonical base64url, 0x04 prefix, 65 bytes, but not on the curve.
       keys: [{ publicKey: `${'B'.repeat(86)}A`, notAfter: FAR }],
-      status: 'blocked-relay-signature',
+      status: 'blocked-relay-key-mismatch',
     },
-    { name: 'wrong key', sig: good, keys: [OTHER_PIN], status: 'blocked-relay-signature' },
+    { name: 'wrong key', sig: good, keys: [OTHER_PIN], status: 'blocked-relay-key-mismatch' },
     {
       name: 'tampered signature',
       sig: () => {
@@ -405,7 +405,7 @@ describe('maybeAttach — session certificate matrix', () => {
   it('wrong root: a certificate under another root key is blocked', async () => {
     setPage(signLink(OTHER_SECRET, RELAY, AT));
     await attempt();
-    expectBlocked();
+    expectBlocked('blocked-relay-key-mismatch');
   });
 
   it('expired certificate is blocked', async () => {
@@ -428,7 +428,7 @@ describe('maybeAttach — session certificate matrix', () => {
   it('a kept certificate under another root does not verify on reload', async () => {
     setHistoryOnly(signLink(OTHER_SECRET, RELAY, AT));
     await attempt();
-    expectBlocked();
+    expectBlocked('blocked-relay-key-mismatch');
   });
 
   it('a URL cannot claim the history path: any attach param in the URL keeps the clock check', async () => {
@@ -530,7 +530,8 @@ describe('maybeAttach — session certificate matrix', () => {
       fetchSpy.mockClear();
       setPage(sig, AT, copy.toString('base64url'));
       await attempt();
-      expectBlocked();
+      // No pinned key certifies the edited certificate.
+      expectBlocked('blocked-relay-key-mismatch');
     }
   });
 

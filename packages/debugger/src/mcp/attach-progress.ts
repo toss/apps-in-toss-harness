@@ -83,6 +83,9 @@ export function startAttachProgress(opts: StartAttachProgressOptions): AttachPro
   };
 
   const unsubscribe = timeline.onStage((event) => {
+    // 코드가 5초마다 바뀌어 재발급이 이어진다. 첫 재발급만 알리고 나머지는 생략한다
+    // (QR 텍스트 재전송은 `announce`가 따로 맡는다).
+    if (event.stage === 'qr-issued' && event.detail === 'remint' && (event.count ?? 1) > 1) return;
     send(formatStageLabel(event));
   });
 

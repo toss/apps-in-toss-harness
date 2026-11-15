@@ -21,6 +21,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { MIN_DEBUGGER_CLIENT_VERSION } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { DEFAULT_KEY_TTL_HOURS } from '../agent/key-ttl.js';
 import { CLIENT_UPDATE_STEPS, LAST_DEBUG_CONSOLE_VERSION } from './client-compat.js';
 import { compareVersions } from './min-version-gate.js';
 
@@ -77,6 +78,7 @@ export type BundleCheck =
     };
 
 interface Deployment {
+  deploymentId: string;
   appName: string;
   bundleVersion: string;
   /** ms since the epoch, `null` when missing or unparseable. */
@@ -112,6 +114,7 @@ function parseRecord(text: string | null): Deployment[] {
       if (name !== '' && version !== '') client = { name, version };
     }
     out.push({
+      deploymentId: str(item.deploymentId),
       appName: str(item.appName),
       bundleVersion: str(item.bundleVersion),
       recordedAt: Number.isNaN(at) ? null : at,
@@ -191,6 +194,36 @@ export function inspectDebugBundle(
     return { status: 'stale', reason: 'built-before-client', bundleVersion: latest.bundleVersion };
   }
   return { status: 'ok' };
+}
+
+/**
+ * How old the uploaded debug build is, when that is past the default relay key
+ * lifetime. The record's time is the upload, a little after the build, so the key can be
+ * expired a little earlier than this says. Prefers the record of `deploymentId` (from the
+ * scheme URL of this attach); with no id it falls back to the latest record of the app,
+ * and an id with no record yields `null`. Returns whole hours, or `null` when the
+ * record is missing, undated or younger than the lifetime. Never blocks anything.
+ */
+export function debugBundleAgeHours(
+  root: string,
+  appName: string | null,
+  deploymentId: string | null,
+  nowMs: number,
+  fs: BundleCheckFs = defaultFs,
+): number | null {
+  const all = parseRecord(fs.readText(join(resolve(root), DEBUG_DEPLOYMENTS_FILE)));
+  const record =
+    deploymentId !== null
+      ? (all.filter((d) => d.deploymentId === deploymentId).pop() ?? null)
+      : pickLatest(all, appName);
+  if (record === null || record.recordedAt === null) return null;
+  const ageHours = (nowMs - record.recordedAt) / 3_600_000;
+  return ageHours > DEFAULT_KEY_TTL_HOURS ? Math.floor(ageHours) : null;
+}
+
+/** The warning line for an old debug build (no QR is blocked). No id, no path. */
+export function oldBundleWarning(ageHours: number): string {
+  return `주의: 마지막으로 올린 디버그 빌드는 약 ${ageHours}시간 전 것이에요. 번들에 박힌 relay 키는 기본 ${DEFAULT_KEY_TTL_HOURS}시간 뒤 만료되니, 폰 막대에 '디버거 키가 만료됐어요'가 뜨면 다시 빌드해 올리세요.`;
 }
 
 /** The fix, in order, for a stale bundle. */

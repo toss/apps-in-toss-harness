@@ -109,16 +109,24 @@ describe('runInjectClient', () => {
   it('refuses when no key is available and leaves the page untouched', async () => {
     const { root, web, script } = setup();
     const before = readFileSync(join(web, 'index.html'), 'utf8');
-    for (const readKeys of [
-      async () => [],
-      async () => {
-        throw new Error('no agent');
+    const empty = await run(['dist/web'], {
+      cwd: () => root,
+      readKeys: async () => [],
+      clientScriptPath: script,
+    });
+    expect(empty.code).toBe(1);
+    expect(empty.err).toContain('Start the debugger');
+    // A failure keeps its cause: agent off, unwritable or hung are not one merged line.
+    const failed = await run(['dist/web'], {
+      cwd: () => root,
+      readKeys: async () => {
+        throw new Error('key agent unavailable: timeout');
       },
-    ]) {
-      const res = await run(['dist/web'], { cwd: () => root, readKeys, clientScriptPath: script });
-      expect(res.code).toBe(1);
-      expect(res.err).toContain('Start the debugger');
-    }
+      clientScriptPath: script,
+    });
+    expect(failed.code).toBe(1);
+    expect(failed.err).toContain('no relay public key is available');
+    expect(failed.err).toContain('key agent unavailable: timeout');
     expect(readFileSync(join(web, 'index.html'), 'utf8')).toBe(before);
     expect(existsSync(join(web, INJECT_SCRIPT_NAME))).toBe(false);
   });

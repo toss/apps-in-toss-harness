@@ -1071,7 +1071,7 @@ async function consentThenVerify(
     options?.relayPublicKeys ?? globalThis.__AIT_DEBUG_RELAY_KEYS__;
   const verdict = await verifyRelaySignature(relayUrl, atCode, sig, arc, keys, fromHistory);
   if (verdict.kind !== 'ok') {
-    failAttach(verdict.kind);
+    failAttach(verdict.kind, verdict.kind === 'key-mismatch' ? verdict.fingerprints : undefined);
     return;
   }
   // The computer name is used only when its signature verifies under the
@@ -1151,6 +1151,7 @@ type SignatureVerdict =
   | { readonly kind: 'no-key' }
   | { readonly kind: 'key-form' }
   | { readonly kind: 'key-expired' }
+  | { readonly kind: 'key-mismatch'; readonly fingerprints: string }
   | { readonly kind: 'needs-update' }
   | { readonly kind: 'bad-signature' };
 
@@ -1187,6 +1188,8 @@ async function verifyWith(
 
 /** A pinned key as parsed: the point bytes and when it stops being trusted. */
 interface RootKey {
+  /** The base64url text of the key as pinned (hashed for the fingerprint, never shown). */
+  readonly publicKey: string;
   readonly bytes: Uint8Array;
   readonly notAfter: number;
 }
@@ -1207,7 +1210,7 @@ function parseRootKeys(keys: readonly unknown[]): RootKey[] {
     if (notAfter <= 0 || notAfter > MAX_NOT_AFTER_SECONDS) continue;
     const bytes = decodeBase64Url(publicKey);
     if (bytes !== null && bytes.length === RELAY_PUBLIC_KEY_BYTES && bytes[0] === 0x04) {
-      rootKeys.push({ bytes, notAfter });
+      rootKeys.push({ publicKey, bytes, notAfter });
     }
   }
   return rootKeys;
@@ -1277,8 +1280,14 @@ async function verifyRelaySignature(
   if (origin === null || link === null || cert === null) return BAD_SIGNATURE;
   if (cert.keyId !== link.keyId) return BAD_SIGNATURE;
   const matched = await certifiedByRoot(subtle, rootKeys, cert);
-  if (matched.length === 0) return BAD_SIGNATURE;
   const now = Math.floor(Date.now() / 1000);
+  if (matched.length === 0) {
+    // No pinned key signed this link's certificate. Say why, locally: either every
+    // pinned key is past its `notAfter` (the key agent rotated; rebuild), or the
+    // bundle was built with a different key (another computer, or before a rotation).
+    if (rootKeys.every((key) => now > key.notAfter + KEY_EXPIRY_GRACE_SECONDS)) return KEY_EXPIRED;
+    return { kind: 'key-mismatch', fingerprints: await pinnedFingerprints(subtle, rootKeys) };
+  }
   // Trust ends at the pin's `notAfter`, not at the certificate's own window: a
   // leaked signing secret stops being useful against bundles built after that.
   const trusted = matched.find((key) => now <= key.notAfter + KEY_EXPIRY_GRACE_SECONDS);
@@ -1293,6 +1302,36 @@ async function verifyRelaySignature(
   ))
     ? { kind: 'ok', cert, rootKey: trusted.bytes }
     : BAD_SIGNATURE;
+}
+
+/**
+ * Short labels of the pinned keys for the phone bar: the first 8 hex characters of
+ * the SHA-256 of the key's base64url text, the same label the debugger prints
+ * (`keyFingerprint`). At most 3, comma separated. Empty when WebCrypto cannot hash.
+ * A fingerprint is not a secret and cannot be reversed into the key.
+ */
+async function pinnedFingerprints(
+  subtle: SubtleCrypto,
+  rootKeys: readonly RootKey[],
+): Promise<string> {
+  const labels: string[] = [];
+  try {
+    for (const key of rootKeys.slice(0, 3)) {
+      labels.push(await keyFingerprint(subtle, key.publicKey));
+    }
+  } catch {
+    return '';
+  }
+  return labels.join(', ');
+}
+
+/** Same value as `keyFingerprint` in `@apps-in-toss/debugger` (`mcp/key-fingerprint.ts`). */
+export async function keyFingerprint(subtle: SubtleCrypto, publicKey: string): Promise<string> {
+  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(publicKey));
+  let hex = '';
+  for (const byte of new Uint8Array(digest).subarray(0, 4))
+    hex += byte.toString(16).padStart(2, '0');
+  return hex;
 }
 
 async function certifiedByRoot(
@@ -1310,7 +1349,8 @@ async function certifiedByRoot(
 
 /** Reports a failed verification and removes the attach values from the page. */
 function failAttach(
-  kind: 'no-key' | 'key-form' | 'key-expired' | 'needs-update' | 'bad-signature',
+  kind: 'no-key' | 'key-form' | 'key-expired' | 'key-mismatch' | 'needs-update' | 'bad-signature',
+  fingerprints?: string,
 ): void {
   // SECRET-HANDLING: fixed labels only — no key, signature, code, host or URL.
   const messages = {
@@ -1320,6 +1360,8 @@ function failAttach(
       '[@apps-in-toss/debugger-client] 연결하지 않았어요 — relayPublicKeys가 옛 형식(문자열)이에요. 디버거 0.4.0의 relay-key 출력({ publicKey, notAfter })으로 바꾸고 다시 빌드하세요',
     'key-expired':
       '[@apps-in-toss/debugger-client] 연결하지 않았어요 — 이 번들에 고정된 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요',
+    'key-mismatch':
+      '[@apps-in-toss/debugger-client] 연결하지 않았어요 — 이 번들에 고정된 디버거 키가 지금 디버거의 키와 달라요. 이 기기에서 디버그 번들을 다시 빌드하세요',
     'needs-update':
       '[@apps-in-toss/debugger-client] debug attach skipped — the link has no certificate; update @apps-in-toss/debugger to 0.4.0 or later and rescan',
     'bad-signature':
@@ -1330,10 +1372,14 @@ function failAttach(
     'no-key': 'blocked-relay-key',
     'key-form': 'blocked-relay-key-form',
     'key-expired': 'blocked-relay-key-expired',
+    'key-mismatch': 'blocked-relay-key-mismatch',
     'needs-update': 'blocked-debugger-update',
     'bad-signature': 'blocked-relay-signature',
   } as const;
-  setDebugStatus(statuses[kind]);
+  setDebugStatus(
+    statuses[kind],
+    kind === 'key-mismatch' && fingerprints ? fingerprints : undefined,
+  );
   // Nothing attached, so `at` / `sig` have no reason to stay in the URL or on
   // the history entry. Only the success path keeps them (for a reload).
   dropPageAttachParams();

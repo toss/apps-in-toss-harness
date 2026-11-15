@@ -31,6 +31,12 @@ export interface AgentPaths {
   readonly endpoint: string;
   readonly tokenPath: string;
   readonly lockPath: string;
+  /**
+   * Set when `AIT_DEBUGGER_KEY_AGENT_DIR` was given but its socket path is longer than the
+   * `sun_path` limit, so the default location is used instead. Holds the byte length of
+   * that socket path (never the path itself). Callers surface it once.
+   */
+  readonly overrideIgnoredBytes?: number;
 }
 
 export interface AgentPathInput {
@@ -80,7 +86,8 @@ export function resolveAgentPaths(input: AgentPathInput): AgentPaths {
     dir = join(env.XDG_RUNTIME_DIR, 'ait-debugger');
   } else dir = join(homedir, '.ait-debugger');
 
-  if (Buffer.byteLength(join(dir, 'agent.sock')) > SUN_PATH_MAX_BYTES) {
+  const socketBytes = Buffer.byteLength(join(dir, 'agent.sock'));
+  if (socketBytes > SUN_PATH_MAX_BYTES) {
     const root = input.tmpRoot ?? '/tmp';
     dir = join(root, `ait-${input.uid ?? shortHash(username).slice(0, 8)}`);
   }
@@ -90,5 +97,8 @@ export function resolveAgentPaths(input: AgentPathInput): AgentPaths {
     endpoint: join(dir, 'agent.sock'),
     tokenPath: join(dir, 'agent.token'),
     lockPath: join(dir, 'agent.lock'),
+    ...(hasOverride && socketBytes > SUN_PATH_MAX_BYTES
+      ? { overrideIgnoredBytes: socketBytes }
+      : {}),
   };
 }

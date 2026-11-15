@@ -176,7 +176,8 @@ debugger와 debugger-client이 둘 다 낮으면 한 번에 묶어 묻되, 항�
 
 동의하면 `ait-debugger`의 `args`에서 그 URL 문자열 하나만 `setup-debugger`
 4단계의 URL로 바꾼다(`Edit`). 다른 서버, 같은 항목의 다른 필드, `-p` 구조는 그대로
-둔다. 바꾼 뒤 안내한다:
+둔다. 바꾼 뒤 `setup-debugger` 4-B단계대로 새 URL로 `debugger --version`을 한 번 실행해
+npx 캐시를 채운다(새 버전의 첫 연결이 다운로드 시간 때문에 실패하지 않게). 그다음 안내한다:
 
 - MCP 서버는 세션 시작 때 띄워진다. 이미 열린 세션이면 `/mcp`에서 `ait-debugger`를
   재연결하거나 세션을 다시 시작해야 새 버전이 뜬다(Cursor는 MCP 목록에서 껐다 켠다).

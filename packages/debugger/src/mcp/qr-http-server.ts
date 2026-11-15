@@ -180,6 +180,8 @@ export interface DashboardStage {
   detail?: string;
   /** `target-rejected-busy`에만: 거부된 앱과 붙어 있던 앱의 첫 DNS 라벨. */
   apps?: { rejected: string; attached: string | null };
+  /** `qr-issued`/`remint`에만: 한 줄로 합쳐진 재발급 횟수. */
+  count?: number;
 }
 
 /**
@@ -526,7 +528,9 @@ function buildTimelineItems(
   return stages
     .map((e) => {
       const template = labels[`${e.stage}.${e.detail ?? e.result}`] ?? `${e.stage} ${e.result}`;
-      const label = fillTimelineApps(template, e.apps);
+      const label =
+        fillTimelineApps(template, e.apps) +
+        (e.count !== undefined && e.count > 1 ? ` ×${e.count}` : '');
       const rel = Number.isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
       const cls = e.result === 'ok' ? 'stage-ok' : 'stage-bad';
       return `<li class="${cls}"><span class="stage-time">+${rel}s</span> ${escapeHtml(label)}</li>`;
@@ -1176,6 +1180,7 @@ function buildSseScript(strings: SseScriptStrings): string {
           var label = TIMELINE_LABELS[e.stage + '.' + (e.detail || e.result)] || (e.stage + ' ' + e.result);
           var apps = e.apps || {};
           label = label.replace(/{rejected}/g, apps.rejected || '?').replace(/{attached}/g, apps.attached || '?');
+          if (e.count > 1) label += ' ×' + e.count;
           var rel = isNaN(t0) ? 0 : Math.max(0, Math.round((Date.parse(e.at) - t0) / 1000));
           return '<li class="' + (e.result === 'ok' ? 'stage-ok' : 'stage-bad') + '"><span class="stage-time">+' +
             rel + 's</span> ' + escHtml(label) + '</li>';

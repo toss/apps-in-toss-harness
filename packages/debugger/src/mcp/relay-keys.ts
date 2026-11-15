@@ -14,7 +14,7 @@
  */
 
 import type { KeyProvider } from '../agent/provider.js';
-import { prepareRelayKeys } from './relay-root.js';
+import { KeyAgentRequiredError, prepareRelayKeys } from './relay-root.js';
 
 /** One relay public key a bundle pins. */
 export interface RelayPublicKeyEntry {
@@ -34,7 +34,7 @@ export interface ReadRelayPublicKeysOptions {
 /**
  * The live relay public keys of this machine, newest first. `projectRoot` only
  * says which folder to clear of a legacy `.ait_relay`; it does not change the key.
- * Throws when the key agent cannot be started or reached.
+ * Throws when the key agent cannot be started or reached, or gives no key.
  */
 export async function readRelayPublicKeys(
   projectRoot: string = process.cwd(),
@@ -46,5 +46,7 @@ export async function readRelayPublicKeys(
     ...(options.log === undefined ? {} : { log: options.log }),
     ...(options.provider === undefined ? {} : { provider: options.provider }),
   });
+  // A bundle built without a key can never attach; fail the build instead.
+  if (keys.keys.length === 0) throw new KeyAgentRequiredError('no-keys');
   return keys.keys.map((k) => ({ publicKey: k.publicKey, notAfter: k.notAfter }));
 }

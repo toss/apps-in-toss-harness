@@ -23,11 +23,11 @@ import {
   type RelayCertJson,
 } from '@apps-in-toss/internal-protocol/relay-signature';
 import { isValidRelayAuthSecret } from '../mcp/totp.js';
+import { DEFAULT_KEY_TTL_HOURS, MAX_KEY_TTL_HOURS } from './key-ttl.js';
 import { AgentError, type AgentStatus, type KeyInfo, type PublicKeyInfo } from './protocol.js';
 import { createRootKey, deriveRootKey, type RootKey } from './root-key.js';
 
-export const DEFAULT_KEY_TTL_HOURS = 24;
-export const MAX_KEY_TTL_HOURS = 72;
+export { DEFAULT_KEY_TTL_HOURS, MAX_KEY_TTL_HOURS };
 
 /** Most projects and most keys per project one store holds. */
 export const MAX_PROJECTS = 64;
