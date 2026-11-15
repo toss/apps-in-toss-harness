@@ -62,8 +62,9 @@ OPTIONS
   --separate-relay        Accepted for compatibility; it changes nothing. The
                           runner always boots its own relay, independent of any
                           debugger MCP session running on the machine.
-  --project-root <dir>    Project root for .ait_relay secret lookup
-                          (default: current working directory)
+  --project-root <dir>    Project root (default: current working directory).
+                          The relay key is one per machine and does not
+                          depend on it; an old .ait_relay there is deleted
   --pace <ms>             Minimum delay in ms between test-to-test AND
                           file-to-file bridge calls (default: 0, i.e. no
                           added delay — today's behavior byte-for-byte).

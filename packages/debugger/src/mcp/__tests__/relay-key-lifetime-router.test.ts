@@ -1,6 +1,6 @@
 /**
  * The daemon's relay entry (`DualConnectionRouter.switchMode`) activates the
- * project's relay key and reports how long it lives: a young key boots fine, a
+ * machine's relay key and reports how long it lives: a young key boots fine, a
  * key close to its expiry still boots and is reported, a local session never
  * touches keys. Here the key agent is off (vitest.setup.ts), so the key lives in
  * the daemon's memory.
@@ -54,7 +54,11 @@ describe('relay entry and the relay key lifetime', () => {
       const { router, bootLazyFor, collector } = makeRouter();
       await router.switchMode('relay-staging', dir);
       expect(bootLazyFor).toHaveBeenCalledTimes(1);
-      expect(collector.getRelayKeyAge()).toMatchObject({ status: 'ok', holder: 'memory' });
+      expect(collector.getRelayKeyAge()).toMatchObject({
+        status: 'ok',
+        holder: 'memory',
+        keyFingerprint: expect.stringMatching(/^[0-9a-f]{8}$/),
+      });
       expect(activeRelayRoot()?.publicKey).toMatch(/^[A-Za-z0-9_-]{87}$/);
       // Fallback mode says so, and that bundles must be rebuilt after a restart.
       expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain('다시 빌드');
@@ -74,10 +78,29 @@ describe('relay entry and the relay key lifetime', () => {
       expect(collector.getRelayKeyAge()).toMatchObject({ status: 'aging' });
       const text = stderr.mock.calls.map((call) => String(call[0])).join('');
       expect(text).not.toContain(SECRET);
-      // Without an agent the key lives only in memory, so the file is not destroyed.
-      expect(existsSync(join(dir, '.ait_relay'))).toBe(true);
+      // The legacy file is never imported (even without an agent), so it is removed.
+      expect(existsSync(join(dir, '.ait_relay'))).toBe(false);
     } finally {
       stderr.mockRestore();
+    }
+  });
+
+  it('a second relay entry for another project folder keeps the same signing key', async () => {
+    const other = mkdtempSync(join(tmpdir(), 'relay-key-router-b-'));
+    writeFileSync(join(other, 'package.json'), '{}');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { router } = makeRouter();
+      await router.switchMode('relay-staging', dir);
+      const first = activeRelayRoot()?.publicKey;
+      await router.switchMode('relay-staging', other);
+      expect(activeRelayRoot()?.publicKey).toBe(first);
+      expect(stderr.mock.calls.map((c) => String(c[0])).join('')).not.toContain(
+        'relay 키가 바뀌었습니다',
+      );
+    } finally {
+      stderr.mockRestore();
+      rmSync(other, { recursive: true, force: true });
     }
   });
 

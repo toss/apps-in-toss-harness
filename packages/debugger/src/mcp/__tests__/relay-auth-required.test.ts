@@ -141,9 +141,12 @@ describe('assertRelayAuthConfigured — reads process.env by default', () => {
 // ---------------------------------------------------------------------------
 
 describe('RELAY_AUTH_SECRET_MISSING_MESSAGE — leaks no secret', () => {
-  it('names the requirement and a mint command, not a value', () => {
+  it('names the key agent and the retired legacy secret, and no longer tells anyone to mint one', () => {
+    expect(RELAY_AUTH_SECRET_MISSING_MESSAGE).toContain('key agent');
     expect(RELAY_AUTH_SECRET_MISSING_MESSAGE).toContain('AIT_DEBUG_TOTP_SECRET');
-    expect(RELAY_AUTH_SECRET_MISSING_MESSAGE).toContain('openssl rand -hex');
+    expect(RELAY_AUTH_SECRET_MISSING_MESSAGE).toContain('더 이상 쓰지 않습니다');
+    // The secret is never used again, so the message must not suggest creating one.
+    expect(RELAY_AUTH_SECRET_MISSING_MESSAGE).not.toContain('openssl rand');
   });
 
   it('does not echo any configured secret value, even when one is set', () => {

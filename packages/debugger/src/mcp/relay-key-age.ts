@@ -23,6 +23,8 @@ export interface RelayKeyAge {
   readonly notAfter: string;
   /** Where the key lives. */
   readonly holder: 'agent' | 'memory';
+  /** Fingerprint of the key the daemon signs with (`key-fingerprint.ts`, same label everywhere). */
+  readonly keyFingerprint?: string;
 }
 
 /** Judges a key that expires at `notAfter` (unix seconds). */
@@ -60,9 +62,9 @@ export function relayKeyHint(age: RelayKeyAge): string | null {
 export class RelayKeyExpiredError extends Error {
   constructor(detail?: string) {
     super(
-      `[@apps-in-toss/debugger] relay 키가 만료됐거나 key agent가 재시작돼 사라졌습니다${
+      `[@apps-in-toss/debugger] relay 키가 만료됐거나, key agent가 재시작돼 사라졌거나, \`debugger relay-key --rotate\`로 교체됐습니다${
         detail === undefined ? '' : ` (${detail})`
-      }. ${RELAY_KEY_REBUILD_STEPS} 번들은 이전 공개 키를 박고 있어 새 키로는 attach되지 않습니다.`,
+      }. 키는 이 기기의 모든 프로젝트·세션이 함께 쓰므로 다른 곳에서 교체해도 이렇게 됩니다. switch_environment로 relay를 다시 시작하고 ${RELAY_KEY_REBUILD_STEPS} 번들은 이전 공개 키를 박고 있어 새 키로는 attach되지 않습니다.`,
     );
     this.name = 'RelayKeyExpiredError';
   }

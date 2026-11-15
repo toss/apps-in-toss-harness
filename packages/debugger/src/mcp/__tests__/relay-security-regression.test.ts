@@ -8,6 +8,10 @@
  * blanket refusal cannot satisfy it.
  *
  * Invariants:
+ *  - A link verifies only under the relay key of the developer's own key agent
+ *    (one key per user account and machine, shared by every project folder);
+ *    another agent's key, a rotated-away key, a legacy `.ait_relay` key and a
+ *    0.4.2 per-project key do not verify it.
  *  - Every relay path is default-deny and code-checked; the tunnel reaches only
  *    the script and the handshake.
  *  - `/client` is never reachable from the tunnel.
@@ -22,8 +26,12 @@
  * the machine: every destination is loopback.
  */
 
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   RELAY_AUTH_LOCKED_CLOSE_CODE,
   RELAY_AUTH_LOCKED_REASON,
@@ -34,10 +42,28 @@ import {
   RELAY_ORIGIN_REJECT_CLOSE_CODE,
   RELAY_ORIGIN_REJECT_REASON,
 } from '@apps-in-toss/internal-protocol/relay-origin-close';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  parseRelayCertParam,
+  parseRelaySignature,
+  relayCertMessage,
+  relayLinkMessage,
+  relayOriginOf,
+} from '@apps-in-toss/internal-protocol/relay-signature';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
+import { KeyStore } from '../../agent/key-store.js';
+import { LocalKeyProvider } from '../../agent/provider.js';
+import { derivePublicKey } from '../../agent/root-key.js';
 import { type ChiiRelay, startChiiRelay } from '../chii-relay.js';
 import type { QrHttpServer } from '../qr-http-server.js';
+import { readRelayPublicKeys } from '../relay-keys.js';
+import {
+  activateRelayRoot,
+  MACHINE_KEY_ID,
+  relayAuthSwitch,
+  resetRelayRootState,
+} from '../relay-root.js';
+import { type AttachSignatures, activeRelayRoot, attachSignatures } from '../relay-signing.js';
 import { buildRelayVerifyAuth, generateTotp } from '../totp.js';
 import { dashboardTokenOf, startQrHttpServer } from './dashboard-auth-helper.js';
 
@@ -582,5 +608,170 @@ describe('dashboard access gate', () => {
     });
     expect(bad.status).toBe(403);
     expect(bad.body).not.toBe('Forbidden');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Relay signing key scope: which bundles trust a link this session signs.
+//
+// The key is one per key agent (one per user account on a machine), not per
+// project. It keeps out a relay that is not the developer's: a bundle pinned
+// with another agent's key, a key from before `relay-key --rotate`, a legacy
+// `.ait_relay` key or a 0.4.2 per-project key never verifies. A bundle built in
+// another project folder of the same user and machine does verify; telling apps
+// apart is the relay's origin check and relay-busy, not the key's.
+//
+// Each row verifies the whole chain the phone checks: the session certificate
+// (`arc`) under a pinned root key, and the link signature (`sig`) under the
+// certified session key. The control row comes first.
+// ---------------------------------------------------------------------------
+
+describe('relay signing key scope', () => {
+  const WSS = 'wss://abc-def.trycloudflare.com';
+  const AT = '0123456789abcdef0123456789abcdef';
+  const LEGACY_SECRET = 'ef'.repeat(32);
+  const folders: string[] = [];
+
+  function folder(prefix: string, opts: { git?: boolean } = {}): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    folders.push(dir);
+    writeFileSync(join(dir, 'package.json'), '{}');
+    if (opts.git === true) {
+      try {
+        execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+      } catch {
+        // without git the folders still differ, which is what the rows need
+      }
+    }
+    return dir;
+  }
+
+  afterEach(() => resetRelayRootState());
+  afterAll(() => {
+    resetRelayRootState();
+    for (const d of folders.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  async function verifies(pinned: readonly { publicKey: string }[], link: AttachSignatures) {
+    const { webcrypto } = await import('node:crypto');
+    const cert = parseRelayCertParam(link.cert);
+    const sig = parseRelaySignature(link.sig);
+    if (cert === null || sig === null || sig.keyId !== cert.keyId) return false;
+    const algo = { name: 'ECDSA', namedCurve: 'P-256' } as const;
+    const verify = { name: 'ECDSA', hash: 'SHA-256' } as const;
+    const session = await webcrypto.subtle.importKey(
+      'raw',
+      new Uint8Array(cert.sessionPublicKeyBytes),
+      algo,
+      false,
+      ['verify'],
+    );
+    const origin = relayOriginOf(WSS);
+    if (origin === null) return false;
+    const linkOk = await webcrypto.subtle.verify(
+      verify,
+      session,
+      new Uint8Array(sig.linkSignatureBytes),
+      new TextEncoder().encode(relayLinkMessage(origin, AT)),
+    );
+    if (!linkOk) return false;
+    for (const k of pinned) {
+      const root = await webcrypto.subtle.importKey(
+        'raw',
+        new Uint8Array(Buffer.from(k.publicKey, 'base64url')),
+        algo,
+        false,
+        ['verify'],
+      );
+      const ok = await webcrypto.subtle.verify(
+        verify,
+        root,
+        new Uint8Array(cert.certSignatureBytes),
+        new TextEncoder().encode(
+          relayCertMessage(cert.sessionPublicKey, cert.notBefore, cert.notAfter),
+        ),
+      );
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  interface ScopeRow {
+    readonly name: string;
+    /** Returns the keys the bundle pins; `agent` is the session's key agent. */
+    readonly pin: (agent: LocalKeyProvider, session: string) => Promise<{ publicKey: string }[]>;
+    /** Runs after the session started signing (for example a rotation elsewhere). */
+    readonly after?: (agent: LocalKeyProvider) => Promise<void>;
+    readonly expected: 'trusted' | 'refused';
+  }
+
+  const pinned = (agent: LocalKeyProvider, dir: string) =>
+    readRelayPublicKeys(dir, { provider: agent, log: () => {} });
+
+  const rows: ScopeRow[] = [
+    {
+      name: "control: bundle built in the session's own project folder",
+      pin: (agent, session) => pinned(agent, session),
+      expected: 'trusted',
+    },
+    {
+      name: 'bundle built in another project folder (another git repository), same user and machine',
+      pin: (agent) => pinned(agent, folder('ait-scope-other-', { git: true })),
+      expected: 'trusted',
+    },
+    {
+      name: 'bundle built from a folder outside any project, same user and machine',
+      pin: (agent) => {
+        const loose = mkdtempSync(join(tmpdir(), 'ait-scope-loose-'));
+        folders.push(loose);
+        return pinned(agent, loose);
+      },
+      expected: 'trusted',
+    },
+    {
+      name: 'bundle built with another key agent (another person or machine)',
+      pin: (_agent, session) => pinned(new LocalKeyProvider(new KeyStore()), session),
+      expected: 'refused',
+    },
+    {
+      name: 'bundle built before relay-key --rotate (rotated after the session started)',
+      pin: (agent, session) => pinned(agent, session),
+      after: async (agent) => {
+        await agent.rotate(MACHINE_KEY_ID);
+        // The session restarts its relay, as the rotate guidance says.
+      },
+      expected: 'refused',
+    },
+    {
+      name: 'bundle pinned to a legacy .ait_relay key, file left in the session folder',
+      pin: async (_agent, session) => {
+        writeFileSync(join(session, '.ait_relay'), LEGACY_SECRET, { mode: 0o600 });
+        return [{ publicKey: derivePublicKey(LEGACY_SECRET) }];
+      },
+      expected: 'refused',
+    },
+    {
+      name: 'bundle pinned to a 0.4.2 per-project key held by the same agent',
+      pin: async (agent) => [await agent.getOrCreate('a1'.repeat(16))],
+      expected: 'refused',
+    },
+  ];
+
+  it.each(rows)('$name', async (row) => {
+    const agent = new LocalKeyProvider(new KeyStore());
+    const session = folder('ait-scope-session-', { git: true });
+    const keys = await row.pin(agent, session);
+    await activateRelayRoot({ projectRoot: session, provider: agent, log: () => {} });
+    if (row.after !== undefined) {
+      await row.after(agent);
+      await activateRelayRoot({ projectRoot: session, provider: agent, log: () => {} });
+    }
+    const link = attachSignatures(relayAuthSwitch(), WSS, AT);
+    expect(link?.cert).toBeDefined();
+    expect(await verifies(keys, link as AttachSignatures)).toBe(row.expected === 'trusted');
+    // Positive control for every refused row: the session's own key does verify the link.
+    expect(
+      await verifies([{ publicKey: activeRelayRoot()?.publicKey ?? '' }], link as AttachSignatures),
+    ).toBe(true);
   });
 });

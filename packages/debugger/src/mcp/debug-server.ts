@@ -96,14 +96,15 @@ import {
 import {
   bakedKeyRefusedMessage,
   builtOutputRefusedMessage,
+  installedDebuggerVersion,
   judgeBakedKeys,
+  LAST_PROJECT_KEY_DEBUGGER,
   scanBuiltOutput,
 } from './built-output.js';
 import {
   BUNDLE_REBUILD_STEPS,
   CLIENT_UPDATE_STEPS_WITH_SKIP,
   inspectDebugBundle,
-  SKIP_BUNDLE_CHECK_CLAUSE,
   staleBundleMessage,
 } from './bundle-check.js';
 import type { CdpConnection } from './cdp-connection.js';
@@ -140,10 +141,12 @@ import {
 } from './errors.js';
 import { decideEvaluate, resolveEvaluatePolicy } from './evaluate-policy.js';
 import { installExitTriggers } from './exit-triggers.js';
+import { keyFingerprint } from './key-fingerprint.js';
 import { LocalCdpConnection } from './local-connection.js';
 import { launchChromium } from './local-launcher.js';
 import { logError, logInfo, logWarn } from './log.js';
 import {
+  compareVersions,
   type MinVersionGateState,
   startMinVersionGate,
   updateRequiredMessage,
@@ -178,7 +181,12 @@ import { readRelayPublicKeys } from './relay-keys.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
 import { activateRelayRoot, relayAuthSwitch } from './relay-root.js';
 import { relayRunId } from './relay-run-id.js';
-import { relayCertDocument, signedLinkParams, signingHostName } from './relay-signing.js';
+import {
+  activeRelayRoot,
+  relayCertDocument,
+  signedLinkParams,
+  signingHostName,
+} from './relay-signing.js';
 import { appendRemoteLog } from './remote-log.js';
 import { describeTestFiles, hashTestFiles } from './run-tests-approval.js';
 import { classifySdkCall, parseSdkAllowlist } from './sdk-policy.js';
@@ -327,9 +335,10 @@ export interface ConnectionRouter {
    *
    * `projectRoot` (issue #396) is the per-debug-session mini-app project root
    * supplied by `switch_environment`. When switching into a relay family the router
-   * activates the project's relay root key (via `activateRelayRoot`: the key
-   * agent, else this process's memory; legacy `.ait_relay` files are imported and
-   * removed) BEFORE the relay boots, so the `assertRelayAuthConfigured()` /
+   * activates this machine's relay root key (via `activateRelayRoot`: the key
+   * agent, else this process's memory; the key is the same for every project, and
+   * `projectRoot` only names the folder whose legacy `.ait_relay` is removed)
+   * BEFORE the relay boots, so the `assertRelayAuthConfigured()` /
    * `buildRelayVerifyAuth()` at the boot site see a live key. Nothing is written
    * to disk or to `process.env`. Ignored for the local family.
    *
@@ -406,14 +415,20 @@ export interface DebugServerDeps {
    */
   attachTimeline?: AttachTimeline;
   /**
-   * The relay public keys this daemon's key agent holds for the project at `root`, or `null`
-   * when they cannot be read. `start_attach` compares them with the keys pinned in the built
-   * bundle before it issues a QR. Default: {@link readRelayPublicKeys} with a short timeout.
-   * Tests inject a fake so no key agent is started.
+   * The relay public keys the key agent holds for this machine, or `null` when they cannot be
+   * read. `start_attach` compares the keys pinned in the built bundle with the key this session
+   * signs QR links with ({@link getSigningKey}); only when no signing key is active yet does it
+   * fall back to these. Default: {@link readRelayPublicKeys} with a short timeout. Tests inject
+   * a fake so no key agent is started.
    */
   readLiveRelayKeys?: (
     root: string,
   ) => Promise<readonly { publicKey: string; notAfter: number }[] | null>;
+  /**
+   * The root key this daemon signs QR links with, or `null` before a relay root is active.
+   * Default: {@link activeRelayRoot} (set by `activateRelayRoot`). Tests inject one.
+   */
+  getSigningKey?: () => { publicKey: string; notAfter: number } | null;
   /**
    * Returns the device↔host protocol version skew observed on the attach
    * handshake, or `null` when the two halves agree (or no device has reported
@@ -844,7 +859,7 @@ function redactedExtra(data: unknown): { data: unknown; extra?: EnvelopeExtraMet
 
 const LIVE_KEYS_TIMEOUT_MS = 3000;
 
-/** Asks the key agent for the project's live relay public keys; `null` when it cannot answer in time. */
+/** Asks the key agent for this machine's live relay public keys; `null` when it cannot answer in time. */
 async function defaultReadLiveRelayKeys(
   root: string,
 ): Promise<readonly { publicKey: string; notAfter: number }[] | null> {
@@ -1167,6 +1182,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         );
       }
 
+      // 이 세션이 QR에 서명하는 키. 아래 번들 키 검사와 결과의 지문 안내가 모두 이 키를 쓴다.
+      const signingKey = (deps.getSigningKey ?? activeRelayRoot)();
+
       // 프로젝트가 이 데몬과 attach할 수 없는 클라이언트(debug-console 또는 낮은 debugger-client)를
       // 쓰면 QR을 발급하지 않는다: 스캔해도 매번 거부된다. 확인할 수 없으면 규칙 한 문장만 결과에 싣는다.
       const rawCompatRoot = args?.projectRoot;
@@ -1199,17 +1217,21 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           );
         }
         if (built.status === 'ok') {
-          const live = await (deps.readLiveRelayKeys ?? defaultReadLiveRelayKeys)(bundleRoot);
+          // 비교 대상은 이 세션이 실제로 QR에 서명하는 키다. 서명 키가 아직 없을 때만 key agent가
+          // 가진 이 기기의 키를 읽는다(키는 기기 단위라 bundleRoot는 키를 고르지 않는다).
+          const live =
+            signingKey !== null
+              ? [signingKey]
+              : await (deps.readLiveRelayKeys ?? defaultReadLiveRelayKeys)(bundleRoot);
           const verdict = judgeBakedKeys(built.keys, live, Math.floor(Date.now() / 1000));
           if (verdict.status !== 'ok') {
+            const helper = installedDebuggerVersion(bundleRoot);
+            const olderHelper =
+              helper !== null && (compareVersions(helper, LAST_PROJECT_KEY_DEBUGGER) ?? 1) <= 0
+                ? helper
+                : null;
             return mcpError(
-              bakedKeyRefusedMessage(
-                verdict,
-                built.path,
-                built.version,
-                __VERSION__,
-                SKIP_BUNDLE_CHECK_CLAUSE,
-              ),
+              bakedKeyRefusedMessage(verdict, built.path, built.version, __VERSION__, olderHelper),
             );
           }
         }
@@ -1226,6 +1248,10 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         compat.status === 'compatible'
           ? compatibleClientNote(compat.version, __VERSION__)
           : compatRuleSentence(__VERSION__);
+      const keyNote =
+        signingKey === null
+          ? ''
+          : `\n\n서명 키: 지문 ${keyFingerprint(signingKey.publicKey)}. 이 기기의 relay 키 하나를 모든 프로젝트·세션이 함께 쓰므로, 이 기기에서 빌드한 번들이면 폴더와 관계없이 지문이 같아야 합니다.`;
       // 마지막 텍스트 블록 끝에 붙인다(블록 수는 그대로).
       const withCompatNote = (result: McpResult): McpResult => {
         let lastText = -1;
@@ -1234,7 +1260,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         });
         if (lastText === -1) return result;
         const content = result.content.map((c, i) =>
-          i === lastText && c.type === 'text' ? { ...c, text: `${c.text}\n\n${compatNote}` } : c,
+          i === lastText && c.type === 'text'
+            ? { ...c, text: `${c.text}\n\n${compatNote}${keyNote}` }
+            : c,
         );
         return { ...result, content };
       };
@@ -3253,14 +3281,13 @@ export class DualConnectionRouter implements ConnectionRouter {
 
     this.swapInFlight = true;
     try {
-      // (1) Project-local relay secret load (issue #396). When entering a relay
-      // family, read the relay TOTP secret read-only from
-      // <projectRoot>/.ait_relay into process.env BEFORE the relay boots, so the
-      // lazy boot's assertRelayAuthConfigured() + buildRelayVerifyAuth() (both
-      // read env at the boot site) see it. The daemon NEVER mints — a missing or
-      // invalid file leaves env untouched and the boot-site assert remains the
-      // single #250 fail-fast. Local switches need no secret, so skip the load.
-      // SECRET-HANDLING: loadRelaySecretReadOnly never logs the value or path.
+      // (1) Relay key activation. When entering a relay family, make this
+      // machine's relay root key (one per key agent, the same for every project)
+      // the signer BEFORE the relay boots, so the lazy boot's
+      // assertRelayAuthConfigured() + buildRelayVerifyAuth() see a live key.
+      // `projectRoot` only names the folder whose legacy `.ait_relay` is removed.
+      // Local switches need no key, so skip it.
+      // SECRET-HANDLING: only public keys and fingerprints leave activateRelayRoot.
       if (isRelayMode(mode)) {
         await activateRelayRoot({
           projectRoot,

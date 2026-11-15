@@ -29,8 +29,8 @@
  * `@apps-in-toss/debugger/test-runner` barrel) does NOT statically drag that graph in.
  *
  * SECRET-HANDLING: relay wss URLs, scheme URLs, and the TOTP secret/code are
- * never logged. `open()` reads the project-local `.ait_relay` secret read-only
- * (never mints) and the minted TOTP code rides only inside the QR `at=` param.
+ * never logged. `open()` activates this machine's relay key (key agent, one key
+ * for every project) and the minted code rides only inside the QR `at=` param.
  *
  * Node-only. react-free (CdpConnection + lazily-imported MCP boot helpers only).
  */
@@ -55,8 +55,8 @@ export interface RelayConnectionFactoryOptions {
    */
   schemeUrl: string;
   /**
-   * Project root for the `.ait_relay` secret lookup (read-only). Defaults to
-   * `process.cwd()`.
+   * Project root; only the folder whose legacy `.ait_relay` is removed (the relay
+   * key is one per machine). Defaults to `process.cwd()`.
    */
   projectRoot?: string;
   /**
@@ -201,10 +201,10 @@ export function createRelayConnectionFactory(
       const { mintRelayCode } = await import('../mcp/totp.js');
       const { appNameFromSchemeUrl } = await import('../mcp/relay-origin.js');
 
-      // Get the project's relay root key (key agent, else this process's memory)
+      // Get this machine's relay root key (key agent, else this process's memory)
       // BEFORE booting the relay so assertRelayAuthConfigured()/buildRelayVerifyAuth()
-      // at the boot site see a live key. Legacy .ait_relay files are imported and
-      // removed. SECRET-HANDLING: only public keys are handled here.
+      // at the boot site see a live key. Legacy .ait_relay files are removed, not
+      // imported. SECRET-HANDLING: only public keys are handled here.
       await activateRelayRoot({ projectRoot });
 
       // PRIMARY FIX (devtools#714): bootRelayFamily starts the cloudflared tunnel

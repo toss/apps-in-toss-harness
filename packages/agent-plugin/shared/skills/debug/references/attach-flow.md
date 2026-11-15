@@ -14,7 +14,9 @@
    먼저 처리한다. "실패할 수 있다"며 QR을 먼저 보이지 않는다. 같은 검사가 빌드 산출물(`dist/`, `*.ait`)과 마지막 디버그 빌드 기록
 (`.ait-debug-deployments.json`)에도 걸린다. 클라이언트를 옮기거나 올렸다면 `start_attach` 전에 `/ait:test-on-device`로
 디버그 빌드를 다시 올리는 것이 규칙이다. 폰 번들이 이미 최신임을 알 때만 `skipBundleCheck: true`를 쓴다. 번들 안에 debugger 키가 없거나 만료됐거나
-이 debugger의 키와 다르면 같은 방식으로 QR 없이 끝난다. 번들러가 없는 빌드(Unity WebGL 출력 등)는 클라이언트를
+이 세션이 QR에 서명하는 키와 다르면 같은 방식으로 QR 없이 끝난다. 이 경우는 `skipBundleCheck`로 넘어가지 않는다(폰의 서명 검증에서 막힌다).
+키는 이 기기에 하나라 어느 폴더에서 빌드했는지는 상관없다. 다른 키가 들었다면 key agent 재시작·`relay-key --rotate`·
+debugger 0.4.2 이하로 빌드한 경우이니 다시 빌드한다(프로젝트에 설치된 `@apps-in-toss/debugger`가 0.4.2 이하면 먼저 올린다). 번들러가 없는 빌드(Unity WebGL 출력 등)는 클라이언트를
 손으로 복사하지 말고 `debugger inject-client <웹 폴더>`로 키와 클라이언트를 넣은 뒤 다시 올린다
 (`../../inject/references/debugger-client.md` 6-B절). 버전 기준과 이전 절차는
    `../../setup-debugger/references/upgrade-check.md`를 따른다.
@@ -72,7 +74,7 @@ relay TOTP 거부(close 4401)는 폰 쪽 코드 만료와 다른 문제다. 데�
 
 | 막대 문구 | 가능한 상태 값 | 원인을 가르는 법과 조치 |
 |---|---|---|
-| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 키가 만료됐을 수도 있으니 `npx debugger relay-key`로 만료 시각을 확인하고, 디버그 번들을 다시 빌드해 업로드한다 |
+| 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | `blocked-opt-in` / `blocked-invalid-relay` / `blocked-auth` / `blocked-relay-signature` / `code-expired` | `__ait_debug_status`로 어느 값인지 읽는다. 대부분 `start_attach`가 알려 준 새 QR을 스캔하면 된다. `blocked-relay-signature`가 반복되면 다른 PC의 디버거로 만든 QR이거나 폰 시계가 몇 분 이상 틀린 것일 수 있다. 키가 만료됐을 수도 있으니 `npx debugger relay-key`로 만료 시각과 키 지문을 확인하고(어느 폴더에서 실행해도 같은 키다), 디버그 번들을 다시 빌드해 업로드한다 |
 | 디버거를 0.4.0 이상으로 업데이트한 뒤 새 QR을 스캔하세요. | `blocked-debugger-update` | QR 링크에 세션 인증서(`arc`)가 없다. 0.4.0 미만 디버거가 만든 QR이다. 디버거를 0.4.0 이상으로 올리고 새 QR을 스캔 |
 | 이 번들에 디버거 키가 없어요. | `blocked-relay-key` | define의 `readRelayPublicKeys`(`@apps-in-toss/debugger/relay-keys`)가 빈 배열을 줬거나 키가 만료된 것이다. 디버그 번들을 다시 빌드해 업로드 |
 | 이 화면에서는 디버거를 쓸 수 없어요. / 디버거와 debugger-client 버전이 맞지 않아요. | `relay-origin-rejected` / `relay-version-mismatch` | relay가 연결을 거부했다(close 4403 / 4426). 4426은 디버거와 debugger-client 중 오래된 쪽을 올리고 새 QR을 스캔 |

@@ -289,6 +289,23 @@ describe('judgeBakedKeys', () => {
 });
 
 describe('bakedKeyRefusedMessage', () => {
+  it('names the signing key, the shared machine key, and an older build helper', () => {
+    const mismatch = {
+      status: 'mismatch' as const,
+      baked: [keyFingerprint(KEY_B)],
+      live: [keyFingerprint(KEY_A)],
+    };
+    const text = bakedKeyRefusedMessage(mismatch, 'dist/web/a.js', '0.4.0', '0.5.0', '0.4.2');
+    expect(text).toContain(`서명하는 키(지문 ${keyFingerprint(KEY_A)})`);
+    expect(text).toContain('키는 이 기기에 하나');
+    expect(text).toContain('--rotate');
+    expect(text).toContain('@apps-in-toss/debugger 0.4.2');
+    expect(text).not.toContain('skipBundleCheck');
+    expect(bakedKeyRefusedMessage(mismatch, 'a.js', null, '0.5.0', null)).not.toContain(
+      '@apps-in-toss/debugger 0',
+    );
+  });
+
   it('prints fingerprints only, never key material', () => {
     for (const verdict of <Parameters<typeof bakedKeyRefusedMessage>[0][]>[
       { status: 'no-keys' } as const,
@@ -299,10 +316,11 @@ describe('bakedKeyRefusedMessage', () => {
         live: [keyFingerprint(KEY_A)],
       } as const,
     ]) {
-      const text = bakedKeyRefusedMessage(verdict, 'dist/web/a.js', '0.4.0', '0.4.2', 'SKIP');
+      const text = bakedKeyRefusedMessage(verdict, 'dist/web/a.js', '0.4.0', '0.4.2');
       expect(text).toContain('QR을 발급하지 않았습니다');
       expect(text).toContain('debugger inject-client');
-      expect(text).toContain('SKIP');
+      // Skipping the check cannot help: the phone's signature check fails the same way.
+      expect(text).not.toContain('skipBundleCheck');
       expect(text).not.toContain(KEY_A);
       expect(text).not.toContain(KEY_B);
     }

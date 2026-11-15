@@ -23,12 +23,11 @@ describe('resolveProject', () => {
     writeFileSync(join(pkg, 'package.json'), '{}');
     const p = resolveProject(sub, { git: () => undefined });
     expect(p.packageDir).toBe(pkg);
-    expect(p.id).toMatch(/^[0-9a-f]{32}$/);
-    expect(resolveProject(pkg, { git: () => undefined }).id).toBe(p.id);
+    expect(p.legacyDirs).toEqual([pkg]);
     expect(nearestPackageJsonDir(sub)).toBe(pkg);
   });
 
-  it('gives every worktree of one repository the same id and lists their twin directories', () => {
+  it('lists the twin directories in every worktree of one repository', () => {
     const main = join(root, 'main');
     const wt = join(root, 'wt');
     mkdirSync(join(main, 'app'), { recursive: true });
@@ -46,32 +45,9 @@ describe('resolveProject', () => {
       });
     const a = resolveProject(join(main, 'app'), { git: gitFor(main) });
     const b = resolveProject(join(wt, 'app'), { git: gitFor(wt) });
-    expect(a.id).toBe(b.id);
+    expect(new Set(a.legacyDirs)).toEqual(new Set(b.legacyDirs));
     expect(a.legacyDirs).toEqual(
       expect.arrayContaining([join(main, 'app'), join(wt, 'app'), main, wt]),
     );
-  });
-
-  it('resolves a relative --git-common-dir against the package directory', () => {
-    const pkg = join(root, 'p');
-    mkdirSync(join(pkg, '.git'), { recursive: true });
-    writeFileSync(join(pkg, 'package.json'), '{}');
-    const viaRelative = resolveProject(pkg, {
-      git: fakeGit({ 'rev-parse --git-common-dir': '.git' }),
-    });
-    const viaAbsolute = resolveProject(pkg, {
-      git: fakeGit({ 'rev-parse --git-common-dir': join(pkg, '.git') }),
-    });
-    expect(viaRelative.id).toBe(viaAbsolute.id);
-  });
-
-  it('git and non-git ids differ for the same directory (no accidental sharing)', () => {
-    writeFileSync(join(root, 'package.json'), '{}');
-    mkdirSync(join(root, '.git'));
-    const git = resolveProject(root, {
-      git: fakeGit({ 'rev-parse --git-common-dir': join(root, '.git') }),
-    });
-    const plain = resolveProject(root, { git: () => undefined });
-    expect(git.id).not.toBe(plain.id);
   });
 });

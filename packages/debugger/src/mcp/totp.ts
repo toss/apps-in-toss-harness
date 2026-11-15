@@ -155,8 +155,8 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
  */
 export const RELAY_AUTH_SECRET_MISSING_MESSAGE = [
   '[ait-debugger] relay 키가 준비되지 않았습니다. relay 환경은 코드 인증이 필수입니다.',
-  '데몬은 switch_environment의 projectRoot 인자로 받은 프로젝트의 relay 키를 key agent(메모리)에서 받아옵니다. switch_environment를 projectRoot와 함께 다시 호출하세요.',
-  '예전 .ait_relay 파일이나 AIT_DEBUG_TOTP_SECRET(32자 이상 16진수, 예: openssl rand -hex 32)이 남아 있으면 첫 호출 때 자동으로 가져온 뒤 파일을 삭제합니다.',
+  '데몬은 이 기기의 relay 키(모든 프로젝트가 함께 쓰는 키 하나)를 key agent(메모리)에서 받아옵니다. switch_environment를 다시 호출하세요.',
+  '예전 .ait_relay 파일과 AIT_DEBUG_TOTP_SECRET은 더 이상 쓰지 않습니다. 남아 있으면 가져오지 않고 지웁니다.',
   '키는 기본 24시간(최대 72시간) 뒤 만료됩니다. 만료나 key agent 재시작 뒤에는 디버그 번들을 다시 빌드해 업로드하세요.',
   '자세히: docs MCP(ait-docs)의 searchDocumentation으로 "relay auth totp" 조회.',
 ].join('\n');

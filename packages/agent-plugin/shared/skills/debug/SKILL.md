@@ -291,7 +291,11 @@ WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 빌드 산출물(`dist/` 등과 `*.ait`)과 `.ait-debug-deployments.json`의 마지막 디버그 빌드 기록도 읽어, 거부되는 클라이언트가
 들어 있으면 같은 방식으로 QR을 발급하지 않는다. **클라이언트 패키지를 옮기거나 올린 뒤에는 `start_attach` 전에 반드시
 `/ait:test-on-device`(디버그 빌드)로 다시 빌드해 올린다.** 폰의 번들이 이미 최신임을 아는 경우(다른 PC에서 올림 등)에만
-`start_attach`에 `skipBundleCheck: true`를 준다. 번들러가 없는 빌드(Unity WebGL 출력 등)에는 `debugger inject-client <웹 폴더>`로
+`start_attach`에 `skipBundleCheck: true`를 준다. 번들에 박힌 debugger 키가 이 세션의 서명 키와 다르다는 오류에는
+`skipBundleCheck`를 쓰지 않는다(건너뛰어도 폰의 서명 검증에서 막힌다). 다시 빌드해 올린다. relay 키는 이 기기(사용자 계정)에
+하나라 어느 폴더에서 빌드해도 같은 키가 들어가므로, 같은 앱을 여러 폴더에서 빌드한 번들도 한 세션에서 번갈아 붙일 수 있다.
+번들과 세션이 같은 키인지는 `start_attach` 결과 끝의 "서명 키: 지문 …"과 빌드·`inject-client` 출력의 지문으로 맞춰 본다.
+번들러가 없는 빌드(Unity WebGL 출력 등)에는 `debugger inject-client <웹 폴더>`로
 키와 클라이언트를 넣는다(`../inject/references/debugger-client.md` 6-B절). 옛 항목을 옮기는 절차와
 버전 기준은 `../setup-debugger/references/upgrade-check.md`(0절·2-B절)를 따른다.
 

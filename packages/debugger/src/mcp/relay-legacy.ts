@@ -1,36 +1,40 @@
 /**
- * Backward compatibility: import and destroy legacy relay secrets.
+ * Backward compatibility: remove legacy relay secrets.
  *
- * 0.3.1 kept the relay secret in `<project>/.ait_relay` (and, as an override, in
- * `AIT_DEBUG_TOTP_SECRET`). The signing key it derives is the one a 0.3.1 bundle
- * pins. When the daemon, the build helper or the `relay-key` command resolves a
- * project and finds such a secret, {@link migrateLegacyRelaySecrets}
+ * 0.3.x kept the relay secret in `<project>/.ait_relay` (and, as an override, in
+ * `AIT_DEBUG_TOTP_SECRET`); 0.4.0 to 0.4.2 imported it into the key agent under
+ * the project's key id. The relay key is now one key per key agent (see
+ * `relay-root.ts`), so such a secret is never used again: importing it would make
+ * a project key the machine key, and the secrets of two projects would compete
+ * for it. When the daemon, the build helper, `relay-key` or `inject-client`
+ * resolves a project folder and finds one, {@link retireLegacyRelaySecrets}
  *
- *   1. validates it,
- *   2. imports it into the key agent (which derives the same root key),
- *   3. checks that the public key the agent reports equals the one derived here,
- *   4. unlinks the file (for the environment variable: removes it from this
- *      process and tells the user to remove it where it is set).
+ *   1. vets the file (no symlink, no other owner) and checks that it holds a
+ *      relay secret (anything else is left alone),
+ *   2. unlinks it, without importing it,
+ *   3. for the environment variable: removes it from this process and tells the
+ *      user to remove it where it is set.
  *
- * On any failure the file is kept and the failure is reported. A second run finds
- * nothing to do. Values are never printed or logged; messages name the file only
- * by project-relative role, never by content.
+ * Nothing attaches with the old key any more: a 0.3.x client is refused by the
+ * protocol check, and a 0.4.x bundle built from an imported secret pinned a key
+ * that expired at most 72 hours after the import (24 by default) and that lives
+ * under a project id this version never signs with. A second run finds nothing
+ * to do. Values are never printed or logged; messages name the file only by its
+ * name, never by content or path.
  *
  * Unlinking a file is not a secure wipe: on an SSD or APFS (copy-on-write,
  * snapshots, Time Machine, backups) old blocks can outlive the unlink. Copies in
  * git history or a sync folder (iCloud Drive, Dropbox, Google Drive, OneDrive)
- * persist too. The reports say so and recommend rebuilding with a fresh key
- * (`debugger relay-key --rotate`) when a copy may exist.
+ * persist too, and anyone holding one can sign a relay that an old bundle pinned
+ * to that key trusts. The reports say so and recommend replacing such bundles.
  */
 
 import * as nodeFs from 'node:fs';
 import { join } from 'node:path';
-import type { KeyProvider } from '../agent/provider.js';
-import { derivePublicKey } from '../agent/root-key.js';
 import { defaultGit, type GitRunner } from './relay-project.js';
 import { isValidRelayAuthSecret } from './totp.js';
 
-/** Project-local secret file name written by 0.3.1 and earlier. */
+/** Project-local secret file name written by 0.3.x. */
 export const RELAY_SECRET_FILE_NAME = '.ait_relay';
 
 const SYNC_FOLDER_MARKERS = [
@@ -93,8 +97,8 @@ export function isInSyncFolder(path: string): boolean {
 }
 
 export type LegacyOutcome =
-  | 'imported' // imported, verified, file destroyed / variable removed
-  | 'kept' // imported (or not) but the file was kept; see `reason`
+  | 'removed' // file deleted / variable removed from this process
+  | 'kept' // a relay secret, but the file could not be deleted
   | 'invalid' // not a usable secret; left alone
   | 'refused'; // file failed the safety vetting; left alone
 
@@ -103,20 +107,14 @@ export interface LegacyReport {
   readonly outcome: LegacyOutcome;
   /** Fixed-text reason for `kept` / `invalid` / `refused`. */
   readonly reason?: string;
-  /** Public key of the imported root key (public data). */
-  readonly publicKey?: string;
   /** The file sat in a git index. */
   readonly gitTracked?: boolean;
   readonly inSyncFolder?: boolean;
 }
 
-export interface MigrateDeps {
-  readonly projectId: string;
+export interface RetireDeps {
   /** Directories that may hold `.ait_relay`. */
   readonly dirs: readonly string[];
-  readonly provider: KeyProvider;
-  /** Remove files after import? False when the key would live only in this process's memory. */
-  readonly destroy: boolean;
   readonly env?: NodeJS.ProcessEnv;
   readonly fs?: LegacyFs;
   readonly git?: GitRunner;
@@ -133,32 +131,11 @@ function isGitTracked(path: string, git: GitRunner): boolean {
   );
 }
 
-async function importOne(
-  secret: string,
-  deps: MigrateDeps,
-): Promise<{ ok: true; publicKey: string } | { ok: false; reason: string }> {
-  let derived: string;
-  try {
-    derived = derivePublicKey(secret);
-  } catch {
-    return { ok: false, reason: '시크릿 형식이 올바르지 않습니다' };
-  }
-  try {
-    const result = await deps.provider.importLegacy(deps.projectId, secret);
-    if (result.publicKey !== derived) {
-      return {
-        ok: false,
-        reason: '가져온 키의 공개 키가 파일에서 유도한 값과 달라 파일을 유지합니다',
-      };
-    }
-    return { ok: true, publicKey: derived };
-  } catch {
-    return { ok: false, reason: 'key agent로 가져오지 못해 파일을 유지합니다' };
-  }
-}
+const COPY_RISK =
+  '그 값을 가진 사람은 이 파일의 키를 박은 옛 디버그 번들이 믿는 relay 서명을 만들 수 있습니다. 그런 번들은 더 쓰지 말고 새로 빌드한 번들로 바꾸세요.';
 
-/** Imports every legacy secret of the project; see the module comment. */
-export async function migrateLegacyRelaySecrets(deps: MigrateDeps): Promise<LegacyReport[]> {
+/** Removes every legacy secret of the project; see the module comment. */
+export async function retireLegacyRelaySecrets(deps: RetireDeps): Promise<LegacyReport[]> {
   const fs = deps.fs ?? (nodeFs as unknown as LegacyFs);
   const git = deps.git ?? defaultGit;
   const platform = deps.platform ?? process.platform;
@@ -177,10 +154,10 @@ export async function migrateLegacyRelaySecrets(deps: MigrateDeps): Promise<Lega
       reports.push({
         source: 'file',
         outcome: 'refused',
-        reason: '심볼릭 링크이거나 소유자가 달라 사용하지 않습니다',
+        reason: '심볼릭 링크이거나 소유자가 달라 손대지 않습니다',
       });
       log(
-        '[@apps-in-toss/debugger] 레거시 relay 시크릿 파일(.ait_relay)이 안전하지 않아 가져오지 않았습니다(심볼릭 링크/소유자). 파일을 직접 확인하세요.\n',
+        '[@apps-in-toss/debugger] 예전 relay 시크릿 파일(.ait_relay)이 심볼릭 링크이거나 소유자가 달라 지우지 않았습니다. 이 debugger는 이 파일을 쓰지 않으니 직접 확인해 지우세요.\n',
       );
       continue;
     }
@@ -205,32 +182,6 @@ export async function migrateLegacyRelaySecrets(deps: MigrateDeps): Promise<Lega
 
     const tracked = isGitTracked(path, git);
     const synced = isInSyncFolder(path);
-    const imported = await importOne(secret, deps);
-    if (!imported.ok) {
-      reports.push({
-        source: 'file',
-        outcome: 'kept',
-        reason: imported.reason,
-        gitTracked: tracked,
-        inSyncFolder: synced,
-      });
-      log(`[@apps-in-toss/debugger] .ait_relay: ${imported.reason}.\n`);
-      continue;
-    }
-    if (!deps.destroy) {
-      reports.push({
-        source: 'file',
-        outcome: 'kept',
-        reason: 'key agent 없이 이 프로세스 메모리에만 키를 두므로 파일을 유지합니다',
-        publicKey: imported.publicKey,
-        gitTracked: tracked,
-        inSyncFolder: synced,
-      });
-      log(
-        '[@apps-in-toss/debugger] key agent에 연결하지 못해 .ait_relay를 가져오되 파일은 지우지 않았습니다. agent가 뜨는 환경에서 다시 실행하면 가져온 뒤 파일을 삭제합니다.\n',
-      );
-      continue;
-    }
     try {
       fs.unlinkSync(path);
     } catch {
@@ -238,63 +189,39 @@ export async function migrateLegacyRelaySecrets(deps: MigrateDeps): Promise<Lega
         source: 'file',
         outcome: 'kept',
         reason: '파일을 삭제하지 못했습니다',
-        publicKey: imported.publicKey,
         gitTracked: tracked,
         inSyncFolder: synced,
       });
       log(
-        '[@apps-in-toss/debugger] .ait_relay를 가져왔지만 파일을 삭제하지 못했습니다. 직접 삭제하세요.\n',
+        '[@apps-in-toss/debugger] 예전 relay 시크릿 파일(.ait_relay)을 삭제하지 못했습니다. 이 debugger는 이 파일을 쓰지 않으니 직접 삭제하세요.\n',
       );
       continue;
     }
-    reports.push({
-      source: 'file',
-      outcome: 'imported',
-      publicKey: imported.publicKey,
-      gitTracked: tracked,
-      inSyncFolder: synced,
-    });
+    reports.push({ source: 'file', outcome: 'removed', gitTracked: tracked, inSyncFolder: synced });
     log(
-      '[@apps-in-toss/debugger] .ait_relay를 key agent(메모리)로 가져오고 파일을 삭제했습니다. 키는 최대 TTL(기본 24시간) 뒤 만료되며, 만료 뒤에는 번들을 다시 빌드하세요. ' +
+      '[@apps-in-toss/debugger] 예전 relay 시크릿 파일(.ait_relay)을 삭제했습니다. 이 debugger는 key agent 메모리에 있는 이 기기의 relay 키 하나만 쓰고 이 파일은 가져오지 않습니다. ' +
         'unlink는 SSD/APFS에서 안전 삭제(secure wipe)가 아니므로 백업·스냅샷에 옛 값이 남을 수 있습니다.\n',
     );
     if (tracked) {
       log(
-        '[@apps-in-toss/debugger] 경고: .ait_relay가 git에 추적되고 있었습니다. 이력에 이미 들어간 값은 남으므로 `debugger relay-key --rotate`로 새 키를 만들어 번들을 다시 빌드하고, 파일을 커밋에서 제거하세요.\n',
+        `[@apps-in-toss/debugger] 경고: .ait_relay가 git에 추적되고 있었습니다. 이력에 값이 남습니다. ${COPY_RISK} 파일은 커밋에서도 제거하세요.\n`,
       );
     }
     if (synced) {
       log(
-        '[@apps-in-toss/debugger] 경고: .ait_relay가 동기화 폴더(iCloud Drive/Dropbox/Google Drive/OneDrive) 안에 있었습니다. 다른 기기나 클라우드에 사본이 남았을 수 있으니 `debugger relay-key --rotate`로 새 키를 만들어 번들을 다시 빌드하세요.\n',
+        `[@apps-in-toss/debugger] 경고: .ait_relay가 동기화 폴더(iCloud Drive/Dropbox/Google Drive/OneDrive) 안에 있었습니다. 다른 기기나 클라우드에 사본이 남았을 수 있습니다. ${COPY_RISK}\n`,
       );
     }
   }
 
   const envSecret = env.AIT_DEBUG_TOTP_SECRET;
   if (envSecret !== undefined && envSecret !== '') {
-    if (!isValidRelayAuthSecret(envSecret)) {
-      reports.push({
-        source: 'env',
-        outcome: 'invalid',
-        reason: '시크릿 형식이 올바르지 않습니다',
-      });
-      log(
-        '[@apps-in-toss/debugger] AIT_DEBUG_TOTP_SECRET 값이 relay 시크릿 형식이 아니라 무시합니다.\n',
-      );
-    } else {
-      const imported = await importOne(envSecret, deps);
-      if (!imported.ok) {
-        reports.push({ source: 'env', outcome: 'kept', reason: imported.reason });
-        log(`[@apps-in-toss/debugger] AIT_DEBUG_TOTP_SECRET: ${imported.reason}.\n`);
-      } else {
-        // The key is in the agent (or this process's memory); drop the variable here.
-        delete env.AIT_DEBUG_TOTP_SECRET;
-        reports.push({ source: 'env', outcome: 'imported', publicKey: imported.publicKey });
-        log(
-          '[@apps-in-toss/debugger] AIT_DEBUG_TOTP_SECRET을 가져왔습니다. 이제 쓰지 않으니 셸 프로필·CI 설정·.env에서 변수를 지우세요(환경변수에 키를 두지 마세요).\n',
-        );
-      }
-    }
+    // Never used again; keep it out of this process and its children.
+    delete env.AIT_DEBUG_TOTP_SECRET;
+    reports.push({ source: 'env', outcome: 'removed' });
+    log(
+      '[@apps-in-toss/debugger] AIT_DEBUG_TOTP_SECRET은 더 이상 쓰지 않아 이 프로세스의 환경에서 지웠습니다. 셸 프로필·CI 설정·.env에서도 변수를 지우세요(환경 변수에 키를 두지 마세요).\n',
+    );
   }
   return reports;
 }
