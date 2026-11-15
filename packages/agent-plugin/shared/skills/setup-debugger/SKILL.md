@@ -167,6 +167,23 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 - Cursor 항목에는 `"type": "stdio"`가 필수다 — 원격 서버가 아니라 로컬
   프로세스임을 Cursor에 알리는 필드다.
 
+### 4-B. 첫 연결 전에 debugger를 한 번 받아 둔다
+
+MCP 서버는 세션이 연결할 때 `npx`가 Release tarball을 처음 내려받고 의존성을 설치한 뒤에야
+뜬다. 캐시가 빈 머신에서는 이 시간이 길어 첫 연결이 MCP 클라이언트의 시작 제한 시간을 넘기고
+`CONNECTION_CLOSED`나 `failed`로 끝날 수 있다(받은 뒤 재연결하면 붙는다). 그래서 4단계에서
+항목을 새로 넣었거나 URL을 바꿨으면, 안내 전에 **같은 URL로** 한 번 실행해 npx 캐시를 채운다.
+항목이 이미 같은 URL로 있었으면 건너뛴다.
+
+```bash
+npx -y -p <4단계 항목의 Release tarball URL> debugger --version
+```
+
+- `debugger <버전>` 한 줄이 나오면 캐시가 찼다. 그 버전이 URL의 버전과 같은지 본다.
+- 실패하면(네트워크, 프록시, Node·npx 없음) 출력의 마지막 몇 줄을 사용자에게 보여 준다.
+  이 상태로는 MCP 연결도 같은 이유로 실패하므로 5단계 안내 전에 원인을 먼저 알린다.
+- 버전만 찍고 끝나는 명령이라 데몬·relay·터널을 띄우지 않고 설정 파일도 바꾸지 않는다.
+
 ### 5. 세션 로드 안내
 
 `.mcp.json`은 파일이 생겼다고 즉시 로드되지 않는다 — Claude Code가 프로젝트 MCP
@@ -181,6 +198,9 @@ Cursor(`.cursor/mcp.json`)는 같은 항목에 `"type": "stdio"`가 첫 키로 �
 - 이 세션에서 바로 쓰려면: /mcp 로 서버 목록을 열어 ait-debugger 연결을 확인해주세요.
 연결되면 /ait:debug 가 start_attach QR attach 경로(환경 3)를 진행합니다.
 ```
+
+연결이 `failed`나 `CONNECTION_CLOSED`로 끝나면 4-B의 명령을 다시 실행해 캐시를 채운 뒤
+`/mcp`에서 `ait-debugger`를 재연결하라고 안내한다(Cursor는 MCP 목록에서 껐다 켠다).
 
 **Cursor용:**
 
