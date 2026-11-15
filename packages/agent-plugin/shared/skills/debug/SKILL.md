@@ -292,7 +292,7 @@ WebView가 deep-link를 열어 in-app gate를 통과하고 relay에 attach.
 들어 있으면 같은 방식으로 QR을 발급하지 않는다. **클라이언트 패키지를 옮기거나 올린 뒤에는 `start_attach` 전에 반드시
 `/ait:test-on-device`(디버그 빌드)로 다시 빌드해 올린다.** 폰의 번들이 이미 최신임을 아는 경우(다른 PC에서 올림 등)에만
 `start_attach`에 `skipBundleCheck: true`를 준다. 번들러가 없는 빌드(Unity WebGL 출력 등)에는 `debugger inject-client <웹 폴더>`로
-키와 클라이언트를 넣는다(`../inject/references/debugger-client.md` 6-B절). 옛 항목을 옮기는 절차와
+키와 클라이언트를 넣는다(`../inject/references/debugger-client.md` 6-B절). 여러 번들을 한 debugger 세션에서 번갈아 붙이려면 같은 `--project`로 `inject-client` 한다(키는 번들이 아니라 프로젝트 폴더 단위). 옛 항목을 옮기는 절차와
 버전 기준은 `../setup-debugger/references/upgrade-check.md`(0절·2-B절)를 따른다.
 
 세션마다 데몬과 대시보드가 따로 뜬다. 대시보드는 `127.0.0.1`의 8317부터 비어 있는 포트(최대 20개, 그다음은

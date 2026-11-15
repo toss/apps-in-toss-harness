@@ -16,7 +16,7 @@
 디버그 빌드를 다시 올리는 것이 규칙이다. 폰 번들이 이미 최신임을 알 때만 `skipBundleCheck: true`를 쓴다. 번들 안에 debugger 키가 없거나 만료됐거나
 이 debugger의 키와 다르면 같은 방식으로 QR 없이 끝난다. 번들러가 없는 빌드(Unity WebGL 출력 등)는 클라이언트를
 손으로 복사하지 말고 `debugger inject-client <웹 폴더>`로 키와 클라이언트를 넣은 뒤 다시 올린다
-(`../../inject/references/debugger-client.md` 6-B절). 버전 기준과 이전 절차는
+(`../../inject/references/debugger-client.md` 6-B절). 키는 번들이 아니라 프로젝트 폴더 단위라서, 한 debugger 세션에서 여러 번들을 번갈아 붙이려면 같은 `--project`로 `inject-client` 한다. `start_attach`가 이 세션의 서명 폴더와 다른 `projectRoot`를 거절하면(지문과 폴더를 알려 준다) 그 안내대로 한다. 버전 기준과 이전 절차는
    `../../setup-debugger/references/upgrade-check.md`를 따른다.
 
 1. **`start_attach({mode: 'relay-staging', scheme_url, projectRoot})`** 도구를 호출한다
