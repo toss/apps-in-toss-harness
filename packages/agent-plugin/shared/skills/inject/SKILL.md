@@ -76,7 +76,8 @@ if (__DEBUG_BUILD__) {
 `__AIT_RELAY_KEYS__`는 번들러 `define`이 디버그 빌드에서만 채운다.
 `define: { __AIT_RELAY_KEYS__: JSON.stringify(debugBuild ? await readRelayPublicKeys(process.cwd()) : []) }`
 처럼 `@apps-in-toss/debugger/relay-keys`의 `readRelayPublicKeys`를 쓴다. 이 함수는 키 에이전트(메모리 전용)에서
-공개키와 만료 시각만 받아 오고, 디스크에 비밀을 만들지 않는다. 키는 기본 24시간 유효하므로 만료되면 디버그 번들을
+공개키와 만료 시각만 받아 오고, 디스크에 비밀을 만들지 않는다. 키는 이 기기(사용자 계정)에 하나라 어느 폴더에서
+빌드해도 같은 키가 들어간다. 키는 기본 24시간 유효하므로 만료되면 디버그 번들을
 다시 빌드해 업로드한다. 공개키는 커밋하지 않아도 된다. QR 테스트 호스트에서는 이 키로 attach URL의 서명을
 확인하므로 키가 없으면 연결되지 않는다(`blocked-relay-key`).
 
