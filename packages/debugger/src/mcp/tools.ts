@@ -328,8 +328,9 @@ export const DEBUG_TOOL_DEFINITIONS = [
           type: 'string',
           description:
             'Absolute path to the mini-app project root (the directory containing its package.json). ' +
-            'When switching into a relay mode, the daemon reads the relay TOTP secret read-only from ' +
-            "<projectRoot>/.ait_relay. Pass this because the daemon's own cwd is fixed at launch.",
+            'The project checks (installed client, built bundle and its pinned key) read this folder. ' +
+            'It does not choose the relay key: there is one key per machine for every project. ' +
+            "Pass this because the daemon's own cwd is fixed at launch.",
         },
       },
       // No required fields — mode/scheme_url requirements are enforced at runtime
@@ -575,8 +576,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'tunnel — it is a deployed bundle reached via the intoss-private scheme, so `npm run dev` ' +
       'plays no part here.\n\n' +
       'For the relay mode (relay-staging), also pass projectRoot — the ' +
-      'absolute mini-app project root — so the daemon can read the relay auth secret from ' +
-      '<projectRoot>/.ait_relay (read-only; the daemon never mints it). Omit it for local-browser.',
+      'absolute mini-app project root. The relay key comes from the key agent (one key per machine, ' +
+      'shared by every project), so projectRoot does not change it. Omit it for local-browser.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -589,10 +590,10 @@ export const DEBUG_TOOL_DEFINITIONS = [
         projectRoot: {
           type: 'string',
           description:
-            'Absolute path to the mini-app project root (the directory containing its package.json and .ait_relay). ' +
-            'The daemon reads the relay auth secret from <projectRoot>/.ait_relay (read-only) when switching to the relay ' +
-            "environment (relay-staging). Pass this because the daemon's own cwd is fixed at launch and may not be " +
-            'the project being debugged. Omit for mode=local-browser (no secret needed).',
+            'Absolute path to the mini-app project root (the directory containing its package.json). ' +
+            'The relay key is one per machine and does not depend on it; an old .ait_relay there is deleted when ' +
+            "switching to the relay environment (relay-staging). Pass this because the daemon's own cwd is fixed at launch and may not be " +
+            'the project being debugged. Omit for mode=local-browser.',
         },
       },
       required: ['mode'],
@@ -613,7 +614,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'recentErrors (last N server-side errors, PII/secret redacted), ' +
       'authRejects ({count, lastAt} — relay TOTP 401 rejections, secret-free; count > 0 with empty pages ' +
       'means the phone reached the relay but its code was rejected), ' +
-      'relayKey ({status: ok|aging|expired, ageDays, hint} or null — age of the relay key; on aging, relay the hint: `debugger relay-key --rotate`), ' +
+      'relayKey ({status: ok|aging|expired, remainingMinutes, notAfter, holder, keyFingerprint, hint} or null — the relay key this session signs QR links with: one key per machine, shared by every project and session; keyFingerprint must match the fingerprint inject-client and the bundle check print; on aging or expired, relay the hint), ' +
       'tunnelRotations ({count, lastAt} — times the daemon reissued the tunnel after repeated failed code checks; ' +
       'count > 0 means the relay URL changed and the developer must scan the new QR from start_attach; no URL is included), ' +
       'attachStages (stage history of the latest start_attach attempt: tunnel, qr-issued, device-handshake, auth, ' +
@@ -2203,11 +2204,10 @@ export interface DiagnosticsResult {
    */
   tunnelRotations: TunnelRotationsSnapshot;
   /**
-   * Age of the relay key (`.ait_relay`) loaded for this session, or `null` when no
-   * relay session has loaded one or its date is unknown. `status` is `ok`,
-   * `aging` (older than 21 days: rotate soon) or `expired` (older than 30 days:
-   * the daemon refuses to start the relay, so this is only seen on a collector
-   * that outlived the refusal). `hint` says what to do and is `null` when the
+   * The relay key this session signs with (one per machine), or `null` before a
+   * relay session activated one. `status` is `ok`, `aging` (less than
+   * `RELAY_KEY_WARN_MINUTES` before `notAfter`) or `expired` (past `notAfter`,
+   * 24 hours after creation by default). `hint` says what to do and is `null` when the
    * key is fine. Age, date and source only, never the key.
    */
   relayKey: (RelayKeyAge & { hint: string | null }) | null;

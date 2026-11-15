@@ -4,13 +4,16 @@
  * For builds without a bundler (a Unity WebGL export, an engine HTML5 output, a
  * hand-packaged `dist/`): the `__DEBUG_BUILD__` define path has nothing to hook
  * into there. This command copies the matching `@apps-in-toss/debugger-client`
- * browser script next to the page, and writes the project's current relay public
+ * browser script next to the page, and writes this machine's current relay public
  * keys plus a `<script>` tag for it into the HTML, before the page's own scripts:
  *
  *   <script>globalThis.__AIT_DEBUG_RELAY_KEYS__=[{"publicKey":"…","notAfter":…}]</script>
  *   <script src="ait-debugger-client.js"></script>
  *
- * Running it again replaces the earlier injection. The result is a DEBUG build:
+ * The key is one per machine (user account), not per project, so the folder this
+ * runs in does not matter; `--project` only names the folder whose legacy
+ * `.ait_relay` is removed. Running it again replaces the earlier injection. The
+ * result is a DEBUG build:
  * it must never be submitted for review. Nothing here is on a production path.
  *
  * SECRET-HANDLING: only public keys and expiries are written or printed (the
@@ -22,7 +25,7 @@
 import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { keyFingerprint } from './built-output.js';
+import { keyFingerprint } from './key-fingerprint.js';
 import { parseProjectFlag } from './relay-key.js';
 import { type RelayPublicKeyEntry, readRelayPublicKeys } from './relay-keys.js';
 
@@ -41,16 +44,24 @@ USAGE
 OPTIONS
   --html <file>      The page to inject into, relative to <built-web-dir>
                      (default: index.html)
-  --project <dir>    Project whose relay key is used (default: current directory)
+  --project <dir>    Accepted for compatibility; it does not change the key. An
+                     old .ait_relay in that project (default: the current
+                     directory) is deleted.
   --help, -h         Show this help message
 
 DESCRIPTION
   For Unity WebGL exports, engine HTML5 outputs and hand-packaged dist folders.
   Copies ${INJECT_SCRIPT_NAME} next to the page and adds, before the page's own
-  scripts, the project's current relay public keys and a <script> tag for it.
+  scripts, this machine's current relay public keys and a <script> tag for it.
   Running it again replaces the earlier injection. Start the debugger first: the
   keys live in its key agent and expire after about 24 hours, so inject again
   (and re-upload) when they do.
+
+  There is one relay key per user account on this machine, shared by every
+  project and every debugger session, so it does not matter which folder you run
+  this in: the bundle attaches to any of your debugger sessions. The key
+  fingerprint is printed; start_attach and get_status show the fingerprint the
+  debugger session signs with.
 
   The result is a DEBUG build. Do not submit it for review; build and upload the
   release build without this step for that.
@@ -60,7 +71,7 @@ export interface InjectClientDeps {
   readonly cwd?: () => string;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
-  /** Test seam: the relay public keys of the project. */
+  /** Test seam: this machine's relay public keys (the argument is the legacy-cleanup folder). */
   readonly readKeys?: (projectRoot: string) => Promise<readonly RelayPublicKeyEntry[]>;
   /** Test seam: where the packaged browser script lives. */
   readonly clientScriptPath?: string;
@@ -185,7 +196,7 @@ export async function runInjectClient(
     [
       `Injected the on-device debugger into ${relative(cwd, htmlPath) || htmlName}.`,
       `  script: ${INJECT_SCRIPT_NAME} (copied next to the page)`,
-      `  relay keys: ${keys.length} (fingerprint ${keys.map((k) => keyFingerprint(k.publicKey)).join(', ')}), valid until ${new Date(soonest * 1000).toISOString()}`,
+      `  relay keys: ${keys.length} (key fingerprint ${keys.map((k) => keyFingerprint(k.publicKey)).join(', ')}, one key for every project on this machine), valid until ${new Date(soonest * 1000).toISOString()}`,
       '',
       'This is a DEBUG build. Do not submit it for review; build the release build without this step for that.',
       'Next: package and upload it (/ait:test-on-device, debug build), then call start_attach.',

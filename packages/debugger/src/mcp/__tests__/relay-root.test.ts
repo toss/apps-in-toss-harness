@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +19,8 @@ import { readRelayPublicKeys } from '../relay-keys.js';
 import {
   activateRelayRoot,
   KeyAgentRequiredError,
-  prepareProjectKeys,
+  MACHINE_KEY_ID,
+  prepareRelayKeys,
   relayAuthSwitch,
   resetRelayRootState,
 } from '../relay-root.js';
@@ -110,7 +112,7 @@ describe('daemon activation through the agent', () => {
     expect(cert!.notAfter).toBeLessThanOrEqual(report.notAfter);
   });
 
-  it('imports a legacy .ait_relay on the way and deletes it; the bundle key keeps working', async () => {
+  it('removes a legacy .ait_relay on the way and never signs with its key', async () => {
     const { client } = await startAgent();
     writeFileSync(join(dir, '.ait_relay'), SECRET, { mode: 0o600 });
     const report = await activateRelayRoot({
@@ -118,8 +120,9 @@ describe('daemon activation through the agent', () => {
       ensureAgent: async () => client,
       log,
     });
-    expect(report.publicKey).toBe(derivePublicKey(SECRET));
-    expect(report.legacy[0]).toMatchObject({ outcome: 'imported' });
+    expect(report.publicKey).not.toBe(derivePublicKey(SECRET));
+    expect(report.keyFingerprint).toMatch(/^[0-9a-f]{8}$/);
+    expect(report.legacy[0]).toMatchObject({ outcome: 'removed' });
     const { existsSync } = await import('node:fs');
     expect(existsSync(join(dir, '.ait_relay'))).toBe(false);
     expect(logs.join('')).not.toContain(SECRET);
@@ -196,16 +199,16 @@ describe('fallback mode (no agent)', () => {
 
   it('the build helper and the CLI do not fall back: a bundle key must outlive the process', async () => {
     await expect(
-      prepareProjectKeys({ projectRoot: dir, requireAgent: true, ensureAgent: unavailable, log }),
+      prepareRelayKeys({ projectRoot: dir, requireAgent: true, ensureAgent: unavailable, log }),
     ).rejects.toBeInstanceOf(KeyAgentRequiredError);
   });
 
-  it('keeps the legacy file because the key would live only in this process', async () => {
+  it('removes the legacy file here too: it is never imported, so nothing depends on it', async () => {
     writeFileSync(join(dir, '.ait_relay'), SECRET, { mode: 0o600 });
     const report = await activateRelayRoot({ projectRoot: dir, ensureAgent: unavailable, log });
-    expect(report.publicKey).toBe(derivePublicKey(SECRET));
+    expect(report.publicKey).not.toBe(derivePublicKey(SECRET));
     const { existsSync } = await import('node:fs');
-    expect(existsSync(join(dir, '.ait_relay'))).toBe(true);
+    expect(existsSync(join(dir, '.ait_relay'))).toBe(false);
   });
 });
 
@@ -221,7 +224,7 @@ describe('build helper', () => {
       expect(Number.isInteger(k.notAfter)).toBe(true);
       expect(k.notAfter).toBeGreaterThan(Date.now() / 1000);
     }
-    expect(keys[0]?.publicKey).toBe(derivePublicKey(SECRET));
+    expect(keys.map((k) => k.publicKey)).not.toContain(derivePublicKey(SECRET));
     expect(JSON.stringify(keys)).not.toContain(SECRET);
     expect(logs.join('')).not.toContain(SECRET);
   });
@@ -237,8 +240,8 @@ describe('build helper', () => {
 describe('relay-key command', () => {
   it('prints the public key on stdout and the expiry on stderr; --rotate prints a new key', async () => {
     const provider = new LocalKeyProvider(new KeyStore());
-    const prepare = (o: Parameters<typeof prepareProjectKeys>[0]) =>
-      prepareProjectKeys({ ...o, provider });
+    const prepare = (o: Parameters<typeof prepareRelayKeys>[0]) =>
+      prepareRelayKeys({ ...o, provider });
     const run = async (args: string[]) => {
       const out: string[] = [];
       const err: string[] = [];
@@ -254,11 +257,14 @@ describe('relay-key command', () => {
     expect(first.code).toBe(0);
     expect(first.out).toMatch(/^[A-Za-z0-9_-]{87}\n$/);
     expect(first.err).toContain('expires');
+    expect(first.err).toMatch(/key fingerprint [0-9a-f]{8}/);
     expect((await run([])).out).toBe(first.out);
     const rotated = await run(['--rotate']);
     expect(rotated.code).toBe(0);
     expect(rotated.out).not.toBe(first.out);
     expect(rotated.err).toContain('rebuild');
+    expect(rotated.err).toContain('every project');
+    expect(rotated.err).toContain('every running debugger session');
     const json = await run(['--json']);
     const parsed = JSON.parse(json.out) as Array<{ publicKey: string; notAfter: number }>;
     expect(parsed[0]?.publicKey).toBe(rotated.out.trim());
@@ -285,9 +291,126 @@ describe('relay-key command', () => {
       cwd: () => dir,
       write: () => {},
       writeError: () => {},
-      prepare: (o) => prepareProjectKeys({ ...o, provider }),
+      prepare: (o) => prepareRelayKeys({ ...o, provider }),
     });
     expect(readdirSync(dir)).toEqual(['package.json']);
+  });
+});
+
+describe('one key per machine, not per project', () => {
+  /** A fresh git repository with a package.json, like a mini-app project. */
+  function gitProject(prefix: string): string {
+    const root = mkdtempSync(join(tmpdir(), prefix));
+    writeFileSync(join(root, 'package.json'), '{}');
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+    } catch {
+      // No git here: the projects still differ by folder, which is all this test needs.
+    }
+    return root;
+  }
+  const extra: string[] = [];
+  afterEach(() => {
+    for (const d of extra.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('two different git repositories get the same key from the build helper and the daemon', async () => {
+    const { client } = await startAgent();
+    const a = gitProject('ait-repo-a-');
+    const b = gitProject('ait-repo-b-');
+    extra.push(a, b);
+    const ensure = async () => client;
+    const fromA = await prepareRelayKeys({
+      projectRoot: a,
+      requireAgent: true,
+      ensureAgent: ensure,
+      log,
+    });
+    const fromB = await prepareRelayKeys({
+      projectRoot: b,
+      requireAgent: true,
+      ensureAgent: ensure,
+      log,
+    });
+    expect(fromB.keys.publicKey).toBe(fromA.keys.publicKey);
+    // A daemon started for either folder signs with that same key.
+    const daemonA = await activateRelayRoot({ projectRoot: a, ensureAgent: ensure, log });
+    const daemonB = await activateRelayRoot({ projectRoot: b, ensureAgent: ensure, log });
+    expect(daemonA.publicKey).toBe(fromA.keys.publicKey);
+    expect(daemonB.publicKey).toBe(fromA.keys.publicKey);
+    expect(daemonB.changed).toBe(false);
+    // The agent holds one key under the machine id, nothing per project.
+    expect((await client.status()).projects).toBe(1);
+  });
+
+  it('relay-key gives the same key from any folder, and --project does not change it', async () => {
+    const provider = new LocalKeyProvider(new KeyStore());
+    const prepare = (o: Parameters<typeof prepareRelayKeys>[0]) =>
+      prepareRelayKeys({ ...o, provider });
+    const elsewhere = mkdtempSync(join(tmpdir(), 'ait-nowhere-'));
+    extra.push(elsewhere);
+    const run = async (cwd: string, args: string[]) => {
+      const out: string[] = [];
+      await runRelayKey(args, {
+        cwd: () => cwd,
+        write: (t) => out.push(t),
+        writeError: () => {},
+        prepare,
+      });
+      return out.join('');
+    };
+    const inProject = await run(dir, []);
+    expect(await run(elsewhere, [])).toBe(inProject);
+    expect(await run(elsewhere, ['--project', dir])).toBe(inProject);
+    expect(await run(dir, [`--project=${elsewhere}`])).toBe(inProject);
+  });
+
+  it('agent protocol compatibility: a 0.4.2 client keeps its per-project key next to the machine key', async () => {
+    const { client } = await startAgent();
+    // What 0.4.2 sends: a per-project id (32 hex) through the same, unchanged protocol.
+    const oldProjectId = 'a1'.repeat(16);
+    const oldKey = await client.getOrCreate(oldProjectId);
+    const imported = await client.importLegacy('b2'.repeat(16), SECRET);
+    expect(imported.publicKey).toBe(derivePublicKey(SECRET));
+
+    const report = await activateRelayRoot({
+      projectRoot: dir,
+      ensureAgent: async () => client,
+      log,
+    });
+    expect(report.publicKey).not.toBe(oldKey.publicKey);
+    expect(report.publicKey).not.toBe(derivePublicKey(SECRET));
+    // Both versions keep signing with their own key.
+    const nowS = Math.floor(Date.now() / 1000);
+    const session = (await import('../../agent/root-key.js')).createRootKey().publicKey;
+    await expect(
+      client.signSessionCert(oldProjectId, {
+        sessionPublicKey: session,
+        nb: nowS,
+        na: nowS + 600,
+        publicKey: oldKey.publicKey,
+      }),
+    ).resolves.toBeDefined();
+    expect(attachSignatures(relayAuthSwitch(), WSS, AT)?.sig).toBeDefined();
+    // Rotating the machine key leaves the 0.4.2 key alone, and the other way round.
+    await client.rotate(MACHINE_KEY_ID);
+    expect((await client.getOrCreate(oldProjectId)).publicKey).toBe(oldKey.publicKey);
+    const machineNow = (await client.getOrCreate(MACHINE_KEY_ID)).publicKey;
+    await client.rotate(oldProjectId);
+    expect((await client.getOrCreate(MACHINE_KEY_ID)).publicKey).toBe(machineNow);
+  });
+
+  it('after --rotate elsewhere, a running daemon refuses to sign and says the key is shared', async () => {
+    const { client } = await startAgent();
+    await activateRelayRoot({ projectRoot: dir, ensureAgent: async () => client, log });
+    await client.rotate(MACHINE_KEY_ID);
+    const err = await refreshRelaySession(Date.now() + SESSION_KEY_ROTATE_MS + 1_000).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(RelayKeyExpiredError);
+    expect((err as Error).message).toContain('--rotate');
+    expect((err as Error).message).toContain('모든 프로젝트');
+    expect((err as Error).message).toContain('switch_environment');
   });
 });
 

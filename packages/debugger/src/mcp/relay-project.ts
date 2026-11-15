@@ -1,14 +1,14 @@
 /**
- * Which project a relay key belongs to.
+ * Where a project may still hold a legacy `.ait_relay` (0.3.x).
  *
- * The id is a hash of the real path of `git rev-parse --git-common-dir`, so every
- * worktree of one repository shares a key. Outside git (or when git is missing)
- * it is a hash of the nearest `package.json` directory. The id is not a secret;
- * the key agent uses it only to tell projects apart.
+ * The relay key is no longer chosen by project: it is one key per key agent
+ * (one per user account on a machine, see `relay-root.ts`). The project folder
+ * is resolved only to find and remove old secret files: the nearest
+ * `package.json` directory and its twin in every git worktree of the same
+ * repository.
  */
 
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { childProcessEnv } from './child-env.js';
@@ -38,8 +38,6 @@ export interface ProjectDeps {
 }
 
 export interface ProjectInfo {
-  /** 32 hex characters. */
-  readonly id: string;
   /** Nearest directory with a package.json at or above the start (real path). */
   readonly packageDir: string;
   /** Directories that may hold a legacy `.ait_relay`: the package dir and its twin in every git worktree. */
@@ -60,13 +58,6 @@ export function nearestPackageJsonDir(
   }
 }
 
-function hashId(kind: string, path: string): string {
-  return createHash('sha256')
-    .update(`ait-relay-project-v1\n${kind}\n${path}`)
-    .digest('hex')
-    .slice(0, 32);
-}
-
 export function resolveProject(start: string, deps: ProjectDeps = {}): ProjectInfo {
   const git = deps.git ?? defaultGit;
   const exists = deps.existsSync ?? existsSync;
@@ -83,9 +74,8 @@ export function resolveProject(start: string, deps: ProjectDeps = {}): ProjectIn
   const common = git(['rev-parse', '--git-common-dir'], packageDir);
   const legacy = new Set<string>([packageDir]);
   if (common === undefined || common === '') {
-    return { id: hashId('package', packageDir), packageDir, legacyDirs: [...legacy] };
+    return { packageDir, legacyDirs: [...legacy] };
   }
-  const commonDir = safeReal(isAbsolute(common) ? common : resolve(packageDir, common));
 
   // The twin of the package directory in every worktree of this repository.
   const topLevel = git(['rev-parse', '--show-toplevel'], packageDir);
@@ -100,5 +90,5 @@ export function resolveProject(start: string, deps: ProjectDeps = {}): ProjectIn
     if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel))
       legacy.add(safeReal(join(root, rel)));
   }
-  return { id: hashId('git', commonDir), packageDir, legacyDirs: [...legacy] };
+  return { packageDir, legacyDirs: [...legacy] };
 }

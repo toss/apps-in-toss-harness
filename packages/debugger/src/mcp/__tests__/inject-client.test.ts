@@ -2,8 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { KeyStore } from '../../agent/key-store.js';
+import { LocalKeyProvider } from '../../agent/provider.js';
 import { scanBuiltOutput } from '../built-output.js';
 import { INJECT_SCRIPT_NAME, injectIntoHtml, runInjectClient } from '../inject-client.js';
+import { keyFingerprint } from '../key-fingerprint.js';
+import { readRelayPublicKeys } from '../relay-keys.js';
 
 const KEY = 'A'.repeat(87);
 const KEYS = [{ publicKey: KEY, notAfter: 1_900_000_000 }];
@@ -117,6 +121,32 @@ describe('runInjectClient', () => {
     }
     expect(readFileSync(join(web, 'index.html'), 'utf8')).toBe(before);
     expect(existsSync(join(web, INJECT_SCRIPT_NAME))).toBe(false);
+  });
+
+  it('injects the same machine key from two project folders, with or without --project', async () => {
+    const provider = new LocalKeyProvider(new KeyStore());
+    const readKeys = (root: string) => readRelayPublicKeys(root, { provider, log: () => {} });
+    const a = setup();
+    const b = setup();
+    const resA = await run(['dist/web'], {
+      cwd: () => a.root,
+      readKeys,
+      clientScriptPath: a.script,
+    });
+    const resB = await run(['dist/web', '--project', a.root], {
+      cwd: () => b.root,
+      readKeys,
+      clientScriptPath: b.script,
+    });
+    expect(resA.code).toBe(0);
+    expect(resB.code).toBe(0);
+    const keysA = scanBuiltOutput(a.root);
+    const keysB = scanBuiltOutput(b.root);
+    expect(keysA.status).toBe('ok');
+    expect(keysB).toEqual({ ...keysA, path: (keysB as { path: string }).path });
+    const key = (keysA as { keys: { publicKey: string }[] }).keys[0]!.publicKey;
+    expect(resA.out).toContain(`key fingerprint ${keyFingerprint(key)}`);
+    expect(resA.out).toContain('one key for every project on this machine');
   });
 
   it('honours --html, and refuses a missing directory, page or argument', async () => {

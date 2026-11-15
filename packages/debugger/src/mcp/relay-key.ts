@@ -1,65 +1,77 @@
 /**
- * `debugger relay-key` — prints the relay public key for a project.
+ * `debugger relay-key` — prints the relay public key of this machine.
  *
  * The key is what a debug build embeds so the device can check that the relay
- * endpoint in a QR link was signed by this project's daemon (see
- * `relay-signing.ts`). The private half lives only in memory, in the key agent
- * (`debugger key-agent`, started on demand); nothing is written to the project
- * or to disk. A key lives 24 hours by default (`AIT_DEBUG_RELAY_KEY_TTL_HOURS`,
- * at most 72); after that, rebuild the debug bundle with the new key.
+ * endpoint in a QR link was signed by the developer's daemon (see
+ * `relay-signing.ts`). There is one key per key agent, that is one per user
+ * account on the machine: every project and every debugger session of the user
+ * signs with it (see `relay-root.ts`). The private half lives only in memory, in
+ * the key agent (`debugger key-agent`, started on demand); nothing is written to
+ * the project or to disk. A key lives 24 hours by default
+ * (`AIT_DEBUG_RELAY_KEY_TTL_HOURS`, at most 72); after that, rebuild the debug
+ * bundle with the new key.
  *
- * `--rotate` drops the project's keys in the agent and prints the NEW public key.
- * A bundle trusts the public keys it was built with, so every bundle that should
- * attach afterwards has to be rebuilt. See {@link rotateGuidance}.
+ * `--rotate` drops the machine's key in the agent and prints the NEW public key.
+ * A bundle trusts the public keys it was built with, so every debug bundle of
+ * every project on the machine has to be rebuilt, and every running debugger
+ * session has to restart its relay. See {@link rotateGuidance}.
+ *
+ * `--project` is accepted for compatibility: it no longer chooses the key; it
+ * only names the folder whose legacy `.ait_relay` is removed (`relay-legacy.ts`).
  *
  * Output contract: stdout carries the public key and a newline, nothing else
- * (`--json`: a JSON array of `{ publicKey, notAfter }`). Diagnostics, the expiry
- * and warnings go to stderr.
+ * (`--json`: a JSON array of `{ publicKey, notAfter }`). Diagnostics, the
+ * fingerprint, the expiry and warnings go to stderr.
  *
- * A legacy `.ait_relay` (or `AIT_DEBUG_TOTP_SECRET`) is imported into the agent and
- * removed on the way, see `relay-legacy.ts`.
- *
- * SECRET-HANDLING: only public keys and expiries are printed.
+ * SECRET-HANDLING: only public keys, fingerprints and expiries are printed.
  */
 
 import { resolve } from 'node:path';
 import { AgentError } from '../agent/protocol.js';
-import { prepareProjectKeys } from './relay-root.js';
+import { keyFingerprint } from './key-fingerprint.js';
+import { MACHINE_KEY_ID, prepareRelayKeys } from './relay-root.js';
 
 export const RELAY_KEY_USAGE = `
-debugger relay-key — print the relay public key for this project
+debugger relay-key — print the relay public key of this machine
 
 USAGE
-  debugger relay-key [--project <dir>] [--rotate] [--json]
+  debugger relay-key [--rotate] [--json] [--project <dir>]
 
 OPTIONS
-  --project <dir>   Project directory (default: the current directory). The
-                    nearest package.json directory at or above it is used.
   --rotate          Replace the relay key with a new one (see below).
   --json            Print every live key as JSON ([{ "publicKey", "notAfter" }],
                     notAfter in unix seconds) instead of the newest public key.
+  --project <dir>   Accepted for compatibility; it does not change the key. An
+                    old .ait_relay in that project (default: the current
+                    directory) is deleted.
+
+There is one relay key per user account on this machine. Every project and every
+debugger session of yours signs with it, so a debug bundle built in any folder
+attaches to any of your debugger sessions; it does not matter where you run this.
 
 The relay key is volatile: the private half exists only in the memory of the
 key agent, a small background process started on demand (\`debugger key-agent\`;
 no service, no keychain, no network listener). It expires after 24 hours (set
 AIT_DEBUG_RELAY_KEY_TTL_HOURS, at most 72) and when the agent exits. Prints the
-public key on stdout; the expiry goes to stderr. The key is safe to commit.
+public key on stdout; the key fingerprint and the expiry go to stderr. The key
+is safe to commit.
 
-An old .ait_relay file or AIT_DEBUG_TOTP_SECRET is imported into the agent
-(bundles built with its public key keep attaching until the key expires) and the
-file is deleted. Deleting is not a secure wipe on SSD/APFS.
+An old .ait_relay file (0.3.x) is no longer used: it is deleted, not imported.
+Deleting is not a secure wipe on SSD/APFS. AIT_DEBUG_TOTP_SECRET is ignored.
 
---rotate drops the project's keys and prints the new public key. Bundles trust the
-public keys they were built with: rebuild every bundle you still test.
+--rotate drops the key and prints the new public key. Bundles trust the public
+keys they were built with: rebuild the debug bundles of every project you still
+test on this machine, and restart every running debugger session.
 `.trimStart();
 
 /** What `--rotate` tells the developer on stderr once the new key is in place. */
 export function rotateGuidance(): string {
   return [
-    '[debugger] relay-key: the relay key was replaced. The new public key is on stdout.',
-    '  1. Rebuild every debug bundle you still test (readRelayPublicKeys() returns the new key).',
-    '  2. Bundles built with the old key no longer attach to this daemon.',
-    '  3. Restart the debugger daemon (or call switch_environment again) so it uses the new key.',
+    '[debugger] relay-key: the relay key of this machine was replaced. The new public key is on stdout.',
+    '  The key is shared by every project and every debugger session on this machine, so:',
+    '  1. Rebuild the debug bundles of every project you still test (readRelayPublicKeys() and inject-client use the new key).',
+    '  2. Bundles built with the old key no longer attach, in any project.',
+    '  3. Restart every running debugger session (or call switch_environment again) so it signs with the new key.',
     '',
   ].join('\n');
 }
@@ -69,8 +81,8 @@ export interface RelayKeyDeps {
   readonly env?: NodeJS.ProcessEnv;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
-  /** Test seam for {@link prepareProjectKeys}. */
-  readonly prepare?: typeof prepareProjectKeys;
+  /** Test seam for {@link prepareRelayKeys}. */
+  readonly prepare?: typeof prepareRelayKeys;
 }
 
 /** Parses `--project <dir>` / `--project=<dir>`; `undefined` when absent, `null` when malformed. */
@@ -118,7 +130,7 @@ export async function runRelayKey(
   const rotate = args.includes('--rotate');
   const json = args.includes('--json');
   const start = resolve(project ?? (deps.cwd ?? (() => process.cwd()))());
-  const prepare = deps.prepare ?? prepareProjectKeys;
+  const prepare = deps.prepare ?? prepareRelayKeys;
   try {
     const prepared = await prepare({
       projectRoot: start,
@@ -128,7 +140,7 @@ export async function runRelayKey(
     });
     let keys = prepared.keys;
     if (rotate) {
-      keys = await prepared.provider.rotate(prepared.project.id);
+      keys = await prepared.provider.rotate(MACHINE_KEY_ID);
       writeError(rotateGuidance());
     }
     if (json) {
@@ -138,6 +150,9 @@ export async function runRelayKey(
     } else {
       write(`${keys.publicKey}\n`);
     }
+    writeError(
+      `[debugger] relay-key: key fingerprint ${keyFingerprint(keys.publicKey)} (one key for every project and debugger session on this machine)\n`,
+    );
     writeError(
       `[debugger] relay-key: expires ${new Date(keys.notAfter * 1000).toISOString()} (the key lives in memory only; rebuild the debug bundle after it expires)\n`,
     );

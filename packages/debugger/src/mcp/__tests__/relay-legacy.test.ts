@@ -14,23 +14,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { KeyStore } from '../../agent/key-store.js';
-import { type KeyProvider, LocalKeyProvider } from '../../agent/provider.js';
+import { LocalKeyProvider } from '../../agent/provider.js';
 import { derivePublicKey } from '../../agent/root-key.js';
 import {
   isInSyncFolder,
   type LegacyFs,
-  migrateLegacyRelaySecrets,
   RELAY_SECRET_FILE_NAME,
+  retireLegacyRelaySecrets,
   vetSecretFile,
 } from '../relay-legacy.js';
+import { MACHINE_KEY_ID, prepareRelayKeys } from '../relay-root.js';
 
 const SECRET = 'ab'.repeat(32);
-const PROJECT = 'd'.repeat(32);
 const posix = process.platform !== 'win32';
 
 let dir: string;
 let logs: string[];
-let provider: LocalKeyProvider;
 const log = (m: string) => logs.push(m);
 const noGit = () => undefined;
 
@@ -38,88 +37,57 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ait-legacy-'));
   writeFileSync(join(dir, 'package.json'), '{}');
   logs = [];
-  provider = new LocalKeyProvider(new KeyStore());
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const file = () => join(dir, RELAY_SECRET_FILE_NAME);
 const base = () => ({
-  projectId: PROJECT,
   dirs: [dir],
-  provider: provider as KeyProvider,
-  destroy: true,
   env: {} as NodeJS.ProcessEnv,
   git: noGit,
   log,
 });
 
-describe('legacy .ait_relay migration', () => {
-  it('imports, verifies the public key and deletes the file', async () => {
+describe('legacy .ait_relay is removed, never imported', () => {
+  it('deletes a valid secret file and reports it removed', async () => {
     writeFileSync(file(), SECRET, { mode: 0o600 });
-    const reports = await migrateLegacyRelaySecrets(base());
-    expect(reports).toEqual([
-      expect.objectContaining({
-        source: 'file',
-        outcome: 'imported',
-        publicKey: derivePublicKey(SECRET),
-      }),
-    ]);
+    const reports = await retireLegacyRelaySecrets(base());
+    expect(reports).toEqual([expect.objectContaining({ source: 'file', outcome: 'removed' })]);
     expect(existsSync(file())).toBe(false);
-    // The agent now holds the key a 0.3.1 bundle pins.
-    const info = await provider.getOrCreate(PROJECT);
-    expect(info.keys.map((k) => k.publicKey)).toContain(derivePublicKey(SECRET));
+    expect(logs.join('')).toContain('가져오지 않습니다');
+  });
+
+  it('never makes the legacy key the machine key, and two projects never compete for it', async () => {
+    const provider = new LocalKeyProvider(new KeyStore());
+    const other = mkdtempSync(join(tmpdir(), 'ait-legacy-b-'));
+    try {
+      writeFileSync(join(other, 'package.json'), '{}');
+      writeFileSync(file(), SECRET, { mode: 0o600 });
+      writeFileSync(join(other, RELAY_SECRET_FILE_NAME), 'cd'.repeat(32), { mode: 0o600 });
+      const a = await prepareRelayKeys({ projectRoot: dir, requireAgent: true, provider, log });
+      const b = await prepareRelayKeys({ projectRoot: other, requireAgent: true, provider, log });
+      expect(b.keys.publicKey).toBe(a.keys.publicKey);
+      const legacyKeys = [derivePublicKey(SECRET), derivePublicKey('cd'.repeat(32))];
+      for (const k of [...a.keys.keys, ...b.keys.keys]) {
+        expect(legacyKeys).not.toContain(k.publicKey);
+      }
+      expect((await provider.getOrCreate(MACHINE_KEY_ID)).keys).toHaveLength(1);
+      expect(existsSync(file())).toBe(false);
+      expect(existsSync(join(other, RELAY_SECRET_FILE_NAME))).toBe(false);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
   });
 
   it('is idempotent: a second run finds nothing to do', async () => {
     writeFileSync(file(), SECRET, { mode: 0o600 });
-    await migrateLegacyRelaySecrets(base());
+    await retireLegacyRelaySecrets(base());
     logs = [];
-    expect(await migrateLegacyRelaySecrets(base())).toEqual([]);
+    expect(await retireLegacyRelaySecrets(base())).toEqual([]);
     expect(logs).toEqual([]);
   });
 
-  it('keeps the file when the import fails', async () => {
-    writeFileSync(file(), SECRET, { mode: 0o600 });
-    const failing: KeyProvider = {
-      ...provider,
-      kind: 'agent',
-      status: provider.status.bind(provider),
-      getOrCreate: provider.getOrCreate.bind(provider),
-      rotate: provider.rotate.bind(provider),
-      signSessionCert: provider.signSessionCert.bind(provider),
-      importLegacy: async () => {
-        throw new Error('agent down');
-      },
-    };
-    const reports = await migrateLegacyRelaySecrets({ ...base(), provider: failing });
-    expect(reports[0]).toMatchObject({ outcome: 'kept' });
-    expect(existsSync(file())).toBe(true);
-    expect(readFileSync(file(), 'utf8')).toBe(SECRET);
-  });
-
-  it('keeps the file when the returned public key differs from the derived one', async () => {
-    writeFileSync(file(), SECRET, { mode: 0o600 });
-    const lying: KeyProvider = {
-      kind: 'agent',
-      status: provider.status.bind(provider),
-      getOrCreate: provider.getOrCreate.bind(provider),
-      rotate: provider.rotate.bind(provider),
-      signSessionCert: provider.signSessionCert.bind(provider),
-      importLegacy: async (id) => ({ ...(await provider.getOrCreate(id)), created: true }),
-    };
-    const reports = await migrateLegacyRelaySecrets({ ...base(), provider: lying });
-    expect(reports[0]).toMatchObject({ outcome: 'kept' });
-    expect(existsSync(file())).toBe(true);
-  });
-
-  it('keeps the file in fallback mode (destroy: false): the key would live only in this process', async () => {
-    writeFileSync(file(), SECRET, { mode: 0o600 });
-    const reports = await migrateLegacyRelaySecrets({ ...base(), destroy: false });
-    expect(reports[0]).toMatchObject({ outcome: 'kept', publicKey: derivePublicKey(SECRET) });
-    expect(existsSync(file())).toBe(true);
-  });
-
-  it('keeps the file when it cannot be deleted', async () => {
+  it('keeps the file when it cannot be deleted, and says to delete it', async () => {
     writeFileSync(file(), SECRET, { mode: 0o600 });
     const fs: LegacyFs = {
       existsSync,
@@ -129,27 +97,22 @@ describe('legacy .ait_relay migration', () => {
         throw new Error('EBUSY');
       },
     };
-    const reports = await migrateLegacyRelaySecrets({ ...base(), fs });
+    const reports = await retireLegacyRelaySecrets({ ...base(), fs });
     expect(reports[0]).toMatchObject({ outcome: 'kept', reason: '파일을 삭제하지 못했습니다' });
+    expect(logs.join('')).toContain('직접 삭제하세요');
   });
 
   it('ignores a file that is not a relay secret and leaves it alone', async () => {
     writeFileSync(file(), 'hello', { mode: 0o600 });
-    const reports = await migrateLegacyRelaySecrets(base());
+    const reports = await retireLegacyRelaySecrets(base());
     expect(reports[0]).toMatchObject({ outcome: 'invalid' });
     expect(existsSync(file())).toBe(true);
   });
 
-  it('imports an environment secret, removes the variable from the process env and warns', async () => {
+  it('removes the environment secret from the process env without importing it, and warns', async () => {
     const env: NodeJS.ProcessEnv = { AIT_DEBUG_TOTP_SECRET: SECRET };
-    const reports = await migrateLegacyRelaySecrets({ ...base(), env });
-    expect(reports).toEqual([
-      expect.objectContaining({
-        source: 'env',
-        outcome: 'imported',
-        publicKey: derivePublicKey(SECRET),
-      }),
-    ]);
+    const reports = await retireLegacyRelaySecrets({ ...base(), env });
+    expect(reports).toEqual([expect.objectContaining({ source: 'env', outcome: 'removed' })]);
     expect(env.AIT_DEBUG_TOTP_SECRET).toBeUndefined();
     expect(logs.join('')).toContain('AIT_DEBUG_TOTP_SECRET');
     expect(logs.join('')).toContain('지우세요');
@@ -159,16 +122,17 @@ describe('legacy .ait_relay migration', () => {
     const synced = join(dir, 'Dropbox', 'app');
     mkdirSync(synced, { recursive: true });
     writeFileSync(join(synced, RELAY_SECRET_FILE_NAME), SECRET, { mode: 0o600 });
-    const reports = await migrateLegacyRelaySecrets({
+    const reports = await retireLegacyRelaySecrets({
       ...base(),
       dirs: [synced],
       git: () => '.ait_relay', // `git ls-files --error-unmatch` succeeded
     });
-    expect(reports[0]).toMatchObject({ outcome: 'imported', gitTracked: true, inSyncFolder: true });
+    expect(reports[0]).toMatchObject({ outcome: 'removed', gitTracked: true, inSyncFolder: true });
     const text = logs.join('');
     expect(text).toContain('git에 추적');
     expect(text).toContain('동기화 폴더');
-    expect(text).toContain('relay-key --rotate');
+    expect(text).toContain('새로 빌드한 번들로 바꾸세요');
+    expect(text).not.toContain('--rotate');
     expect(text).toContain('secure wipe');
     expect(text).not.toContain(SECRET);
     expect(text).not.toContain(SECRET.slice(0, 16));
@@ -179,10 +143,8 @@ describe('legacy .ait_relay migration', () => {
     try {
       writeFileSync(join(other, RELAY_SECRET_FILE_NAME), 'cd'.repeat(32), { mode: 0o600 });
       writeFileSync(file(), SECRET, { mode: 0o600 });
-      const reports = await migrateLegacyRelaySecrets({ ...base(), dirs: [dir, other, dir] });
-      expect(reports.map((r) => r.outcome)).toEqual(['imported', 'imported']);
-      const info = await provider.getOrCreate(PROJECT);
-      expect(info.keys).toHaveLength(2);
+      const reports = await retireLegacyRelaySecrets({ ...base(), dirs: [dir, other, dir] });
+      expect(reports.map((r) => r.outcome)).toEqual(['removed', 'removed']);
       expect(existsSync(join(other, RELAY_SECRET_FILE_NAME))).toBe(false);
     } finally {
       rmSync(other, { recursive: true, force: true });
@@ -191,7 +153,7 @@ describe('legacy .ait_relay migration', () => {
 
   it('never logs the secret or the path', async () => {
     writeFileSync(file(), SECRET, { mode: 0o600 });
-    await migrateLegacyRelaySecrets({ ...base(), env: { AIT_DEBUG_TOTP_SECRET: 'cd'.repeat(32) } });
+    await retireLegacyRelaySecrets({ ...base(), env: { AIT_DEBUG_TOTP_SECRET: 'cd'.repeat(32) } });
     const text = logs.join('');
     expect(text).not.toContain(SECRET);
     expect(text).not.toContain('cd'.repeat(32));
@@ -215,19 +177,21 @@ describe('sync folder detection', () => {
 });
 
 describe.skipIf(!posix)('secret file vetting', () => {
-  it('tightens a world-readable file to 0600', async () => {
+  it('still removes a world-readable file (vetting tightens it first)', async () => {
     writeFileSync(file(), SECRET);
     chmodSync(file(), 0o644);
-    const reports = await migrateLegacyRelaySecrets(base());
-    expect(reports[0]).toMatchObject({ outcome: 'imported' });
+    const reports = await retireLegacyRelaySecrets(base());
+    expect(reports[0]).toMatchObject({ outcome: 'removed' });
+    expect(existsSync(file())).toBe(false);
   });
 
   it('refuses a symlink and leaves it alone', async () => {
     const target = join(dir, 'real-secret');
     writeFileSync(target, SECRET, { mode: 0o600 });
     symlinkSync(target, file());
-    const reports = await migrateLegacyRelaySecrets(base());
+    const reports = await retireLegacyRelaySecrets(base());
     expect(reports[0]).toMatchObject({ outcome: 'refused' });
+    expect(existsSync(file())).toBe(true);
     expect(existsSync(target)).toBe(true);
   });
 

@@ -20,7 +20,6 @@
  * Node-only.
  */
 
-import { createHash } from 'node:crypto';
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -28,6 +27,7 @@ import {
   LAST_PRE_RENAME_PROTOCOL,
   MIN_DEBUGGER_CLIENT_VERSION,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { keyFingerprint } from './key-fingerprint.js';
 import { compareVersions } from './min-version-gate.js';
 
 /** Directories (relative to the project root) searched for built files and `.ait` archives. */
@@ -122,10 +122,7 @@ export function readBakedKeys(text: string): BakedKey[] {
   return [...byKey.values()];
 }
 
-/** Short, non-reversible label for a key, safe to print. */
-export function keyFingerprint(publicKey: string): string {
-  return createHash('sha256').update(publicKey).digest('hex').slice(0, 8);
-}
+export { keyFingerprint };
 
 interface Budget {
   files: number;
@@ -384,13 +381,44 @@ export function judgeBakedKeys(
   return { status: 'ok' };
 }
 
-/** Error text for `start_attach` when the bundle's pinned keys cannot verify this daemon. No QR was issued. */
+/** The last debugger whose build helper pins a per-project relay key (later ones pin the machine key). */
+export const LAST_PROJECT_KEY_DEBUGGER = '0.4.2';
+
+/**
+ * Version of `@apps-in-toss/debugger` installed in the project (`node_modules`), or `null`
+ * when it is not installed or unreadable. That copy is the one a bundler config imports
+ * `readRelayPublicKeys` from, so it decides which key a bundler build pins.
+ */
+export function installedDebuggerVersion(projectRoot: string): string | null {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(
+        join(projectRoot, 'node_modules', '@apps-in-toss', 'debugger', 'package.json'),
+        'utf8',
+      ),
+    ) as { version?: unknown };
+    return typeof pkg.version === 'string' && pkg.version !== '' ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Error text for `start_attach` when the bundle's pinned keys cannot verify this daemon. No
+ * QR was issued. There is no `skipBundleCheck` hint on purpose: a bundle whose key does not
+ * match fails the phone's signature check anyway, so skipping this check only moves the
+ * failure to the phone.
+ *
+ * @param buildHelperVersion - The project's installed `@apps-in-toss/debugger` when it is
+ *   {@link LAST_PROJECT_KEY_DEBUGGER} or older: those pin a per-project key, so a bundler
+ *   build made with it never matches; the message then says to upgrade it first.
+ */
 export function bakedKeyRefusedMessage(
   verdict: Exclude<BakedKeyVerdict, { status: 'ok' }>,
   path: string,
   clientVersion: string | null,
   debuggerVersion: string,
-  skipClause: string,
+  buildHelperVersion?: string | null,
 ): string {
   const client = `debugger-client${clientVersion === null ? '' : ` ${clientVersion}`}`;
   const rebuild =
@@ -403,8 +431,15 @@ export function bakedKeyRefusedMessage(
     found = `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.fingerprints.join(', ')})는 유효 시간(약 24시간)이 지나 폰이 받지 않습니다.`;
   } else {
     found =
-      `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.baked.join(', ')})는 이전 키 에이전트의 것이거나 ` +
-      `지금 debugger ${debuggerVersion}이 쓰는 키(지문 ${verdict.live.join(', ')})와 달라 폰이 relay 주소를 검증하지 못합니다.`;
+      `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.baked.join(', ')})는 ` +
+      `이 debugger ${debuggerVersion} 세션이 QR에 서명하는 키(지문 ${verdict.live.join(', ')})와 달라 폰이 relay 주소를 검증하지 못합니다. ` +
+      '키는 이 기기에 하나라 어느 폴더에서 빌드해도 같지만, key agent가 재시작됐거나 `relay-key --rotate`로 교체됐거나 ' +
+      'debugger 0.4.2 이하(프로젝트별 키)로 빌드한 번들이면 다릅니다.';
+    if (buildHelperVersion !== undefined && buildHelperVersion !== null) {
+      found +=
+        ` 이 프로젝트에 설치된 @apps-in-toss/debugger ${buildHelperVersion}는 프로젝트별 키를 넣으므로 그대로 다시 빌드해도 맞지 않습니다. ` +
+        `먼저 이 debugger와 같은 버전(${debuggerVersion})으로 올리세요(/ait:setup-debugger).`;
+    }
   }
-  return `start_attach: QR을 발급하지 않았습니다. ${found} 먼저 고치세요: ${rebuild} ${skipClause}`;
+  return `start_attach: QR을 발급하지 않았습니다. ${found} 먼저 고치세요: ${rebuild}`;
 }

@@ -29,6 +29,7 @@ import type {
 } from '../cdp-connection.js';
 import { createDebugServer, startAttachWatcher } from '../debug-server.js';
 import type { McpEnvironment } from '../environment.js';
+import { keyFingerprint } from '../key-fingerprint.js';
 import { startParentWatcher } from '../parent-watcher.js';
 import { relayRunId } from '../relay-run-id.js';
 import type { TunnelStatus } from '../tools.js';
@@ -153,6 +154,8 @@ interface MakeClientOptions {
   readLiveRelayKeys?: (
     root: string,
   ) => Promise<readonly { publicKey: string; notAfter: number }[] | null>;
+  /** The key this session signs QR links with (test seam; default: none active). */
+  getSigningKey?: () => { publicKey: string; notAfter: number } | null;
 }
 
 /**
@@ -173,6 +176,7 @@ async function makeClient({
   getProtocolVersionSkew,
   phoneHasStatusChip,
   readLiveRelayKeys,
+  getSigningKey,
 }: MakeClientOptions): Promise<Client> {
   const server = createDebugServer({
     connection: connection ?? new FakeCdpConnection(),
@@ -183,6 +187,7 @@ async function makeClient({
     getProtocolVersionSkew,
     phoneHasStatusChip,
     ...(readLiveRelayKeys !== undefined ? { readLiveRelayKeys } : {}),
+    getSigningKey: getSigningKey ?? (() => null),
     getEnvironment: () => env,
     getEnvironmentReason: () => `test-pinned-${env}`,
     // null = caller explicitly wants no secret (for fail-closed tests).
@@ -536,8 +541,78 @@ describe('start_attach — client compatibility', () => {
       const result = await attachWithLive(root, [{ publicKey: KEY, notAfter: future }]);
       expect(result.isError).toBe(true);
       const text = getContent(result)[0]!.text!;
-      expect(text).toContain('이전 키 에이전트');
+      expect(text).toContain('서명하는 키');
+      expect(text).toContain('키는 이 기기에 하나');
+      // A mismatched key fails the phone's signature check too: no skip hint.
+      expect(text).not.toContain('skipBundleCheck');
       expect(text).not.toContain('B'.repeat(87));
+    });
+
+    describe('compared with the key this session signs with', () => {
+      const SIGNING = 'S'.repeat(87);
+      const OTHER = 'O'.repeat(87);
+      async function attachSigned(root: string, live: { publicKey: string; notAfter: number }[]) {
+        const client = await makeClient({
+          getTunnelStatus: () => tunnelUp,
+          connection: attachedConn(schemeUrl),
+          readLiveRelayKeys: async () => live,
+          getSigningKey: () => ({ publicKey: SIGNING, notAfter: future }),
+        });
+        return client.callTool({
+          name: 'start_attach',
+          arguments: { scheme_url: schemeUrl, projectRoot: root },
+        });
+      }
+
+      it('issues the QR for a bundle pinned with the signing key, whatever the agent lists', async () => {
+        const root = withKeys(`{publicKey:"${SIGNING}",notAfter:${future}}`);
+        const result = await attachSigned(root, [{ publicKey: OTHER, notAfter: future }]);
+        expect(result.isError).toBeFalsy();
+        const text = getContent(result).at(-1)!.text!;
+        expect(text).toContain(`서명 키: 지문 ${keyFingerprint(SIGNING)}`);
+        expect(text).not.toContain(SIGNING);
+      });
+
+      it('issues no QR for a bundle pinned with another key, even one the agent lists', async () => {
+        const root = withKeys(`{publicKey:"${OTHER}",notAfter:${future}}`);
+        const result = await attachSigned(root, [{ publicKey: OTHER, notAfter: future }]);
+        expect(result.isError).toBe(true);
+        const text = getContent(result)[0]!.text!;
+        expect(text).toContain(`지문 ${keyFingerprint(SIGNING)}`);
+        expect(text).not.toContain('skipBundleCheck');
+      });
+
+      it('one session, projectRoot A then B then A: bundles built in both folders pass', async () => {
+        // Two project folders (different repositories) with their own builds of the same app;
+        // the key is per machine, so both pin the key this session signs with.
+        const a = withKeys(`{publicKey:"${SIGNING}",notAfter:${future}}`);
+        const b = withKeys(`{publicKey:"${SIGNING}",notAfter:${future}}`);
+        const client = await makeClient({
+          getTunnelStatus: () => tunnelUp,
+          connection: attachedConn(schemeUrl),
+          readLiveRelayKeys: async () => null,
+          getSigningKey: () => ({ publicKey: SIGNING, notAfter: future }),
+        });
+        for (const root of [a, b, a]) {
+          const result = await client.callTool({
+            name: 'start_attach',
+            arguments: { scheme_url: schemeUrl, projectRoot: root },
+          });
+          expect(result.isError).toBeFalsy();
+        }
+      });
+
+      it('names an older installed build helper, which pins a per-project key', async () => {
+        const root = project({
+          'package.json': { name: 'keyed' },
+          'dist/web/main.js': clientJs,
+          'dist/web/index.html': `{publicKey:"${OTHER}",notAfter:${future}}`,
+          'node_modules/@apps-in-toss/debugger/package.json': { version: '0.4.2' },
+        });
+        const result = await attachSigned(root, []);
+        expect(result.isError).toBe(true);
+        expect(getContent(result)[0]!.text!).toContain('@apps-in-toss/debugger 0.4.2');
+      });
     });
 
     it('issues no QR for an expired key and issues it for a matching key', async () => {

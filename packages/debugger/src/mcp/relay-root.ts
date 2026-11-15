@@ -8,21 +8,34 @@
  * read-only home, CI) the daemon falls back to a key in its own memory for its
  * lifetime and says that debug bundles must be rebuilt after a daemon restart.
  *
- * {@link prepareProjectKeys} resolves the project, imports and destroys legacy
- * `.ait_relay` secrets (see `relay-legacy.ts`) and returns the project's keys.
- * {@link activateRelayRoot} adds the daemon part: it installs the root as the
- * certifier of session keys (`relay-signing.ts`) and keeps a fresh session key
- * on a timer.
+ * Scope: one key per key agent, that is one per user account on a machine. Every
+ * project, worktree and debugger session of the user signs with it, so a debug
+ * bundle built in any folder attaches to any debugger session of the same user.
+ * The key stops a relay that is not the developer's (a bundle pins its public
+ * key and checks the relay's signature); another person or another machine has
+ * another agent and so another key. Telling apps apart is not the key's job:
+ * the relay checks the app origin and accepts one mini-app (close 4409).
+ * 0.4.2 and earlier asked the agent for a key per project id; the agent protocol
+ * is unchanged and those versions keep working next to this one with their own
+ * keys (their bundles do not attach here, so they are rebuilt once).
+ *
+ * {@link prepareRelayKeys} removes legacy `.ait_relay` secrets of the given
+ * project folder (see `relay-legacy.ts`, they are not imported) and returns the
+ * machine key. {@link activateRelayRoot} adds the daemon part: it installs the
+ * root as the certifier of session keys (`relay-signing.ts`) and keeps a fresh
+ * session key on a timer.
  *
  * SECRET-HANDLING: only public keys and expiries leave this module; nothing here
  * logs a secret.
  */
 
+import { createHash } from 'node:crypto';
 import { type AgentClient, AgentUnavailableError } from '../agent/client.js';
 import { KeyStore, resolveKeyTtlMs } from '../agent/key-store.js';
 import { ensureAgent } from '../agent/launcher.js';
 import { AgentError, type KeyInfo } from '../agent/protocol.js';
 import { type KeyProvider, LocalKeyProvider } from '../agent/provider.js';
+import { keyFingerprint } from './key-fingerprint.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import {
   judgeRelayKeyAge,
@@ -30,8 +43,8 @@ import {
   type RelayKeyAge,
   RelayKeyExpiredError,
 } from './relay-key-age.js';
-import { type LegacyReport, migrateLegacyRelaySecrets } from './relay-legacy.js';
-import { type ProjectInfo, resolveProject } from './relay-project.js';
+import { type LegacyReport, retireLegacyRelaySecrets } from './relay-legacy.js';
+import { resolveProject } from './relay-project.js';
 import {
   activeRelayRoot,
   isRelayRootLive,
@@ -39,6 +52,17 @@ import {
   refreshRelaySession,
   setRelayRoot,
 } from './relay-signing.js';
+
+/**
+ * The id under which the key agent holds this machine's relay key. Fixed, not a
+ * secret (the agent is private to the user already); it only has to differ from
+ * the per-project ids 0.4.2 and earlier use in the same agent, and it fits the
+ * agent's id format (16 to 64 hex characters).
+ */
+export const MACHINE_KEY_ID = createHash('sha256')
+  .update('ait-relay-machine-v1')
+  .digest('hex')
+  .slice(0, 32);
 
 /** How often the daemon checks that a fresh session key is available. */
 export const SESSION_REFRESH_INTERVAL_MS = 30_000;
@@ -64,8 +88,12 @@ export function resetRelayRootState(): void {
 }
 
 export interface PrepareKeysOptions {
-  /** Project directory; the nearest package.json directory at or above it is used. */
-  readonly projectRoot: string;
+  /**
+   * A project folder to clear of legacy `.ait_relay` files (the nearest package.json
+   * directory at or above it, and its twins in other git worktrees). It does not choose
+   * the key: every folder gets the same machine key. Omitted: no folder is checked.
+   */
+  readonly projectRoot?: string | undefined;
   /** Fail instead of falling back to an in-process key (build helper, CLI). */
   readonly requireAgent: boolean;
   readonly env?: NodeJS.ProcessEnv;
@@ -73,12 +101,11 @@ export interface PrepareKeysOptions {
   /** Test seams. */
   readonly provider?: KeyProvider;
   readonly ensureAgent?: () => Promise<AgentClient>;
-  readonly project?: ProjectInfo;
-  readonly migrate?: typeof migrateLegacyRelaySecrets;
+  readonly legacyDirs?: readonly string[];
+  readonly retire?: typeof retireLegacyRelaySecrets;
 }
 
-export interface ProjectKeys {
-  readonly project: ProjectInfo;
+export interface RelayKeys {
   readonly provider: KeyProvider;
   readonly holder: 'agent' | 'memory';
   readonly keys: KeyInfo;
@@ -100,11 +127,10 @@ function agentDisabled(env: NodeJS.ProcessEnv): boolean {
   return env.AIT_DEBUGGER_KEY_AGENT === 'off';
 }
 
-/** Resolves the project, runs the legacy migration and returns its keys. */
-export async function prepareProjectKeys(options: PrepareKeysOptions): Promise<ProjectKeys> {
+/** Removes legacy secrets of `projectRoot` (if given) and returns this machine's relay key. */
+export async function prepareRelayKeys(options: PrepareKeysOptions): Promise<RelayKeys> {
   const env = options.env ?? process.env;
   const log = options.log ?? ((m: string) => void process.stderr.write(m));
-  const project = options.project ?? resolveProject(options.projectRoot);
 
   let provider: KeyProvider | undefined = options.provider;
   if (provider === undefined) {
@@ -123,16 +149,12 @@ export async function prepareProjectKeys(options: PrepareKeysOptions): Promise<P
   }
   const holder = provider.kind === 'agent' ? 'agent' : 'memory';
 
-  const legacy = await (options.migrate ?? migrateLegacyRelaySecrets)({
-    projectId: project.id,
-    dirs: project.legacyDirs,
-    provider,
-    destroy: holder === 'agent',
-    env,
-    log,
-  });
-  const keys = await provider.getOrCreate(project.id);
-  return { project, provider, holder, keys, legacy };
+  const dirs =
+    options.legacyDirs ??
+    (options.projectRoot === undefined ? [] : resolveProject(options.projectRoot).legacyDirs);
+  const legacy = await (options.retire ?? retireLegacyRelaySecrets)({ dirs, env, log });
+  const keys = await provider.getOrCreate(MACHINE_KEY_ID);
+  return { provider, holder, keys, legacy };
 }
 
 // ---------------------------------------------------------------------------
@@ -140,8 +162,9 @@ export async function prepareProjectKeys(options: PrepareKeysOptions): Promise<P
 // ---------------------------------------------------------------------------
 
 export interface ActivationReport {
-  readonly projectId: string;
   readonly publicKey: string;
+  /** {@link keyFingerprint} of `publicKey`. */
+  readonly keyFingerprint: string;
   readonly notAfter: number;
   readonly holder: 'agent' | 'memory';
   /** The key differs from the one this daemon used before (bundles must be rebuilt). */
@@ -149,13 +172,13 @@ export interface ActivationReport {
   readonly legacy: readonly LegacyReport[];
 }
 
-function certifierFor(provider: KeyProvider, projectId: string, keys: KeyInfo): RootCertSigner {
+function certifierFor(provider: KeyProvider, keys: KeyInfo): RootCertSigner {
   return {
     publicKey: keys.publicKey,
     notAfter: keys.notAfter,
     async certify(sessionPublicKey, nb, na) {
       try {
-        return await provider.signSessionCert(projectId, {
+        return await provider.signSessionCert(MACHINE_KEY_ID, {
           sessionPublicKey,
           nb,
           na,
@@ -208,14 +231,13 @@ function startSessionRefresher(log: (message: string) => void): void {
   refresher.unref();
 }
 
-export interface ActivateOptions extends Omit<PrepareKeysOptions, 'requireAgent' | 'projectRoot'> {
-  readonly projectRoot?: string | undefined;
+export interface ActivateOptions extends Omit<PrepareKeysOptions, 'requireAgent'> {
   readonly onKeyAge?: (age: RelayKeyAge) => void;
   readonly now?: () => number;
 }
 
 /**
- * Daemon entry: makes the project's root key the certifier of session keys and
+ * Daemon entry: makes this machine's root key the certifier of session keys and
  * gets a first session key. Throws {@link RelayKeyExpiredError} when the root
  * cannot sign.
  */
@@ -223,18 +245,19 @@ export async function activateRelayRoot(options: ActivateOptions = {}): Promise<
   const log = options.log ?? ((m: string) => void process.stderr.write(m));
   const now = options.now ?? Date.now;
   const previous = activeRelayRoot();
-  const prepared = await prepareProjectKeys({
+  const prepared = await prepareRelayKeys({
     ...options,
     projectRoot: options.projectRoot ?? process.cwd(),
     requireAgent: false,
     log,
   });
-  const { keys, provider, project, holder } = prepared;
-  setRelayRoot(certifierFor(provider, project.id, keys));
+  const { keys, provider, holder } = prepared;
+  const fingerprint = keyFingerprint(keys.publicKey);
+  setRelayRoot(certifierFor(provider, keys));
   await refreshRelaySession(now());
   startSessionRefresher(log);
 
-  const age = judgeRelayKeyAge(keys.notAfter, holder, now());
+  const age = { ...judgeRelayKeyAge(keys.notAfter, holder, now()), keyFingerprint: fingerprint };
   try {
     options.onKeyAge?.(age);
   } catch {
@@ -243,12 +266,12 @@ export async function activateRelayRoot(options: ActivateOptions = {}): Promise<
   const changed = previous !== null && previous.publicKey !== keys.publicKey;
   if (changed) {
     log(
-      `[@apps-in-toss/debugger] relay 키가 새로 만들어졌습니다. ${RELAY_KEY_REBUILD_STEPS} 이전 번들은 이전 공개 키를 박고 있어 attach되지 않습니다.\n`,
+      `[@apps-in-toss/debugger] relay 키가 바뀌었습니다(지문 ${fingerprint}). ${RELAY_KEY_REBUILD_STEPS} 이전 번들은 이전 공개 키를 박고 있어 attach되지 않습니다.\n`,
     );
   }
   return {
-    projectId: project.id,
     publicKey: keys.publicKey,
+    keyFingerprint: fingerprint,
     notAfter: keys.notAfter,
     holder,
     changed,

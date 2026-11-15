@@ -1,18 +1,20 @@
 /**
- * Build-time helper: the relay public keys of a project, for a debug bundle.
+ * Build-time helper: the relay public keys of this machine, for a debug bundle.
  *
  *   // vite.config.ts (inside the AIT_DEBUG_BUILD gate)
  *   import { readRelayPublicKeys } from '@apps-in-toss/debugger/relay-keys';
  *   define: { __AIT_RELAY_KEYS__: JSON.stringify(await readRelayPublicKeys(process.cwd())) }
  *
- * Node-only. It starts the key agent when it is not running, imports and removes
- * a legacy `.ait_relay` (so a bundle built with its public key keeps attaching
- * until the key expires), gets or creates the project's key and returns public
- * data only. Nothing secret is returned, printed or written to disk.
+ * Node-only. It starts the key agent when it is not running, removes a legacy
+ * `.ait_relay` of the project folder (it is no longer used), gets or creates the
+ * machine's key and returns public data only. The key is one per key agent (one
+ * per user account on the machine), not per project: a bundle built in any
+ * folder attaches to any debugger session of the same user. Nothing secret is
+ * returned, printed or written to disk.
  */
 
 import type { KeyProvider } from '../agent/provider.js';
-import { prepareProjectKeys } from './relay-root.js';
+import { prepareRelayKeys } from './relay-root.js';
 
 /** One relay public key a bundle pins. */
 export interface RelayPublicKeyEntry {
@@ -30,14 +32,15 @@ export interface ReadRelayPublicKeysOptions {
 }
 
 /**
- * The live relay public keys for the project at or above `projectRoot`, newest
- * first. Throws when the key agent cannot be started or reached.
+ * The live relay public keys of this machine, newest first. `projectRoot` only
+ * says which folder to clear of a legacy `.ait_relay`; it does not change the key.
+ * Throws when the key agent cannot be started or reached.
  */
 export async function readRelayPublicKeys(
   projectRoot: string = process.cwd(),
   options: ReadRelayPublicKeysOptions = {},
 ): Promise<RelayPublicKeyEntry[]> {
-  const { keys } = await prepareProjectKeys({
+  const { keys } = await prepareRelayKeys({
     projectRoot,
     requireAgent: true,
     ...(options.log === undefined ? {} : { log: options.log }),
