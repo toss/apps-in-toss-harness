@@ -95,3 +95,73 @@ export function launchBrowserCommand(
     }, timeoutMs);
   });
 }
+
+/** 대시보드를 열 브라우저 명령을 지정하는 환경 변수 이름. */
+export const BROWSER_ENV = 'AIT_DEBUGGER_BROWSER';
+
+export type BrowserCommandParse =
+  | { kind: 'unset' }
+  | { kind: 'ok'; cmd: string; args: string[] }
+  | { kind: 'invalid'; reason: string };
+
+/**
+ * `AIT_DEBUGGER_BROWSER` 값을 argv 배열로 푼다. 셸은 쓰지 않는다.
+ *
+ * - 비어 있으면 `unset`: 기존 후보 목록을 그대로 쓴다.
+ * - `[`로 시작하면 JSON 문자열 배열(`["/path with space/browser","--flag"]`)이다.
+ * - 아니면 공백으로 나누고, 작은따옴표나 큰따옴표로 감싼 구간은 한 인자로 묶는다. 백슬래시는
+ *   이스케이프가 아니라 문자 그대로다(Windows 경로). 변수 치환·글롭·`;`·`|`·`&&`는 해석하지 않고
+ *   그냥 글자로 남는다. 그래서 값에 셸 문법을 넣어도 다른 명령이 실행되지 않는다.
+ *
+ * 토큰 붙은 URL은 여기서 다루지 않는다. 호출자가 마지막 인자로만 덧붙인다.
+ */
+export function parseBrowserCommand(raw: string | undefined): BrowserCommandParse {
+  const value = raw?.trim();
+  if (!value) return { kind: 'unset' };
+  let argv: string[];
+  if (value.startsWith('[')) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return { kind: 'invalid', reason: `${BROWSER_ENV} 값이 올바른 JSON 배열이 아닙니다.` };
+    }
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length === 0 ||
+      !parsed.every((a) => typeof a === 'string' && a.length > 0)
+    ) {
+      return {
+        kind: 'invalid',
+        reason: `${BROWSER_ENV} JSON 배열은 비어 있지 않은 문자열만 담아야 합니다.`,
+      };
+    }
+    argv = parsed as string[];
+  } else {
+    argv = [];
+    let cur = '';
+    let has = false;
+    let quote: '"' | "'" | null = null;
+    for (const ch of value) {
+      if (quote) {
+        if (ch === quote) quote = null;
+        else cur += ch;
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+        has = true;
+      } else if (/\s/.test(ch)) {
+        if (has || cur) argv.push(cur);
+        cur = '';
+        has = false;
+      } else {
+        cur += ch;
+        has = true;
+      }
+    }
+    if (quote) return { kind: 'invalid', reason: `${BROWSER_ENV} 값의 따옴표가 닫히지 않았습니다.` };
+    if (has || cur) argv.push(cur);
+  }
+  const [cmd, ...args] = argv;
+  if (!cmd) return { kind: 'invalid', reason: `${BROWSER_ENV} 값에 실행할 명령이 없습니다.` };
+  return { kind: 'ok', cmd, args };
+}

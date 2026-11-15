@@ -17,6 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TunnelStatus } from '../tools.js';
+import { parseBrowserCommand } from '../browser-launch.js';
 import { buildAttachUrl, canOpenBrowser, openQrInBrowser } from '../tools.js';
 import { fakeChild } from './fake-spawn.js';
 
@@ -537,5 +538,106 @@ describe('buildAttachUrl — authorityWarning', () => {
         secret,
       ),
     ).toThrow(/tunnel/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AIT_DEBUGGER_BROWSER — 브라우저 지정
+// ---------------------------------------------------------------------------
+
+describe('openQrInBrowser with AIT_DEBUGGER_BROWSER', () => {
+  const TOKEN_URL = 'http://127.0.0.1:12345/?dashtoken=SECRETTOKEN1234567890';
+  type SpawnMock = ReturnType<typeof vi.fn>;
+  const spawnMock = async (): Promise<SpawnMock> =>
+    (await import('node:child_process')).spawn as unknown as SpawnMock;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it('runs only the given command as argv and passes the token URL as the last argument', async () => {
+    vi.stubEnv('AIT_DEBUGGER_BROWSER', 'orca browser open --tab');
+    const spawn = await spawnMock();
+    spawn.mockImplementation(() => fakeChild({ status: 0 }));
+    const result = await openQrInBrowser('http://127.0.0.1:12345/', 'x/qr.png', TOKEN_URL);
+    expect(result.opened).toBe(true);
+    expect(spawn).toHaveBeenCalledOnce();
+    const [cmd, args, opts] = spawn.mock.calls[0] as [string, string[], { shell?: unknown }];
+    expect(cmd).toBe('orca');
+    expect(args).toEqual(['browser', 'open', '--tab', TOKEN_URL]);
+    expect(opts.shell).toBeFalsy();
+    // The result carries only the token-free root URL.
+    expect(JSON.stringify(result)).not.toContain('SECRETTOKEN');
+  });
+
+  it('does not fall back to the default candidates when the given command fails, and hides the token', async () => {
+    vi.stubEnv('AIT_DEBUGGER_BROWSER', '/opt/b');
+    const spawn = await spawnMock();
+    spawn.mockImplementation(() =>
+      fakeChild({ status: 2, stderr: `cannot open ${TOKEN_URL}`, error: null }),
+    );
+    const result = await openQrInBrowser('http://127.0.0.1:12345/', 'x/qr.png', TOKEN_URL);
+    expect(result.opened).toBe(false);
+    // First pass plus the one retry, both with the given command only.
+    expect(spawn).toHaveBeenCalledTimes(2);
+    for (const call of spawn.mock.calls as Array<[string]>) expect(call[0]).toBe('/opt/b');
+    expect(JSON.stringify(result)).not.toContain('SECRETTOKEN');
+    expect(result.stderrSummary).toContain('dashtoken=<redacted>');
+  });
+
+  it('keeps shell syntax inert: it is just argv text', async () => {
+    vi.stubEnv('AIT_DEBUGGER_BROWSER', 'br ; touch $HOME/x && echo `id` | cat');
+    const spawn = await spawnMock();
+    spawn.mockImplementation(() => fakeChild({ status: 0 }));
+    await openQrInBrowser('http://127.0.0.1:12345/', 'x/qr.png', TOKEN_URL);
+    const [cmd, args] = spawn.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe('br');
+    expect(args.slice(0, 3)).toEqual([';', 'touch', '$HOME/x']);
+    expect(args.at(-1)).toBe(TOKEN_URL);
+  });
+
+  it('rejects an unparsable value without spawning anything', async () => {
+    vi.stubEnv('AIT_DEBUGGER_BROWSER', 'br "unclosed');
+    const spawn = await spawnMock();
+    const result = await openQrInBrowser('http://127.0.0.1:12345/', 'x/qr.png', TOKEN_URL);
+    expect(result.opened).toBe(false);
+    expect(result.error).toContain('AIT_DEBUGGER_BROWSER');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('uses the platform candidates when unset or blank, and ignores the standard BROWSER variable', async () => {
+    vi.stubEnv('AIT_DEBUGGER_BROWSER', '  ');
+    vi.stubEnv('BROWSER', 'w3m');
+    const spawn = await spawnMock();
+    spawn.mockImplementation(() => fakeChild({ status: 0 }));
+    await openQrInBrowser('http://127.0.0.1:12345/', 'x/qr.png', TOKEN_URL);
+    const [cmd, args] = spawn.mock.calls[0] as [string, string[]];
+    expect(cmd).not.toBe('w3m');
+    expect(args.at(-1)).toBe(TOKEN_URL);
+  });
+});
+
+describe('parseBrowserCommand', () => {
+  it('splits on whitespace, groups quotes, keeps backslashes, reads a JSON array', () => {
+    expect(parseBrowserCommand(undefined)).toEqual({ kind: 'unset' });
+    expect(parseBrowserCommand('open -a "Google Chrome"')).toEqual({
+      kind: 'ok',
+      cmd: 'open',
+      args: ['-a', 'Google Chrome'],
+    });
+    expect(parseBrowserCommand('"C:\\Program Files\\b.exe" --x')).toEqual({
+      kind: 'ok',
+      cmd: 'C:\\Program Files\\b.exe',
+      args: ['--x'],
+    });
+    expect(parseBrowserCommand('["/a b/br","--new tab"]')).toEqual({
+      kind: 'ok',
+      cmd: '/a b/br',
+      args: ['--new tab'],
+    });
+    expect(parseBrowserCommand('[]').kind).toBe('invalid');
+    expect(parseBrowserCommand('[1]').kind).toBe('invalid');
+    expect(parseBrowserCommand('[nope').kind).toBe('invalid');
   });
 });

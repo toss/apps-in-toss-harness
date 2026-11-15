@@ -35,7 +35,12 @@ import {
   type AttachTimeline,
   diagnoseAttach,
 } from './attach-timeline.js';
-import { BROWSER_LAUNCH_TIMEOUT_MS, launchBrowserCommand } from './browser-launch.js';
+import {
+  BROWSER_ENV,
+  BROWSER_LAUNCH_TIMEOUT_MS,
+  launchBrowserCommand,
+  parseBrowserCommand,
+} from './browser-launch.js';
 import type {
   CdpCallFrame,
   CdpConnection,
@@ -1234,7 +1239,8 @@ function isLaunchFailureStderr(stderr: string): boolean {
 /**
  * 로컬 HTTP 서버 루트 URL(`http://127.0.0.1:<port>/`)을 OS 기본 브라우저로 연다 (#595).
  *
- * platform별 fallback chain으로 시도하며, 모두 실패하면 1회 retry를 수행한다
+ * 환경 변수 `AIT_DEBUGGER_BROWSER`가 있으면 그 명령(셸 없이 argv, URL이 마지막 인자)만 쓰고,
+ * 없으면 platform별 fallback chain으로 시도하며, 모두 실패하면 1회 retry를 수행한다
  * (ephemeral process launch 타이밍 문제 대응). retry까지 실패해도 `opened: false` +
  * `httpUrl`을 반환해 사용자가 직접 브라우저에 붙여넣을 수 있게 한다.
  *
@@ -1262,17 +1268,29 @@ export async function openQrInBrowser(
   launchUrl: string = httpUrl,
   launchTimeoutMs: number = BROWSER_LAUNCH_TIMEOUT_MS,
 ): Promise<OpenQrInBrowserResult> {
+  // AIT_DEBUGGER_BROWSER가 있으면 그 명령 하나만 쓴다(토큰 URL은 마지막 인자). 지정한 브라우저가
+  // 안 뜨는데 기본 브라우저로 몰래 열면 어느 브라우저에 쿠키가 생겼는지 알 수 없게 되므로,
+  // 실패해도 기본 후보로 넘어가지 않고 openQrInBrowser가 opened:false로 돌려준다.
+  // 표준 BROWSER 변수는 읽지 않는다(다른 도구가 쓰는 값이라 의도하지 않은 명령이 실행될 수 있다).
+  const custom = parseBrowserCommand(process.env[BROWSER_ENV]);
+  if (custom.kind === 'invalid') {
+    return { opened: false, httpUrl, pngUrl, error: custom.reason };
+  }
+  const candidates =
+    custom.kind === 'ok'
+      ? [{ cmd: custom.cmd, args: [...custom.args, launchUrl] }]
+      : getBrowserCandidates(launchUrl);
+
   /**
    * 한 번의 fallback chain 시도. 열렸거나(느린 후보 포함) 하나라도 실행 중이면 true.
    * stderrLines에 각 후보의 stderr를 누적한다.
    */
   async function tryOnce(stderrLines: string[]): Promise<boolean> {
-    const candidates = getBrowserCandidates(launchUrl);
     for (const { cmd, args } of candidates) {
       const result = await launchBrowserCommand(cmd, args, isLaunchFailureStderr, launchTimeoutMs);
 
       if (result.errorMessage) {
-        stderrLines.push(`${cmd}: ${result.errorMessage}`);
+        stderrLines.push(`${cmd}: ${redactSecrets(result.errorMessage)}`);
       }
       const stderr = result.stderr.trim();
       if (stderr) {
