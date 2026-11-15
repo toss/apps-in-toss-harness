@@ -297,7 +297,10 @@ describe('relay-key command', () => {
   });
 });
 
-describe('one key per machine, not per project', () => {
+// These tests run a real key agent, git init and several key round trips. Under
+// a full parallel test run (one worker per file) they can pass 5 s, so they get
+// more time; the assertions are unchanged.
+describe('one key per machine, not per project', { timeout: 30_000 }, () => {
   /** A fresh git repository with a package.json, like a mini-app project. */
   function gitProject(prefix: string): string {
     const root = mkdtempSync(join(tmpdir(), prefix));

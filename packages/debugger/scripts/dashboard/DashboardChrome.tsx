@@ -13,6 +13,8 @@
  *   connecting  — progress steps while the phone opens the mini-app
  *   connected   — device, time left, DevTools link, pages
  *   error       — the connection path dropped (cause + next action)
+ * Orthogonal to data-view: `data-conn="lost"` (set when the /events stream drops) shows the
+ * `lost` pane over whatever view was current, until a frame arrives again.
  * The server writes the first `data-view`; the inline client script keeps it
  * current from the `/events` frames. Diagnostics live in a collapsed
  * "자세히" block and never show the tunnel host, tokens or the attach link.
@@ -52,6 +54,8 @@ interface DashboardChromeProps {
     peekWarn: string;
     errorTitle: string;
     errorBody: string;
+    lostTitle: string;
+    lostBody: string;
     detailsSummary: string;
   };
 }
@@ -149,6 +153,10 @@ p { margin: 0; }
 [data-view="connecting"] [data-pane="connecting"],
 [data-view="connected"] [data-pane="connected"],
 [data-view="error"] [data-pane="error"] { display: block; }
+/* conn=lost: the SSE link to the debugger dropped, so every pane is stale. The lost pane wins over data-view. */
+#stage[data-conn="lost"] .pane { display: none; }
+#stage[data-conn="lost"] [data-pane="lost"] { display: block; }
+#stage[data-conn="lost"] ~ #ait-control { display: none; }
 .notice { margin: 0 auto var(--sp-2); max-width: 380px; padding: 12px var(--sp-2); border-radius: 12px; background: var(--warn-bg); color: var(--warn); font-size: 14px; line-height: 22px; }
 .notice[hidden] { display: none; }
 #attach-section { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
@@ -422,6 +430,14 @@ export function DashboardChrome({ lang, strings }: DashboardChromeProps) {
                     {strings.qrMake}
                   </button>
                 </div>
+              </div>
+
+              <div className="pane" data-pane="lost" role="status">
+                <div className="state-badge bad" aria-hidden="true">
+                  {'?'}
+                </div>
+                <h2>{strings.lostTitle}</h2>
+                <p className="lead">{strings.lostBody}</p>
               </div>
             </section>
 

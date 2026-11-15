@@ -41,7 +41,10 @@ const control = (over: Partial<DashboardControl> = {}): DashboardControl => ({
   ...over,
 });
 
-let sse: { onmessage: ((e: MessageEvent) => void) | null } | null = null;
+let sse: {
+  onmessage: ((e: MessageEvent) => void) | null;
+  onerror: (() => void) | null;
+} | null = null;
 let pending: Array<{ src: string; ok: () => void; fail: () => void }> = [];
 const fetched: string[] = [];
 let qrStatus = 200;
@@ -133,7 +136,9 @@ async function decodeNext(): Promise<string> {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  // setInterval too: the dashboard script starts a 250 ms countdown interval on every mount.
+  // Left real, it outlives the test file and fires after jsdom is gone (document is not defined).
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   sse = null;
   pending = [];
   fetched.length = 0;
@@ -271,5 +276,66 @@ describe('dashboard states — no empty card, only the actions that make sense',
     expect(document.querySelector('[data-pane="wait"]')?.getAttribute('data-qr')).toBe('1');
     await decodeNext();
     expect(qrFrame().dataset.ready).toBe('1');
+  });
+});
+
+describe('daemon connection lost — the big screen must not keep saying "connected"', () => {
+  const stage = () => document.getElementById('stage') as HTMLElement;
+  const pill = () => document.getElementById('tunnel-status');
+  const attached = state({ pages: [{ id: 'p1', url: 'https://m.example/' }] });
+  const conn = () => stage().getAttribute('data-conn');
+
+  // jsdom here only gets the body markup, not the page's stylesheet, so which pane is visible is
+  // checked as "attribute state + the CSS rule that maps it", not through getComputedStyle.
+  it('ships a CSS rule that lets the lost pane win over every data-view pane', async () => {
+    const srv = await startQrHttpServer(() => state());
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
+      expect(html).toContain('#stage[data-conn="lost"] .pane { display: none; }');
+      expect(html).toContain('#stage[data-conn="lost"] [data-pane="lost"] { display: block; }');
+      expect(html).toContain('data-pane="lost"');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('SSE onerror on the connected screen marks the stage lost and the badge says so too', async () => {
+    await mount(attached, control({ attached: 1 }));
+    expect(stage().getAttribute('data-view')).toBe('connected');
+    expect(conn()).toBeNull();
+    sse?.onerror?.();
+    expect(pill()?.textContent).toBe('연결 끊김 — 재연결 시도 중…');
+    expect(conn()).toBe('lost');
+    const text = document.querySelector('[data-pane="lost"]')?.textContent ?? '';
+    expect(text).toContain('debugger와 연결이 끊겼어요');
+    expect(text).toContain('Claude에게 다시 연결해 달라고');
+    // Developer terms (tool names) stay out of the dashboard copy.
+    expect(text).not.toContain('start_attach');
+    // The tunnel-down copy belongs to the error pane, not here.
+    expect(text).not.toContain('연결 통로가 끊겼어요');
+  });
+
+  it('a frame after reconnect restores the screen the state calls for', async () => {
+    await mount(attached, control({ attached: 1 }));
+    sse?.onerror?.();
+    frame({ ...attached, control: control({ attached: 1 }) });
+    expect(conn()).toBeNull();
+    expect(stage().getAttribute('data-view')).toBe('connected');
+    expect(pill()?.textContent).toBe('폰 연결됨');
+    // Lost again, and this time the phone is gone when the daemon returns.
+    sse?.onerror?.();
+    expect(conn()).toBe('lost');
+    frame({ ...state(), control: control() });
+    expect(conn()).toBeNull();
+    expect(stage().getAttribute('data-view')).toBe('wait');
+  });
+
+  it('also covers the wait screen, and keeps the link out of the page text', async () => {
+    await mount(state(), control());
+    sse?.onerror?.();
+    expect(conn()).toBe('lost');
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('intoss-private');
+    expect(text).not.toContain('sig=');
   });
 });

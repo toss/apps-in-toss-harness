@@ -54,6 +54,9 @@ export const ko = {
   'dashboard.watchdog.close': '탭 닫기',
   'dashboard.watchdog.closeManual': '이 탭은 브라우저에서 직접 닫아 주세요',
   'dashboard.conn.lost': '연결 끊김 — 재연결 시도 중…',
+  'dashboard.lost.title': 'debugger와 연결이 끊겼어요',
+  'dashboard.lost.body':
+    '폰 연결 상태를 확인할 수 없어요. debugger가 다시 뜨면 자동으로 이어져요. 계속 이 화면이면 Claude에게 다시 연결해 달라고 요청해 주세요.',
   'dashboard.superseded.title': '다른 탭에서 대시보드가 열려 있어요',
   'dashboard.superseded.body':
     '이 탭은 더 이상 갱신되지 않아요. 가장 최근에 연 대시보드 탭을 쓰시거나, 이 탭을 닫아도 됩니다.',
