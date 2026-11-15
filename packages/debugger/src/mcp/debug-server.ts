@@ -1247,7 +1247,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         if (bundle.status === 'stale') {
           return mcpError(staleBundleMessage(bundle, __VERSION__));
         }
-        // 키는 기본 24시간 뒤 만료된다. 올린 지 그보다 오래된 빌드면 QR은 막지 않고 한 줄만 알린다.
+        // 키는 기본 4주 뒤 만료된다. 올린 지 그보다 오래된 빌드면 QR은 막지 않고 한 줄만 알린다.
         const rawScheme = args?.scheme_url;
         const age = debugBundleAgeHours(
           bundleRoot,

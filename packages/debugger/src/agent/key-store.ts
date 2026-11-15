@@ -5,13 +5,18 @@
  * daemon keeps one for itself when no agent can be reached (fallback mode, see
  * `../mcp/relay-root.ts`). Nothing here touches a file, the environment or a log.
  *
- * Lifetime: a key lives {@link DEFAULT_KEY_TTL_HOURS} hours from creation or
- * import (`AIT_DEBUG_RELAY_KEY_TTL_HOURS`, at most {@link MAX_KEY_TTL_HOURS}).
- * After its `notAfter` it never signs again and is dropped.
+ * Lifetime: a key lives {@link DEFAULT_KEY_TTL_HOURS} hours (4 weeks) from
+ * creation or import (`AIT_DEBUG_RELAY_KEY_TTL_HOURS` can only shorten it, at
+ * most {@link MAX_KEY_TTL_HOURS}). After its `notAfter` it never signs again and
+ * is dropped.
  *
- * A project can hold a few keys at once (the newest is the primary): importing a
- * legacy secret next to a freshly created key keeps bundles built with either
- * attachable until their TTL.
+ * A project can hold a few keys at once. The primary (`KeyInfo.publicKey`) is the
+ * signing key: the OLDEST live key, so a bundle built before the next key existed
+ * (it pins only the old one) attaches until the old key expires, and a bundle
+ * built later pins both. When the signing key has {@link KEY_PRE_ROTATION_HOURS}
+ * hours or less left and no newer key exists, the next key is made (lazily, on a
+ * lookup; there is no timer). Importing a legacy secret adds a key the same way.
+ * `KeyInfo.keys` lists every live key, oldest first (the signing key first).
  *
  * SECRET-HANDLING: private keys stay inside {@link RootKey} closures; only public
  * keys and certificates are returned.
@@ -23,7 +28,7 @@ import {
   type RelayCertJson,
 } from '@apps-in-toss/internal-protocol/relay-signature';
 import { isValidRelayAuthSecret } from '../mcp/totp.js';
-import { DEFAULT_KEY_TTL_HOURS, MAX_KEY_TTL_HOURS } from './key-ttl.js';
+import { DEFAULT_KEY_TTL_HOURS, KEY_PRE_ROTATION_HOURS, MAX_KEY_TTL_HOURS } from './key-ttl.js';
 import { AgentError, type AgentStatus, type KeyInfo, type PublicKeyInfo } from './protocol.js';
 import { createRootKey, deriveRootKey, type RootKey } from './root-key.js';
 
@@ -35,7 +40,7 @@ export const MAX_KEYS_PER_PROJECT = 4;
 
 const PROJECT_ID_RE = /^[0-9a-f]{16,64}$/;
 
-/** Reads `AIT_DEBUG_RELAY_KEY_TTL_HOURS`: default 24, at most 72, never zero or negative. */
+/** Reads `AIT_DEBUG_RELAY_KEY_TTL_HOURS`: default 672 (4 weeks), at most 672, never zero or negative. */
 export function resolveKeyTtlMs(env: NodeJS.ProcessEnv): number {
   const raw = env.AIT_DEBUG_RELAY_KEY_TTL_HOURS;
   let hours = DEFAULT_KEY_TTL_HOURS;
@@ -55,6 +60,15 @@ interface Entry {
 export interface KeyStoreOptions {
   readonly now?: () => number;
   readonly ttlMs?: number;
+  /** Pre-rotation window; default {@link KEY_PRE_ROTATION_HOURS}, capped at half the TTL. */
+  readonly preRotationMs?: number;
+}
+
+/** The signing key: the oldest of the entries. */
+function oldest(entries: readonly Entry[]): Entry | undefined {
+  let found: Entry | undefined;
+  for (const e of entries) if (found === undefined || e.createdAtMs < found.createdAtMs) found = e;
+  return found;
 }
 
 export function isProjectId(value: unknown): value is string {
@@ -67,12 +81,28 @@ export class KeyStore {
   private readonly expired = new Set<string>();
   private readonly now: () => number;
   private readonly ttlMs: number;
+  private readonly preRotationMs: number;
   readonly startedAt: number;
 
   constructor(options: KeyStoreOptions = {}) {
     this.now = options.now ?? Date.now;
     this.ttlMs = options.ttlMs ?? DEFAULT_KEY_TTL_HOURS * 3_600_000;
+    // A short TTL (the env override) would otherwise sit inside the window all its life.
+    this.preRotationMs = Math.min(
+      options.preRotationMs ?? KEY_PRE_ROTATION_HOURS * 3_600_000,
+      Math.floor(this.ttlMs / 2),
+    );
     this.startedAt = this.now();
+  }
+
+  /** Makes the next key when the signing (oldest live) key is inside the pre-rotation window. */
+  private preRotate(projectId: string): void {
+    const entries = this.live(projectId);
+    const signing = oldest(entries);
+    if (signing === undefined) return;
+    if (entries.some((e) => e.createdAtMs > signing.createdAtMs)) return;
+    if (signing.notAfterMs - this.now() > this.preRotationMs) return;
+    this.add(projectId, createRootKey());
   }
 
   /** Drops expired keys; returns how many live keys remain. */
@@ -99,6 +129,8 @@ export class KeyStore {
   }
 
   status(pid: number): AgentStatus {
+    this.purgeExpired();
+    for (const id of [...this.projects.keys()]) this.preRotate(id);
     const keys = this.purgeExpired();
     return {
       pid,
@@ -114,8 +146,8 @@ export class KeyStore {
   }
 
   private info(projectId: string): KeyInfo {
-    // Newest first.
-    const entries = [...this.live(projectId)].sort((a, b) => b.createdAtMs - a.createdAtMs);
+    // Oldest first: the first one is the signing key.
+    const entries = [...this.live(projectId)].sort((a, b) => a.createdAtMs - b.createdAtMs);
     const keys: PublicKeyInfo[] = entries.map((e) => ({
       publicKey: e.key.publicKey,
       notAfter: Math.floor(e.notAfterMs / 1000),
@@ -144,10 +176,11 @@ export class KeyStore {
     if (!isProjectId(projectId)) throw new AgentError('bad-request', 'invalid project id');
   }
 
-  /** The project's primary key, created when it has none live. */
+  /** The project's signing key (the oldest live one), created when it has none live. */
   getOrCreate(projectId: string): KeyInfo {
     this.checkId(projectId);
     if (this.live(projectId).length === 0) this.add(projectId, createRootKey());
+    this.preRotate(projectId);
     return this.info(projectId);
   }
 
@@ -207,8 +240,8 @@ export class KeyStore {
 
     const entries = this.live(projectId);
     const wanted = request.publicKey;
-    const sorted = [...entries].sort((a, b) => b.createdAtMs - a.createdAtMs);
-    const entry = wanted === undefined ? sorted[0] : sorted.find((e) => e.key.publicKey === wanted);
+    const entry =
+      wanted === undefined ? oldest(entries) : entries.find((e) => e.key.publicKey === wanted);
     if (entry === undefined) {
       if (wanted !== undefined && this.expired.has(wanted)) {
         throw new AgentError('expired', 'key expired');

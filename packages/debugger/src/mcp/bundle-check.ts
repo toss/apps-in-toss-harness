@@ -223,7 +223,7 @@ export function debugBundleAgeHours(
 
 /** The warning line for an old debug build (no QR is blocked). No id, no path. */
 export function oldBundleWarning(ageHours: number): string {
-  return `주의: 마지막으로 올린 디버그 빌드는 약 ${ageHours}시간 전 것이에요. 번들에 박힌 relay 키는 기본 ${DEFAULT_KEY_TTL_HOURS}시간 뒤 만료되니, 폰 막대에 '디버거 키가 만료됐어요'가 뜨면 다시 빌드해 올리세요.`;
+  return `주의: 마지막으로 올린 디버그 빌드는 약 ${ageHours}시간 전 것이에요. 번들에 박힌 relay 키는 기본 ${Math.round(DEFAULT_KEY_TTL_HOURS / 24)}일(4주) 뒤 만료되니, 폰 막대에 '디버거 키가 만료됐어요'가 뜨면 다시 빌드해 올리세요.`;
 }
 
 /** The fix, in order, for a stale bundle. */

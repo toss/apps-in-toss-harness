@@ -54,7 +54,7 @@ DESCRIPTION
   Copies ${INJECT_SCRIPT_NAME} next to the page and adds, before the page's own
   scripts, this machine's current relay public keys and a <script> tag for it.
   Running it again replaces the earlier injection. Start the debugger first: the
-  keys live in its key agent and expire after about 24 hours, so inject again
+  keys live in its key agent and expire after about 4 weeks, so inject again
   (and re-upload) when they do.
 
   There is one relay key per user account on this machine, shared by every
@@ -194,16 +194,16 @@ export async function runInjectClient(
   writeFileSync(htmlPath, injectIntoHtml(html, keys));
   copyFileSync(clientScript, join(dirname(htmlPath), INJECT_SCRIPT_NAME));
 
-  const soonest = Math.min(...keys.map((k) => k.notAfter));
+  const latest = Math.max(...keys.map((k) => k.notAfter));
   write(
     [
       `Injected the on-device debugger into ${relative(cwd, htmlPath) || htmlName}.`,
       `  script: ${INJECT_SCRIPT_NAME} (copied next to the page)`,
-      `  relay keys: ${keys.length} (key fingerprint ${keys.map((k) => keyFingerprint(k.publicKey)).join(', ')}, one key for every project on this machine), valid until ${new Date(soonest * 1000).toISOString()}`,
+      `  relay keys: ${keys.length} (key fingerprint ${keys.map((k) => keyFingerprint(k.publicKey)).join(', ')}, one key for every project on this machine), valid until ${new Date(latest * 1000).toISOString()}`,
       '',
       'This is a DEBUG build. Do not submit it for review; build the release build without this step for that.',
       'Next: package and upload it (/ait:test-on-device, debug build), then call start_attach.',
-      'The keys expire after about 24 hours: run this again and re-upload when they do.',
+      'The keys expire after about 4 weeks: run this again and re-upload when they do.',
       '',
     ].join('\n'),
   );

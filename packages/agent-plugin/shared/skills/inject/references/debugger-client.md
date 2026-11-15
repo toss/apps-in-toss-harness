@@ -140,7 +140,7 @@ if (__DEBUG_BUILD__) {
 - `__AIT_RELAY_KEYS__`는 번들러 `define`에서 채운다:
   `__AIT_RELAY_KEYS__: JSON.stringify(debugBuild ? await readRelayPublicKeys(process.cwd()) : [])`
   (`import { readRelayPublicKeys } from '@apps-in-toss/debugger/relay-keys'`). 키는 디스크가 아니라
-  디버거 키 에이전트 메모리에만 있고 기본 24시간 뒤 만료되므로, 만료되면 디버그 번들을 다시 빌드해 업로드한다.
+  디버거 키 에이전트 메모리에만 있고 기본 4주 뒤 만료되며(만료 1주 전에 다음 키가 생겨 그 뒤에 빌드한 번들은 계속 붙는다), 만료되거나 에이전트가 다시 뜨면(재부팅·로그아웃) 디버그 번들을 다시 빌드해 업로드한다.
   키는 이 기기(사용자 계정)에 하나라 인자로 넘긴 폴더와 관계없이 같은 키가 들어가고, 같은 사용자의 어느 디버거 세션에나 붙는다.
   이 헬퍼는 프로젝트에 설치된 `@apps-in-toss/debugger`에서 오므로 그 버전이 0.4.2 이하면 프로젝트별 키가 들어간다. 디버거와 같은 버전으로 맞춘다.
   공개키와 만료 시각 `{ publicKey, notAfter }`만 번들에 들어간다. 키 없이 `maybeAttach()`만 부르면 QR 테스트
@@ -215,7 +215,7 @@ debugger가 같은 버전의 `ait-debugger-client.js`를 페이지 옆에 복사
 공개키를 읽어 페이지의 첫 `<script>` 앞에 `__AIT_DEBUG_RELAY_KEYS__`와 `<script src>`를 넣는다. 키는 이 기기에 하나라
 어느 폴더에서 실행해도 같고(`--project`는 필요 없다), 출력에 키 지문이 나온다. 다시 실행하면
 앞의 주입을 바꿔 넣는다. 키가 없으면(debugger가 안 떠 있음) 멈추니 debugger를 먼저 띄운다. 결과는 디버그
-빌드라서 `.ait`로 묶어 올릴 때 `.ait-debug-deployments.json`에 기록하고 검수에 제출하지 않는다. 키는 약 24시간 뒤
+빌드라서 `.ait`로 묶어 올릴 때 `.ait-debug-deployments.json`에 기록하고 검수에 제출하지 않는다. 키는 약 4주 뒤
 만료되므로 그때는 다시 실행하고 다시 올린다. 릴리즈 빌드에는 이 단계를 하지 않는다.
 
 ## 7. 검증

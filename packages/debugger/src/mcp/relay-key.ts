@@ -7,9 +7,10 @@
  * account on the machine: every project and every debugger session of the user
  * signs with it (see `relay-root.ts`). The private half lives only in memory, in
  * the key agent (`debugger key-agent`, started on demand); nothing is written to
- * the project or to disk. A key lives 24 hours by default
- * (`AIT_DEBUG_RELAY_KEY_TTL_HOURS`, at most 72); after that, rebuild the debug
- * bundle with the new key.
+ * the project or to disk. A key lives 4 weeks by default
+ * (`AIT_DEBUG_RELAY_KEY_TTL_HOURS` can only shorten it); one week before the
+ * signing key expires the agent adds the next key, and a bundle built after that
+ * pins both. Rebuild the debug bundle when its keys have expired.
  *
  * `--rotate` drops the machine's key in the agent and prints the NEW public key.
  * A bundle trusts the public keys it was built with, so every debug bundle of
@@ -51,10 +52,12 @@ attaches to any of your debugger sessions; it does not matter where you run this
 
 The relay key is volatile: the private half exists only in the memory of the
 key agent, a small background process started on demand (\`debugger key-agent\`;
-no service, no keychain, no network listener). It expires after 24 hours (set
-AIT_DEBUG_RELAY_KEY_TTL_HOURS, at most 72) and when the agent exits. Prints the
-public key on stdout; the key fingerprint and the expiry go to stderr. The key
-is safe to commit.
+no service, no keychain, no network listener). It expires after 4 weeks (set
+AIT_DEBUG_RELAY_KEY_TTL_HOURS to shorten it) and when the agent exits. One week
+before it expires the agent adds the next key; a bundle built after that pins
+both. Prints the signing key on stdout (--json: every live key, signing key
+first); the key fingerprint and the expiry go to stderr. The key is safe to
+commit.
 
 An old .ait_relay file (0.3.x) is no longer used: it is deleted, not imported.
 Deleting is not a secure wipe on SSD/APFS. AIT_DEBUG_TOTP_SECRET is ignored.
@@ -153,6 +156,11 @@ export async function runRelayKey(
     writeError(
       `[debugger] relay-key: key fingerprint ${keyFingerprint(keys.publicKey)} (one key for every project and debugger session on this machine)\n`,
     );
+    if (!json && keys.keys.length > 1) {
+      writeError(
+        `[debugger] relay-key: ${keys.keys.length} keys are live; use --json to get all of them (a bundle pinned to the signing key alone stops attaching when it expires)\n`,
+      );
+    }
     writeError(
       `[debugger] relay-key: expires ${new Date(keys.notAfter * 1000).toISOString()} (the key lives in memory only; rebuild the debug bundle after it expires)\n`,
     );

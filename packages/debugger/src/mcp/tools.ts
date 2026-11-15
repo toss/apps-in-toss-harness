@@ -2225,7 +2225,7 @@ export interface DiagnosticsResult {
    * The relay key this session signs with (one per machine), or `null` before a
    * relay session activated one. `status` is `ok`, `aging` (less than
    * `RELAY_KEY_WARN_MINUTES` before `notAfter`) or `expired` (past `notAfter`,
-   * 24 hours after creation by default). `hint` says what to do and is `null` when the
+   * 4 weeks after creation by default). `hint` says what to do and is `null` when the
    * key is fine. Age, date and source only, never the key.
    */
   relayKey: (RelayKeyAge & { hint: string | null }) | null;

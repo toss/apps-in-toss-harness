@@ -59,7 +59,9 @@ QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 
 
 - **범위: 기기(사용자 계정)당 키 하나**: agent 하나가 키 하나를 들고, 이 사용자의 모든 프로젝트·worktree·디버거 세션이 그 키로 서명한다. 그래서 어느 폴더에서 빌드한 디버그 번들이든 같은 사용자의 어느 디버거 세션에나 붙는다. 키가 막는 것은 개발자의 것이 아닌 relay다(번들이 공개키를 박고 relay의 서명을 확인한다). 다른 사람이나 다른 기기는 agent가 달라 키도 다르다. 다른 미니앱을 가르는 일은 키가 아니라 relay의 앱 origin 검사와 relay 하나에 미니앱 하나(close 4409)가 맡는다. 0.4.2 이하는 프로젝트(git 저장소)마다 키를 따로 썼으므로, 그 버전으로 빌드한 번들은 한 번 다시 빌드해야 한다.
 - **key agent**: 루트 키는 `debugger key-agent`라는 작은 상주 Node 프로세스가 메모리에 들고 있다. 데몬이나 빌드 헬퍼, `relay-key` 명령이 처음 부를 때 알아서 떠서(`detached`, stdio 없음) 따로 설치하거나 켤 것이 없다. launchd·systemd·레지스트리·OS 키체인·네트워크 포트를 쓰지 않고, 사용자 폴더도 읽지 않는다. 통신은 사용자 전용 디렉터리(0700)의 Unix 소켓(macOS·Linux·WSL, `~/.ait-debugger/agent.sock`. Linux는 `$XDG_RUNTIME_DIR/ait-debugger/`가 있으면 그 아래)이나 Windows 이름 있는 파이프(`\\.\pipe\ait-debugger-<사용자 이름 해시>`)로만 한다. 요청마다 agent별 무작위 토큰(같은 사용자 전용 파일)이 필요한데, 이 토큰은 요청 권한만 줄 뿐 키가 아니다. agent는 개인키를 내보내지 않고 공개키와 세션 인증서만 돌려준다. 살아 있는 키가 없는 채로 5분이 지나면 스스로 끝난다.
-- **수명**: 키는 만든 때부터 기본 **24시간**, 최대 **72시간**(`AIT_DEBUG_RELAY_KEY_TTL_HOURS`) 뒤 만료된다. 만료되면 agent는 더 서명하지 않는다. 공개키와 만료 시각(`notAfter`)은 번들에 박히고, 클라이언트는 만료 시각을 5분 넘긴 키의 서명을 거부한다. 그래서 만료되거나 agent가 다시 뜬 뒤에는 **디버그 번들을 다시 빌드해 업로드해야** 한다. 데몬은 만료 2시간 전부터 `get_status`의 `relayKey.hint`로 알린다.
+- **수명**: 키는 만든 때부터 기본 **4주(28일)** 뒤 만료된다. `AIT_DEBUG_RELAY_KEY_TTL_HOURS`로 더 짧게는 줄 수 있지만 4주보다 길게는 못 한다. 만료되면 agent는 더 서명하지 않는다. 공개키와 만료 시각(`notAfter`)은 번들에 박히고, 클라이언트는 만료 시각을 5분 넘긴 키의 서명을 거부한다. 수명을 늘린 만큼 키를 박은 번들이 그 키를 믿는 기간도 길어진다. 개인키는 agent 메모리에만 있고 번들은 QR 테스트 호스트에서만 attach되므로 번들만으로 relay를 흉내 낼 수는 없다.
+- **다음 키(만료 1주 전)**: QR에는 살아 있는 키 중 **가장 오래된 키**로 서명한다. 그 키의 남은 수명이 7일 이하가 되면 agent가 다음 키를 하나 더 만든다(키를 조회할 때 만들고 타이머는 없다). 빌드 헬퍼와 `inject-client`는 살아 있는 키를 전부 번들에 박으므로, 다음 키가 생긴 뒤에 빌드한 번들은 두 키를 다 믿어 오래된 키가 만료돼도 계속 붙는다. 그 전에 빌드한 번들은 오래된 키가 만료될 때까지 붙는다. 그래서 언제 빌드한 번들이든 최소 7일은 붙는다. 서명 키가 바뀌면 데몬이 30초 안에 다음 키로 넘어가고, 그때부터 발급하는 QR은 새 키로 서명한다. 데몬은 서명 키 만료 2시간 전부터 `get_status`의 `relayKey.hint`로 알린다.
+- **agent가 다시 뜨면**: agent는 메모리에만 키를 두므로 재부팅·로그아웃으로 agent가 끝난 뒤에는 키가 새로 만들어진다. 이때는 이전 번들의 키가 모두 사라지니 **디버그 번들을 다시 빌드해 업로드해야** 한다. 4주가 지나 모든 키가 만료됐을 때도 같다.
 - **agent를 못 쓰는 환경**(샌드박스, 읽기 전용 홈, CI): 데몬이 자기 메모리에 키를 두고 쓰며, 데몬을 재시작하면 키가 새로 만들어지므로 그때마다 번들을 다시 빌드해야 한다고 stderr에 알린다. 빌드 헬퍼와 `relay-key` 명령은 이 경우 에러로 멈춘다(프로세스가 끝나면 사라지는 키는 번들에 박을 수 없다). `AIT_DEBUGGER_KEY_AGENT=off`로 agent를 끌 수 있고, `AIT_DEBUGGER_KEY_AGENT_DIR`로 디렉터리를 바꿀 수 있다.
 
 번들에 넣을 공개키는 빌드 헬퍼로 얻는다. 디버그 빌드 게이트(`AIT_DEBUG_BUILD`) 안에서만 쓴다.
@@ -103,7 +105,7 @@ npx -p <tgz URL> debugger relay-key --rotate   # 이 기기의 키를 버리고 
 
 ### 번들러 없는 빌드 (`debugger inject-client`)
 
-Unity WebGL 출력, 엔진 HTML5 출력, 직접 패키징한 `dist/`처럼 번들러가 없는 빌드에는 `define`으로 키를 넣을 곳이 없다. `debugger inject-client <빌드된 웹 폴더> [--html index.html]`가 이 경우를 맡는다. 이 debugger 릴리스에 들어 있는 `@apps-in-toss/debugger-client`의 브라우저용 스크립트(`ait-debugger-client.js`)를 페이지 옆에 복사하고, 실행 중인 key agent에서 현재 relay 공개키를 읽어 페이지의 첫 `<script>` 앞에 `globalThis.__AIT_DEBUG_RELAY_KEYS__=[…]`와 `<script src="ait-debugger-client.js">`를 넣는다. 다시 실행하면 앞의 주입을 바꿔 넣는다. 사용할 수 있는 키가 없으면(debugger가 안 떠 있음) 멈춘다. 결과는 디버그 빌드이므로 검수에 제출하면 안 되고, 키는 약 24시간 뒤 만료되니 그때는 다시 실행해 다시 올린다. 키는 기기 단위라 어느 폴더에서 실행해도 같은 키가 들어가고, 같은 앱을 여러 폴더에서 빌드해도 한 디버거 세션에서 번갈아 붙일 수 있다. `--project <dir>`는 호환을 위해 받기만 하고 키를 바꾸지 않는다. 출력에는 키의 짧은 지문만 나온다.
+Unity WebGL 출력, 엔진 HTML5 출력, 직접 패키징한 `dist/`처럼 번들러가 없는 빌드에는 `define`으로 키를 넣을 곳이 없다. `debugger inject-client <빌드된 웹 폴더> [--html index.html]`가 이 경우를 맡는다. 이 debugger 릴리스에 들어 있는 `@apps-in-toss/debugger-client`의 브라우저용 스크립트(`ait-debugger-client.js`)를 페이지 옆에 복사하고, 실행 중인 key agent에서 현재 relay 공개키를 읽어 페이지의 첫 `<script>` 앞에 `globalThis.__AIT_DEBUG_RELAY_KEYS__=[…]`와 `<script src="ait-debugger-client.js">`를 넣는다. 다시 실행하면 앞의 주입을 바꿔 넣는다. 사용할 수 있는 키가 없으면(debugger가 안 떠 있음) 멈춘다. 결과는 디버그 빌드이므로 검수에 제출하면 안 되고, 키는 약 4주 뒤 만료되니 그때는 다시 실행해 다시 올린다. 키는 기기 단위라 어느 폴더에서 실행해도 같은 키가 들어가고, 같은 앱을 여러 폴더에서 빌드해도 한 디버거 세션에서 번갈아 붙일 수 있다. `--project <dir>`는 호환을 위해 받기만 하고 키를 바꾸지 않는다. 출력에는 키의 짧은 지문만 나온다.
 
 ### Test runner (`debugger-test`)
 
