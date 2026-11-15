@@ -16,8 +16,8 @@
  * 파일/워커와의 고정 포트 충돌을 피한다.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TunnelStatus } from '../tools.js';
 import { parseBrowserCommand } from '../browser-launch.js';
+import type { TunnelStatus } from '../tools.js';
 import { buildAttachUrl, canOpenBrowser, openQrInBrowser } from '../tools.js';
 import { fakeChild } from './fake-spawn.js';
 

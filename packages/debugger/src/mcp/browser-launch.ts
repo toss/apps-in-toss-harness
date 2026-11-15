@@ -158,7 +158,8 @@ export function parseBrowserCommand(raw: string | undefined): BrowserCommandPars
         has = true;
       }
     }
-    if (quote) return { kind: 'invalid', reason: `${BROWSER_ENV} 값의 따옴표가 닫히지 않았습니다.` };
+    if (quote)
+      return { kind: 'invalid', reason: `${BROWSER_ENV} 값의 따옴표가 닫히지 않았습니다.` };
     if (has || cur) argv.push(cur);
   }
   const [cmd, ...args] = argv;
