@@ -291,6 +291,19 @@ describe('layout stays put while the dashboard updates', () => {
       await srv.close();
     }
   });
+
+  // The QR <img> must know its box before the PNG arrives, or the page reflows while it loads.
+  it('gives every QR image a fixed square box before the PNG loads', async () => {
+    const srv = await startQrHttpServer(() => state());
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
+      expect(html).toMatch(/img\.qr \{[^}]*aspect-ratio: 1 \/ 1;/);
+      // The image the script inserts on first render carries width/height too.
+      expect(html).toContain('width=\\"256\\" height=\\"256\\"');
+    } finally {
+      await srv.close();
+    }
+  });
 });
 
 describe('daemon connection lost — the big screen must not keep saying "connected"', () => {

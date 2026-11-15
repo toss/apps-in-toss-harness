@@ -433,6 +433,8 @@ describe('page-not-opened diagnosis', () => {
     tl.record('qr-issued', 'ok', 'mint');
     const d = diagnoseAttach(tl.snapshot());
     expect(d.kind).toBe('page-not-opened');
-    expect(d.actions.some((a) => a.includes('relay 키는 기본 약 24시간 뒤 만료돼요'))).toBe(true);
+    expect(d.actions.some((a) => a.includes('relay 키는 기본 약 28일(4주) 뒤 만료돼요'))).toBe(
+      true,
+    );
   });
 });

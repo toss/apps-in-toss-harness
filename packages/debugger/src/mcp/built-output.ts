@@ -428,7 +428,7 @@ export function bakedKeyRefusedMessage(
   if (verdict.status === 'no-keys') {
     found = `빌드 산출물(${path})의 ${client}에는 debugger 키가 들어 있지 않아 폰이 "이 번들에는 디버거 키가 없어요"로 막습니다.`;
   } else if (verdict.status === 'expired') {
-    found = `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.fingerprints.join(', ')})는 유효 시간(약 24시간)이 지나 폰이 받지 않습니다.`;
+    found = `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.fingerprints.join(', ')})는 유효 시간(약 4주)이 지나 폰이 받지 않습니다.`;
   } else {
     found =
       `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.baked.join(', ')})는 ` +

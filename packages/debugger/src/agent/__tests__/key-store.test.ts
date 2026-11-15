@@ -43,18 +43,18 @@ async function verifyRaw(pub: string, sig: string, message: string): Promise<boo
 }
 
 describe('resolveKeyTtlMs', () => {
-  it('defaults to 24 hours', () => {
-    expect(DEFAULT_KEY_TTL_HOURS).toBe(24);
-    expect(resolveKeyTtlMs({})).toBe(24 * HOUR);
+  it('defaults to 4 weeks', () => {
+    expect(DEFAULT_KEY_TTL_HOURS).toBe(28 * 24);
+    expect(resolveKeyTtlMs({})).toBe(28 * 24 * HOUR);
   });
-  it('honours the variable, capped at 72 hours', () => {
+  it('honours the variable, capped at 4 weeks', () => {
     expect(resolveKeyTtlMs({ AIT_DEBUG_RELAY_KEY_TTL_HOURS: '2' })).toBe(2 * HOUR);
-    expect(MAX_KEY_TTL_HOURS).toBe(72);
-    expect(resolveKeyTtlMs({ AIT_DEBUG_RELAY_KEY_TTL_HOURS: '500' })).toBe(72 * HOUR);
+    expect(MAX_KEY_TTL_HOURS).toBe(28 * 24);
+    expect(resolveKeyTtlMs({ AIT_DEBUG_RELAY_KEY_TTL_HOURS: '5000' })).toBe(28 * 24 * HOUR);
   });
   it('falls back to the default for zero, negative or garbage', () => {
     for (const bad of ['0', '-3', 'abc', '', 'NaN', 'Infinity']) {
-      expect(resolveKeyTtlMs({ AIT_DEBUG_RELAY_KEY_TTL_HOURS: bad })).toBe(24 * HOUR);
+      expect(resolveKeyTtlMs({ AIT_DEBUG_RELAY_KEY_TTL_HOURS: bad })).toBe(28 * 24 * HOUR);
     }
   });
 });
@@ -73,7 +73,7 @@ describe('KeyStore', () => {
 
   it('drops a key at notAfter and makes a new one afterwards', () => {
     const c = clock();
-    const store = new KeyStore({ now: c.now, ttlMs: HOUR });
+    const store = new KeyStore({ now: c.now, ttlMs: HOUR, preRotationMs: 0 });
     const first = store.getOrCreate(PROJECT);
     c.advance(HOUR - 1);
     expect(store.getOrCreate(PROJECT).publicKey).toBe(first.publicKey);
@@ -200,17 +200,19 @@ describe('KeyStore', () => {
     expect(again.keys).toHaveLength(1);
   });
 
-  it('keeps a created key next to an imported one; the import becomes the primary', () => {
+  it('keeps a created key next to an imported one; the oldest stays the signing key', () => {
     const c = clock();
     const store = new KeyStore({ now: c.now });
     const fresh = store.getOrCreate(PROJECT);
     c.advance(1000);
     const imported = store.importLegacy(PROJECT, SECRET);
+    // The import answer names the imported key at the top level (what a 0.4.2 daemon signs with).
+    expect(imported.publicKey).toBe(derivePublicKey(SECRET));
     expect(imported.keys.map((k) => k.publicKey)).toEqual([
-      derivePublicKey(SECRET),
       fresh.publicKey,
+      derivePublicKey(SECRET),
     ]);
-    expect(store.getOrCreate(PROJECT).publicKey).toBe(derivePublicKey(SECRET));
+    expect(store.getOrCreate(PROJECT).publicKey).toBe(fresh.publicKey);
   });
 
   it('rejects an invalid secret without echoing it', () => {
@@ -236,5 +238,134 @@ describe('KeyStore', () => {
     const store = new KeyStore();
     for (let i = 0; i < 64; i++) store.getOrCreate(i.toString(16).padStart(32, '0'));
     expect(() => store.getOrCreate('f'.repeat(32))).toThrow(AgentError);
+  });
+  describe('pre-rotation and the oldest signing key', () => {
+    const DAY = 24 * HOUR;
+    const WEEK = 7 * DAY;
+    const TTL = 28 * DAY;
+
+    async function signsUnder(store: KeyStore, publicKey: string | undefined, nowMs: number) {
+      const session = createRootKey().publicKey;
+      const nb = Math.floor(nowMs / 1000) - 300;
+      return store.signSessionCert(PROJECT, {
+        sessionPublicKey: session,
+        nb,
+        na: nb + 900,
+        ...(publicKey === undefined ? {} : { publicKey }),
+      });
+    }
+
+    it('makes no second key before the last week', () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      const first = store.getOrCreate(PROJECT);
+      c.advance(TTL - WEEK - HOUR);
+      expect(store.getOrCreate(PROJECT).keys).toHaveLength(1);
+      expect(store.status(1).keys).toBe(1);
+      expect(first.keys).toHaveLength(1);
+    });
+
+    it('adds the next key once, 7 days before the signing key expires, and keeps signing with the old one', async () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      const first = store.getOrCreate(PROJECT);
+      c.advance(TTL - WEEK);
+      const info = store.getOrCreate(PROJECT);
+      expect(info.keys).toHaveLength(2);
+      expect(info.publicKey).toBe(first.publicKey);
+      expect(info.notAfter).toBe(first.notAfter);
+      expect(info.keys[0]?.publicKey).toBe(first.publicKey);
+      const second = info.keys[1];
+      expect(second?.notAfter).toBe(Math.floor((c.now() + TTL) / 1000));
+      // Asking again makes no third key.
+      c.advance(3 * DAY);
+      expect(store.getOrCreate(PROJECT).keys).toHaveLength(2);
+      // The default signature is the oldest key's.
+      const cert = await signsUnder(store, undefined, c.now());
+      expect(cert.pub).toBeDefined();
+      const ok = await verifyRaw(
+        first.publicKey,
+        cert.sig,
+        relayCertMessage(cert.pub, cert.nb, cert.na),
+      );
+      expect(ok).toBe(true);
+    });
+
+    it('status() also pre-rotates, so the keys exist before anyone asks', () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      store.getOrCreate(PROJECT);
+      c.advance(TTL - WEEK + HOUR);
+      expect(store.status(1).keys).toBe(2);
+    });
+
+    it('moves to the next key when the oldest expires, and makes another one a week ahead', () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      const first = store.getOrCreate(PROJECT);
+      c.advance(TTL - WEEK);
+      const second = store.getOrCreate(PROJECT).keys[1];
+      c.advance(WEEK);
+      const after = store.getOrCreate(PROJECT);
+      expect(after.publicKey).toBe(second?.publicKey);
+      expect(after.publicKey).not.toBe(first.publicKey);
+      // The second key is 3 weeks from expiry: no third key yet.
+      expect(after.keys).toHaveLength(1);
+      c.advance(TTL - 2 * WEEK);
+      expect(store.getOrCreate(PROJECT).keys).toHaveLength(2);
+    });
+
+    it('a bundle built before the next key (old key only) and one built after (both) both attach for 7+ days', () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      const early = store.getOrCreate(PROJECT).keys.map((k) => k.publicKey);
+      c.advance(TTL - WEEK);
+      const late = store.getOrCreate(PROJECT).keys.map((k) => k.publicKey);
+      const signing = (at: number) => {
+        c.advance(at - (c.now() - T0));
+        return store.getOrCreate(PROJECT).publicKey;
+      };
+      // Until the old key expires the signing key is in both lists.
+      const justBefore = signing(TTL - 1000);
+      expect(early).toContain(justBefore);
+      expect(late).toContain(justBefore);
+      // After it expires the signing key is the next one: only the later bundle has it.
+      const justAfter = signing(TTL + 1000);
+      expect(late).toContain(justAfter);
+      expect(early).not.toContain(justAfter);
+    });
+
+    it('keeps at most MAX_KEYS_PER_PROJECT keys', () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      store.getOrCreate(PROJECT);
+      for (let i = 0; i < 6; i++) {
+        c.advance(1000);
+        store.importLegacy(PROJECT, `${(i + 1).toString(16).padStart(2, '0')}`.repeat(32));
+      }
+      expect(store.getOrCreate(PROJECT).keys.length).toBeLessThanOrEqual(4);
+    });
+
+    it('caps the window at half the lifetime for a short TTL', () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: 24 * HOUR });
+      store.getOrCreate(PROJECT);
+      c.advance(11 * HOUR);
+      expect(store.getOrCreate(PROJECT).keys).toHaveLength(1);
+      c.advance(1 * HOUR);
+      expect(store.getOrCreate(PROJECT).keys).toHaveLength(2);
+    });
+
+    it('still refuses an expired key by name', async () => {
+      const c = clock();
+      const store = new KeyStore({ now: c.now, ttlMs: TTL });
+      const first = store.getOrCreate(PROJECT);
+      c.advance(TTL - WEEK);
+      store.getOrCreate(PROJECT);
+      c.advance(WEEK + 1000);
+      await expect(signsUnder(store, first.publicKey, c.now())).rejects.toMatchObject({
+        code: 'expired',
+      });
+    });
   });
 });

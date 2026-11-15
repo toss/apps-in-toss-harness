@@ -157,7 +157,7 @@ export const RELAY_AUTH_SECRET_MISSING_MESSAGE = [
   '[ait-debugger] relay 키가 준비되지 않았습니다. relay 환경은 코드 인증이 필수입니다.',
   '데몬은 이 기기의 relay 키(모든 프로젝트가 함께 쓰는 키 하나)를 key agent(메모리)에서 받아옵니다. switch_environment를 다시 호출하세요.',
   '예전 .ait_relay 파일과 AIT_DEBUG_TOTP_SECRET은 더 이상 쓰지 않습니다. 남아 있으면 가져오지 않고 지웁니다.',
-  '키는 기본 24시간(최대 72시간) 뒤 만료됩니다. 만료나 key agent 재시작 뒤에는 디버그 번들을 다시 빌드해 업로드하세요.',
+  '키는 기본 4주(최대 4주) 뒤 만료됩니다. 만료나 key agent 재시작 뒤에는 디버그 번들을 다시 빌드해 업로드하세요.',
   '자세히: docs MCP(ait-docs)의 searchDocumentation으로 "relay auth totp" 조회.',
 ].join('\n');
 

@@ -227,21 +227,54 @@ export function stopSessionRefresher(): void {
   refresher = null;
 }
 
-function startSessionRefresher(log: (message: string) => void): void {
+/**
+ * Follows the signing key. The agent signs with the oldest live key and moves to
+ * the next one when it expires; the daemon asks on every tick (this also lets the
+ * agent make the next key one week ahead) and re-binds the certifier when the
+ * signing key changed. Session keys of the old root are dropped by `setRelayRoot`,
+ * so the next QR is certified by the new root. Best effort: an unreachable agent
+ * leaves the current root, and the refresh below reports the failure.
+ */
+async function followSigningKey(
+  provider: KeyProvider,
+  log: (message: string) => void,
+  onRebind: (keys: KeyInfo) => void,
+): Promise<void> {
+  const active = activeRelayRoot();
+  if (active === null) return;
+  let keys: KeyInfo;
+  try {
+    keys = await provider.getOrCreate(MACHINE_KEY_ID);
+  } catch {
+    return;
+  }
+  // The root may have been replaced while the call was out.
+  if (activeRelayRoot()?.publicKey !== active.publicKey) return;
+  if (keys.publicKey === active.publicKey) return;
+  setRelayRoot(certifierFor(provider, keys));
+  log(
+    `[@apps-in-toss/debugger] relay 서명 키가 다음 키로 넘어갔습니다(지문 ${keyFingerprint(keys.publicKey)}). 새 QR부터 새 키로 서명하고, 이전 키로 서명한 QR은 이전 키 만료 뒤 붙지 않으니 start_attach로 새 QR을 받으세요.\n`,
+  );
+  onRebind(keys);
+}
+
+function startSessionRefresher(log: (message: string) => void, follow?: () => Promise<void>): void {
   stopSessionRefresher();
   let lastError = '';
   refresher = setInterval(() => {
-    refreshRelaySession().then(
-      () => {
-        lastError = '';
-      },
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : 'relay 세션 키 갱신 실패';
-        if (message === lastError) return;
-        lastError = message;
-        log(`${message}\n`);
-      },
-    );
+    (follow?.() ?? Promise.resolve())
+      .then(() => refreshRelaySession())
+      .then(
+        () => {
+          lastError = '';
+        },
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : 'relay 세션 키 갱신 실패';
+          if (message === lastError) return;
+          lastError = message;
+          log(`${message}\n`);
+        },
+      );
   }, SESSION_REFRESH_INTERVAL_MS);
   refresher.unref();
 }
@@ -270,7 +303,18 @@ export async function activateRelayRoot(options: ActivateOptions = {}): Promise<
   const fingerprint = keyFingerprint(keys.publicKey);
   setRelayRoot(certifierFor(provider, keys));
   await refreshRelaySession(now());
-  startSessionRefresher(log);
+  startSessionRefresher(log, () =>
+    followSigningKey(provider, log, (next) => {
+      try {
+        options.onKeyAge?.({
+          ...judgeRelayKeyAge(next.notAfter, holder, now()),
+          keyFingerprint: keyFingerprint(next.publicKey),
+        });
+      } catch {
+        // Observability is best-effort.
+      }
+    }),
+  );
 
   const age = { ...judgeRelayKeyAge(keys.notAfter, holder, now()), keyFingerprint: fingerprint };
   try {

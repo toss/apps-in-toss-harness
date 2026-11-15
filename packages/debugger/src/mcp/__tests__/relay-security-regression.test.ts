@@ -775,3 +775,114 @@ describe('relay signing key scope', () => {
     ).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Key lifetime: the session signs with the OLDEST live key; the next key is made
+// a week before it expires. Rows are added to the table above, none changed.
+// ---------------------------------------------------------------------------
+
+describe('relay signing key lifetime (oldest key signs, next key made a week ahead)', () => {
+  const DAY = 24 * 3_600_000;
+  const WSS = 'wss://abc-def.trycloudflare.com';
+  const AT = '0123456789abcdef0123456789abcdef';
+
+  afterEach(() => resetRelayRootState());
+
+  async function certVerifiesUnder(rootKey: string, link: AttachSignatures): Promise<boolean> {
+    const { webcrypto } = await import('node:crypto');
+    const cert = parseRelayCertParam(link.cert);
+    if (cert === null) return false;
+    const key = await webcrypto.subtle.importKey(
+      'raw',
+      new Uint8Array(Buffer.from(rootKey, 'base64url')),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    );
+    return webcrypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      new Uint8Array(cert.certSignatureBytes),
+      new TextEncoder().encode(
+        relayCertMessage(cert.sessionPublicKey, cert.notBefore, cert.notAfter),
+      ),
+    );
+  }
+
+  /** A key made 22 days ago (6 days left), then the next key made on the first lookup today. */
+  async function setup() {
+    let offset = -22 * DAY;
+    const store = new KeyStore({ now: () => Date.now() + offset });
+    const agent = new LocalKeyProvider(store);
+    const early = await agent.getOrCreate(MACHINE_KEY_ID);
+    offset = 0;
+    const late = await agent.getOrCreate(MACHINE_KEY_ID);
+    return { agent, early, late };
+  }
+
+  it('control: the next key exists and the session still signs with the oldest', async () => {
+    const { agent, early, late } = await setup();
+    expect(early.keys).toHaveLength(1);
+    expect(late.keys).toHaveLength(2);
+    expect(late.publicKey).toBe(early.publicKey);
+    const dir = mkdtempSync(join(tmpdir(), 'ait-life-'));
+    try {
+      await activateRelayRoot({ projectRoot: dir, provider: agent, log: () => {} });
+      expect(activeRelayRoot()?.publicKey).toBe(early.publicKey);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const cases = [
+    { name: 'bundle built before the next key (pins only the oldest key)', pin: 'early', ok: true },
+    { name: 'bundle built after the next key (pins both keys)', pin: 'both', ok: true },
+    {
+      name: 'bundle pinned to the next key alone is not what the session signs with',
+      pin: 'next',
+      ok: false,
+    },
+  ] as const;
+
+  it.each(cases)('$name', async ({ pin, ok }) => {
+    const { agent, early, late } = await setup();
+    const dir = mkdtempSync(join(tmpdir(), 'ait-life-'));
+    try {
+      await activateRelayRoot({ projectRoot: dir, provider: agent, log: () => {} });
+      const link = attachSignatures(relayAuthSwitch(), WSS, AT);
+      expect(link?.cert).toBeDefined();
+      const keys =
+        pin === 'early'
+          ? [early.publicKey]
+          : pin === 'next'
+            ? [late.keys[1]?.publicKey ?? '']
+            : late.keys.map((k) => k.publicKey);
+      let attaches = false;
+      for (const k of keys) {
+        attaches ||= await certVerifiesUnder(k, link as AttachSignatures);
+      }
+      expect(attaches).toBe(ok);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an expired key is refused by name and never signs again', async () => {
+    let offset = 0;
+    const store = new KeyStore({ now: () => Date.now() + offset });
+    const agent = new LocalKeyProvider(store);
+    const root = await agent.getOrCreate(MACHINE_KEY_ID);
+    offset = 29 * DAY;
+    const nowSeconds = Math.floor((Date.now() + offset) / 1000);
+    await expect(
+      agent.signSessionCert(MACHINE_KEY_ID, {
+        sessionPublicKey: derivePublicKey(LEGACY_SECRET_FOR_LIFETIME),
+        nb: nowSeconds - 300,
+        na: nowSeconds + 600,
+        publicKey: root.publicKey,
+      }),
+    ).rejects.toMatchObject({ code: 'expired' });
+  });
+});
+
+const LEGACY_SECRET_FOR_LIFETIME = '12'.repeat(32);

@@ -2,7 +2,7 @@
  * How long the relay root key still lives, and what the daemon says about it.
  *
  * The key is volatile: the key agent (or the daemon, in fallback mode) holds it
- * in memory and drops it at `notAfter` (24 hours by default, at most 72). There
+ * in memory and drops it at `notAfter` (4 weeks by default, never more). There
  * is no file and no date to look up; the expiry is part of the key's public
  * data, and a bundle pins the same `notAfter`.
  *
@@ -53,7 +53,7 @@ export function relayKeyHint(age: RelayKeyAge): string | null {
     return `relay 키가 만료됐습니다. switch_environment로 relay를 다시 시작하고 ${RELAY_KEY_REBUILD_STEPS} 번들에 박힌 이전 공개 키로는 attach되지 않습니다.${memory}`;
   }
   if (age.status === 'aging') {
-    return `relay 키가 ${age.remainingMinutes}분 뒤 만료됩니다(${age.notAfter}). 만료 뒤에는 ${RELAY_KEY_REBUILD_STEPS}${memory}`;
+    return `relay 키가 ${age.remainingMinutes}분 뒤 만료됩니다(${age.notAfter}). 다음 키는 만료 전에 미리 생기므로(기본 1주 전) 그 뒤에 빌드한 번들은 계속 attach되고, 그 전에 빌드한 번들만 만료 뒤 다시 빌드해야 합니다. ${RELAY_KEY_REBUILD_STEPS}${memory}`;
   }
   return age.holder === 'memory' ? memory.trim() : null;
 }

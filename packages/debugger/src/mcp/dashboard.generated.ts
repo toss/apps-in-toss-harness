@@ -146,7 +146,7 @@ p { margin: 0; }
   box-shadow: 0 0 0 1px var(--line), 0 16px 32px -16px rgba(16, 24, 40, 0.25);
 }
 img.qr {
-  display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.18s ease;
+  display: block; width: 100%; height: 100%; aspect-ratio: 1 / 1; opacity: 0; transition: opacity 0.18s ease;
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .qr-frame[data-ready="1"] img.qr { opacity: 1; }
@@ -299,7 +299,7 @@ h1 { font-size: 1.25rem; font-weight: 600; color: #e6edf3; margin: 0; text-align
 }
 .label { font-size: 0.8rem; opacity: 0.5; font-family: monospace; margin: 0; }
 img.qr {
-  width: min(90vw, 360px); height: auto;
+  width: min(90vw, 360px); height: auto; aspect-ratio: 1 / 1; box-sizing: border-box;
   image-rendering: pixelated;
   background: #fff; padding: 1rem; border-radius: 12px;
   display: block; margin: 0 auto;
@@ -340,7 +340,7 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0.5rem 0;
 }
 .inspector-link:hover { background: #388bfd; }
 .inspector-hint { display: inline-block; margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.45; }
-</style></head><body><h1>AIT 디버그 세션 — QR 스캔</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>스캔 절차</h2><ol><li>토스 앱을 실행하세요. 이 미니앱이 이미 열려 있다면 스캔해도 새로고침되지 않으니, X 버튼으로 먼저 닫으세요.</li><li>폰 카메라 앱으로 QR 코드를 스캔하세요.</li><li>팝업이 뜨면 <strong>"토스로 열기"</strong>를 탭하세요.</li><li>미니앱이 열리고 디버그 세션이 자동으로 attach됩니다.</li><li><strong>테스트가 끝날 때까지 토스 앱을 화면 앞에 유지하세요</strong> — 백그라운드로 전환하면 디버그 세션이 끊어집니다.</li></ol></section><hr/><section><h2>진단 체크리스트</h2><ul><li><strong>토스 앱이 안 열리는 경우</strong> — 앱 버전 확인, 카메라 앱으로 스캔 (토스 앱 내 QR 리더 X)</li><li><strong>미니앱이 PREPARE 상태에서 멈추는 경우</strong> — deep-link에 <code>_deploymentId</code> 파라미터가 있는지 확인</li><li><strong>Chii 주입 실패 / 콘솔이 비어 있는 경우</strong> — 미니앱 번들에 <code>in-app</code> debug import가 있는지 확인</li><li><strong>인증 코드가 만료됐다고 나오는 경우</strong> — 이 대시보드의 최신 QR로 다시 스캔 (오래된 QR의 코드는 받아 주지 않음)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="링크 복사">링크 복사</button></div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section></body></html>`;
+</style></head><body><h1>AIT 디버그 세션 — QR 스캔</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" width="256" height="256" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>스캔 절차</h2><ol><li>토스 앱을 실행하세요. 이 미니앱이 이미 열려 있다면 스캔해도 새로고침되지 않으니, X 버튼으로 먼저 닫으세요.</li><li>폰 카메라 앱으로 QR 코드를 스캔하세요.</li><li>팝업이 뜨면 <strong>"토스로 열기"</strong>를 탭하세요.</li><li>미니앱이 열리고 디버그 세션이 자동으로 attach됩니다.</li><li><strong>테스트가 끝날 때까지 토스 앱을 화면 앞에 유지하세요</strong> — 백그라운드로 전환하면 디버그 세션이 끊어집니다.</li></ol></section><hr/><section><h2>진단 체크리스트</h2><ul><li><strong>토스 앱이 안 열리는 경우</strong> — 앱 버전 확인, 카메라 앱으로 스캔 (토스 앱 내 QR 리더 X)</li><li><strong>미니앱이 PREPARE 상태에서 멈추는 경우</strong> — deep-link에 <code>_deploymentId</code> 파라미터가 있는지 확인</li><li><strong>Chii 주입 실패 / 콘솔이 비어 있는 경우</strong> — 미니앱 번들에 <code>in-app</code> debug import가 있는지 확인</li><li><strong>인증 코드가 만료됐다고 나오는 경우</strong> — 이 대시보드의 최신 QR로 다시 스캔 (오래된 QR의 코드는 받아 주지 않음)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="링크 복사">링크 복사</button></div></section><hr/><section id="inspector-section"><h2>인스펙터</h2>__INSPECTOR_SECTION__</section></body></html>`;
 
 // ── locale: en ──────────────────────────────────────────────────────
 
@@ -451,7 +451,7 @@ p { margin: 0; }
   box-shadow: 0 0 0 1px var(--line), 0 16px 32px -16px rgba(16, 24, 40, 0.25);
 }
 img.qr {
-  display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.18s ease;
+  display: block; width: 100%; height: 100%; aspect-ratio: 1 / 1; opacity: 0; transition: opacity 0.18s ease;
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .qr-frame[data-ready="1"] img.qr { opacity: 1; }
@@ -604,7 +604,7 @@ h1 { font-size: 1.25rem; font-weight: 600; color: #e6edf3; margin: 0; text-align
 }
 .label { font-size: 0.8rem; opacity: 0.5; font-family: monospace; margin: 0; }
 img.qr {
-  width: min(90vw, 360px); height: auto;
+  width: min(90vw, 360px); height: auto; aspect-ratio: 1 / 1; box-sizing: border-box;
   image-rendering: pixelated;
   background: #fff; padding: 1rem; border-radius: 12px;
   display: block; margin: 0 auto;
@@ -645,7 +645,7 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0.5rem 0;
 }
 .inspector-link:hover { background: #388bfd; }
 .inspector-hint { display: inline-block; margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.45; }
-</style></head><body><h1>AIT Debug Session — QR Scan</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>How to scan</h2><ol><li>Open the Toss app. If this mini-app is already open, scanning will not reload it, so close it with the X button first.</li><li>Scan the QR code with your phone camera app.</li><li>Tap <strong>"Open in Toss"</strong> when the popup appears.</li><li>The mini-app opens and the debug session attaches automatically.</li><li><strong>Keep the Toss app in the foreground until the test run finishes</strong> — backgrounding it will drop the debug session.</li></ol></section><hr/><section><h2>Troubleshooting checklist</h2><ul><li><strong>Toss app does not open</strong> — check app version; scan with the system camera app (not the Toss in-app QR reader)</li><li><strong>Mini-app stuck in PREPARE state</strong> — verify the deep-link has a <code>_deploymentId</code> parameter</li><li><strong>Chii injection failure / console is empty</strong> — verify the mini-app bundle has an <code>in-app</code> debug import</li><li><strong>The code is reported as expired</strong> — scan the latest QR on this dashboard again (the relay rejects the code of an old QR)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="Copy link">Copy link</button></div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section></body></html>`;
+</style></head><body><h1>AIT Debug Session — QR Scan</h1>__MODE_LABEL____LANG_SWITCHER__<p class="label">deployment: __SAFE_LABEL__</p><div id="attach-section"><img class="qr" width="256" height="256" src="__QR_DATA_URL__" alt="attach QR"/></div><section><h2>How to scan</h2><ol><li>Open the Toss app. If this mini-app is already open, scanning will not reload it, so close it with the X button first.</li><li>Scan the QR code with your phone camera app.</li><li>Tap <strong>"Open in Toss"</strong> when the popup appears.</li><li>The mini-app opens and the debug session attaches automatically.</li><li><strong>Keep the Toss app in the foreground until the test run finishes</strong> — backgrounding it will drop the debug session.</li></ol></section><hr/><section><h2>Troubleshooting checklist</h2><ul><li><strong>Toss app does not open</strong> — check app version; scan with the system camera app (not the Toss in-app QR reader)</li><li><strong>Mini-app stuck in PREPARE state</strong> — verify the deep-link has a <code>_deploymentId</code> parameter</li><li><strong>Chii injection failure / console is empty</strong> — verify the mini-app bundle has an <code>in-app</code> debug import</li><li><strong>The code is reported as expired</strong> — scan the latest QR on this dashboard again (the relay rejects the code of an old QR)</li></ul></section><hr/><section id="url-section"><h2>URL (fallback)</h2><div class="url-row"><p class="url-box" id="url-box">__SAFE_ATTACH_URL__</p><button class="copy-btn" id="copy-btn" type="button" aria-label="Copy link">Copy link</button></div></section><hr/><section id="inspector-section"><h2>Inspector</h2>__INSPECTOR_SECTION__</section></body></html>`;
 
 /** Map from Locale to the precompiled dashboard chrome string. */
 export const dashboardChromeByLocale: Record<Locale, string> = {

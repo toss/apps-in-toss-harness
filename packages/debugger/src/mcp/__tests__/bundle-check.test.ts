@@ -178,13 +178,13 @@ describe('debugBundleAgeHours', () => {
   const NOW = T('2026-01-10T00:00:00Z');
   const fs = fakeFs({
     [RECORD]: rec(
-      { deploymentId: 'old', appName: 'a', recordedAt: '2026-01-08T00:00:00Z' },
+      { deploymentId: 'old', appName: 'a', recordedAt: '2025-12-08T00:00:00Z' },
       { deploymentId: 'new', appName: 'a', recordedAt: '2026-01-09T23:00:00Z' },
     ),
   });
 
   it('uses the record of this deployment, not the latest one', () => {
-    expect(debugBundleAgeHours(ROOT, 'a', 'old', NOW, fs)).toBe(48);
+    expect(debugBundleAgeHours(ROOT, 'a', 'old', NOW, fs)).toBe(792);
     expect(debugBundleAgeHours(ROOT, 'a', 'new', NOW, fs)).toBeNull();
   });
 
@@ -206,7 +206,7 @@ describe('debugBundleAgeHours', () => {
   it('warns in one line without the id or a path', () => {
     const line = oldBundleWarning(48);
     expect(line).toContain('48시간');
-    expect(line).toContain('24시간');
+    expect(line).toContain('28일');
     expect(line).not.toContain('\n');
     expect(line).not.toContain(ROOT);
   });

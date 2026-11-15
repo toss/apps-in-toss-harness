@@ -167,7 +167,7 @@ p { margin: 0; }
   box-shadow: 0 0 0 1px var(--line), 0 16px 32px -16px rgba(16, 24, 40, 0.25);
 }
 img.qr {
-  display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.18s ease;
+  display: block; width: 100%; height: 100%; aspect-ratio: 1 / 1; opacity: 0; transition: opacity 0.18s ease;
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .qr-frame[data-ready="1"] img.qr { opacity: 1; }

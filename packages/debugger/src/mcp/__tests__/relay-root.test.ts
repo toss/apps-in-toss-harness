@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRelaySignature } from '@apps-in-toss/internal-protocol/relay-signature';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentClient, AgentUnavailableError } from '../../agent/client.js';
 import { KeyStore } from '../../agent/key-store.js';
 import { resolveAgentPaths } from '../../agent/paths.js';
@@ -24,7 +24,12 @@ import {
   relayAuthSwitch,
   resetRelayRootState,
 } from '../relay-root.js';
-import { attachSignatures, refreshRelaySession, SESSION_KEY_ROTATE_MS } from '../relay-signing.js';
+import {
+  activeRelayRoot,
+  attachSignatures,
+  refreshRelaySession,
+  SESSION_KEY_ROTATE_MS,
+} from '../relay-signing.js';
 
 const SECRET = 'ef'.repeat(32);
 const WSS = 'wss://abc-def.trycloudflare.com';
@@ -480,5 +485,64 @@ describe('every attach-link builder carries the session certificate', () => {
       expect(link, name).toMatch(/[?&]sig=/);
       expect(link, name).toMatch(/[?&]arc=[A-Za-z0-9_-]{180}(?:&|$)/);
     }
+  });
+});
+
+describe('daemon follows the signing key', () => {
+  const DAY = 24 * 3_600_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function verifiesUnder(rootKey: string, arc: string | undefined): Promise<boolean> {
+    const { webcrypto } = await import('node:crypto');
+    const { parseRelayCertParam, relayCertMessage } = await import(
+      '@apps-in-toss/internal-protocol/relay-signature'
+    );
+    const cert = parseRelayCertParam(arc);
+    if (cert === null) return false;
+    const key = await webcrypto.subtle.importKey(
+      'raw',
+      new Uint8Array(Buffer.from(rootKey, 'base64url')),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    );
+    return webcrypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      new Uint8Array(cert.certSignatureBytes),
+      new TextEncoder().encode(
+        relayCertMessage(cert.sessionPublicKey, cert.notBefore, cert.notAfter),
+      ),
+    );
+  }
+
+  it('re-certifies with the next key after the oldest expires; later QR links verify under the new key', async () => {
+    vi.useFakeTimers({ now: 1_800_000_000_000 });
+    const store = new KeyStore({ now: () => Date.now() });
+    const provider = new LocalKeyProvider(store);
+    const first = await activateRelayRoot({ projectRoot: dir, provider, log });
+    const before = attachSignatures(relayAuthSwitch(), WSS, AT);
+    expect(await verifiesUnder(first.publicKey, before?.cert)).toBe(true);
+
+    // 3 weeks later the next key exists (made on lookup); the daemon still signs with the old one.
+    vi.setSystemTime(Date.now() + 21 * DAY + 3_600_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(activeRelayRoot()?.publicKey).toBe(first.publicKey);
+    expect(store.getOrCreate(MACHINE_KEY_ID).keys).toHaveLength(2);
+    const nextKey = store.getOrCreate(MACHINE_KEY_ID).keys[1]?.publicKey as string;
+
+    // The old key expires: the daemon moves on within one tick and signs under the next key.
+    vi.setSystemTime(first.notAfter * 1000 + 1000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(activeRelayRoot()?.publicKey).toBe(nextKey);
+    const after = attachSignatures(relayAuthSwitch(), WSS, AT);
+    expect(after?.cert).toBeDefined();
+    expect(await verifiesUnder(nextKey, after?.cert)).toBe(true);
+    expect(await verifiesUnder(first.publicKey, after?.cert)).toBe(false);
+    expect(logs.join('')).toContain('다음 키로 넘어갔습니다');
+    expect(logs.join('')).not.toContain(nextKey);
   });
 });
