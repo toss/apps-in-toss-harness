@@ -41,7 +41,7 @@ npx -p https://github.com/toss/apps-in-toss-harness/releases/download/debugger-v
 }
 ```
 
-MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고, 데몬마다 relay·cloudflared 터널·대시보드·포트가 독립이다. 세션을 여러 개 동시에 써도 서로 막거나 끊지 않고, 도구도 모두 쓸 수 있다. relay 하나는 계속 미니앱 하나만 받으므로(close 4409) 세션마다 미니앱 하나씩 붙는다. 같은 프로젝트의 세션들은 `.ait_relay` 키를 읽기 전용으로 함께 쓴다. 머신 전체에서 디버거 세션을 하나만 허용하는 잠금은 없다.
+MCP 클라이언트 세션(Claude Code 창 하나)마다 데몬이 따로 뜨고, 데몬마다 relay·cloudflared 터널·대시보드·포트가 독립이다. 세션을 여러 개 동시에 써도 서로 막거나 끊지 않고, 도구도 모두 쓸 수 있다. relay 하나는 계속 미니앱 하나만 받으므로(close 4409) 세션마다 미니앱 하나씩 붙는다. 모든 세션은 이 기기의 relay 키 하나로 서명한다(아래 relay 키 절). 머신 전체에서 디버거 세션을 하나만 허용하는 잠금은 없다.
 
 프로젝트를 여러 개 열면 대시보드가 세션마다 따로 뜬다. 대시보드는 `127.0.0.1`에만 열리고, 기본 포트 8317부터 시작해 쓰는 중이면 1씩 올려 최대 20개까지 비어 있는 포트를 찾고(8317~8336), 그래도 없으면 OS가 고른 임의 포트를 쓴다. 시작 포트는 환경 변수 `AIT_DEBUG_HTTP_PORT`로 바꾸고, `0`이면 항상 임의 포트다. 먼저 뜬 세션이 8317, 다음 세션이 8318처럼 시작 순서대로 잡히므로 포트 번호만으로는 프로젝트를 알 수 없다. 그래서 대시보드는 탭 제목을 `<앱 이름> · AIT 디버그`로 쓰고 머리 아래에 `<앱 이름> · <프로젝트 폴더 이름>` 줄을 보여 준다. 앱 이름은 `granite.config.{ts,js,mts,mjs}`의 `appName`(파일을 실행하지 않고 글자만 읽는다), 없으면 `package.json`의 `name`, 그것도 없으면 폴더 이름이다. 폴더는 이름만 보이고 전체 경로는 나오지 않는다. `get_status`의 `project`는 이 세션의 이름·폴더·대시보드 포트를, `otherSessions`는 다른 세션의 이름·폴더·대시보드 포트·시작 시각을 알려 준다(대시보드 주소는 `http://127.0.0.1:<포트>/`, PID·터널 주소 없음).
 
@@ -57,8 +57,9 @@ AIT_DEVTOOLS_URL=http://127.0.0.1:5173 npx -p https://github.com/toss/apps-in-to
 
 QR 테스트 호스트의 `debugger-client`은 attach URL의 `sig`를 개발자 공개키로 검증한다. 공개키의 개인키(루트 서명 키)는 **메모리에만** 있다. 파일(`.ait_relay`)에도, 환경 변수에도 두지 않는다.
 
+- **범위: 기기(사용자 계정)당 키 하나**: agent 하나가 키 하나를 들고, 이 사용자의 모든 프로젝트·worktree·디버거 세션이 그 키로 서명한다. 그래서 어느 폴더에서 빌드한 디버그 번들이든 같은 사용자의 어느 디버거 세션에나 붙는다. 키가 막는 것은 개발자의 것이 아닌 relay다(번들이 공개키를 박고 relay의 서명을 확인한다). 다른 사람이나 다른 기기는 agent가 달라 키도 다르다. 다른 미니앱을 가르는 일은 키가 아니라 relay의 앱 origin 검사와 relay 하나에 미니앱 하나(close 4409)가 맡는다. 0.4.2 이하는 프로젝트(git 저장소)마다 키를 따로 썼으므로, 그 버전으로 빌드한 번들은 한 번 다시 빌드해야 한다.
 - **key agent**: 루트 키는 `debugger key-agent`라는 작은 상주 Node 프로세스가 메모리에 들고 있다. 데몬이나 빌드 헬퍼, `relay-key` 명령이 처음 부를 때 알아서 떠서(`detached`, stdio 없음) 따로 설치하거나 켤 것이 없다. launchd·systemd·레지스트리·OS 키체인·네트워크 포트를 쓰지 않고, 사용자 폴더도 읽지 않는다. 통신은 사용자 전용 디렉터리(0700)의 Unix 소켓(macOS·Linux·WSL, `~/.ait-debugger/agent.sock`. Linux는 `$XDG_RUNTIME_DIR/ait-debugger/`가 있으면 그 아래)이나 Windows 이름 있는 파이프(`\\.\pipe\ait-debugger-<사용자 이름 해시>`)로만 한다. 요청마다 agent별 무작위 토큰(같은 사용자 전용 파일)이 필요한데, 이 토큰은 요청 권한만 줄 뿐 키가 아니다. agent는 개인키를 내보내지 않고 공개키와 세션 인증서만 돌려준다. 살아 있는 키가 없는 채로 5분이 지나면 스스로 끝난다.
-- **수명**: 키는 만든(또는 가져온) 때부터 기본 **24시간**, 최대 **72시간**(`AIT_DEBUG_RELAY_KEY_TTL_HOURS`) 뒤 만료된다. 만료되면 agent는 더 서명하지 않는다. 공개키와 만료 시각(`notAfter`)은 번들에 박히고, 클라이언트는 만료 시각을 5분 넘긴 키의 서명을 거부한다. 그래서 만료되거나 agent가 다시 뜬 뒤에는 **디버그 번들을 다시 빌드해 업로드해야** 한다. 데몬은 만료 2시간 전부터 `get_status`의 `relayKey.hint`로 알린다.
+- **수명**: 키는 만든 때부터 기본 **24시간**, 최대 **72시간**(`AIT_DEBUG_RELAY_KEY_TTL_HOURS`) 뒤 만료된다. 만료되면 agent는 더 서명하지 않는다. 공개키와 만료 시각(`notAfter`)은 번들에 박히고, 클라이언트는 만료 시각을 5분 넘긴 키의 서명을 거부한다. 그래서 만료되거나 agent가 다시 뜬 뒤에는 **디버그 번들을 다시 빌드해 업로드해야** 한다. 데몬은 만료 2시간 전부터 `get_status`의 `relayKey.hint`로 알린다.
 - **agent를 못 쓰는 환경**(샌드박스, 읽기 전용 홈, CI): 데몬이 자기 메모리에 키를 두고 쓰며, 데몬을 재시작하면 키가 새로 만들어지므로 그때마다 번들을 다시 빌드해야 한다고 stderr에 알린다. 빌드 헬퍼와 `relay-key` 명령은 이 경우 에러로 멈춘다(프로세스가 끝나면 사라지는 키는 번들에 박을 수 없다). `AIT_DEBUGGER_KEY_AGENT=off`로 agent를 끌 수 있고, `AIT_DEBUGGER_KEY_AGENT_DIR`로 디렉터리를 바꿀 수 있다.
 
 번들에 넣을 공개키는 빌드 헬퍼로 얻는다. 디버그 빌드 게이트(`AIT_DEBUG_BUILD`) 안에서만 쓴다.
@@ -72,35 +73,37 @@ define: {
 },
 ```
 
-`readRelayPublicKeys(projectRoot)`는 agent를 띄우고, 프로젝트의 키를 가져오거나 만들어 `[{ publicKey, notAfter }]`(`notAfter`는 유닉스 초)를 돌려준다. 공개 데이터만 나오고 개인키·시크릿은 어디에도 출력하지 않는다. 그 값을 `startDebugConsole({ relayPublicKeys: __AIT_RELAY_KEYS__ })`에 넘긴다. 프로젝트는 `git rev-parse --git-common-dir`(없으면 가장 가까운 `package.json` 폴더)의 실경로로 구분하므로 같은 저장소의 worktree는 키를 같이 쓴다.
+`readRelayPublicKeys(projectRoot)`는 agent를 띄우고, 이 기기의 키를 가져오거나 만들어 `[{ publicKey, notAfter }]`(`notAfter`는 유닉스 초)를 돌려준다. 공개 데이터만 나오고 개인키·시크릿은 어디에도 출력하지 않는다. 그 값을 `startDebugConsole({ relayPublicKeys: __AIT_RELAY_KEYS__ })`에 넘긴다. `projectRoot`는 키를 고르지 않는다. 그 폴더에 예전 `.ait_relay`가 있으면 지우는 데만 쓴다. 번들러 빌드는 프로젝트에 설치된 `@apps-in-toss/debugger`의 헬퍼를 쓰므로, 그 버전이 0.4.2 이하면 프로젝트별 키가 들어간다. 디버거와 같은 버전으로 올린다.
 
 명령으로도 같은 값을 볼 수 있다.
 
 ```sh
-npx -p <tgz URL> debugger relay-key            # 공개키 한 줄을 stdout에, 만료 시각을 stderr에
+npx -p <tgz URL> debugger relay-key            # 공개키 한 줄을 stdout에, 키 지문과 만료 시각을 stderr에
 npx -p <tgz URL> debugger relay-key --json     # [{ "publicKey", "notAfter" }] 전부
-npx -p <tgz URL> debugger relay-key --rotate   # 이 프로젝트의 키를 버리고 새 키를 만든다
+npx -p <tgz URL> debugger relay-key --rotate   # 이 기기의 키를 버리고 새 키를 만든다
 ```
+
+어느 폴더에서 실행해도 같은 키가 나온다. `--project <dir>`는 예전 버전과의 호환을 위해 받기만 하고 키를 바꾸지 않는다(그 폴더의 예전 `.ait_relay`를 지울 뿐이다). 키 지문(공개키 SHA-256 앞 8자)은 `relay-key`, `inject-client`, `start_attach` 결과, `get_status`의 `relayKey.keyFingerprint`, 번들 키 거부 안내에 같은 형식으로 나오므로 번들과 세션이 같은 키인지 지문으로 맞춰 볼 수 있다.
 
 공개키는 루트 키이고 링크에 직접 서명하지는 않는다. 데몬은 메모리에만 두는 세션 키를 5분마다 새로 만들고, agent가 루트 키로 그 세션 키에 짧은 인증서(발급 5분 전부터 15분 뒤까지, 루트 만료를 넘지 않음)를 붙인 다음, 세션 키로 링크마다 서명한다. 링크의 `sig`에는 세션 키 id와 링크 서명만 실리고, 그 링크에 서명한 세션 인증서 하나는 `arc`에 담긴다(공개 데이터, 공개키 65바이트 + 시작 시각 4 + 유효 시간 2 + 루트 서명 64 = 135바이트, base64url 180자). 그래서 폰은 relay에 인증서를 요청하지 않고 동의 전에도 아무것도 보내지 않는다. relay는 debugger-client 0.4.0 미만을 위해 `GET /relay-cert`도 계속 내준다(코드 불필요, 허용한 미니앱 origin만, 캐시 금지, 코드 잠금 횟수에 세지 않음, 만료 전 인증서는 다음 세션 키가 나온 뒤에도 함께 내준다). 0.4.0 미만 클라이언트가 더는 없다고 볼 수 있으면 이 경로는 없앨 수 있다. 0.4.0 클라이언트는 `arc`가 없는 링크(0.4.0 미만 디버거)를 연결하지 않고 업데이트를 안내한다.
 
 #### 키 교체 (`debugger relay-key --rotate`)
 
-키가 유출됐을 수 있거나 번들을 새 키로 맞추고 싶을 때 쓴다. agent가 메모리의 키를 버리고 새 키를 만들며, 새 공개키 한 줄이 stdout에 나온다. 이어서 다음을 한다.
+키가 유출됐을 수 있거나 번들을 새 키로 맞추고 싶을 때 쓴다. agent가 메모리의 키를 버리고 새 키를 만들며, 새 공개키 한 줄이 stdout에 나온다. 키는 이 기기의 모든 프로젝트와 세션이 함께 쓰므로 교체도 전부에 영향을 준다. 이어서 다음을 한다.
 
-1. 계속 테스트할 번들을 모두 다시 빌드한다(`readRelayPublicKeys`가 새 키를 돌려준다). 이전 키만 가진 번들은 이 데몬에 더 이상 attach되지 않는다.
-2. 데몬이 떠 있으면 `switch_environment`를 다시 호출해 새 키를 쓰게 한다.
+1. 계속 테스트할 번들을 프로젝트와 관계없이 모두 다시 빌드한다(`readRelayPublicKeys`와 `inject-client`가 새 키를 쓴다). 이전 키만 가진 번들은 어느 프로젝트의 것이든 더 이상 attach되지 않는다.
+2. 떠 있는 디버거 세션마다 `switch_environment`를 다시 호출해 새 키를 쓰게 한다. 다시 부르지 않은 세션은 세션 키를 갱신할 때 "`relay-key --rotate`로 교체됐습니다" 오류를 낸다.
 
 #### 예전 `.ait_relay`와 `AIT_DEBUG_TOTP_SECRET`
 
-0.3.0까지는 시크릿을 `.ait_relay`(와 `.ait_relay.meta`)에 두었다. 이제 데몬·빌드 헬퍼·`relay-key` 명령이 프로젝트(와 같은 저장소의 worktree 폴더)에서 이 파일을 찾으면 자동으로 시크릿을 검증하고 agent에 가져온 뒤, agent가 돌려준 공개키가 시크릿에서 유도한 값과 같은 것을 확인하고 **파일을 삭제한다**. 같은 키라서 이전 버전으로 빌드한 번들도 키가 만료될 때까지 계속 attach된다. 어느 단계든 실패하면 파일을 그대로 두고 이유만 알린다(agent를 못 쓰는 환경에서는 키가 프로세스 메모리에만 있으므로 파일을 지우지 않는다). 다시 실행해도 같은 결과다(이미 지웠으면 할 일이 없다). `AIT_DEBUG_TOTP_SECRET` 환경 변수도 가져오고, 이 프로세스의 환경에서 지운 뒤 셸 프로필·CI 설정에서 변수를 지우라고 알린다. 값은 어디에도 출력하지 않는다.
+0.3.0까지는 시크릿을 `.ait_relay`(와 `.ait_relay.meta`)에 두었고, 0.4.0~0.4.2는 이 파일을 agent의 프로젝트별 키로 가져왔다. 이제는 가져오지 않는다. 가져오면 한 프로젝트의 옛 키가 기기 키 자리를 차지하고, 여러 프로젝트의 옛 키가 그 자리를 두고 겹치기 때문이다. 이 파일의 키로 붙던 번들도 남지 않는다. 0.3.x 클라이언트는 프로토콜 검사에서 거부되고, 0.4.x가 가져온 키는 가져온 때부터 최대 72시간(기본 24시간) 뒤 만료됐으며 이 버전이 서명에 쓰지 않는 프로젝트별 키다. 그래서 데몬·빌드 헬퍼·`relay-key`·`inject-client`가 프로젝트(와 같은 저장소의 worktree 폴더)에서 이 파일을 찾으면, 심볼릭 링크나 다른 사용자 소유가 아니고 내용이 relay 시크릿 형식인지만 확인한 뒤 **가져오지 않고 삭제한다**. 지우지 못하면 파일을 그대로 두고 직접 지우라고 알리며, 형식이 다른 파일은 손대지 않는다. `AIT_DEBUG_TOTP_SECRET` 환경 변수도 쓰지 않는다. 이 프로세스의 환경에서 지운 뒤 셸 프로필·CI 설정에서 변수를 지우라고 알린다. 값은 어디에도 출력하지 않는다.
 
-- 파일이 git에 추적되고 있었거나 동기화 폴더(iCloud Drive, Dropbox, Google Drive, OneDrive) 안에 있었다면 복사본이 남았을 수 있다고 경고한다. 그때는 `debugger relay-key --rotate`로 새 키를 만들고 번들을 다시 빌드하는 것을 권한다.
-- 파일 삭제(unlink)는 **안전 삭제(secure wipe)가 아니다**. SSD·APFS(copy-on-write, 스냅샷, Time Machine)와 백업에는 옛 값이 남을 수 있다. 값이 이미 다른 곳에 있었을 가능성이 있으면 키를 교체하는 쪽이 확실하다.
+- 파일이 git에 추적되고 있었거나 동기화 폴더(iCloud Drive, Dropbox, Google Drive, OneDrive) 안에 있었다면 복사본이 남았을 수 있다고 경고한다. 그 값을 가진 사람은 이 키를 박은 옛 디버그 번들이 믿는 relay 서명을 만들 수 있으니, 그런 번들은 쓰지 말고 새로 빌드한 번들로 바꾼다. 기기 키(`relay-key --rotate`)와는 관계가 없다.
+- 파일 삭제(unlink)는 **안전 삭제(secure wipe)가 아니다**. SSD·APFS(copy-on-write, 스냅샷, Time Machine)와 백업에는 옛 값이 남을 수 있다.
 
 ### 번들러 없는 빌드 (`debugger inject-client`)
 
-Unity WebGL 출력, 엔진 HTML5 출력, 직접 패키징한 `dist/`처럼 번들러가 없는 빌드에는 `define`으로 키를 넣을 곳이 없다. `debugger inject-client <빌드된 웹 폴더> [--html index.html] [--project <dir>]`가 이 경우를 맡는다. 이 debugger 릴리스에 들어 있는 `@apps-in-toss/debugger-client`의 브라우저용 스크립트(`ait-debugger-client.js`)를 페이지 옆에 복사하고, 실행 중인 key agent에서 현재 relay 공개키를 읽어 페이지의 첫 `<script>` 앞에 `globalThis.__AIT_DEBUG_RELAY_KEYS__=[…]`와 `<script src="ait-debugger-client.js">`를 넣는다. 다시 실행하면 앞의 주입을 바꿔 넣는다. 사용할 수 있는 키가 없으면(debugger가 안 떠 있음) 멈춘다. 결과는 디버그 빌드이므로 검수에 제출하면 안 되고, 키는 약 24시간 뒤 만료되니 그때는 다시 실행해 다시 올린다. 출력에는 키의 짧은 지문만 나온다.
+Unity WebGL 출력, 엔진 HTML5 출력, 직접 패키징한 `dist/`처럼 번들러가 없는 빌드에는 `define`으로 키를 넣을 곳이 없다. `debugger inject-client <빌드된 웹 폴더> [--html index.html]`가 이 경우를 맡는다. 이 debugger 릴리스에 들어 있는 `@apps-in-toss/debugger-client`의 브라우저용 스크립트(`ait-debugger-client.js`)를 페이지 옆에 복사하고, 실행 중인 key agent에서 현재 relay 공개키를 읽어 페이지의 첫 `<script>` 앞에 `globalThis.__AIT_DEBUG_RELAY_KEYS__=[…]`와 `<script src="ait-debugger-client.js">`를 넣는다. 다시 실행하면 앞의 주입을 바꿔 넣는다. 사용할 수 있는 키가 없으면(debugger가 안 떠 있음) 멈춘다. 결과는 디버그 빌드이므로 검수에 제출하면 안 되고, 키는 약 24시간 뒤 만료되니 그때는 다시 실행해 다시 올린다. 키는 기기 단위라 어느 폴더에서 실행해도 같은 키가 들어가고, 같은 앱을 여러 폴더에서 빌드해도 한 디버거 세션에서 번갈아 붙일 수 있다. `--project <dir>`는 호환을 위해 받기만 하고 키를 바꾸지 않는다. 출력에는 키의 짧은 지문만 나온다.
 
 ### Test runner (`debugger-test`)
 
@@ -132,7 +135,7 @@ debugger와 debugger-client는 프로토콜 번호가 같을 때만 연결된다
 | 0.4.x (프로토콜 3) | `@apps-in-toss/debug-console` 0.3.0 이하 | 항상 거부 |
 | 0.3.0 이하 | `@apps-in-toss/debugger-client` | 연결되지 않음(프로토콜 불일치) |
 
-`start_attach`는 QR을 발급하기 전에 프로젝트(데몬의 작업 폴더, 또는 `projectRoot` 인자)의 `node_modules/@apps-in-toss/debugger-client`·`debug-console`과 `package.json`의 의존성 선언(버전 또는 릴리스 tarball URL)을 읽는다. `debug-console`만 있거나 `debugger-client`가 최소 버전보다 낮으면 QR을 발급하지 않고 `/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach` 순서를 알려 주는 오류를 돌려준다. 호환되는 버전이 설치돼 있으면 QR을 발급하고, 폰에 올린 번들도 업그레이드한 뒤에 빌드한 것이어야 한다는 안내를 붙인다. 아무것도 확인할 수 없으면(`node_modules`가 없는 등) QR을 발급하고 위 규칙을 한 문장으로 붙인다. 폰 쪽에서 거부될 때(close 4426, `update-required`)도 같은 조치를 안내한다. 설치된 패키지뿐 아니라 프로젝트의 빌드 산출물(`dist/`·`build/`·`out/`·`.granite/`와 루트의 `*.ait`)과 `.ait-debug-deployments.json`에 기록된 마지막 디버그 빌드도 확인해, 거부되는 클라이언트가 든 번들이 폰에 있을 것으로 보이면 QR을 발급하지 않는다. 폰의 번들이 이미 최신임을 알면(다른 PC에서 올린 경우 등) `start_attach`에 `skipBundleCheck: true`를 줘 이 확인만 건너뛴다. 옛 기기가 relay에 닿으면 대기 시간을 다 쓰지 않고 몇 초 안에 같은 안내로 끝난다. 호환되는 클라이언트가 든 번들이면 그 번들에 박힌 debugger 키도 본다: 키가 없거나, 만료됐거나(약 24시간), 이 debugger의 key agent가 가진 키와 다르면 QR을 발급하지 않고 다시 빌드(번들러 빌드는 `AIT_DEBUG_BUILD=1`, 번들러가 없는 출력은 `debugger inject-client`)하라고 안내한다. 키는 짧은 지문만 보여 준다.
+`start_attach`는 QR을 발급하기 전에 프로젝트(데몬의 작업 폴더, 또는 `projectRoot` 인자)의 `node_modules/@apps-in-toss/debugger-client`·`debug-console`과 `package.json`의 의존성 선언(버전 또는 릴리스 tarball URL)을 읽는다. `debug-console`만 있거나 `debugger-client`가 최소 버전보다 낮으면 QR을 발급하지 않고 `/ait:setup-debugger` → 번들 재빌드·재업로드(`/ait:test-on-device`) → `start_attach` 순서를 알려 주는 오류를 돌려준다. 호환되는 버전이 설치돼 있으면 QR을 발급하고, 폰에 올린 번들도 업그레이드한 뒤에 빌드한 것이어야 한다는 안내를 붙인다. 아무것도 확인할 수 없으면(`node_modules`가 없는 등) QR을 발급하고 위 규칙을 한 문장으로 붙인다. 폰 쪽에서 거부될 때(close 4426, `update-required`)도 같은 조치를 안내한다. 설치된 패키지뿐 아니라 프로젝트의 빌드 산출물(`dist/`·`build/`·`out/`·`.granite/`와 루트의 `*.ait`)과 `.ait-debug-deployments.json`에 기록된 마지막 디버그 빌드도 확인해, 거부되는 클라이언트가 든 번들이 폰에 있을 것으로 보이면 QR을 발급하지 않는다. 폰의 번들이 이미 최신임을 알면(다른 PC에서 올린 경우 등) `start_attach`에 `skipBundleCheck: true`를 줘 이 확인만 건너뛴다. 옛 기기가 relay에 닿으면 대기 시간을 다 쓰지 않고 몇 초 안에 같은 안내로 끝난다. 호환되는 클라이언트가 든 번들이면 그 번들에 박힌 debugger 키도 본다: 키가 없거나, 만료됐거나(약 24시간), 이 세션이 QR에 서명하는 키와 다르면 QR을 발급하지 않고 다시 빌드(번들러 빌드는 `AIT_DEBUG_BUILD=1`, 번들러가 없는 출력은 `debugger inject-client`)하라고 안내한다. 키가 다른 번들은 이 검사를 건너뛰어도 폰의 서명 검증에서 실패하므로, 이 안내에는 `skipBundleCheck`를 넣지 않는다. 프로젝트에 설치된 `@apps-in-toss/debugger`가 0.4.2 이하이면(프로젝트별 키를 넣는 빌드 헬퍼) 먼저 올리라고 덧붙인다. 키는 짧은 지문만 보여 주고, QR을 발급할 때 결과 끝에 이 세션의 서명 키 지문을 붙인다.
 
 ## 최소 버전 확인
 
