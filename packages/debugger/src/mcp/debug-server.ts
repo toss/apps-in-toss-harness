@@ -78,6 +78,7 @@ import {
   type AttachDeps,
   type AttachUrlParts,
   buildIndicatorRemovalExpression,
+  extractDeploymentId,
   isRelayPageFresh,
   type McpResult,
   prepareAttach as prepareAttachCore,
@@ -104,7 +105,9 @@ import {
 import {
   BUNDLE_REBUILD_STEPS,
   CLIENT_UPDATE_STEPS_WITH_SKIP,
+  debugBundleAgeHours,
   inspectDebugBundle,
+  oldBundleWarning,
   staleBundleMessage,
 } from './bundle-check.js';
 import type { CdpConnection } from './cdp-connection.js';
@@ -1200,6 +1203,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
       }
       // 프로젝트 안의 빌드 산출물(dist 등, *.ait)이나 올려 둔 디버그 빌드의 기록이 거부되는 클라이언트를
       // 담고 있으면 마찬가지로 QR을 발급하지 않는다. 폰이 여는 것은 설치된 패키지가 아니라 그 번들이다.
+      let oldBundleNote = '';
       if (args?.skipBundleCheck !== true) {
         const bundleRoot = findProjectRoot(
           typeof rawCompatRoot === 'string' && isAbsolute(rawCompatRoot)
@@ -1243,6 +1247,15 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         if (bundle.status === 'stale') {
           return mcpError(staleBundleMessage(bundle, __VERSION__));
         }
+        // 키는 기본 24시간 뒤 만료된다. 올린 지 그보다 오래된 빌드면 QR은 막지 않고 한 줄만 알린다.
+        const rawScheme = args?.scheme_url;
+        const age = debugBundleAgeHours(
+          bundleRoot,
+          identity.source === 'granite' ? identity.label : null,
+          typeof rawScheme === 'string' ? extractDeploymentId(rawScheme) : null,
+          Date.now(),
+        );
+        if (age !== null) oldBundleNote = `\n\n${oldBundleWarning(age)}`;
       }
       const compatNote =
         compat.status === 'compatible'
@@ -1261,7 +1274,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         if (lastText === -1) return result;
         const content = result.content.map((c, i) =>
           i === lastText && c.type === 'text'
-            ? { ...c, text: `${c.text}\n\n${compatNote}${keyNote}` }
+            ? { ...c, text: `${c.text}\n\n${compatNote}${keyNote}${oldBundleNote}` }
             : c,
         );
         return { ...result, content };

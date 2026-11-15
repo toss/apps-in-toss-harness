@@ -842,8 +842,9 @@ export async function renderAndMaybeWait(
   /**
    * Segmented wait with TOTP re-mint (issue #626 §3). Resolves with the
    * attached page list, or rejects on timeout. Between SEGMENT_MS slices it
-   * re-mints when the code has aged past the threshold (max ~4 re-mints over
-   * 600 s). Returns immediately once a matching page attaches (no re-mint).
+   * re-mints whenever the code steps over (every RELAY_CODE_STEP_SECONDS, 5 s, so
+   * a long wait re-mints many times; the timeline folds them into one entry with
+   * a count). Returns immediately once a matching page attaches (no re-mint).
    */
   async function waitWithRemint(): Promise<ReturnType<CdpConnection['listTargets']>> {
     // A mismatch recorded before this wait began belongs to an earlier scan.

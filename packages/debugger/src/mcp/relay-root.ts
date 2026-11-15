@@ -114,12 +114,17 @@ export interface RelayKeys {
 
 /** Thrown when a build helper or the CLI needs the agent and cannot get it. */
 export class KeyAgentRequiredError extends Error {
-  constructor() {
+  /** `unreachable`: no agent connection (or it stopped answering). `no-keys`: it answered but gave no key. */
+  readonly reason: 'unreachable' | 'no-keys';
+  constructor(reason: 'unreachable' | 'no-keys' = 'unreachable') {
     super(
-      '[@apps-in-toss/debugger] key agent에 연결하지 못했습니다. 홈 디렉터리가 읽기 전용이거나 샌드박스·CI 환경일 수 있습니다. ' +
-        '`npx debugger key-agent`를 직접 실행할 수 있는 환경에서 다시 시도하거나 AIT_DEBUGGER_KEY_AGENT_DIR로 쓰기 가능한 디렉터리를 지정하세요.',
+      reason === 'no-keys'
+        ? '[@apps-in-toss/debugger] key agent가 relay 공개 키를 주지 않았습니다(키 0개). agent를 다시 띄우거나 `npx debugger relay-key --rotate`로 키를 새로 만든 뒤 다시 시도하세요.'
+        : '[@apps-in-toss/debugger] key agent에 연결하지 못했습니다. 홈 디렉터리가 읽기 전용이거나 샌드박스·CI 환경일 수 있습니다. ' +
+            '`npx debugger key-agent`를 직접 실행할 수 있는 환경에서 다시 시도하거나 AIT_DEBUGGER_KEY_AGENT_DIR로 쓰기 가능한 디렉터리를 지정하세요.',
     );
     this.name = 'KeyAgentRequiredError';
+    this.reason = reason;
   }
 }
 
@@ -153,7 +158,17 @@ export async function prepareRelayKeys(options: PrepareKeysOptions): Promise<Rel
     options.legacyDirs ??
     (options.projectRoot === undefined ? [] : resolveProject(options.projectRoot).legacyDirs);
   const legacy = await (options.retire ?? retireLegacyRelaySecrets)({ dirs, env, log });
-  const keys = await provider.getOrCreate(MACHINE_KEY_ID);
+  let keys: KeyInfo;
+  try {
+    keys = await provider.getOrCreate(MACHINE_KEY_ID);
+  } catch (error) {
+    // The agent answered the status probe but stopped answering here: say what to do
+    // instead of surfacing the raw transport error (build helper and CLI only).
+    if (options.requireAgent && error instanceof AgentUnavailableError) {
+      throw new KeyAgentRequiredError();
+    }
+    throw error;
+  }
   return { provider, holder, keys, legacy };
 }
 

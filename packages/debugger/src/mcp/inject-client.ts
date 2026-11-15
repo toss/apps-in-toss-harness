@@ -178,8 +178,11 @@ export async function runInjectClient(
     keys = await (deps.readKeys ?? ((root) => readRelayPublicKeys(root, { log: writeError })))(
       resolve(cwd, project ?? '.'),
     );
-  } catch {
-    keys = [];
+  } catch (error) {
+    // Messages of the key helpers carry no secrets; show why instead of one merged line.
+    return fail(
+      `no relay public key is available: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   if (keys.length === 0) {
     return fail(

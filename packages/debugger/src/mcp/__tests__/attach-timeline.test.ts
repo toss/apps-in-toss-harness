@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { startAttachProgress } from '../attach-progress.js';
 import {
+  type AttachStageEvent,
   AttachTimeline,
   buildDashboardTimelineState,
   createRelayStageHooks,
@@ -73,8 +74,43 @@ describe('AttachTimeline', () => {
   it('is a ring buffer (capacity bound)', () => {
     const tl = new AttachTimeline({ capacity: 3 });
     tl.beginAttempt();
-    for (let i = 0; i < 10; i++) tl.record('qr-issued', 'ok', 'remint');
+    for (let i = 0; i < 10; i++) tl.record('device-handshake', 'ok');
     expect(tl.snapshot().events).toHaveLength(3);
+  });
+
+  it('folds consecutive QR re-issues of one attempt into one event with a count', () => {
+    const { tl } = freshAttempt();
+    const seen: Array<number | undefined> = [];
+    tl.onStage((e) => seen.push(e.count));
+    tl.record('qr-issued', 'ok', 'mint');
+    const first = tl.record('qr-issued', 'ok', 'remint');
+    tl.record('qr-issued', 'ok', 'remint');
+    const last = tl.record('qr-issued', 'ok', 'remint');
+    const events = tl.snapshot().events;
+    expect(events.map((e) => `${e.stage}.${e.detail}`)).toEqual([
+      'qr-issued.mint',
+      'qr-issued.remint',
+    ]);
+    expect(first.count).toBeUndefined();
+    expect(events[1]).toBe(last);
+    expect(events[1]?.count).toBe(3);
+    expect(events[1]?.seq).toBe(last.seq);
+    // Listeners still hear every re-issue.
+    expect(seen).toEqual([undefined, undefined, 2, 3]);
+    expect(formatStageLabel(events[1] as AttachStageEvent)).toBe('QR 재발급 ×3 (코드 갱신)');
+    expect(formatStageLabel(first)).toBe('QR 재발급 (코드 갱신)');
+  });
+
+  it('does not fold across another stage or another attempt', () => {
+    const { tl } = freshAttempt();
+    tl.record('qr-issued', 'ok', 'remint');
+    tl.record('device-handshake', 'ok');
+    tl.record('qr-issued', 'ok', 'remint');
+    expect(tl.snapshot().events).toHaveLength(3);
+    tl.beginAttempt();
+    tl.record('qr-issued', 'ok', 'remint');
+    tl.record('qr-issued', 'ok', 'remint');
+    expect(tl.snapshot().events.map((e) => e.count)).toEqual([2]); // the new attempt starts its own count
   });
 
   it('delivers events to onStage listeners and survives a throwing listener', () => {
@@ -269,7 +305,7 @@ describe('formatStageHistory / formatStageLabel', () => {
 describe('buildDashboardTimelineState', () => {
   it('returns the last 12 stages and a session marker', () => {
     const { tl } = freshAttempt();
-    for (let i = 0; i < 20; i++) tl.record('qr-issued', 'ok', 'remint');
+    for (let i = 0; i < 20; i++) tl.record('device-handshake', 'ok');
     const state = buildDashboardTimelineState(tl, '2026-10-14T00:00:00.000Z', 'test-runner');
     expect(state.stages).toHaveLength(12);
     expect(state.session).toEqual({
@@ -327,6 +363,18 @@ describe('startAttachProgress', () => {
     vi.useRealTimers();
   });
 
+  it('announces only the first QR re-issue of a run', () => {
+    const { tl, sent, progress } = setup('tok');
+    tl.record('qr-issued', 'ok', 'mint');
+    for (let i = 0; i < 5; i++) tl.record('qr-issued', 'ok', 'remint');
+    progress.stop();
+    expect(sent.map((s) => s.message)).toEqual([
+      'QR 발급됨 — 폰으로 스캔하세요',
+      'QR 재발급 (코드 갱신)',
+    ]);
+    vi.useRealTimers();
+  });
+
   it('says the phone has not responded while no phone-side stage exists', () => {
     const { tl, sent, progress } = setup('tok');
     tl.record('qr-issued', 'ok', 'mint');
@@ -375,5 +423,16 @@ describe('startAttachProgress', () => {
     vi.advanceTimersByTime(60_000);
     expect(send).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+describe('page-not-opened diagnosis', () => {
+  it('lists the expired bundle key as a candidate, with the default lifetime', () => {
+    const { tl } = freshAttempt();
+    tl.record('tunnel', 'ok');
+    tl.record('qr-issued', 'ok', 'mint');
+    const d = diagnoseAttach(tl.snapshot());
+    expect(d.kind).toBe('page-not-opened');
+    expect(d.actions.some((a) => a.includes('relay 키는 기본 약 24시간 뒤 만료돼요'))).toBe(true);
   });
 });

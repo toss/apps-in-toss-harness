@@ -279,6 +279,20 @@ describe('dashboard states — no empty card, only the actions that make sense',
   });
 });
 
+describe('layout stays put while the dashboard updates', () => {
+  // When the progress list grows past the viewport the vertical scrollbar appears and the
+  // centred page would jump sideways by its width. The gutter is reserved up front instead.
+  it('reserves the scrollbar gutter', async () => {
+    const srv = await startQrHttpServer(() => state());
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${srv.port}/?lang=ko`)).text();
+      expect(html).toMatch(/html \{[^}]*scrollbar-gutter: stable;/);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
 describe('daemon connection lost — the big screen must not keep saying "connected"', () => {
   const stage = () => document.getElementById('stage') as HTMLElement;
   const pill = () => document.getElementById('tunnel-status');

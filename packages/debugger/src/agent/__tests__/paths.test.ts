@@ -95,4 +95,23 @@ describe('resolveAgentPaths', () => {
     expect(w1.endpoint).not.toBe(w2.endpoint);
     expect(w1.tokenPath).toBe('C:\\t1\\agent.token');
   });
+
+  it('reports (by length only) that an overlong override was ignored', () => {
+    const long = `/${'a'.repeat(120)}`;
+    const p = resolveAgentPaths({
+      ...base,
+      platform: 'darwin',
+      env: { AIT_DEBUGGER_KEY_AGENT_DIR: long },
+    });
+    expect(p.dir).toBe('/tmp/ait-501');
+    expect(p.overrideIgnoredBytes).toBe(Buffer.byteLength(`${long}/agent.sock`));
+    expect(JSON.stringify(p)).not.toContain(long);
+    const ok = resolveAgentPaths({
+      ...base,
+      platform: 'darwin',
+      env: { AIT_DEBUGGER_KEY_AGENT_DIR: '/tmp/x' },
+    });
+    expect(ok.overrideIgnoredBytes).toBeUndefined();
+    expect(resolveAgentPaths({ ...base, platform: 'darwin' }).overrideIgnoredBytes).toBeUndefined();
+  });
 });

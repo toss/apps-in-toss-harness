@@ -17,6 +17,7 @@
  */
 
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { DEFAULT_KEY_TTL_HOURS } from '../agent/key-ttl.js';
 import type { AttachHandshakeEvent, RelayAuthRejectEvent } from './chii-relay.js';
 import { protocolSkewParts } from './protocol-version.js';
 import type { DashboardState } from './qr-http-server.js';
@@ -71,6 +72,11 @@ export interface AttachStageEvent {
   detail?: AttachStageDetail;
   /** `target-rejected-busy`에만: 거부된 앱과 붙어 있던 앱의 라벨. */
   apps?: BusyApps;
+  /**
+   * `qr-issued`/`remint`에만: 이 한 줄로 합쳐진 재발급 횟수. 코드가 5초마다 바뀌어 재발급이
+   * 쌓이므로 연속된 재발급은 한 이벤트로 합치고 횟수만 센다. 합쳐지지 않았으면 없다(= 1회).
+   */
+  count?: number;
 }
 
 export type AttachStageListener = (event: AttachStageEvent) => void;
@@ -99,6 +105,10 @@ const DETACH_CAUSE_WINDOW_MS = 60_000;
 const DETACH_CAUSE_LATE_MS = 5_000;
 
 const DEFAULT_CAPACITY = 100;
+
+function isRemint(event: AttachStageEvent): boolean {
+  return event.stage === 'qr-issued' && event.detail === 'remint';
+}
 
 export class AttachTimeline {
   private readonly buffer: AttachStageEvent[] = [];
@@ -170,8 +180,16 @@ export class AttachTimeline {
       ...(detail !== undefined ? { detail } : {}),
       ...(apps !== undefined ? { apps } : {}),
     };
-    this.buffer.push(event);
-    if (this.buffer.length > this.capacity) this.buffer.shift();
+    // 코드는 5초마다 바뀌므로 대기 중 재발급이 분당 12번 쌓인다. 직전 이벤트가 같은 시도의
+    // 재발급이면 그것을 새 이벤트로 바꿔(횟수만 센다) 진단에 쓸 단계가 밀려나지 않게 한다.
+    const prev = this.buffer[this.buffer.length - 1];
+    if (isRemint(event) && prev !== undefined && isRemint(prev) && prev.attempt === event.attempt) {
+      event.count = (prev.count ?? 1) + 1;
+      this.buffer[this.buffer.length - 1] = event;
+    } else {
+      this.buffer.push(event);
+      if (this.buffer.length > this.capacity) this.buffer.shift();
+    }
     if (stage === 'tunnel') this.lastTunnel = event;
     if (stage === 'tunnel' && result === 'down') this.noteDetachCause('tunnel-down');
     for (const listener of [...this.listeners]) {
@@ -473,6 +491,7 @@ export function diagnoseAttach(
     lastStage,
     summary: '폰이 이번 QR의 페이지를 열지 않았어요 (폰에서 이 relay로 온 요청이 없어요).',
     actions: [
+      `디버그 번들의 relay 키는 기본 약 ${DEFAULT_KEY_TTL_HOURS}시간 뒤 만료돼요. 번들을 빌드한 지 하루가 넘었으면 다시 빌드해 올리세요 (폰 막대에 '디버거 키가 만료됐어요'가 뜨는 경우).`,
       '폰에 "디버거에 연결할까요?" 창이 떠 있으면 "연결"을 눌러 주세요 — 누르기 전에는 폰이 relay로 아무 요청도 보내지 않아요.',
       '미니앱이 이미 열려 있으면 X 버튼으로 닫고 QR을 다시 스캔하세요 — 열린 미니앱은 스캔해도 새로고침되지 않아요.',
       '폰 화면에 디버거 막대가 아예 없다면 QR 테스트 호스트가 아닌 주소로 열렸거나 debugger-client이 번들에 없는 경우예요 — 토스 앱에서 테스트 번들로 연 화면인지 확인하세요.',
@@ -538,7 +557,10 @@ export function formatStageLabel(event: AttachStageEvent): string {
     case 'tunnel':
       return event.result === 'ok' ? '터널 연결됨' : '터널 끊김';
     case 'qr-issued':
-      return event.detail === 'remint' ? 'QR 재발급 (코드 갱신)' : 'QR 발급됨 — 폰으로 스캔하세요';
+      if (event.detail !== 'remint') return 'QR 발급됨 — 폰으로 스캔하세요';
+      return event.count !== undefined && event.count > 1
+        ? `QR 재발급 ×${event.count} (코드 갱신)`
+        : 'QR 재발급 (코드 갱신)';
     case 'device-handshake':
       return '폰이 이번 QR의 페이지를 열었어요';
     case 'auth':
@@ -591,6 +613,7 @@ export function buildDashboardTimelineState(
       result: e.result,
       ...(e.detail !== undefined ? { detail: e.detail } : {}),
       ...(e.apps !== undefined ? { apps: e.apps } : {}),
+      ...(e.count !== undefined ? { count: e.count } : {}),
     })),
     session: { kind, startedAt, pid: process.pid },
   };
