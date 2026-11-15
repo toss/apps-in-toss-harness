@@ -95,6 +95,8 @@ function renderDashboardChrome(locale: Locale): string {
         peekWarn: s('dashboard.peek.warn'),
         errorTitle: s('dashboard.error.title'),
         errorBody: s('dashboard.attach.tunnelDown'),
+        lostTitle: s('dashboard.lost.title'),
+        lostBody: s('dashboard.lost.body'),
         detailsSummary: s('dashboard.details.summary'),
       },
     }),

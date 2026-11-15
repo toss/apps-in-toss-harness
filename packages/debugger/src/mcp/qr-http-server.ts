@@ -884,7 +884,7 @@ function buildViewScriptStrings(
 
 /**
  * 대시보드 화면 전환 스크립트. SSE 스크립트가 프레임마다 던지는 `ait-dash-state` 이벤트를 받아
- * 한 번에 한 화면(`#stage[data-view]`: wait · connecting · connected · error)만 보이게 하고,
+ * 한 번에 한 화면(`#stage[data-view]`: wait · connecting · connected · error, SSE가 끊기면 `data-conn="lost"`로 안내 패널을 덮는다)만 보이게 하고,
  * 진행 단계·안내 문구·연결 정보·QR 갱신 타이머를 그린다. 서버가 첫 `data-view`를 정하고
  * (wait/connected/error), 이 스크립트가 단계 기록(`stages`)으로 `connecting`을 더한다.
  *
@@ -970,6 +970,8 @@ function buildViewScript(tableJson: string): string {
   function update(s) {
     if (!document.getElementById('stage')) return;
     var r = derive(s);
+    // 프레임이 왔다는 건 daemon이 살아 있다는 뜻이라 '연결 끊김' 표시를 거둔다.
+    stage.removeAttribute('data-conn');
     if (stage.getAttribute('data-view') !== r.view) stage.setAttribute('data-view', r.view);
     // 펼침은 connected 화면에서만 의미가 있다. 연결이 끊겨 wait로 돌아가면 접고 QR을 그대로 보인다.
     if (r.view !== 'connected' && stage.getAttribute('data-peek') === '1') setPeek(false);
@@ -1297,9 +1299,14 @@ function buildSseScript(strings: SseScriptStrings): string {
         disconnectedShown = true;
         var el = document.getElementById('tunnel-status');
         if (el) { el.textContent = CONN_LOST; el.className = 'status status-down'; }
+        // 큰 화면도 같이 바꾼다. 배지만 바뀌고 '폰이 연결됐어요'가 남으면 두 표시가 모순된다.
+        var stg = document.getElementById('stage');
+        if (stg) stg.setAttribute('data-conn', 'lost');
       }
       function clearConnLost() {
         disconnectedShown = false;
+        var stg = document.getElementById('stage');
+        if (stg) stg.removeAttribute('data-conn');
       }
 
       function fireWatchdog() {
