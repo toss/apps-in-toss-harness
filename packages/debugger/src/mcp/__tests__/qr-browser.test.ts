@@ -118,7 +118,7 @@ describe('startQrHttpServer', () => {
     const html = await res.text();
 
     // base64 inline QR
-    expect(html).toContain('<img class="qr" src="data:image/png;base64,');
+    expect(html).toContain('<img class="qr" width="256" height="256" src="data:image/png;base64,');
 
     // 스캔 절차 (4단계)
     expect(html).toContain('스캔 절차');

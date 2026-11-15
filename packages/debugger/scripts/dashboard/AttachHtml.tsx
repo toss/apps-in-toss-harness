@@ -87,7 +87,7 @@ h1 { font-size: 1.25rem; font-weight: 600; color: #e6edf3; margin: 0; text-align
 }
 .label { font-size: 0.8rem; opacity: 0.5; font-family: monospace; margin: 0; }
 img.qr {
-  width: min(90vw, 360px); height: auto;
+  width: min(90vw, 360px); height: auto; aspect-ratio: 1 / 1; box-sizing: border-box;
   image-rendering: pixelated;
   background: #fff; padding: 1rem; border-radius: 12px;
   display: block; margin: 0 auto;
@@ -146,7 +146,7 @@ hr { border: none; border-top: 1px solid #21262d; width: 100%; margin: 0.5rem 0;
         {/* #attach-section: SSE push가 QR img src만 교체. url-box는 #url-section에 분리 관리. */}
         <div id="attach-section">
           {/* __QR_DATA_URL__ filled at runtime */}
-          <img className="qr" src="__QR_DATA_URL__" alt="attach QR" />
+          <img className="qr" width={256} height={256} src="__QR_DATA_URL__" alt="attach QR" />
         </div>
 
         <section>

@@ -618,7 +618,7 @@ function buildDashboardHtml(
     copyUrl = state.attachUrl;
     attachSection =
       `<div class="qr-frame" data-ready="1">` +
-      `<img class="qr" src="${qrDataUrl}" alt="${escapeHtml(s('dashboard.qr.alt'))}" />` +
+      `<img class="qr" width="256" height="256" src="${qrDataUrl}" alt="${escapeHtml(s('dashboard.qr.alt'))}" />` +
       `<div class="qr-skel" role="status"><i></i><span>${escapeHtml(s('dashboard.qr.loading'))}</span></div>` +
       `</div>` +
       `<p class="hint reopen-hint">${escapeHtml(s('dashboard.attach.reopenHint'))}</p>`;
@@ -1505,7 +1505,7 @@ function buildSseScript(strings: SseScriptStrings): string {
               // 이미지는 비워 두고 "불러오는 중" 표시가 칸을 채운다. 링크 문자열은 화면에 그리지 않는다 —
               // 복사 버튼의 data-url에만 둔다.
               sec.innerHTML =
-                '<div class=\\"qr-frame\\" data-ready=\\"0\\"><img class=\\"qr\\" alt=\\"' + QR_ALT + '\\" />' +
+                '<div class=\\"qr-frame\\" data-ready=\\"0\\"><img class=\\"qr\\" width=\\"256\\" height=\\"256\\" alt=\\"' + QR_ALT + '\\" />' +
                 '<div class=\\"qr-skel\\" role=\\"status\\"><i></i><span>' + QR_LOADING + '</span></div></div>' +
                 '<p class=\\"hint reopen-hint\\">' + REOPEN_HINT + '</p>';
               qrShown = null;
@@ -1514,7 +1514,7 @@ function buildSseScript(strings: SseScriptStrings): string {
               qrPump();`
                   : `// /attach: img만 갈아 끼운다 — url-box는 별도 #url-section에서 관리해 이중 표시 방지(#458).
               if (!curImg) {
-                sec.innerHTML = '<img class=\\"qr\\" src=\\"/qr.png?u=' + encoded + '\\" alt=\\"attach QR\\" />';
+                sec.innerHTML = '<img class=\\"qr\\" width=\\"256\\" height=\\"256\\" src=\\"/qr.png?u=' + encoded + '\\" alt=\\"attach QR\\" />';
                 qrShown = null;
               }
               qrWant = encoded;
