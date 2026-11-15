@@ -136,7 +136,9 @@ async function decodeNext(): Promise<string> {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  // setInterval too: the dashboard script starts a 250 ms countdown interval on every mount.
+  // Left real, it outlives the test file and fires after jsdom is gone (document is not defined).
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   sse = null;
   pending = [];
   fetched.length = 0;
