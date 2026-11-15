@@ -62,6 +62,10 @@ export type BlockedReason =
  *                        debugger older than 0.4.0), so nothing was attempted
  *                        `blocked-relay-key-expired`: every pinned key that matches the
  *                        link is past its `notAfter` (rebuild the debug bundle);
+ *                        `blocked-relay-key-mismatch`: no pinned key signed the link's
+ *                        certificate and at least one pinned key is still current
+ *                        (a bundle built on another computer or before a key
+ *                        rotation); the bar shows the pinned keys' short fingerprints
  *                        `blocked-relay-key-form`: `relayPublicKeys` still has
  *                        plain strings instead of `{ publicKey, notAfter }`
  * - `session-revoked` / `session-idle` / `session-stopped` / `session-expired`
@@ -90,6 +94,7 @@ export type DebugStatus =
   | 'session-stopped'
   | 'session-expired'
   | 'blocked-relay-key-expired'
+  | 'blocked-relay-key-mismatch'
   | 'blocked-relay-key-form'
   | 'code-expired'
   | 'relay-busy'
@@ -130,6 +135,10 @@ const MESSAGES: Record<Exclude<DebugStatus, 'blocked-host'>, { tone: Tone; text:
   'blocked-relay-key-expired': {
     tone: 'error',
     text: '이 디버그 번들의 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요.',
+  },
+  'blocked-relay-key-mismatch': {
+    tone: 'error',
+    text: '이 번들의 디버거 키가 지금 디버거의 키와 달라요. 이 기기에서 디버그 번들을 다시 빌드하세요.',
   },
   'blocked-relay-key-form': {
     tone: 'error',
@@ -213,7 +222,7 @@ function onVisibilityForBanner(): void {
     (GONE_ON_RETURN.has(status) || status in GONE_ON_RETURN_NAMED) &&
     document.getElementById(BANNER_HOST_ID) !== null
   ) {
-    renderBanner(status as Exclude<DebugStatus, 'blocked-host'>);
+    renderBanner(status as Exclude<DebugStatus, 'blocked-host'>, statusDetail);
   }
 }
 
@@ -225,10 +234,29 @@ function watchVisibility(): void {
 
 /** Epoch ms of the last accepted status change; `null` before the first. */
 let statusSince: number | null = null;
+/** Detail of the current status (fingerprints only), or `null`. */
+let statusDetail: string | null = null;
+
+/**
+ * Optional detail some lines carry: only short key fingerprints (8 hex each, at most 3,
+ * comma separated). Anything else is dropped, so a caller cannot put other text on the bar.
+ */
+const FINGERPRINT_DETAIL = /^[0-9a-f]{8}(, [0-9a-f]{8}){0,2}$/;
+
+function lineFor(status: Exclude<DebugStatus, 'blocked-host'>, detail: string | null): string {
+  if (
+    status === 'blocked-relay-key-mismatch' &&
+    detail !== null &&
+    FINGERPRINT_DETAIL.test(detail)
+  ) {
+    return `이 번들의 디버거 키(지문 ${detail})가 지금 디버거의 키와 달라요. 이 기기에서 디버그 번들을 다시 빌드하세요.`;
+  }
+  return MESSAGES[status].text;
+}
 
 /** Short Korean line for a status (what the banner would say), or `null` if it has none. */
-export function statusLabel(status: DebugStatus): string | null {
-  return status === 'blocked-host' ? null : MESSAGES[status].text;
+export function statusLabel(status: DebugStatus, detail?: string): string | null {
+  return status === 'blocked-host' ? null : lineFor(status, detail ?? null);
 }
 
 /** When the current status was set (epoch ms), or `null`. */
@@ -266,7 +294,7 @@ function removeBanner(): void {
   document.getElementById(BANNER_HOST_ID)?.remove();
 }
 
-function renderBanner(status: Exclude<DebugStatus, 'blocked-host'>): void {
+function renderBanner(status: Exclude<DebugStatus, 'blocked-host'>, detail: string | null): void {
   if (typeof document === 'undefined') return;
   const parent = document.body ?? document.documentElement;
   if (parent === null || parent === undefined) return;
@@ -284,8 +312,8 @@ function renderBanner(status: Exclude<DebugStatus, 'blocked-host'>): void {
   const root = host.shadowRoot;
   if (root === null) return;
 
-  const { tone, text: baseText } = MESSAGES[status];
-  let text = baseText;
+  const { tone } = MESSAGES[status];
+  let text = lineFor(status, detail);
   if (returnedRecently()) {
     const reason = GONE_ON_RETURN_NAMED[status];
     if (GONE_ON_RETURN.has(status)) text = GONE_ON_RETURN_TEXT;
@@ -335,15 +363,17 @@ function renderBanner(status: Exclude<DebugStatus, 'blocked-host'>): void {
  * leaves no node and no global.
  * Never throws into the host app. A later status replaces an earlier one
  * (including after a tap-dismiss); `connected` hides itself after a few seconds.
+ * `detail` is optional and only ever short key fingerprints (see `FINGERPRINT_DETAIL`).
  */
-export function setDebugStatus(status: DebugStatus): void {
+export function setDebugStatus(status: DebugStatus, detail?: string): void {
   if (status === 'blocked-host') return;
   if (!isExplicitOptIn()) return;
   try {
     if (window.__ait_debug_status !== status) statusSince = Date.now();
     window.__ait_debug_status = status;
+    statusDetail = detail ?? null;
     clearHideTimer();
-    renderBanner(status);
+    renderBanner(status, statusDetail);
     if (status === 'connected') {
       hideTimer = setTimeout(removeBanner, CONNECTED_VISIBLE_MS);
     }

@@ -7,7 +7,7 @@
  * banner that names the new form, and neither path sends anything to the relay.
  */
 
-import { webcrypto } from 'node:crypto';
+import { createHash, webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GateResult } from '../index.js';
 import { SEED_HOST_NAME, seedComputerConsent } from './consent-seed.js';
@@ -118,9 +118,9 @@ describe('pinned key expiry', () => {
     expect(document.querySelector('script')).not.toBeNull();
   });
 
-  it('an expired key that does not match the link is a plain signature failure', async () => {
+  it('an expired key that does not match the link is reported as expired (the key rotated)', async () => {
     await attempt([{ publicKey: relayPublicKey('22'.repeat(32)), notAfter: nowSec() - 4000 }]);
-    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-expired');
     expectNoRelayActivity();
   });
 
@@ -140,6 +140,87 @@ describe('pinned key expiry', () => {
   ])('a pin with notAfter as %s is not usable', async (_name, notAfter) => {
     await attempt([{ publicKey: KEY, notAfter }]);
     expect(window.__ait_debug_status).toBe('blocked-relay-key');
+    expectNoRelayActivity();
+  });
+});
+
+describe('a link signed by a key that is not pinned', () => {
+  const OTHER = relayPublicKey('22'.repeat(32));
+  const THIRD = relayPublicKey('33'.repeat(32));
+  const fingerprintOf = (key: string): string =>
+    createHash('sha256').update(key).digest('hex').slice(0, 8);
+  const bannerText = (): string | undefined =>
+    document.getElementById('__ait_status_banner')?.shadowRoot?.querySelector('.bar')
+      ?.textContent ?? undefined;
+
+  it('every pinned key expired: key-expired, zero activity', async () => {
+    await attempt([
+      { publicKey: OTHER, notAfter: nowSec() - 4000 },
+      { publicKey: THIRD, notAfter: nowSec() - 9000 },
+    ]);
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-expired');
+    expectNoRelayActivity();
+  });
+
+  it('a live pinned key: key-mismatch with its fingerprint, zero activity', async () => {
+    await attempt([{ publicKey: OTHER, notAfter: nowSec() + 3600 }]);
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-mismatch');
+    expectNoRelayActivity();
+    const banner = bannerText();
+    expect(banner).toContain(`지문 ${fingerprintOf(OTHER)}`);
+    expect(banner).toMatch(/다시 빌드/);
+    expect(banner).not.toContain(OTHER);
+    expect(String(warnSpy.mock.calls[0]?.[0])).not.toContain(OTHER);
+    expect(new URLSearchParams(window.location.search).has('at')).toBe(false);
+  });
+
+  it('an expired key next to a live one: key-mismatch, both fingerprints', async () => {
+    await attempt([
+      { publicKey: OTHER, notAfter: nowSec() - 4000 },
+      { publicKey: THIRD, notAfter: nowSec() + 3600 },
+    ]);
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-mismatch');
+    expectNoRelayActivity();
+    expect(bannerText()).toContain(`지문 ${fingerprintOf(OTHER)}, ${fingerprintOf(THIRD)}`);
+  });
+
+  it('shows at most 3 fingerprints', async () => {
+    const keys = ['44', '55', '66', '77'].map((b) => relayPublicKey(b.repeat(32)));
+    await attempt(keys.map((publicKey) => ({ publicKey, notAfter: nowSec() + 3600 })));
+    const banner = bannerText() ?? '';
+    for (const key of keys.slice(0, 3)) expect(banner).toContain(fingerprintOf(key));
+    expect(banner).not.toContain(fingerprintOf(keys[3] as string));
+  });
+
+  it('the fingerprint equals the debugger keyFingerprint for the same text', async () => {
+    const { keyFingerprint } = await import('../attach.js');
+    const { keyFingerprint: debuggerFingerprint } = await import(
+      '../../../debugger/src/mcp/key-fingerprint.js'
+    );
+    for (const key of [OTHER, THIRD, KEY, 'AAAA', '']) {
+      expect(await keyFingerprint(webcrypto.subtle as unknown as SubtleCrypto, key)).toBe(
+        debuggerFingerprint(key),
+      );
+      expect(await keyFingerprint(webcrypto.subtle as unknown as SubtleCrypto, key)).toBe(
+        fingerprintOf(key),
+      );
+    }
+  });
+
+  it('without WebCrypto digest the bar still says the keys differ, without a fingerprint', async () => {
+    const real = webcrypto.subtle;
+    vi.stubGlobal('crypto', {
+      subtle: new Proxy(real, {
+        get: (target, prop) =>
+          prop === 'digest'
+            ? () => Promise.reject(new Error('no digest'))
+            : Reflect.get(target, prop, target).bind?.(target),
+      }),
+    });
+    await attempt([{ publicKey: OTHER, notAfter: nowSec() + 3600 }]);
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-mismatch');
+    expect(bannerText()).not.toContain('지문');
+    expect(bannerText()).toMatch(/달라요/);
     expectNoRelayActivity();
   });
 });
@@ -180,5 +261,18 @@ describe('zero network before consent', () => {
     }
     expect(document.getElementById('__ait_debug_consent')).not.toBeNull();
     expectNoRelayActivity();
+  });
+});
+
+describe('status label detail', () => {
+  it('only short fingerprints reach the line; anything else is ignored', async () => {
+    const { statusLabel } = await import('../status-banner.js');
+    expect(statusLabel('blocked-relay-key-mismatch', 'abcdef01, 01234567')).toContain(
+      '(지문 abcdef01, 01234567)',
+    );
+    for (const bad of ['', 'ABCDEF01', 'https://evil.example', 'abcdef01, a, b', 'a'.repeat(40)]) {
+      expect(statusLabel('blocked-relay-key-mismatch', bad)).not.toContain('지문');
+    }
+    expect(statusLabel('blocked-relay-key-expired', 'abcdef01')).not.toContain('abcdef01');
   });
 });

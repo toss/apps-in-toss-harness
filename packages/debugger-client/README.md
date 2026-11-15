@@ -106,8 +106,9 @@ attach가 어디까지 됐는지를 폰 화면 아래쪽 작은 막대로 알려
 |---|---|---|
 | `blocked-opt-in` / `blocked-invalid-relay` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | 게이트가 막았다(`debug=1` 누락, 올바르지 않은 relay 주소). 대시보드의 QR로 다시 연다 |
 | `blocked-relay-key` | 이 번들에 디버거 키가 없어요. | 번들에 공개키가 없다. 프로젝트 폴더에서 `npx debugger relay-key`를 실행해 출력을 `startDebugConsole({ relayPublicKeys })`에 넣고 다시 빌드한다 |
-| `blocked-relay-signature` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | URL의 `sig`·`arc`가 없거나 깨졌거나 등록한 공개키와 맞지 않는다. 폰 시계가 몇 분 이상 틀려 서명 인증서의 유효 시간 밖이어도 이렇게 멈춘다. 다른 PC의 디버거로 만든 QR이면 그 PC에서 `npx debugger relay-key`로 얻은 키를 배열에 추가하고 다시 빌드하고, 아니면 새 QR을 스캔한다 |
-| `blocked-relay-key-expired` | 이 디버그 번들의 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요. | 링크의 서명은 맞지만 번들에 고정된 키의 `notAfter`(+5분)가 지났다. relay에는 아무 요청도 보내지 않는다. 디버거 0.4.0의 `relay-key` 출력으로 디버그 번들을 다시 빌드한다 |
+| `blocked-relay-signature` | 이 QR로는 연결할 수 없어요. 새 QR을 스캔하세요. | URL의 `sig`·`arc`가 없거나 깨졌거나 서명이 맞지 않는다(링크를 서명한 키가 고정된 키와 다른 경우는 아래 `blocked-relay-key-expired`·`blocked-relay-key-mismatch`로 나뉜다). 폰 시계가 몇 분 이상 틀려 서명 인증서의 유효 시간 밖이어도 이렇게 멈춘다. 새 QR을 스캔한다. 다른 PC의 디버거로 만든 QR이면 그 PC에서 `npx debugger relay-key`로 얻은 키를 배열에 추가하고 다시 빌드한다 |
+| `blocked-relay-key-expired` | 이 디버그 번들의 디버거 키가 만료됐어요. 디버그 번들을 다시 빌드하세요. | 번들에 고정된 키가 모두 `notAfter`(+5분)를 지났다(링크를 서명한 키가 고정된 키와 달라도 모두 만료됐으면 이 상태다). relay에는 아무 요청도 보내지 않는다. 디버거 0.4.0의 `relay-key` 출력으로 디버그 번들을 다시 빌드한다 |
+| `blocked-relay-key-mismatch` | 이 번들의 디버거 키(지문 xxxxxxxx)가 지금 디버거의 키와 달라요. 이 기기에서 디버그 번들을 다시 빌드하세요. | 번들에 고정된 키 중 링크의 인증서를 서명한 키가 없고, 아직 만료되지 않은 키가 있다. 다른 PC에서 빌드했거나 키가 바뀌기 전에 빌드한 번들이다. 지문은 번들 키의 SHA-256 앞 8자리(최대 3개, 쉼표로 구분)이고 디버거가 출력하는 키 지문과 같다. 이 기기에서 `relay-key` 출력으로 디버그 번들을 다시 빌드한다. relay에는 아무 요청도 보내지 않는다 |
 | `blocked-relay-key-form` | 번들의 디버거 키 형식이 옛날 방식이에요. `debugger relay-key` 출력으로 다시 빌드하세요. | `relayPublicKeys`에 문자열이 들어 있다. `{ publicKey, notAfter }` 항목으로 바꾸고 다시 빌드한다 |
 | `blocked-debugger-update` | 디버거를 0.4.0 이상으로 업데이트한 뒤 새 QR을 스캔하세요. | 링크에 세션 인증서(`arc`)가 없다. 0.4.0 미만 디버거가 만든 QR이다. relay에는 아무 요청도 보내지 않고 연결하지 않는다. 디버거를 0.4.0 이상으로 올리고 새 QR을 스캔한다 |
 | `relay-origin-rejected` | 이 화면에서는 디버거를 쓸 수 없어요. | relay가 이 페이지의 origin을 거부했다(close 4403). 토스 앱에서 테스트 번들로 연 화면인지 확인한다 |

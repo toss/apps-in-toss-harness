@@ -637,7 +637,7 @@ describe('developer computer name in the dialog', () => {
     await pending;
     expect(dialogRoot()).toBeNull();
     expectNothingSent();
-    expect(window.__ait_debug_status).toBe('blocked-relay-signature');
+    expect(window.__ait_debug_status).toBe('blocked-relay-key-mismatch');
   });
 
   it('an old-daemon link (no name) is unchanged: nothing is requested before the answer', async () => {
@@ -735,7 +735,7 @@ describe('nothing leaves for the relay before "연결"', () => {
     [
       'certificate under another root',
       () => setLink(undefined, { secret: '22'.repeat(32) }),
-      'blocked-relay-signature',
+      'blocked-relay-key-mismatch',
     ],
     [
       'expired certificate',
