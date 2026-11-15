@@ -1,9 +1,21 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { KeyStore } from '../../agent/key-store.js';
+import { LocalKeyProvider } from '../../agent/provider.js';
 import { scanBuiltOutput } from '../built-output.js';
 import { INJECT_SCRIPT_NAME, injectIntoHtml, runInjectClient } from '../inject-client.js';
+import { keyFingerprint } from '../key-fingerprint.js';
+import { prepareProjectKeys } from '../relay-root.js';
 
 const KEY = 'A'.repeat(87);
 const KEYS = [{ publicKey: KEY, notAfter: 1_900_000_000 }];
@@ -17,6 +29,7 @@ function setup(
 ) {
   const root = mkdtempSync(join(tmpdir(), 'ait-inject-'));
   dirs.push(root);
+  writeFileSync(join(root, 'package.json'), '{}');
   const web = join(root, 'dist', 'web');
   mkdirSync(web, { recursive: true });
   if (html !== null) writeFileSync(join(web, 'index.html'), html);
@@ -100,6 +113,39 @@ describe('runInjectClient', () => {
       keys: [{ publicKey: KEY, notAfter: 1_900_000_000 }],
     });
     expect(web).toBeTruthy();
+  });
+
+  it('prints the project folder and the key fingerprint, and warns when it made the key', async () => {
+    const { root, script } = setup();
+    const provider = new LocalKeyProvider(new KeyStore());
+    const deps = (): Parameters<typeof runInjectClient>[1] => ({
+      cwd: () => root,
+      clientScriptPath: script,
+      prepare: (o) => prepareProjectKeys({ ...o, provider, log: () => {} }),
+    });
+    const first = await run(['dist/web'], deps());
+    expect(first.code).toBe(0);
+    const html = readFileSync(join(root, 'dist', 'web', 'index.html'), 'utf8');
+    const pinned = /publicKey":"([^"]+)"/.exec(html)?.[1] as string;
+    expect(first.out).toContain(
+      `project folder ${realpathSync(root)}, key fingerprint ${keyFingerprint(pinned)}`,
+    );
+    expect(first.out).not.toContain(pinned);
+    expect(first.err).toContain('warning: --project was not given');
+    expect(first.err).toContain(realpathSync(root));
+    expect(first.err).not.toContain(pinned);
+
+    const second = await run(['dist/web'], deps());
+    expect(second.out).toContain(`key fingerprint ${keyFingerprint(pinned)}`);
+    expect(second.err).not.toContain('warning');
+
+    const explicit = await run(['dist/web', '--project', root], {
+      ...deps(),
+      prepare: (o) =>
+        prepareProjectKeys({ ...o, provider: new LocalKeyProvider(new KeyStore()), log: () => {} }),
+    });
+    expect(explicit.err).toContain('had no relay key');
+    expect(explicit.err).not.toContain('--project was not given');
   });
 
   it('refuses when no key is available and leaves the page untouched', async () => {

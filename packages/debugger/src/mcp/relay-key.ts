@@ -24,6 +24,7 @@
 
 import { resolve } from 'node:path';
 import { AgentError } from '../agent/protocol.js';
+import { describeKeyTarget, keyFingerprint, newKeyWarning } from './key-fingerprint.js';
 import { prepareProjectKeys } from './relay-root.js';
 
 export const RELAY_KEY_USAGE = `
@@ -43,7 +44,10 @@ The relay key is volatile: the private half exists only in the memory of the
 key agent, a small background process started on demand (\`debugger key-agent\`;
 no service, no keychain, no network listener). It expires after 24 hours (set
 AIT_DEBUG_RELAY_KEY_TTL_HOURS, at most 72) and when the agent exits. Prints the
-public key on stdout; the expiry goes to stderr. The key is safe to commit.
+public key on stdout; the folder, the key fingerprint and the expiry go to stderr.
+The key belongs to the project folder: bundles built with it attach to the debugger
+session that runs for the same folder. A warning appears when the folder had no key
+and a new one was created. The key is safe to commit.
 
 An old .ait_relay file or AIT_DEBUG_TOTP_SECRET is imported into the agent
 (bundles built with its public key keep attaching until the key expires) and the
@@ -127,6 +131,16 @@ export async function runRelayKey(
       log: writeError,
     });
     let keys = prepared.keys;
+    if (prepared.created === true && !rotate) {
+      writeError(
+        newKeyWarning(
+          'relay-key',
+          prepared.project.packageDir,
+          keyFingerprint(keys.publicKey),
+          project !== undefined,
+        ),
+      );
+    }
     if (rotate) {
       keys = await prepared.provider.rotate(prepared.project.id);
       writeError(rotateGuidance());
@@ -138,6 +152,9 @@ export async function runRelayKey(
     } else {
       write(`${keys.publicKey}\n`);
     }
+    writeError(
+      `[debugger] relay-key: ${describeKeyTarget(prepared.project.packageDir, [keyFingerprint(keys.publicKey)])}\n`,
+    );
     writeError(
       `[debugger] relay-key: expires ${new Date(keys.notAfter * 1000).toISOString()} (the key lives in memory only; rebuild the debug bundle after it expires)\n`,
     );

@@ -20,7 +20,6 @@
  * Node-only.
  */
 
-import { createHash } from 'node:crypto';
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -28,6 +27,7 @@ import {
   LAST_PRE_RENAME_PROTOCOL,
   MIN_DEBUGGER_CLIENT_VERSION,
 } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { keyFingerprint } from './key-fingerprint.js';
 import { compareVersions } from './min-version-gate.js';
 
 /** Directories (relative to the project root) searched for built files and `.ait` archives. */
@@ -122,10 +122,7 @@ export function readBakedKeys(text: string): BakedKey[] {
   return [...byKey.values()];
 }
 
-/** Short, non-reversible label for a key, safe to print. */
-export function keyFingerprint(publicKey: string): string {
-  return createHash('sha256').update(publicKey).digest('hex').slice(0, 8);
-}
+export { keyFingerprint };
 
 interface Budget {
   files: number;
@@ -390,7 +387,7 @@ export function bakedKeyRefusedMessage(
   path: string,
   clientVersion: string | null,
   debuggerVersion: string,
-  skipClause: string,
+  signingFolder?: string,
 ): string {
   const client = `debugger-client${clientVersion === null ? '' : ` ${clientVersion}`}`;
   const rebuild =
@@ -404,7 +401,10 @@ export function bakedKeyRefusedMessage(
   } else {
     found =
       `빌드 산출물(${path})에 들어 있는 debugger 키(지문 ${verdict.baked.join(', ')})는 이전 키 에이전트의 것이거나 ` +
-      `지금 debugger ${debuggerVersion}이 쓰는 키(지문 ${verdict.live.join(', ')})와 달라 폰이 relay 주소를 검증하지 못합니다.`;
+      `지금 debugger ${debuggerVersion}이 서명에 쓰는 키(지문 ${verdict.live.join(', ')}${
+        signingFolder === undefined ? '' : `, 폴더 ${signingFolder}`
+      })와 달라 폰이 relay 주소를 검증하지 못합니다. 키는 번들이 아니라 프로젝트 폴더 단위이니, 이 debugger 세션과 같은 폴더의 키로 빌드하세요.`;
   }
-  return `start_attach: QR을 발급하지 않았습니다. ${found} 먼저 고치세요: ${rebuild} ${skipClause}`;
+  // 키가 안 맞는 번들은 검사를 건너뛰어도 폰의 서명 검증에서 실패하므로 skipBundleCheck를 안내하지 않는다.
+  return `start_attach: QR을 발급하지 않았습니다. ${found} 먼저 고치세요: ${rebuild}`;
 }

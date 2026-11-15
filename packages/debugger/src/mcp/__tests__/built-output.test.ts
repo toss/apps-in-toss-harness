@@ -299,12 +299,25 @@ describe('bakedKeyRefusedMessage', () => {
         live: [keyFingerprint(KEY_A)],
       } as const,
     ]) {
-      const text = bakedKeyRefusedMessage(verdict, 'dist/web/a.js', '0.4.0', '0.4.2', 'SKIP');
+      const text = bakedKeyRefusedMessage(verdict, 'dist/web/a.js', '0.4.0', '0.4.2');
       expect(text).toContain('QR을 발급하지 않았습니다');
       expect(text).toContain('debugger inject-client');
-      expect(text).toContain('SKIP');
+      // 키가 안 맞는 번들은 검사를 건너뛰어도 폰 서명 검증에서 실패하므로 skip을 안내하지 않는다.
+      expect(text).not.toContain('skipBundleCheck');
       expect(text).not.toContain(KEY_A);
       expect(text).not.toContain(KEY_B);
     }
+  });
+
+  it('names the folder the session signs with in a mismatch', () => {
+    const text = bakedKeyRefusedMessage(
+      { status: 'mismatch', baked: [keyFingerprint(KEY_B)], live: [keyFingerprint(KEY_A)] },
+      'dist/web/a.js',
+      '0.4.0',
+      '0.4.2',
+      '/work/app-a',
+    );
+    expect(text).toContain(`지문 ${keyFingerprint(KEY_A)}, 폴더 /work/app-a`);
+    expect(text).not.toContain('skipBundleCheck');
   });
 });

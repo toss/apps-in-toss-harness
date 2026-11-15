@@ -23,6 +23,7 @@ import { KeyStore, resolveKeyTtlMs } from '../agent/key-store.js';
 import { ensureAgent } from '../agent/launcher.js';
 import { AgentError, type KeyInfo } from '../agent/protocol.js';
 import { type KeyProvider, LocalKeyProvider } from '../agent/provider.js';
+import { keyFingerprint } from './key-fingerprint.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import {
   judgeRelayKeyAge,
@@ -56,11 +57,35 @@ export function getFallbackProvider(env: NodeJS.ProcessEnv = process.env): Local
   return fallbackProvider;
 }
 
+/**
+ * The project whose root key this daemon signs with: set by {@link activateRelayRoot},
+ * the single source for "which key signs the QR". Only the folder, the project id and the
+ * public key (plus its fingerprint) are kept.
+ */
+export interface ActiveKeyRoot {
+  /** Real path of the nearest package.json directory the key was resolved for. */
+  readonly packageDir: string;
+  /** Project id; worktrees of one repository share it, and with it the key. */
+  readonly projectId: string;
+  readonly publicKey: string;
+  /** Unix seconds. */
+  readonly notAfter: number;
+  readonly keyFingerprint: string;
+}
+
+let activeKeyRootInfo: ActiveKeyRoot | null = null;
+
+/** The key root this daemon is signing with, or `null` before {@link activateRelayRoot} ran. */
+export function activeKeyRoot(): ActiveKeyRoot | null {
+  return activeKeyRootInfo;
+}
+
 /** Forgets the fallback store and the active root. For tests. */
 export function resetRelayRootState(): void {
   fallbackProvider = null;
   stopSessionRefresher();
   setRelayRoot(null);
+  activeKeyRootInfo = null;
 }
 
 export interface PrepareKeysOptions {
@@ -83,6 +108,11 @@ export interface ProjectKeys {
   readonly holder: 'agent' | 'memory';
   readonly keys: KeyInfo;
   readonly legacy: readonly LegacyReport[];
+  /**
+   * The project had no key before this call and one was made now (a legacy import does not
+   * count). `undefined` when the provider could not say.
+   */
+  readonly created?: boolean;
 }
 
 /** Thrown when a build helper or the CLI needs the agent and cannot get it. */
@@ -98,6 +128,14 @@ export class KeyAgentRequiredError extends Error {
 
 function agentDisabled(env: NodeJS.ProcessEnv): boolean {
   return env.AIT_DEBUGGER_KEY_AGENT === 'off';
+}
+
+async function projectCount(provider: KeyProvider): Promise<number | undefined> {
+  try {
+    return (await provider.status()).projects;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Resolves the project, runs the legacy migration and returns its keys. */
@@ -131,8 +169,14 @@ export async function prepareProjectKeys(options: PrepareKeysOptions): Promise<P
     env,
     log,
   });
+  const projectsBefore = await projectCount(provider);
   const keys = await provider.getOrCreate(project.id);
-  return { project, provider, holder, keys, legacy };
+  const projectsAfter = projectsBefore === undefined ? undefined : await projectCount(provider);
+  const created =
+    projectsBefore === undefined || projectsAfter === undefined
+      ? undefined
+      : projectsAfter > projectsBefore;
+  return { project, provider, holder, keys, legacy, ...(created === undefined ? {} : { created }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -231,10 +275,21 @@ export async function activateRelayRoot(options: ActivateOptions = {}): Promise<
   });
   const { keys, provider, project, holder } = prepared;
   setRelayRoot(certifierFor(provider, project.id, keys));
+  activeKeyRootInfo = {
+    packageDir: project.packageDir,
+    projectId: project.id,
+    publicKey: keys.publicKey,
+    notAfter: keys.notAfter,
+    keyFingerprint: keyFingerprint(keys.publicKey),
+  };
   await refreshRelaySession(now());
   startSessionRefresher(log);
 
-  const age = judgeRelayKeyAge(keys.notAfter, holder, now());
+  const age = {
+    ...judgeRelayKeyAge(keys.notAfter, holder, now()),
+    keyFingerprint: keyFingerprint(keys.publicKey),
+    keyRoot: project.packageDir,
+  };
   try {
     options.onKeyAge?.(age);
   } catch {
@@ -243,7 +298,7 @@ export async function activateRelayRoot(options: ActivateOptions = {}): Promise<
   const changed = previous !== null && previous.publicKey !== keys.publicKey;
   if (changed) {
     log(
-      `[@apps-in-toss/debugger] relay 키가 새로 만들어졌습니다. ${RELAY_KEY_REBUILD_STEPS} 이전 번들은 이전 공개 키를 박고 있어 attach되지 않습니다.\n`,
+      `[@apps-in-toss/debugger] relay 키가 새로 만들어졌습니다(지문 ${keyFingerprint(keys.publicKey)}, 폴더 ${project.packageDir}). ${RELAY_KEY_REBUILD_STEPS} 이전 번들은 이전 공개 키를 박고 있어 attach되지 않습니다.\n`,
     );
   }
   return {

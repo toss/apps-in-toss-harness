@@ -22,9 +22,11 @@
 import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { keyFingerprint } from './built-output.js';
+import { describeKeyTarget, keyFingerprint, newKeyWarning } from './key-fingerprint.js';
 import { parseProjectFlag } from './relay-key.js';
-import { type RelayPublicKeyEntry, readRelayPublicKeys } from './relay-keys.js';
+import type { RelayPublicKeyEntry } from './relay-keys.js';
+import { resolveProject } from './relay-project.js';
+import { prepareProjectKeys } from './relay-root.js';
 
 export const INJECT_SCRIPT_NAME = 'ait-debugger-client.js';
 const BEGIN = '<!-- ait-debugger-client:begin (debug build, do not submit for review) -->';
@@ -52,6 +54,11 @@ DESCRIPTION
   keys live in its key agent and expire after about 24 hours, so inject again
   (and re-upload) when they do.
 
+  The key belongs to the project folder, not to a bundle: to switch between
+  several bundles in one debugger session, inject each with the same --project.
+  The folder and the key fingerprint are printed; a warning appears when the
+  folder had no key and a new one was created.
+
   The result is a DEBUG build. Do not submit it for review; build and upload the
   release build without this step for that.
 `.trimStart();
@@ -60,8 +67,10 @@ export interface InjectClientDeps {
   readonly cwd?: () => string;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
-  /** Test seam: the relay public keys of the project. */
+  /** Test seam: the relay public keys of the project (the folder is then resolved without the key agent). */
   readonly readKeys?: (projectRoot: string) => Promise<readonly RelayPublicKeyEntry[]>;
+  /** Test seam for {@link prepareProjectKeys}, used when `readKeys` is not given. */
+  readonly prepare?: typeof prepareProjectKeys;
   /** Test seam: where the packaged browser script lives. */
   readonly clientScriptPath?: string;
 }
@@ -163,10 +172,23 @@ export async function runInjectClient(
   }
 
   let keys: readonly RelayPublicKeyEntry[];
+  let projectFolder = resolve(cwd, project ?? '.');
+  let created = false;
   try {
-    keys = await (deps.readKeys ?? ((root) => readRelayPublicKeys(root, { log: writeError })))(
-      resolve(cwd, project ?? '.'),
-    );
+    const projectRoot = resolve(cwd, project ?? '.');
+    if (deps.readKeys !== undefined) {
+      keys = await deps.readKeys(projectRoot);
+      projectFolder = resolveProject(projectRoot).packageDir;
+    } else {
+      const prepared = await (deps.prepare ?? prepareProjectKeys)({
+        projectRoot,
+        requireAgent: true,
+        log: writeError,
+      });
+      keys = prepared.keys.keys.map((k) => ({ publicKey: k.publicKey, notAfter: k.notAfter }));
+      projectFolder = prepared.project.packageDir;
+      created = prepared.created === true;
+    }
   } catch {
     keys = [];
   }
@@ -176,6 +198,17 @@ export async function runInjectClient(
     );
   }
 
+  const fingerprints = keys.map((k) => keyFingerprint(k.publicKey));
+  if (created) {
+    writeError(
+      newKeyWarning(
+        'inject-client',
+        projectFolder,
+        fingerprints[0] as string,
+        project !== undefined,
+      ),
+    );
+  }
   const html = readFileSync(htmlPath, 'utf8');
   writeFileSync(htmlPath, injectIntoHtml(html, keys));
   copyFileSync(clientScript, join(dirname(htmlPath), INJECT_SCRIPT_NAME));
@@ -185,7 +218,8 @@ export async function runInjectClient(
     [
       `Injected the on-device debugger into ${relative(cwd, htmlPath) || htmlName}.`,
       `  script: ${INJECT_SCRIPT_NAME} (copied next to the page)`,
-      `  relay keys: ${keys.length} (fingerprint ${keys.map((k) => keyFingerprint(k.publicKey)).join(', ')}), valid until ${new Date(soonest * 1000).toISOString()}`,
+      `  ${describeKeyTarget(projectFolder, fingerprints)}`,
+      `  relay keys: ${keys.length}, valid until ${new Date(soonest * 1000).toISOString()}`,
       '',
       'This is a DEBUG build. Do not submit it for review; build the release build without this step for that.',
       'Next: package and upload it (/ait:test-on-device, debug build), then call start_attach.',

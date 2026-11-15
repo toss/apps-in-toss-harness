@@ -613,7 +613,7 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'recentErrors (last N server-side errors, PII/secret redacted), ' +
       'authRejects ({count, lastAt} — relay TOTP 401 rejections, secret-free; count > 0 with empty pages ' +
       'means the phone reached the relay but its code was rejected), ' +
-      'relayKey ({status: ok|aging|expired, ageDays, hint} or null — age of the relay key; on aging, relay the hint: `debugger relay-key --rotate`), ' +
+      'relayKey ({status: ok|aging|expired, remainingMinutes, notAfter, holder, keyFingerprint, keyRoot, hint} or null — age of the relay key this session signs QR links with, its fingerprint and the project folder it belongs to; on aging, relay the hint: `debugger relay-key --rotate`), ' +
       'tunnelRotations ({count, lastAt} — times the daemon reissued the tunnel after repeated failed code checks; ' +
       'count > 0 means the relay URL changed and the developer must scan the new QR from start_attach; no URL is included), ' +
       'attachStages (stage history of the latest start_attach attempt: tunnel, qr-issued, device-handshake, auth, ' +

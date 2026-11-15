@@ -5,14 +5,15 @@
  * touches keys. Here the key agent is off (vitest.setup.ts), so the key lives in
  * the daemon's memory.
  */
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CdpConnection } from '../cdp-connection.js';
 import { type BootedFamily, DualConnectionRouter } from '../debug-server.js';
 import { AutoDevtoolsOpener } from '../devtools-opener.js';
-import { resetRelayRootState } from '../relay-root.js';
+import { keyFingerprint } from '../key-fingerprint.js';
+import { activeKeyRoot, resetRelayRootState } from '../relay-root.js';
 import { activeRelayRoot } from '../relay-signing.js';
 import { InMemoryDiagnosticsCollector } from '../tools.js';
 
@@ -60,6 +61,32 @@ describe('relay entry and the relay key lifetime', () => {
       expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain('다시 빌드');
     } finally {
       stderr.mockRestore();
+    }
+  });
+
+  it('records the key root it signs with, and reports its fingerprint and folder in get_status', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const other = mkdtempSync(join(tmpdir(), 'relay-key-router-b-'));
+    try {
+      writeFileSync(join(other, 'package.json'), '{}');
+      const { router, collector } = makeRouter();
+      await router.switchMode('relay-staging', dir);
+      const first = activeKeyRoot();
+      expect(first?.packageDir).toBe(realpathSync(dir));
+      expect(first?.keyFingerprint).toBe(keyFingerprint(activeRelayRoot()?.publicKey as string));
+      expect(collector.getRelayKeyAge()).toMatchObject({
+        keyFingerprint: first?.keyFingerprint,
+        keyRoot: realpathSync(dir),
+      });
+
+      // An explicit switch with another projectRoot re-roots signing and the record follows it.
+      await router.switchMode('relay-staging', other);
+      expect(activeKeyRoot()?.packageDir).toBe(realpathSync(other));
+      expect(activeKeyRoot()?.publicKey).toBe(activeRelayRoot()?.publicKey);
+      expect(activeKeyRoot()?.publicKey).not.toBe(first?.publicKey);
+    } finally {
+      stderr.mockRestore();
+      rmSync(other, { recursive: true, force: true });
     }
   });
 

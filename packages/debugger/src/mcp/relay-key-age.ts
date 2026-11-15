@@ -23,6 +23,10 @@ export interface RelayKeyAge {
   readonly notAfter: string;
   /** Where the key lives. */
   readonly holder: 'agent' | 'memory';
+  /** Fingerprint of the key the daemon signs with (same format as everywhere else). */
+  readonly keyFingerprint?: string;
+  /** Project folder (real path) that key belongs to. */
+  readonly keyRoot?: string;
 }
 
 /** Judges a key that expires at `notAfter` (unix seconds). */

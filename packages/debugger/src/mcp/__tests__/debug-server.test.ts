@@ -29,7 +29,9 @@ import type {
 } from '../cdp-connection.js';
 import { createDebugServer, startAttachWatcher } from '../debug-server.js';
 import type { McpEnvironment } from '../environment.js';
+import { keyFingerprint } from '../key-fingerprint.js';
 import { startParentWatcher } from '../parent-watcher.js';
+import { resolveProject } from '../relay-project.js';
 import { relayRunId } from '../relay-run-id.js';
 import type { TunnelStatus } from '../tools.js';
 import { BOOTSTRAP_TOOL_NAMES, DEBUG_TOOL_DEFINITIONS } from '../tools.js';
@@ -153,6 +155,8 @@ interface MakeClientOptions {
   readLiveRelayKeys?: (
     root: string,
   ) => Promise<readonly { publicKey: string; notAfter: number }[] | null>;
+  /** The key root this session signs with (test seam; default is the daemon's recorded root). */
+  getActiveKeyRoot?: () => import('../relay-root.js').ActiveKeyRoot | null;
 }
 
 /**
@@ -173,6 +177,7 @@ async function makeClient({
   getProtocolVersionSkew,
   phoneHasStatusChip,
   readLiveRelayKeys,
+  getActiveKeyRoot,
 }: MakeClientOptions): Promise<Client> {
   const server = createDebugServer({
     connection: connection ?? new FakeCdpConnection(),
@@ -183,6 +188,7 @@ async function makeClient({
     getProtocolVersionSkew,
     phoneHasStatusChip,
     ...(readLiveRelayKeys !== undefined ? { readLiveRelayKeys } : {}),
+    ...(getActiveKeyRoot !== undefined ? { getActiveKeyRoot } : {}),
     getEnvironment: () => env,
     getEnvironmentReason: () => `test-pinned-${env}`,
     // null = caller explicitly wants no secret (for fail-closed tests).
@@ -540,6 +546,19 @@ describe('start_attach — client compatibility', () => {
       expect(text).not.toContain('B'.repeat(87));
     });
 
+    it('never offers skipBundleCheck for a bundle whose key cannot verify this session', async () => {
+      const refusals = [
+        withKeys('<html></html>'),
+        withKeys(`{publicKey:"${'B'.repeat(87)}",notAfter:${future}}`),
+        withKeys(`{publicKey:"${KEY}",notAfter:${Math.floor(Date.now() / 1000) - 7200}}`),
+      ];
+      for (const root of refusals) {
+        const result = await attachWithLive(root, [{ publicKey: KEY, notAfter: future }]);
+        expect(result.isError).toBe(true);
+        expect(getContent(result)[0]!.text!).not.toContain('skipBundleCheck');
+      }
+    });
+
     it('issues no QR for an expired key and issues it for a matching key', async () => {
       const expired = withKeys(
         `{publicKey:"${KEY}",notAfter:${Math.floor(Date.now() / 1000) - 7200}}`,
@@ -551,6 +570,91 @@ describe('start_attach — client compatibility', () => {
       expect(
         (await attachWithLive(good, [{ publicKey: KEY, notAfter: future }])).isError,
       ).toBeFalsy();
+    });
+  });
+
+  describe('the key root the session signs with', () => {
+    const KEY_A = 'A'.repeat(87);
+    const KEY_B = 'B'.repeat(87);
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    const clientJs = 'var a="__ait_debug_status";var u="?p=3&v="+"0.4.0";';
+    const rootA = project({ 'package.json': { name: 'app-a' } });
+    const rootB = project({
+      'package.json': { name: 'app-b' },
+      'dist/web/main.js': clientJs,
+      'dist/web/index.html': `{publicKey:"${KEY_A}",notAfter:${future}}`,
+    });
+    const signing = (packageDir: string, projectId: string, publicKey: string) => ({
+      packageDir,
+      projectId,
+      publicKey,
+      notAfter: future,
+      keyFingerprint: keyFingerprint(publicKey),
+    });
+    async function attachAs(
+      active: ReturnType<typeof signing> | null,
+      args: Record<string, unknown>,
+      liveFromAgent: { publicKey: string; notAfter: number }[] | null = null,
+    ) {
+      const client = await makeClient({
+        getTunnelStatus: () => tunnelUp,
+        connection: attachedConn(schemeUrl),
+        getActiveKeyRoot: () => active,
+        readLiveRelayKeys: async () => liveFromAgent,
+      });
+      return client.callTool({
+        name: 'start_attach',
+        arguments: { scheme_url: schemeUrl, ...args },
+      });
+    }
+
+    it('refuses a projectRoot of another key root: no QR, fingerprint and both folders named', async () => {
+      const active = signing(rootA, resolveProject(rootA).id, KEY_A);
+      const result = await attachAs(active, { projectRoot: rootB });
+      expect(result.isError).toBe(true);
+      const text = getContent(result)[0]!.text!;
+      expect(text).toContain('QR을 발급하지 않았습니다');
+      expect(text).toContain(`projectRoot ${rootB}를 넘겼지만`);
+      expect(text).toContain(`${rootA} 폴더 키(지문 ${keyFingerprint(KEY_A)})로 서명 중`);
+      expect(text).toContain('inject-client');
+      expect(text).not.toContain(KEY_A);
+      expect(text).not.toContain('wss://');
+      expect(getContent(result)).toHaveLength(1);
+    });
+
+    it('refuses even with skipBundleCheck: a root mismatch is a session error, not a bundle check', async () => {
+      const active = signing(rootA, resolveProject(rootA).id, KEY_A);
+      const result = await attachAs(active, { projectRoot: rootB, skipBundleCheck: true });
+      expect(result.isError).toBe(true);
+      expect(getContent(result)[0]!.text!).toContain('폴더 키(지문');
+    });
+
+    it('checks the bundle against the key the session signs with, not the folder passed', async () => {
+      // B holds a bundle with A's key; the session signs with A (same project id as B here).
+      const active = signing(rootA, resolveProject(rootB).id, KEY_A);
+      // The key agent would answer with another key for rootB; it must not be consulted.
+      const ok = await attachAs(active, { projectRoot: rootB }, [
+        { publicKey: KEY_B, notAfter: future },
+      ]);
+      expect(ok.isError).toBeFalsy();
+      const text = getContent(ok).at(-1)!.text!;
+      expect(text).toContain(`서명 키: 지문 ${keyFingerprint(KEY_A)}, 폴더 ${rootA}`);
+
+      const other = signing(rootA, resolveProject(rootB).id, KEY_B);
+      const refused = await attachAs(other, { projectRoot: rootB }, [
+        { publicKey: KEY_A, notAfter: future },
+      ]);
+      expect(refused.isError).toBe(true);
+      const refusedText = getContent(refused)[0]!.text!;
+      expect(refusedText).toContain(keyFingerprint(KEY_B));
+      expect(refusedText).toContain(`폴더 ${rootA}`);
+      expect(refusedText).not.toContain('skipBundleCheck');
+    });
+
+    it('leaves a call without projectRoot alone: no root mismatch, the key check still uses the signing key', async () => {
+      const active = signing(rootA, resolveProject(rootA).id, KEY_A);
+      const result = await attachAs(active, {}, null);
+      expect(getContent(result)[0]!.text!).not.toContain('폴더 키(지문');
     });
   });
 

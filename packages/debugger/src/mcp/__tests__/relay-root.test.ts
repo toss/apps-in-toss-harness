@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRelaySignature } from '@apps-in-toss/internal-protocol/relay-signature';
@@ -12,11 +12,13 @@ import { derivePublicKey } from '../../agent/root-key.js';
 import { ensureSecureDir } from '../../agent/secure-dir.js';
 import { createKeyAgentServer, type KeyAgentServer } from '../../agent/server.js';
 import { createAgentToken } from '../../agent/token.js';
+import { keyFingerprint } from '../key-fingerprint.js';
 import { runRelayKey } from '../relay-key.js';
 import { RelayKeyExpiredError } from '../relay-key-age.js';
 import { readRelayPublicKeys } from '../relay-keys.js';
 import {
   activateRelayRoot,
+  activeKeyRoot,
   KeyAgentRequiredError,
   prepareProjectKeys,
   relayAuthSwitch,
@@ -234,6 +236,40 @@ describe('build helper', () => {
   });
 });
 
+describe('the key root the daemon signs with', () => {
+  it('is recorded on activation with the folder and the fingerprint, and reported with the key age', async () => {
+    expect(activeKeyRoot()).toBeNull();
+    const provider = new LocalKeyProvider(new KeyStore());
+    const ages: Array<{ keyFingerprint?: string; keyRoot?: string }> = [];
+    const report = await activateRelayRoot({
+      projectRoot: dir,
+      provider,
+      log,
+      onKeyAge: (age) => ages.push(age),
+    });
+    const root = activeKeyRoot();
+    expect(root?.packageDir).toBe(realpathSync(dir));
+    expect(root?.publicKey).toBe(report.publicKey);
+    expect(root?.keyFingerprint).toBe(keyFingerprint(report.publicKey));
+    expect(ages[0]).toMatchObject({
+      keyFingerprint: keyFingerprint(report.publicKey),
+      keyRoot: realpathSync(dir),
+    });
+    resetRelayRootState();
+    expect(activeKeyRoot()).toBeNull();
+  });
+
+  it('prepareProjectKeys says whether it made the key', async () => {
+    const provider = new LocalKeyProvider(new KeyStore());
+    expect(
+      (await prepareProjectKeys({ projectRoot: dir, requireAgent: true, provider, log })).created,
+    ).toBe(true);
+    expect(
+      (await prepareProjectKeys({ projectRoot: dir, requireAgent: true, provider, log })).created,
+    ).toBe(false);
+  });
+});
+
 describe('relay-key command', () => {
   it('prints the public key on stdout and the expiry on stderr; --rotate prints a new key', async () => {
     const provider = new LocalKeyProvider(new KeyStore());
@@ -262,6 +298,53 @@ describe('relay-key command', () => {
     const json = await run(['--json']);
     const parsed = JSON.parse(json.out) as Array<{ publicKey: string; notAfter: number }>;
     expect(parsed[0]?.publicKey).toBe(rotated.out.trim());
+  });
+
+  it('prints the folder and the key fingerprint, and warns once when it had to make a new key', async () => {
+    const provider = new LocalKeyProvider(new KeyStore());
+    const prepare = (o: Parameters<typeof prepareProjectKeys>[0]) =>
+      prepareProjectKeys({ ...o, provider });
+    const run = async (args: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await runRelayKey(args, {
+        cwd: () => dir,
+        write: (t) => out.push(t),
+        writeError: (t) => err.push(t),
+        prepare,
+      });
+      return { code, out: out.join(''), err: err.join('') };
+    };
+    const folder = realpathSync(dir);
+
+    const first = await run([]);
+    const fp = keyFingerprint(first.out.trim());
+    expect(first.err).toContain(`project folder ${folder}, key fingerprint ${fp}`);
+    expect(first.err).toContain('warning: --project was not given');
+    expect(first.err).toContain(`current folder ${folder}`);
+    expect(first.err).not.toContain(first.out.trim());
+
+    const second = await run([]);
+    expect(second.err).toContain(`key fingerprint ${fp}`);
+    expect(second.err).not.toContain('warning');
+
+    const other = mkdtempSync(join(tmpdir(), 'ait-other-'));
+    try {
+      writeFileSync(join(other, 'package.json'), '{}');
+      const out: string[] = [];
+      const err: string[] = [];
+      await runRelayKey(['--project', other], {
+        cwd: () => dir,
+        write: (t) => out.push(t),
+        writeError: (t) => err.push(t),
+        prepare,
+      });
+      expect(err.join('')).toContain(`${realpathSync(other)} had no relay key`);
+      expect(err.join('')).not.toContain('--project was not given');
+      expect(out.join('')).not.toBe(first.out);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
   });
 
   it('exits 1 with a pointer when the agent cannot be reached', async () => {

@@ -103,7 +103,6 @@ import {
   BUNDLE_REBUILD_STEPS,
   CLIENT_UPDATE_STEPS_WITH_SKIP,
   inspectDebugBundle,
-  SKIP_BUNDLE_CHECK_CLAUSE,
   staleBundleMessage,
 } from './bundle-check.js';
 import type { CdpConnection } from './cdp-connection.js';
@@ -176,7 +175,13 @@ import type { RelayAuthThrottleOptions } from './relay-auth-throttle.js';
 import { relayCodeSecret } from './relay-code-secret.js';
 import { readRelayPublicKeys } from './relay-keys.js';
 import { appNameFromSchemeUrl } from './relay-origin.js';
-import { activateRelayRoot, relayAuthSwitch } from './relay-root.js';
+import { resolveProject } from './relay-project.js';
+import {
+  type ActiveKeyRoot,
+  activateRelayRoot,
+  activeKeyRoot,
+  relayAuthSwitch,
+} from './relay-root.js';
 import { relayRunId } from './relay-run-id.js';
 import { relayCertDocument, signedLinkParams, signingHostName } from './relay-signing.js';
 import { appendRemoteLog } from './remote-log.js';
@@ -414,6 +419,13 @@ export interface DebugServerDeps {
   readLiveRelayKeys?: (
     root: string,
   ) => Promise<readonly { publicKey: string; notAfter: number }[] | null>;
+  /**
+   * The key root this daemon signs QR links with (folder, fingerprint, public key), or `null`
+   * when none is active yet. `start_attach` checks the bundle's pinned keys against THIS key
+   * and refuses a `projectRoot` that belongs to another key root. Default: the root
+   * {@link activateRelayRoot} recorded; tests inject one.
+   */
+  getActiveKeyRoot?: () => ActiveKeyRoot | null;
   /**
    * Returns the device↔host protocol version skew observed on the attach
    * handshake, or `null` when the two halves agree (or no device has reported
@@ -842,6 +854,17 @@ function redactedExtra(data: unknown): { data: unknown; extra?: EnvelopeExtraMet
 // it is the orchestrator's wait primitive (used by renderAndMaybeWait's
 // segmented wait). The `start_attach` handler no longer references it directly.
 
+/** Error text for `start_attach` when `projectRoot` belongs to another key than the one this session signs with. No QR was issued. */
+export function attachRootMismatchMessage(requested: string, signing: ActiveKeyRoot): string {
+  return (
+    `start_attach: QR을 발급하지 않았습니다. projectRoot ${requested}를 넘겼지만 이 debugger 세션은 ` +
+    `${signing.packageDir} 폴더 키(지문 ${signing.keyFingerprint})로 서명 중입니다. ` +
+    `같은 --project(${signing.packageDir})로 debugger inject-client 하거나, ` +
+    `debugger 세션을 다시 띄운 뒤 ${requested}로 start_attach 하세요. ` +
+    '(키는 번들이 아니라 프로젝트 폴더 단위입니다.)'
+  );
+}
+
 const LIVE_KEYS_TIMEOUT_MS = 3000;
 
 /** Asks the key agent for the project's live relay public keys; `null` when it cannot answer in time. */
@@ -1167,6 +1190,18 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         );
       }
 
+      // 서명 키 루트: 이 세션이 QR에 서명하는 키의 프로젝트 폴더. 검사하는 키와 서명하는 키가 같아야 하므로
+      // (아래 번들 키 검사도 이 키와 비교한다), 다른 키 루트의 projectRoot는 QR 전에 거절한다.
+      // skipBundleCheck와 무관하다: 번들 검사가 아니라 세션 설정 오류라서 건너뛰어도 폰 검증에서 실패한다.
+      const signingRoot = (deps.getActiveKeyRoot ?? activeKeyRoot)();
+      const rawRootArg = args?.projectRoot;
+      if (signingRoot !== null && typeof rawRootArg === 'string' && isAbsolute(rawRootArg)) {
+        const requested = resolveProject(rawRootArg);
+        if (requested.id !== signingRoot.projectId) {
+          return mcpError(attachRootMismatchMessage(rawRootArg, signingRoot));
+        }
+      }
+
       // 프로젝트가 이 데몬과 attach할 수 없는 클라이언트(debug-console 또는 낮은 debugger-client)를
       // 쓰면 QR을 발급하지 않는다: 스캔해도 매번 거부된다. 확인할 수 없으면 규칙 한 문장만 결과에 싣는다.
       const rawCompatRoot = args?.projectRoot;
@@ -1199,7 +1234,12 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           );
         }
         if (built.status === 'ok') {
-          const live = await (deps.readLiveRelayKeys ?? defaultReadLiveRelayKeys)(bundleRoot);
+          // 비교 대상은 이 세션이 실제로 서명하는 키다. 서명 키를 모르는 경우(활성 루트 없음)에만
+          // bundleRoot의 키 에이전트 키를 읽는다.
+          const live =
+            signingRoot !== null
+              ? [{ publicKey: signingRoot.publicKey, notAfter: signingRoot.notAfter }]
+              : await (deps.readLiveRelayKeys ?? defaultReadLiveRelayKeys)(bundleRoot);
           const verdict = judgeBakedKeys(built.keys, live, Math.floor(Date.now() / 1000));
           if (verdict.status !== 'ok') {
             return mcpError(
@@ -1208,7 +1248,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
                 built.path,
                 built.version,
                 __VERSION__,
-                SKIP_BUNDLE_CHECK_CLAUSE,
+                signingRoot?.packageDir,
               ),
             );
           }
@@ -1226,6 +1266,10 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         compat.status === 'compatible'
           ? compatibleClientNote(compat.version, __VERSION__)
           : compatRuleSentence(__VERSION__);
+      const keyNote =
+        signingRoot === null
+          ? ''
+          : `\n\n서명 키: 지문 ${signingRoot.keyFingerprint}, 폴더 ${signingRoot.packageDir}. 번들에 박힌 키가 이 지문과 같아야 폰이 연결을 받습니다.`;
       // 마지막 텍스트 블록 끝에 붙인다(블록 수는 그대로).
       const withCompatNote = (result: McpResult): McpResult => {
         let lastText = -1;
@@ -1234,7 +1278,9 @@ export function createDebugServer(deps: DebugServerDeps): Server {
         });
         if (lastText === -1) return result;
         const content = result.content.map((c, i) =>
-          i === lastText && c.type === 'text' ? { ...c, text: `${c.text}\n\n${compatNote}` } : c,
+          i === lastText && c.type === 'text'
+            ? { ...c, text: `${c.text}\n\n${compatNote}${keyNote}` }
+            : c,
         );
         return { ...result, content };
       };
