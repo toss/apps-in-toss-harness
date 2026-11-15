@@ -306,7 +306,9 @@ describe('daemon connection lost — the big screen must not keep saying "connec
     expect(conn()).toBe('lost');
     const text = document.querySelector('[data-pane="lost"]')?.textContent ?? '';
     expect(text).toContain('debugger와 연결이 끊겼어요');
-    expect(text).toContain('start_attach');
+    expect(text).toContain('Claude에게 다시 연결해 달라고');
+    // Developer terms (tool names) stay out of the dashboard copy.
+    expect(text).not.toContain('start_attach');
     // The tunnel-down copy belongs to the error pane, not here.
     expect(text).not.toContain('연결 통로가 끊겼어요');
   });

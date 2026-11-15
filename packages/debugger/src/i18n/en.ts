@@ -46,7 +46,7 @@ export const en: Record<StringKey, string> = {
   'dashboard.conn.lost': 'Connection lost — reconnecting…',
   'dashboard.lost.title': 'Lost connection to the debugger',
   'dashboard.lost.body':
-    "We can't tell whether your phone is still connected. This page reconnects on its own once the debugger is back. If it stays like this, call start_attach again.",
+    "We can't tell whether your phone is still connected. This page reconnects on its own once the debugger is back. If it stays like this, ask Claude to connect again.",
   'dashboard.superseded.title': 'The dashboard is open in another tab',
   'dashboard.superseded.body':
     'This tab no longer updates. Use the most recently opened dashboard tab, or close this one.',
