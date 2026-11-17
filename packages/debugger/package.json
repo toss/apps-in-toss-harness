@@ -55,11 +55,11 @@
     "cloudflared": "0.7.3",
     "esbuild": "0.28.2",
     "qrcode": "1.5.4",
-    "ws": "8.22.1"
+    "ws": "8.22.2"
   },
   "devDependencies": {
     "@apps-in-toss/debugger-client": "workspace:*",
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.6",
     "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.6",
@@ -69,10 +69,10 @@
     "jsdom": "^31.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "tsdown": "^0.23.5",
+    "tsdown": "^0.23.7",
     "tsx": "^4.23.15",
     "typescript": "~7.0.2",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vitest": "^5.1.0"
   },
   "keywords": [
