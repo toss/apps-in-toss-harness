@@ -14,7 +14,7 @@
         "cloudflared": "0.7.3",
         "esbuild": "0.28.2",
         "qrcode": "1.5.4",
-        "ws": "8.22.1"
+        "ws": "8.22.2"
       },
       "bin": {
         "debugger": "./dist/mcp/cli.js",
@@ -793,7 +793,7 @@
         "koa-router": "13.1.1",
         "koa-send": "5.0.1",
         "licia": "1.48.1",
-        "ws": "8.22.1"
+        "ws": "8.22.2"
       },
       "bin": {
         "chii": "bin/chii.js"
@@ -2947,9 +2947,9 @@
       "license": "ISC"
     },
     "node_modules/ws": {
-      "version": "8.22.1",
-      "resolved": "https://registry.npmjs.org/ws/-/ws-8.22.1.tgz",
-      "integrity": "sha512-oyL6OPYme/CmiFvNuGzeoxCJ4nOrZE2O1FwM9MWM1AsGri6nLXB2pg+lNA8aLeXMSav0J6eIVS1j6vUPzUtK9g==",
+      "version": "8.22.2",
+      "resolved": "https://registry.npmjs.org/ws/-/ws-8.22.2.tgz",
+      "integrity": "sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==",
       "license": "MIT",
       "peerDependencies": {
         "bufferutil": "^4.0.1",
