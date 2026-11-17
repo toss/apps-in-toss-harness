@@ -320,7 +320,9 @@ describe('status chip', () => {
       vi.advanceTimersByTime(4000);
       const style = chipHost()?.style;
       expect(style?.getPropertyValue('top')).toContain('67px');
-      expect(style?.getPropertyValue('bottom')).toBe('');
+      // 호스트가 `all:initial`로 시작해서 jsdom 31+는 설정하지 않은 offset을 ''가 아니라 'initial'로 돌려준다.
+      // 둘 다 "bottom에 고정 길이를 두지 않았다"는 뜻이다.
+      expect(['', 'initial']).toContain(style?.getPropertyValue('bottom'));
     } finally {
       delete (window as unknown as Record<string, unknown>).__sdk;
     }
