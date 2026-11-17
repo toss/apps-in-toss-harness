@@ -174,7 +174,8 @@ describe('setDebugStatus — rendering', () => {
     const host = document.getElementById('__ait_status_banner') as HTMLElement;
     expect(host.style.pointerEvents).toBe('none');
     expect(host.style.bottom).toBe('0px');
-    expect(host.style.top).toBe('');
+    // 호스트가 `all:initial`로 시작해서 jsdom 31+는 설정하지 않은 offset을 ''가 아니라 'initial'로 돌려준다.
+    expect(['', 'initial']).toContain(host.style.top);
   });
 
   it('closes on tap, and a later status shows it again', async () => {
