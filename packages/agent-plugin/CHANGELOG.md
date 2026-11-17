@@ -1,5 +1,14 @@
 # @apps-in-toss/agent-plugin
 
+## 0.4.2
+
+### Patch Changes
+
+- debugger의 relay 키가 기기(사용자 계정)마다 하나로 바뀐 것을 `debug`·`attach-flow`·`inject` 안내에 반영했다. 어느 폴더에서 빌드해도 같은 키가 들어가므로 같은 앱을 여러 폴더에서 빌드한 번들도 한 세션에서 번갈아 붙일 수 있고, 번들과 세션은 키 지문으로 맞춰 본다. 키가 맞지 않는다는 `start_attach` 오류에는 `skipBundleCheck`를 쓰지 않고 다시 빌드한다. 프로젝트에 설치된 `@apps-in-toss/debugger`가 0.4.2 이하면 번들러 빌드가 프로젝트별 키를 넣으므로 먼저 올린다. 예전 `.ait_relay`는 가져오지 않고 지운다.
+- `/ait:setup-debugger`가 MCP 서버를 등록하거나 URL을 바꾼 직후 같은 URL로 `debugger --version`을 한 번 실행해 npx 캐시를 채운다. 첫 연결이 Release tarball 다운로드 시간 때문에 `CONNECTION_CLOSED`로 끝나지 않는다. `/ait:debug`의 폰 막대 상태 표에 debugger-client 0.4.2의 `blocked-relay-key-expired`·`blocked-relay-key-mismatch` 안내를 넣었다.
+  
+  debugger 0.5.0의 relay 키 수명(4주, 만료 1주 전 다음 키 생성)을 `debug`·`inject` 안내에 반영했다.
+
 ## 0.4.1
 
 ### Patch Changes
