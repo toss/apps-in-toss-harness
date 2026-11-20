@@ -80,6 +80,11 @@ function isAlive(pid: number): boolean {
   }
 }
 
+async function waitUntilDead(pid: number, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (isAlive(pid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+}
+
 describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)', () => {
   let root: string;
   let stateDir: string;
@@ -179,7 +184,10 @@ describe.skipIf(!existsSync(cli))('concurrent debugger sessions (built daemon)',
     // Ending one session leaves the other fully working.
     await a.client.close();
     sessions.splice(sessions.indexOf(a), 1);
-    await new Promise((r) => setTimeout(r, 500));
+    // Wait for the closed session's daemon to actually exit instead of a fixed sleep: client.close()
+    // escalates stdin-end → SIGTERM → SIGKILL on the wrapper over ~4s, and a daemon starved
+    // of CPU can outlive that, so a short fixed delay is a race, not a check.
+    await waitUntilDead(statusA.process.pid);
     expect(isAlive(statusB.process.pid)).toBe(true);
     const again = await b.client.listTools();
     expect(again.tools.map((t) => t.name).sort()).toEqual(namesA);
