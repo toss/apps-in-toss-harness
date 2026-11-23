@@ -992,12 +992,14 @@ export async function renderAndMaybeWait(
   if (guiAvailable && qrHttpServer) {
     const httpUrl = qrHttpServer.buildAttachPageUrl(attachUrl);
     const pngUrl = qrHttpServer.buildPngUrl(attachUrl);
-    // A dashboard tab is already connected: do NOT open another one. Every tab
+    // A dashboard tab the user is actively using (it reported window focus recently;
+    // visibilityState alone is not enough — background tabs can report "visible") is
+    // connected: do NOT open another one. Every tab
     // holds an SSE connection to the fixed dashboard port and Firefox caps
     // persistent connections per host at 6, so a new tab per call starves
     // `/qr.png` and the SSE streams. Push a state refresh to the open tab(s)
     // instead (the fresh attach URL is already in getDashboardState()).
-    if (qrHttpServer.hasVisibleClient()) {
+    if (qrHttpServer.hasFocusedClient()) {
       qrHttpServer.notifyStateChange();
       const openResult = { attempted: false, succeeded: true, reusedExistingTab: true };
       const shortText =

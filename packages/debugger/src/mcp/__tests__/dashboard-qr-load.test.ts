@@ -50,6 +50,8 @@ const fetched: string[] = [];
 let qrStatus = 200;
 let actions: string[] = [];
 const docListeners: Array<[string, EventListener]> = [];
+const winListeners: Array<[string, EventListener]> = [];
+let actionHold: Promise<void> | null = null;
 
 class StubES {
   onopen: (() => void) | null = null;
@@ -102,6 +104,7 @@ async function mount(s: DashboardState, c?: DashboardControl): Promise<void> {
     }
     if (String(u) === '/action') {
       actions.push(JSON.parse(init?.body ?? '{}').action);
+      if (actionHold) await actionHold;
       return { json: async () => ({ ok: true }) };
     }
     throw new Error(`unexpected fetch ${u}`);
@@ -111,6 +114,13 @@ async function mount(s: DashboardState, c?: DashboardControl): Promise<void> {
     (t: string, fn: EventListenerOrEventListenerObject) => {
       docListeners.push([t, fn as EventListener]);
       realAdd(t, fn);
+    },
+  );
+  const realWinAdd = window.addEventListener.bind(window);
+  vi.spyOn(window, 'addEventListener').mockImplementation(
+    (t: string, fn: EventListenerOrEventListenerObject) => {
+      winListeners.push([t, fn as EventListener]);
+      realWinAdd(t, fn);
     },
   );
   for (const code of scripts) {
@@ -144,10 +154,13 @@ beforeEach(() => {
   fetched.length = 0;
   qrStatus = 200;
   actions = [];
+  actionHold = null;
 });
 
 afterEach(() => {
   for (const [t, fn] of docListeners.splice(0)) document.removeEventListener(t, fn);
+  for (const [t, fn] of winListeners.splice(0)) window.removeEventListener(t, fn);
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
@@ -364,5 +377,83 @@ describe('daemon connection lost — the big screen must not keep saying "connec
     const text = document.body.textContent ?? '';
     expect(text).not.toContain('intoss-private');
     expect(text).not.toContain('sig=');
+  });
+});
+
+describe('returning to the tab re-arms an expired QR on its own', () => {
+  let now = 1_000_000;
+  const gainFocus = async (focused = true): Promise<void> => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(focused);
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+  };
+  beforeEach(() => {
+    now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+
+  const noQr = () => state({ attachUrl: null });
+
+  it('wait view without a QR: focus calls new-qr once, then at most once per 30 s', async () => {
+    await mount(noQr(), control({ armed: false }));
+    expect(document.querySelector('[data-pane="wait"]')?.getAttribute('data-qr')).toBe('0');
+    await gainFocus();
+    expect(actions).toEqual(['new-qr']);
+    now += 29_000;
+    await gainFocus();
+    expect(actions).toEqual(['new-qr']);
+    now += 2_000;
+    await gainFocus();
+    expect(actions).toEqual(['new-qr', 'new-qr']);
+  });
+
+  it('also fires when the tab becomes visible while it has focus', async () => {
+    await mount(noQr(), control({ armed: false }));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(actions).toEqual(['new-qr']);
+  });
+
+  it('never while a request is in flight', async () => {
+    let release: () => void = () => {};
+    actionHold = new Promise<void>((r) => {
+      release = r;
+    });
+    await mount(noQr(), control({ armed: false }));
+    await gainFocus();
+    expect(actions).toEqual(['new-qr']);
+    now += 60_000;
+    await gainFocus();
+    expect(actions).toEqual(['new-qr']);
+    actionHold = null;
+    release();
+    await flush();
+    await gainFocus();
+    expect(actions).toEqual(['new-qr', 'new-qr']);
+  });
+
+  it('does nothing without focus, with a QR on screen, or in the connected and error panes', async () => {
+    await mount(noQr(), control({ armed: false }));
+    await gainFocus(false);
+    expect(actions).toEqual([]);
+
+    frame(state({ attachUrl: urlWith('aaaa') }));
+    await flush();
+    await gainFocus();
+    expect(actions).toEqual([]);
+
+    const attached = state({ pages: [{ id: 'p1', url: 'https://m.example/' }], attachUrl: null });
+    frame({ ...attached, control: control({ attached: 1 }) });
+    await flush();
+    expect(document.getElementById('stage')?.getAttribute('data-view')).toBe('connected');
+    await gainFocus();
+    expect(actions).toEqual([]);
+
+    frame({ ...state({ attachUrl: null, tunnel: { up: false, wssUrl: '' } }), control: control() });
+    await flush();
+    expect(document.getElementById('stage')?.getAttribute('data-view')).toBe('error');
+    await gainFocus();
+    expect(actions).toEqual([]);
   });
 });

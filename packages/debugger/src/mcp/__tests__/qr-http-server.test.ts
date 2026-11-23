@@ -29,7 +29,7 @@ import {
   type DashboardState,
   isCurrentAttachUrl,
   MAX_SSE_CLIENTS,
-  PRESENCE_VISIBLE_WINDOW_MS,
+  PRESENCE_FOCUS_WINDOW_MS,
   REOPEN_BUDGET,
   REOPEN_MIN_INTERVAL_MS,
   SSE_EVICTION_BUDGET,
@@ -2897,7 +2897,7 @@ describe('startQrHttpServer — 안정 포트 (devtools#752)', () => {
 // SSE 구독 상한 + 대시보드 탭 재사용 (연결 기아 방지)
 // ---------------------------------------------------------------------------
 
-describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
+describe('startQrHttpServer — SSE 구독 상한·탭 교체와 hasFocusedClient', () => {
   const baseState: DashboardState = {
     tunnel: { up: true, wssUrl: 'wss://test.trycloudflare.com' },
     pages: [],
@@ -2907,15 +2907,19 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
 
   /** /events를 열고 지금까지 받은 텍스트를 모으는 리더. */
   let cidSeq = 0;
-  async function openSse(port: number): Promise<{
+  async function openSse(
+    port: number,
+    cidArg?: string | null,
+  ): Promise<{
     cid: string;
     text: () => string;
     ended: Promise<void>;
     abort: () => void;
   }> {
     const ctrl = new AbortController();
-    const cid = (++cidSeq).toString(16).padStart(16, '0');
-    const res = await fetch(`http://127.0.0.1:${port}/events?v=2&cid=${cid}`, {
+    // cidArg === null이면 cid 없이 연결한다(탭 교체 대상이 아닌 구독 — 상한 밀어내기 시험용).
+    const cid = cidArg === undefined ? (++cidSeq).toString(16).padStart(16, '0') : (cidArg ?? '');
+    const res = await fetch(`http://127.0.0.1:${port}/events?v=2${cid ? `&cid=${cid}` : ''}`, {
       signal: ctrl.signal,
     });
     const reader = res.body?.getReader();
@@ -2940,12 +2944,14 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
   }
 
   /** 탭이 보내는 하트비트를 흉내 낸다. */
-  const presence = (port: number, cid: string, visible: boolean) =>
+  const presenceRaw = (port: number, body: string) =>
     fetch(`http://127.0.0.1:${port}/presence`, {
       method: 'POST',
       headers: { 'X-Ait-Dash': '1', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cid, visible }),
+      body,
     });
+  const presence = (port: number, cid: string, visible: boolean, focused: boolean = visible) =>
+    presenceRaw(port, JSON.stringify({ cid, visible, focused }));
 
   async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
     const deadline = Date.now() + ms;
@@ -2954,41 +2960,124 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
     }
   }
 
-  it('연결만으로는 보이는 탭이 아니고, 보임 하트비트가 있어야 true이며 숨김·끊김·만료에서 false로 돌아온다', async () => {
+  it('연결·가시성만으로는 재사용 대상이 아니고, 포커스 있음 하트비트가 있어야 true다 (포커스를 잃어도 창 안에서는 유지)', async () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
-      expect(srv.hasVisibleClient()).toBe(false);
+      expect(srv.hasFocusedClient()).toBe(false);
       const a = await openSse(srv.port);
-      expect(srv.hasVisibleClient()).toBe(false);
-      expect((await presence(srv.port, a.cid, true)).status).toBe(204);
-      expect(srv.hasVisibleClient()).toBe(true);
-      expect(srv.hasVisibleClient(0)).toBe(false);
-      await presence(srv.port, a.cid, false);
-      expect(srv.hasVisibleClient()).toBe(false);
-      await presence(srv.port, a.cid, true);
-      expect(srv.hasVisibleClient()).toBe(true);
+      expect(srv.hasFocusedClient()).toBe(false);
+      // Orca 내장 브라우저처럼 안 보이는 탭이 visible로 보고하지만 포커스는 없는 경우.
+      expect((await presence(srv.port, a.cid, true, false)).status).toBe(204);
+      expect(srv.hasFocusedClient()).toBe(false);
+      await presence(srv.port, a.cid, true, true);
+      expect(srv.hasFocusedClient()).toBe(true);
+      expect(srv.hasFocusedClient(0)).toBe(false);
+      // 창을 옮겨 blur가 와도 방금까지 쓰던 탭이라 창 안에서는 재사용 대상으로 남는다.
+      await presence(srv.port, a.cid, true, false);
+      expect(srv.hasFocusedClient()).toBe(true);
       a.abort();
-      await waitFor(() => !srv.hasVisibleClient());
-      expect(srv.hasVisibleClient()).toBe(false);
+      await waitFor(() => !srv.hasFocusedClient());
+      expect(srv.hasFocusedClient()).toBe(false);
     } finally {
       await srv.close();
     }
   });
 
-  it('보임 하트비트가 PRESENCE_VISIBLE_WINDOW_MS를 넘기면 보이는 탭으로 세지 않는다', async () => {
+  it('포커스 하트비트가 PRESENCE_FOCUS_WINDOW_MS(2분)를 넘기면 재사용 대상으로 세지 않는다', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const srv = await startQrHttpServer(() => baseState);
     let a: Awaited<ReturnType<typeof openSse>> | undefined;
     try {
+      expect(PRESENCE_FOCUS_WINDOW_MS).toBe(120_000);
       a = await openSse(srv.port);
-      await presence(srv.port, a.cid, true);
-      expect(srv.hasVisibleClient()).toBe(true);
-      vi.setSystemTime(Date.now() + PRESENCE_VISIBLE_WINDOW_MS + 1);
-      expect(srv.hasVisibleClient()).toBe(false);
+      await presence(srv.port, a.cid, true, true);
+      expect(srv.hasFocusedClient()).toBe(true);
+      vi.setSystemTime(Date.now() + PRESENCE_FOCUS_WINDOW_MS - 1);
+      expect(srv.hasFocusedClient()).toBe(true);
+      vi.setSystemTime(Date.now() + 2);
+      expect(srv.hasFocusedClient()).toBe(false);
     } finally {
       a?.abort();
       await srv.close();
       vi.useRealTimers();
+    }
+  });
+
+  it('/presence 본문은 {cid, visible, focused}만 받는다 — 빠졌거나 타입·키가 틀리면 무시하고 큰 본문은 413', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const a = await openSse(srv.port);
+      for (const bad of [
+        { cid: a.cid, visible: true },
+        { cid: a.cid, visible: true, focused: 'yes' },
+        { cid: a.cid, visible: 1, focused: true },
+        { cid: 1, visible: true, focused: true },
+        { cid: a.cid, visible: true, focused: true, extra: 1 },
+        [a.cid, true, true],
+      ]) {
+        const res = await presenceRaw(srv.port, JSON.stringify(bad));
+        expect(res.status).toBe(204);
+        expect(srv.hasFocusedClient()).toBe(false);
+      }
+      expect((await presenceRaw(srv.port, 'not json')).status).toBe(204);
+      expect(srv.hasFocusedClient()).toBe(false);
+      const big = await presenceRaw(
+        srv.port,
+        JSON.stringify({ cid: a.cid, visible: true, focused: true, pad: 'x'.repeat(300) }),
+      );
+      expect(big.status).toBe(413);
+      expect(srv.hasFocusedClient()).toBe(false);
+      await presence(srv.port, a.cid, true, true);
+      expect(srv.hasFocusedClient()).toBe(true);
+      a.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('새 cid의 탭이 연결되면 이전 탭들에만 superseded를 보내고 끝낸다 (같은 cid 재연결·cid 없는 구독은 건드리지 않는다)', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const a = await openSse(srv.port);
+      const b = await openSse(srv.port);
+      await a.ended;
+      expect(a.text()).toContain('event: superseded');
+      expect(b.text()).not.toContain('event: superseded');
+      // 같은 cid로 다시 연결(EventSource 자동 재시도)해도 그 탭은 밀려나지 않는다.
+      const b2 = await openSse(srv.port, b.cid);
+      expect(b.text()).not.toContain('event: superseded');
+      expect(b2.text()).not.toContain('event: superseded');
+      // cid가 없는 구독은 교체 대상도, 교체 주체도 아니다.
+      const anon = await openSse(srv.port, null);
+      expect(b.text()).not.toContain('event: superseded');
+      const c = await openSse(srv.port);
+      await b.ended;
+      await b2.ended;
+      expect(b.text()).toContain('event: superseded');
+      expect(b2.text()).toContain('event: superseded');
+      expect(anon.text()).not.toContain('event: superseded');
+      expect(c.text()).not.toContain('event: superseded');
+      for (const x of [a, b, b2, anon, c]) x.abort();
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('교체된 탭의 포커스 기록은 사라지고 새 탭만 재사용 대상이 된다', async () => {
+    const srv = await startQrHttpServer(() => baseState);
+    try {
+      const a = await openSse(srv.port);
+      await presence(srv.port, a.cid, true, true);
+      expect(srv.hasFocusedClient()).toBe(true);
+      const b = await openSse(srv.port);
+      await a.ended;
+      expect(srv.hasFocusedClient()).toBe(false);
+      await presence(srv.port, b.cid, true, true);
+      expect(srv.hasFocusedClient()).toBe(true);
+      a.abort();
+      b.abort();
+    } finally {
+      await srv.close();
     }
   });
 
@@ -2999,50 +3088,50 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
       const noCookie = await fetch(`http://127.0.0.1:${srv.port}/presence`, {
         method: 'POST',
         headers: { 'x-test-no-auth': '1', 'X-Ait-Dash': '1' },
-        body: JSON.stringify({ cid: a.cid, visible: true }),
+        body: JSON.stringify({ cid: a.cid, visible: true, focused: true }),
       });
       expect(noCookie.status).toBe(403);
       const noHeader = await fetch(`http://127.0.0.1:${srv.port}/presence`, {
         method: 'POST',
-        body: JSON.stringify({ cid: a.cid, visible: true }),
+        body: JSON.stringify({ cid: a.cid, visible: true, focused: true }),
       });
       expect(noHeader.status).toBe(403);
       await presence(srv.port, 'deadbeefdeadbeef', true);
-      expect(srv.hasVisibleClient()).toBe(false);
+      expect(srv.hasFocusedClient()).toBe(false);
       a.abort();
     } finally {
       await srv.close();
     }
   });
 
-  it(`상한을 넘으면 보이는 탭보다 숨은 탭을 먼저 밀어낸다 (가장 오래된 탭이 보이는 탭이어도)`, async () => {
+  it(`상한을 넘으면 포커스 있는 탭보다 없는 탭을 먼저 밀어낸다 (가장 오래된 탭이 포커스 탭이어도)`, async () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
       const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
-      for (let i = 0; i < MAX_SSE_CLIENTS; i++) opened.push(await openSse(srv.port));
-      // 가장 오래된 탭만 보이는 탭이다. 그 다음으로 오래된 숨은 탭이 밀려나야 한다.
-      await presence(srv.port, opened[0]?.cid ?? '', true);
-      const newest = await openSse(srv.port);
+      // 가장 오래된 구독만 cid가 있고 포커스 하트비트를 보냈다. 나머지는 cid가 없어 탭 교체 대상이 아니다.
+      opened.push(await openSse(srv.port));
+      for (let i = 1; i < MAX_SSE_CLIENTS; i++) opened.push(await openSse(srv.port, null));
+      await presence(srv.port, opened[0]?.cid ?? '', true, true);
+      const newest = await openSse(srv.port, null);
       await opened[1]?.ended;
       expect(opened[1]?.text()).toContain('event: superseded');
       expect(opened[0]?.text()).not.toContain('event: superseded');
-      expect(srv.hasVisibleClient()).toBe(true);
+      expect(srv.hasFocusedClient()).toBe(true);
       for (const c of [...opened, newest]) c.abort();
     } finally {
       await srv.close();
     }
   });
 
-  it('전부 보이는 탭이면 가장 오래된 탭을 밀어낸다', async () => {
+  it('전부 포커스 탭이면 가장 오래된 구독을 밀어낸다', async () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
       const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
-      for (let i = 0; i < MAX_SSE_CLIENTS; i++) {
-        const c = await openSse(srv.port);
-        await presence(srv.port, c.cid, true);
-        opened.push(c);
-      }
-      const newest = await openSse(srv.port);
+      // 같은 cid의 재연결이 쌓인 경우: 하트비트 하나가 전부를 포커스로 만든다.
+      const shared = 'abcdef0123456789';
+      for (let i = 0; i < MAX_SSE_CLIENTS; i++) opened.push(await openSse(srv.port, shared));
+      await presence(srv.port, shared, true, true);
+      const newest = await openSse(srv.port, null);
       await opened[0]?.ended;
       expect(opened[0]?.text()).toContain('event: superseded');
       expect(opened[1]?.text()).not.toContain('event: superseded');
@@ -3057,12 +3146,12 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
     try {
       const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
       for (let i = 0; i < MAX_SSE_CLIENTS; i++) {
-        opened.push(await openSse(srv.port));
+        opened.push(await openSse(srv.port, null));
       }
       const oldest = opened[0];
       expect(oldest?.text()).not.toContain('event: superseded');
 
-      const newest = await openSse(srv.port);
+      const newest = await openSse(srv.port, null);
 
       await oldest?.ended; // 서버가 응답을 end → 스트림 종료
       expect(oldest?.text()).toContain('event: superseded');
@@ -3076,12 +3165,12 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
     }
   });
 
-  it('프로토콜 표식(?v=2)이 없는 오래된 클라이언트는 204로 거절되고 슬롯·hasVisibleClient에 영향이 없다', async () => {
+  it('프로토콜 표식(?v=2)이 없는 오래된 클라이언트는 204로 거절되고 슬롯·hasFocusedClient에 영향이 없다', async () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
       const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
       for (let i = 0; i < MAX_SSE_CLIENTS; i++) {
-        opened.push(await openSse(srv.port));
+        opened.push(await openSse(srv.port, null));
       }
       // 이전 데몬이 띄운 채 남은 탭: superseded를 모르고 /events(표식 없음)로 재연결한다.
       for (let i = 0; i < 5; i++) {
@@ -3094,7 +3183,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
       for (const c of opened) c.abort();
       const stale = await fetch(`http://127.0.0.1:${srv.port}/events`);
       expect(stale.status).toBe(204);
-      expect(srv.hasVisibleClient()).toBe(false);
+      expect(srv.hasFocusedClient()).toBe(false);
     } finally {
       await srv.close();
     }
@@ -3106,7 +3195,10 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
       const html = await (await fetch(`http://127.0.0.1:${srv.port}/`)).text();
       expect(html).toContain("new EventSource('/events?v=2&cid=' + CID)");
       expect(html).toContain("fetch('/presence'");
-      expect(html).toContain("document.visibilityState === 'visible'");
+      expect(html).toContain('document.hasFocus()');
+      expect(html).toContain('focused: tabFocused()');
+      expect(html).toContain("window.addEventListener('focus', sendPresence)");
+      expect(html).toContain("window.addEventListener('blur', sendPresence)");
     } finally {
       await srv.close();
     }
@@ -3117,7 +3209,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
     try {
       const clients: Array<Awaited<ReturnType<typeof openSse>>> = [];
       for (let i = 0; i < MAX_SSE_CLIENTS + 2; i++) {
-        clients.push(await openSse(srv.port));
+        clients.push(await openSse(srv.port, null));
       }
       expect(() => srv.notifyStateChange()).not.toThrow();
       const last = clients[clients.length - 1];
@@ -3135,7 +3227,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
     const opened: Array<Awaited<ReturnType<typeof openSse>>> = [];
     try {
       for (let i = 0; i < MAX_SSE_CLIENTS + SSE_EVICTION_BUDGET; i++) {
-        opened.push(await openSse(srv.port));
+        opened.push(await openSse(srv.port, null));
       }
       // 예산을 다 썼다. 남은 구독은 마지막 MAX_SSE_CLIENTS개.
       const alive = opened.slice(-MAX_SSE_CLIENTS);
@@ -3146,7 +3238,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
 
       // 창이 지나면 다시 밀어낼 수 있다.
       vi.setSystemTime(Date.now() + SSE_EVICTION_WINDOW_MS + 1);
-      const again = await openSse(srv.port);
+      const again = await openSse(srv.port, null);
       opened.push(again);
       expect(again.text()).toContain('data: {');
       expect(alive[0]?.text()).toContain('event: superseded');
@@ -3161,7 +3253,7 @@ describe('startQrHttpServer — SSE 구독 상한과 hasVisibleClient', () => {
     const srv = await startQrHttpServer(() => baseState);
     try {
       for (let i = 0; i < SSE_EVICTION_BUDGET + 3; i++) {
-        const c = await openSse(srv.port);
+        const c = await openSse(srv.port, null);
         c.abort();
         await c.ended;
         await new Promise((r) => setTimeout(r, 20));
@@ -3239,11 +3331,11 @@ describe('startQrHttpServer — 대시보드 SSE 클라이언트 스크립트 (�
       sse.emit('superseded');
 
       expect(sse.closed).toBe(true);
-      expect(document.body.textContent).toContain('다른 탭에서 대시보드가 열려 있어요');
+      expect(document.body.textContent).toContain('다른 탭에서 대시보드를 열었어요');
 
       // 서버가 응답을 끝낸 뒤 오는 onerror가 안내를 '연결 끊김'으로 덮어쓰지 않는다.
       sse.onerror?.(new Event('error'));
-      expect(document.body.textContent).toContain('다른 탭에서 대시보드가 열려 있어요');
+      expect(document.body.textContent).toContain('다른 탭에서 대시보드를 열었어요');
       expect(document.body.textContent).not.toContain('연결 끊김');
     } finally {
       await srv.close();

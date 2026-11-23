@@ -2243,7 +2243,7 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => false,
+      hasFocusedClient: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
 
@@ -2289,7 +2289,7 @@ describe('start_attach — always open dashboard (headless fallback when GUI una
       buildAttachPageUrl: (url: string) =>
         `http://127.0.0.1:19998/attach?u=${encodeURIComponent(url)}`,
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => false,
+      hasFocusedClient: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
 
@@ -2437,7 +2437,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => false,
+      hasFocusedClient: () => false,
       close: async () => {},
     };
 
@@ -2480,7 +2480,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: () => 'http://127.0.0.1:19999/',
       notifyStateChange: notify,
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => true,
+      hasFocusedClient: () => true,
       close: async () => {},
     };
 
@@ -2505,7 +2505,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
     expect(text).not.toContain('debug=1');
   });
 
-  it('when SSE clients exist but none is visible (hasVisibleClient false), a fresh tokenized tab is opened', async () => {
+  it('when SSE clients exist but none is visible (hasFocusedClient false), a fresh tokenized tab is opened', async () => {
     const { canOpenBrowser } = await import('../tools.js');
     (canOpenBrowser as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
 
@@ -2522,7 +2522,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: () => 'http://127.0.0.1:19999/',
       notifyStateChange: notify,
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => false,
+      hasFocusedClient: () => false,
       close: async () => {},
     };
 
@@ -2583,7 +2583,7 @@ describe('start_attach — browser dashboard (always attempted, #553)', () => {
       buildAttachPageUrl: (url) => `http://127.0.0.1:19999/attach?u=${encodeURIComponent(url)}`,
       notifyStateChange: () => {},
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => false,
+      hasFocusedClient: () => false,
       close: async () => {},
     };
 
@@ -2637,7 +2637,7 @@ describe('start_attach — TOTP auto-splice', () => {
         return `http://127.0.0.1:19997/attach?u=${encodeURIComponent(url)}`;
       },
       tokenizeUrl: fakeTokenize,
-      hasVisibleClient: () => false,
+      hasFocusedClient: () => false,
       close: () => Promise.resolve(),
     } as import('../qr-http-server.js').QrHttpServer;
     const client = await makeClient({
@@ -2894,7 +2894,7 @@ describe('start_attach — dashboard token and attach secrets in results', () =>
     buildAttachPageUrl: () => 'http://127.0.0.1:19997/',
     notifyStateChange: () => {},
     tokenizeUrl: fakeTokenize,
-    hasVisibleClient: () => false,
+    hasFocusedClient: () => false,
     close: async () => {},
   });
 
