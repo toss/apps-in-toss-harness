@@ -84,7 +84,11 @@ export async function runKeyAgent(deps: RunKeyAgentDeps = {}): Promise<number> {
     finish = resolve;
   });
   const agent = createKeyAgentServer({
-    store: new KeyStore({ ttlMs: resolveKeyTtlMs(env) }),
+    store: new KeyStore({
+      ttlMs: resolveKeyTtlMs(env),
+      // `__VERSION__` is replaced at build time; unbundled runs have no define.
+      version: typeof __VERSION__ === 'string' && __VERSION__.length > 0 ? __VERSION__ : undefined,
+    }),
     token,
     endpoint: paths.endpoint,
     idleExitMs: deps.idleExitMs ?? resolveIdleExitMs(env),

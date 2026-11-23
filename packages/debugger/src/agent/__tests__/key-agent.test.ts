@@ -125,6 +125,18 @@ describe('protocol framing', () => {
 });
 
 describe('agent server', () => {
+  it('reports its package version in status when the store has one', async () => {
+    const { client } = await startServer({ store: new KeyStore({ version: '9.9.9' }) });
+    const status = await client.status();
+    expect(status.version).toBe('9.9.9');
+    expect(Object.keys(status).sort()).toEqual(['keys', 'pid', 'projects', 'startedAt', 'version']);
+  });
+
+  it('omits the version from status when the store has none (an old agent looks the same)', async () => {
+    const { client } = await startServer();
+    expect('version' in (await client.status())).toBe(false);
+  });
+
   it('answers status, getOrCreate, importLegacy, rotate and signSessionCert over the socket', async () => {
     const { client } = await startServer();
     expect((await client.status()).keys).toBe(0);

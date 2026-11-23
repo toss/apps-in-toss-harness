@@ -23,6 +23,7 @@
  */
 
 import type { ProtocolVersionCheck } from '@apps-in-toss/internal-protocol/attach-handshake';
+import { AGENT_PROTOCOL_VERSION, type AgentStatus } from '../agent/protocol.js';
 import type {
   AitMockState,
   AitOperationalEnvironment,
@@ -631,6 +632,8 @@ export const DEBUG_TOOL_DEFINITIONS = [
       'its local dashboard is http://127.0.0.1:<dashboardPort>/), ' +
       'otherSessions ({count, sessions[{project, label, dashboardPort, startedAt}]} — other debugger sessions running on this machine, each with its own relay and dashboard ' +
       '(http://127.0.0.1:<dashboardPort>/); never interferes with this session, informational only; no hosts, tunnel URLs or PIDs), ' +
+      "keyAgent ({reachable, pid, startedAt, version, protocol, hint} — the resident key agent that holds this machine's relay keys; " +
+      'version is "unknown (<=0.5.0)" for an agent that reports none, hint is set when it is unreachable or differs from this daemon; public data only), ' +
       'nextRecommendedAction ({tool, reason} or null — the single next tool to call; ' +
       'in local-target mode tunnel.up=false is normal so "restart" is never recommended). ' +
       'All fields are nullable — missing data is null, not an error. ' +
@@ -2126,6 +2129,58 @@ export interface DiagnosticsOtherSessions {
   }>;
 }
 
+/** What `get_status` reports when the key agent's status carries no version (agent 0.5.0 and earlier). */
+export const KEY_AGENT_VERSION_UNKNOWN = 'unknown (<=0.5.0)';
+
+/**
+ * The key agent that holds this machine's relay keys. Public data only: pid,
+ * start time, package version and agent protocol version. No keys, tokens or paths.
+ */
+export interface DiagnosticsKeyAgent {
+  /** `false` when no agent answered the status request (not running, or unreachable). */
+  reachable: boolean;
+  pid: number | null;
+  /** ISO timestamp the agent started at. */
+  startedAt: string | null;
+  /** The agent's package version, {@link KEY_AGENT_VERSION_UNKNOWN} when it reports none, `null` when unreachable. */
+  version: string | null;
+  /** Agent protocol version; `null` when unreachable. */
+  protocol: number | null;
+  /** Set when the agent is unreachable or differs from this daemon's version; `null` otherwise. */
+  hint: string | null;
+}
+
+/** Builds the `keyAgent` block of `get_status`. */
+export function buildKeyAgentReport(
+  status: AgentStatus | null,
+  daemonVersion: string | null,
+): DiagnosticsKeyAgent {
+  if (status === null) {
+    return {
+      reachable: false,
+      pid: null,
+      startedAt: null,
+      version: null,
+      protocol: null,
+      hint: 'key agent에 연결하지 못했습니다. 실행 중이 아니거나 응답하지 않는 상태입니다. relay를 시작하면(switch_environment) 필요할 때 새로 띄웁니다.',
+    };
+  }
+  const reported = typeof status.version === 'string' && status.version.length > 0;
+  const version = reported ? (status.version as string) : KEY_AGENT_VERSION_UNKNOWN;
+  const differs = reported ? daemonVersion !== null && version !== daemonVersion : true;
+  const hint = differs
+    ? `key agent가 이 데몬${daemonVersion === null ? '' : `(${daemonVersion})`}과 다른 이전 버전(${version})입니다. 같은 사용자의 모든 세션이 이 agent의 키를 함께 쓰므로 키 관련 동작은 이전 버전 기준입니다. agent는 보관 중인 키가 모두 만료되고 5분간 요청이 없을 때 스스로 종료하고, 그 뒤 처음 시작되는 agent가 현재 버전입니다. 실행 중인 agent를 이 데몬이 직접 교체하지는 않습니다.`
+    : null;
+  return {
+    reachable: true,
+    pid: status.pid,
+    startedAt: new Date(status.startedAt * 1000).toISOString(),
+    version,
+    protocol: AGENT_PROTOCOL_VERSION,
+    hint,
+  };
+}
+
 /**
  * Which project this session serves and where its local dashboard is.
  * SECRET-HANDLING: names, folder basename and a loopback port only.
@@ -2257,6 +2312,11 @@ export interface DiagnosticsResult {
    * dashboard tabs apart.
    */
   otherSessions: DiagnosticsOtherSessions;
+  /**
+   * The key agent serving this machine's relay keys (pid, start time, version, protocol),
+   * or `null` when this daemon did not look. `reachable: false` when it did and none answered.
+   */
+  keyAgent: DiagnosticsKeyAgent | null;
   /** The project this session serves and its local dashboard port; `null` when unknown. */
   project: DiagnosticsProject | null;
   /**
@@ -2719,6 +2779,11 @@ export interface GetDiagnosticsInput {
   attachTimeline?: AttachTimeline;
   /** 데몬이 마지막으로 본 device↔host 프로토콜 skew. 있으면 attach 진단이 skew를 직접 말한다. */
   getProtocolVersionSkew?: () => ProtocolVersionCheck | null;
+  /**
+   * Reads the key agent's status without starting one; `null` when it does not answer.
+   * Omitted: `keyAgent` is `null` (not looked at).
+   */
+  readKeyAgentStatus?: () => Promise<AgentStatus | null>;
 }
 
 /** The `relayKey` block of `get_status` for a recorded key age (`null` when none). */
@@ -2754,6 +2819,7 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
     tunnelChildPid,
     attachTimeline,
     getProtocolVersionSkew,
+    readKeyAgentStatus,
     booted = true,
   } = input;
 
@@ -2905,6 +2971,10 @@ export async function getDiagnostics(input: GetDiagnosticsInput): Promise<Diagno
         }
       : { kind: 'none', reason: UNBOOTED_ENV_REASON },
     otherSessions,
+    keyAgent:
+      readKeyAgentStatus === undefined
+        ? null
+        : buildKeyAgentReport(await readKeyAgentStatus().catch(() => null), devtoolsVersion),
     project:
       selfEntry === null
         ? null
