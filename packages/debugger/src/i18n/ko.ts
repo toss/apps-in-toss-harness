@@ -57,9 +57,8 @@ export const ko = {
   'dashboard.lost.title': 'debugger와 연결이 끊겼어요',
   'dashboard.lost.body':
     '폰 연결 상태를 확인할 수 없어요. debugger가 다시 뜨면 자동으로 이어져요. 계속 이 화면이면 Claude에게 다시 연결해 달라고 요청해 주세요.',
-  'dashboard.superseded.title': '다른 탭에서 대시보드가 열려 있어요',
-  'dashboard.superseded.body':
-    '이 탭은 더 이상 갱신되지 않아요. 가장 최근에 연 대시보드 탭을 쓰시거나, 이 탭을 닫아도 됩니다.',
+  'dashboard.superseded.title': '다른 탭에서 대시보드를 열었어요',
+  'dashboard.superseded.body': '이 탭은 닫아도 돼요.',
   'dashboard.session.completeTitle': '테스트 실행 완료',
   'dashboard.session.completeBody': '러너가 정상 종료되었습니다. 결과는 터미널에서 확인하세요.',
   'dashboard.session.shutdownTitle': '디버그 서버가 종료되었습니다',

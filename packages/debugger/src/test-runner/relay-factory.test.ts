@@ -127,7 +127,7 @@ const fakeQrServer = {
   tokenizeUrl: (url: string) => `${url}&dashtoken=${'a'.repeat(64)}`,
   inspectorStableUrl: 'http://127.0.0.1:49152/inspector',
   notifyStateChange: qrServerNotifyMock,
-  hasVisibleClient: () => false,
+  hasFocusedClient: () => false,
   close: qrServerCloseMock,
 };
 const startQrHttpServerMock = vi.fn(() => Promise.resolve(fakeQrServer));

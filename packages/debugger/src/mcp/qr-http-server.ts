@@ -235,15 +235,15 @@ export interface QrHttpServer {
    */
   notifyStateChange(): void;
   /**
-   * 사용자가 실제로 볼 수 있는 대시보드 탭이 있는지: SSE가 연결돼 있고, 그 탭이 최근
-   * `withinMs`(기본 {@link PRESENCE_VISIBLE_WINDOW_MS}) 안에 "보이는 상태" 하트비트
-   * (`POST /presence`)를 보냈을 때만 true다.
+   * 사용자가 지금 쓰고 있을 대시보드 탭이 있는지: SSE가 연결돼 있고, 그 탭이 최근
+   * `withinMs`(기본 {@link PRESENCE_FOCUS_WINDOW_MS}) 안에 "포커스 있음" 하트비트
+   * (`POST /presence`의 `focused: true`)를 보냈을 때만 true다.
    *
-   * `start_attach`가 이 값으로 새 탭을 열지 재사용할지 정한다. 연결만 살아 있고 숨겨졌거나
-   * 하트비트가 끊긴 탭(다른 브라우저의 오래된 탭 등)은 세지 않으므로, 그런 탭이 새 탭 열기를
-   * 막지 않는다.
+   * `start_attach`가 이 값으로 새 탭을 열지 재사용할지 정한다. 연결만 살아 있거나 가시성만
+   * 'visible'인 탭(백그라운드·가려진 탭은 visible로 보고되기도 한다)은 세지 않으므로, 그런 탭이
+   * 새 탭 열기를 막지 않는다.
    */
-  hasVisibleClient(withinMs?: number): boolean;
+  hasFocusedClient(withinMs?: number): boolean;
   close(): Promise<void>;
 }
 
@@ -255,8 +255,25 @@ export interface QrHttpServer {
  */
 export const MAX_SSE_CLIENTS = 6;
 
-/** 보이는 탭으로 인정하는 마지막 하트비트의 최대 경과 시간. 탭은 보이는 동안 20초마다 보낸다. */
-export const PRESENCE_VISIBLE_WINDOW_MS = 45_000;
+/** `POST /presence` 본문 검증: 정확히 {cid, visible, focused}만 받는다. */
+function isPresenceBody(v: unknown): v is { cid: string; visible: boolean; focused: boolean } {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length !== 3 || !keys.every((k) => k === 'cid' || k === 'visible' || k === 'focused')) {
+    return false;
+  }
+  return (
+    typeof o.cid === 'string' && typeof o.visible === 'boolean' && typeof o.focused === 'boolean'
+  );
+}
+
+/**
+ * 사용자가 쓰는 탭으로 인정하는 "포커스 있음" 하트비트의 최대 경과 시간. 탭은 포커스가 있는
+ * 동안 20초마다 보내고, 포커스·가시성이 바뀔 때도 보낸다. 가시성만으로는 가려진 탭을 거르지
+ * 못해(Orca 내장 브라우저는 안 보이는 탭도 visible로 보고한다) 포커스를 기준으로 삼는다.
+ */
+export const PRESENCE_FOCUS_WINDOW_MS = 120_000;
 
 /** `POST /reopen` 최소 간격과, 그 창 안에서 허용하는 총 횟수. 브라우저 탭이 쏟아지는 것을 막는다. */
 export const REOPEN_MIN_INTERVAL_MS = 10_000;
@@ -843,10 +860,21 @@ function buildControlSection(
     `var on=c.attached>0;kb.hidden=!on;nb.hidden=on;` +
     `Array.prototype.forEach.call(document.querySelectorAll('[data-act]'),function(b){b.hidden=false});` +
     `}` +
-    `function act(a){er.textContent='';fetch('/action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Ait-Dash':'1'},body:JSON.stringify({action:a})})` +
+    `var busy=false,lastAuto=0;` +
+    `function act(a){busy=true;er.textContent='';fetch('/action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Ait-Dash':'1'},body:JSON.stringify({action:a})})` +
     `.then(function(r){return r.json().catch(function(){return{}})})` +
     `.then(function(j){if(j&&j.ok===false){er.textContent=j.reason==='no-scheme'?T.noScheme:T.failed}})` +
-    `.catch(function(){er.textContent=T.failed})}` +
+    `.catch(function(){er.textContent=T.failed})` +
+    `.then(function(){busy=false})}` +
+    // 탭으로 돌아오면(포커스) QR이 없는 대기 화면에서 새 QR을 알아서 만든다. 오류·끊김·연결됨 화면과
+    // 폰이 붙은 상태에서는 하지 않고, 탭당 30초에 한 번, 요청이 진행 중이면 하지 않는다. 버튼은 그대로 둔다.
+    `function autoNewQr(){` +
+    `if(busy||document.visibilityState!=='visible'||!document.hasFocus())return;` +
+    `var g=document.getElementById('stage');if(!g||g.getAttribute('data-view')!=='wait'||g.getAttribute('data-conn')==='lost')return;` +
+    `var w=g.querySelector('[data-pane="wait"]');if(!w||w.getAttribute('data-qr')!=='0')return;` +
+    `var m=document.querySelector('.qr-none [data-act="new-qr"]');if(!m||m.hidden)return;` +
+    `var t=Date.now();if(t-lastAuto<30000)return;lastAuto=t;act('new-qr')}` +
+    `window.addEventListener('focus',autoNewQr);document.addEventListener('visibilitychange',autoNewQr);` +
     `kb.addEventListener('click',function(){act('kill')});nb.addEventListener('click',function(){act('new-qr')});` +
     `document.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-act]');if(b&&!b.hidden){act(b.getAttribute('data-act'))}});` +
     `window.addEventListener('ait-dash-state',function(e){var d=e.detail||{};render(d.control===undefined?null:d.control)});` +
@@ -1251,13 +1279,14 @@ function buildSseScript(strings: SseScriptStrings): string {
       var watchdogTimer = null;
 
       // 폴백 UI — window.close()가 무시되면 stale QR 대신 안내 화면을 표시한다.
-      function showWatchdogFallback() {
+      function showWatchdogFallback() { showCloseFallback(WATCHDOG_TITLE, WATCHDOG_BODY); }
+      function showCloseFallback(title, body) {
         if (document.body) {
           document.body.innerHTML =
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;' +
             'height:100vh;font-family:inherit;text-align:center;padding:2rem;box-sizing:border-box;">' +
-            '<p style="font-size:1.4rem;font-weight:bold;margin-bottom:1rem;">' + WATCHDOG_TITLE + '</p>' +
-            '<p style="opacity:0.7;margin-bottom:2rem;">' + WATCHDOG_BODY + '</p>' +
+            '<p style="font-size:1.4rem;font-weight:bold;margin-bottom:1rem;">' + title + '</p>' +
+            '<p style="opacity:0.7;margin-bottom:2rem;">' + body + '</p>' +
             '<button id="ait-close-tab" onclick="window.close()" ' +
             'style="padding:0.6rem 1.4rem;font-size:1rem;cursor:pointer;border:1px solid currentColor;' +
             'border-radius:12px;background:transparent;color:inherit;min-height:44px;">' + WATCHDOG_CLOSE_LABEL + '</button>' +
@@ -1417,20 +1446,29 @@ function buildSseScript(strings: SseScriptStrings): string {
         for (var ci = 0; ci < cidBytes.length; ci++) CID += ('0' + cidBytes[ci].toString(16)).slice(-2);
       } catch (_) { CID = String(Date.now()) + '00000000'; CID = CID.replace(/[^0-9]/g, ''); }
       var presenceTimer = null;
+      // 가시성(visibilityState)만으로는 가려진 탭·백그라운드 탭을 거르지 못한다(Orca 내장 브라우저 등은
+      // 안 보이는 탭도 'visible'로 보고한다). 사용자가 실제로 쓰는 탭인지는 포커스로 본다.
+      function tabFocused() {
+        try { return document.visibilityState === 'visible' && document.hasFocus(); } catch (_) { return false; }
+      }
+      var presenceStopped = false;
       function sendPresence() {
+        if (presenceStopped) return;
         try {
           fetch('/presence', {
             method: 'POST', credentials: 'same-origin', keepalive: true,
             headers: { 'Content-Type': 'application/json', 'X-Ait-Dash': '1' },
-            body: JSON.stringify({ cid: CID, visible: document.visibilityState === 'visible' })
+            body: JSON.stringify({ cid: CID, visible: document.visibilityState === 'visible', focused: tabFocused() })
           }).catch(function () {});
         } catch (_) { /* 하트비트 실패는 무시 */ }
       }
       var src = new EventSource('/events?v=2&cid=' + CID);
       src.addEventListener('open', sendPresence);
       document.addEventListener('visibilitychange', sendPresence);
+      window.addEventListener('focus', sendPresence);
+      window.addEventListener('blur', sendPresence);
       presenceTimer = setInterval(function () {
-        if (document.visibilityState === 'visible') sendPresence();
+        if (tabFocused()) sendPresence();
       }, 20000);
       src.onopen = function () {
         // 연결 복구 시 lastSeen 갱신 — 일시적 끊김이 watchdog을 발화시키지 않게.
@@ -1567,11 +1605,14 @@ function buildSseScript(strings: SseScriptStrings): string {
       // 재연결(= 다른 탭을 다시 밀어내는 핑퐁)을 막고 정적 안내만 남긴다.
       src.addEventListener('superseded', function () {
         src.close();
+        presenceStopped = true;
+        if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
         showTerminalBanner(SUPERSEDED_TITLE, SUPERSEDED_BODY);
+        showCloseFallback(SUPERSEDED_TITLE, SUPERSEDED_BODY);
       });
       // 탭을 떠날 때 연결을 즉시 반납한다 — 브라우저의 호스트당 영속 연결 한도
       // (Firefox 6)를 닫힌/이동한 탭이 붙들고 있지 않게 한다.
-      window.addEventListener('pagehide', function () { src.close(); if (presenceTimer) clearInterval(presenceTimer); });
+      window.addEventListener('pagehide', function () { presenceStopped = true; src.close(); if (presenceTimer) clearInterval(presenceTimer); });
       // bfcache에서 복원되면 닫아 둔 EventSource가 되살아나지 않으므로 새로 불러온다.
       window.addEventListener('pageshow', function (e) {
         if (e.persisted && !watchdogFired) location.reload();
@@ -1855,13 +1896,22 @@ export async function startQrHttpServer(
 
   /** SSE 활성 연결 목록 — `notifyStateChange()` 시 전체 push. */
   const sseClients: ServerResponse[] = [];
-  /** SSE 연결별 메타. cid는 탭이 만든 무작위 id, lastVisibleAt은 마지막 "보임" 하트비트 시각(0 = 없음/숨김). */
-  const sseMeta = new Map<ServerResponse, { cid: string | null; lastVisibleAt: number }>();
-  const isVisibleClient = (c: ServerResponse, now: number, withinMs: number): boolean => {
+  /** SSE 연결별 메타. cid는 탭이 만든 무작위 id, lastFocusedAt은 마지막 "포커스 있음" 하트비트 시각(0 = 없음). */
+  const sseMeta = new Map<ServerResponse, { cid: string | null; lastFocusedAt: number }>();
+  const isFocusedClient = (c: ServerResponse, now: number, withinMs: number): boolean => {
     if (c.destroyed || c.writableEnded) return false;
-    const at = sseMeta.get(c)?.lastVisibleAt ?? 0;
+    const at = sseMeta.get(c)?.lastFocusedAt ?? 0;
     return at > 0 && now - at < withinMs;
   };
+  /** 구독 하나에 `superseded`를 보내고 끝낸다. 목록에서 빼는 일은 호출자가 한다. */
+  function sendSuperseded(res: ServerResponse): void {
+    try {
+      res.write('event: superseded\ndata: {}\n\n');
+      res.end();
+    } catch {
+      // 이미 끊긴 연결 — 목록에서만 빠지면 된다.
+    }
+  }
   /** 최근 /reopen 시도 시각. 간격·횟수 제한 계산용. */
   const reopenAttempts: number[] = [];
 
@@ -1912,21 +1962,16 @@ export async function startQrHttpServer(
     }
     if (sseEvictions.length >= SSE_EVICTION_BUDGET) return false;
     while (sseClients.length >= MAX_SSE_CLIENTS) {
-      // 숨겨졌거나 하트비트가 끊긴 구독을 오래된 순으로 먼저 밀어낸다. 보이는 탭은 숨은 탭이
+      // 포커스 하트비트가 끊긴 구독을 오래된 순으로 먼저 밀어낸다. 포커스가 있는 탭은 없는 탭이
       // 하나라도 있으면 건드리지 않는다. 배열은 연결 순서라 첫 일치가 가장 오래된 것이다.
       const hiddenIdx = sseClients.findIndex(
-        (c) => !isVisibleClient(c, now, PRESENCE_VISIBLE_WINDOW_MS),
+        (c) => !isFocusedClient(c, now, PRESENCE_FOCUS_WINDOW_MS),
       );
       const oldest = sseClients.splice(hiddenIdx === -1 ? 0 : hiddenIdx, 1)[0];
       if (!oldest) break;
       sseMeta.delete(oldest);
       sseEvictions.push(now);
-      try {
-        oldest.write('event: superseded\ndata: {}\n\n');
-        oldest.end();
-      } catch {
-        // 이미 끊긴 연결 — 목록에서만 빠지면 된다.
-      }
+      sendSuperseded(oldest);
     }
     return true;
   }
@@ -2172,7 +2217,7 @@ export async function startQrHttpServer(
 
     // ── POST /presence — 탭이 보이는 상태인지 알리는 하트비트 ────────────────
     // 쿠키(위)·커스텀 헤더·Origin(위의 isAllowedDashboardRequest)을 통과한 요청만 온다.
-    // 본문은 {cid, visible}뿐이고 응답은 204다. start_attach의 탭 재사용 판단에만 쓴다.
+    // 본문은 {cid, visible, focused}뿐이고 응답은 204다. start_attach의 탭 재사용 판단에만 쓴다.
     if (path === '/presence') {
       if (req.method !== 'POST') {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -2205,12 +2250,14 @@ export async function startQrHttpServer(
         return;
       }
       try {
-        const parsed = JSON.parse(body) as { cid?: unknown; visible?: unknown };
-        if (typeof parsed.cid === 'string' && typeof parsed.visible === 'boolean') {
+        const parsed: unknown = JSON.parse(body);
+        if (isPresenceBody(parsed)) {
           for (const c of sseClients) {
             const meta = sseMeta.get(c);
             if (meta && meta.cid === parsed.cid) {
-              meta.lastVisibleAt = parsed.visible ? Date.now() : 0;
+              // 포커스가 있다고 보고한 마지막 시각만 남긴다. 포커스를 잃으면 0이 아니라 시각을 그대로 둔다 —
+              // 창 전환 직후 start_attach가 와도 방금까지 쓰던 탭은 재사용 대상으로 남는다.
+              if (parsed.focused) meta.lastFocusedAt = Date.now();
             }
           }
         }
@@ -2229,6 +2276,21 @@ export async function startQrHttpServer(
         res.writeHead(204, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end();
         return;
+      }
+      // 새 대시보드 탭(새 cid)이 연결되면 이전 탭들은 쓸모가 없다. `superseded`를 보내 스스로
+      // 닫게 해서 브라우저의 호스트당 영속 연결 한도(Firefox 6)를 탭이 쌓여 먹지 않게 한다.
+      // 같은 cid의 재연결(EventSource 자동 재시도)은 같은 탭이므로 건드리지 않는다.
+      const newCid = params.get('cid');
+      if (newCid !== null && /^[0-9a-f]{8,64}$/.test(newCid)) {
+        for (let i = sseClients.length - 1; i >= 0; i--) {
+          const old = sseClients[i];
+          if (!old) continue;
+          const oldCid = sseMeta.get(old)?.cid ?? null;
+          if (oldCid === null || oldCid === newCid) continue;
+          sseClients.splice(i, 1);
+          sseMeta.delete(old);
+          sendSuperseded(old);
+        }
       }
       // 자리를 먼저 확보한다 — 못 구하면 기존 구독을 건드리지 않고 거절한다.
       if (!makeRoomForSseClient()) {
@@ -2253,7 +2315,7 @@ export async function startQrHttpServer(
       const cidParam = params.get('cid');
       sseMeta.set(res, {
         cid: cidParam !== null && /^[0-9a-f]{8,64}$/.test(cidParam) ? cidParam : null,
-        lastVisibleAt: 0,
+        lastFocusedAt: 0,
       });
 
       // 연결 끊기면 목록에서 제거.
@@ -2538,9 +2600,9 @@ export async function startQrHttpServer(
     notifyStateChange(): void {
       notifyStateChangeInternal();
     },
-    hasVisibleClient(withinMs: number = PRESENCE_VISIBLE_WINDOW_MS): boolean {
+    hasFocusedClient(withinMs: number = PRESENCE_FOCUS_WINDOW_MS): boolean {
       const now = Date.now();
-      return sseClients.some((c) => isVisibleClient(c, now, withinMs));
+      return sseClients.some((c) => isFocusedClient(c, now, withinMs));
     },
     close(): Promise<void> {
       clearInterval(refreshHandle);
