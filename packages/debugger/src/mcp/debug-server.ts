@@ -56,6 +56,10 @@ import { isDebugAllowedHost } from '@apps-in-toss/internal-protocol/debug-host';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { AgentClient } from '../agent/client.js';
+import { defaultAgentPaths } from '../agent/launcher.js';
+import type { AgentStatus } from '../agent/protocol.js';
+import { readAgentToken } from '../agent/secure-dir.js';
 // Test-runner core (#646): run_tests reuses the same orchestration the
 // `debugger-test` CLI uses. These imports are react-free (node:* + esbuild),
 // so they do not break the MCP-daemon react-free invariant.
@@ -528,6 +532,11 @@ export interface DebugServerDeps {
    */
   readSessions?: () => SessionsSnapshot | null;
   /**
+   * Reads the key agent's status for `get_status` without starting one; `null` when it does
+   * not answer. Default asks the real agent. Tests inject a fake.
+   */
+  readKeyAgentStatus?: () => Promise<AgentStatus | null>;
+  /**
    * Maximum age (ms) of a page's `lastSeenAt` before it is treated as a
    * ghost and excluded from `wait_for_attach` short-circuit logic (issue #610).
    *
@@ -861,6 +870,24 @@ function redactedExtra(data: unknown): { data: unknown; extra?: EnvelopeExtraMet
 // segmented wait). The `start_attach` handler no longer references it directly.
 
 const LIVE_KEYS_TIMEOUT_MS = 3000;
+const KEY_AGENT_STATUS_TIMEOUT_MS = 1500;
+
+/**
+ * Asks the running key agent for its status (pid, start time, version). Never starts an
+ * agent; `null` when none answers. Public data only.
+ */
+async function defaultReadKeyAgentStatus(): Promise<AgentStatus | null> {
+  try {
+    const paths = defaultAgentPaths();
+    const client = new AgentClient(paths, {
+      readToken: () => readAgentToken(paths.tokenPath),
+      timeoutMs: KEY_AGENT_STATUS_TIMEOUT_MS,
+    });
+    return await client.status();
+  } catch {
+    return null;
+  }
+}
 
 /** Asks the key agent for this machine's live relay public keys; `null` when it cannot answer in time. */
 async function defaultReadLiveRelayKeys(
@@ -1517,6 +1544,7 @@ export function createDebugServer(deps: DebugServerDeps): Server {
           tunnelChildPid: getTunnelChildPid?.() ?? undefined,
           attachTimeline: timeline,
           getProtocolVersionSkew: deps.getProtocolVersionSkew,
+          readKeyAgentStatus: deps.readKeyAgentStatus ?? defaultReadKeyAgentStatus,
         });
         const attached = conn.listTargets().length > 0;
         const payload =

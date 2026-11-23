@@ -62,6 +62,8 @@ export interface KeyStoreOptions {
   readonly ttlMs?: number;
   /** Pre-rotation window; default {@link KEY_PRE_ROTATION_HOURS}, capped at half the TTL. */
   readonly preRotationMs?: number;
+  /** Package version reported by `status()`; omitted from the status when unset. */
+  readonly version?: string | undefined;
 }
 
 /** The signing key: the oldest of the entries. */
@@ -82,6 +84,7 @@ export class KeyStore {
   private readonly now: () => number;
   private readonly ttlMs: number;
   private readonly preRotationMs: number;
+  private readonly version: string | undefined;
   readonly startedAt: number;
 
   constructor(options: KeyStoreOptions = {}) {
@@ -93,6 +96,7 @@ export class KeyStore {
       Math.floor(this.ttlMs / 2),
     );
     this.startedAt = this.now();
+    this.version = options.version;
   }
 
   /** Makes the next key when the signing (oldest live) key is inside the pre-rotation window. */
@@ -137,6 +141,7 @@ export class KeyStore {
       startedAt: Math.floor(this.startedAt / 1000),
       projects: this.projects.size,
       keys,
+      ...(this.version !== undefined ? { version: this.version } : {}),
     };
   }
 

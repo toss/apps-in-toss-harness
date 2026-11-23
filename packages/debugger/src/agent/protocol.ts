@@ -64,6 +64,12 @@ export interface AgentStatus {
   readonly startedAt: number;
   readonly projects: number;
   readonly keys: number;
+  /**
+   * The debugger package version the agent runs. Additive and optional: agents
+   * built before this field existed (0.5.0 and earlier) omit it. The agent
+   * protocol version stays 1.
+   */
+  readonly version?: string;
 }
 
 export type AgentRequest =
