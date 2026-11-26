@@ -69,24 +69,40 @@ JS 소스만 쟀고 TS 로더, dev 서버, 실기기는 미확인이다.
   설정 에셋(예: `Assets/AppsInToss/Editor/AITCredentials.asset`)을 읽거나 출력하지 않는다. 이 경로와
   파일 이름은 공개 docs에서 확인하지 못했다(미확인). 이 항목은 저장소의 자격증명 취급 규칙이고 docs 사실이 아니다.
   Deploy Key 입력 위치 출처: `/documentation/api-and-sdk-en/unity/first-steps/getting-started`.
-- 명령줄(batchmode) 빌드 (확인일 2026-10-23, SDK 3.8.0, Unity 6000.0.62f1, macOS arm64, 샘플 프로젝트
-  1회 실측):
-  - 진입점: SDK 패키지 `Editor/`에는 공개 batch 진입점이 없다(`[MenuItem]`은 `AIT/...` 메뉴뿐이고
-    명령줄 인자를 읽는 코드가 없다, SDK main 소스 확인). 빌드 본체인 `AITConvertCore.DoExport(...)`는
-    `public static`이고 `AITExportError`를 돌려준다. `-executeMethod`로 부를 수 있는 진입점은 SDK 저장소의
-    E2E 테스트 러너(`E2EBuildRunner.CommandLineBuild`)뿐이고, 이 러너는 씬 생성과 appName을 하드코딩하므로
-    사용자 프로젝트에 쓰지 않는다. 선택지는 둘이다. (1) 사용자가 Editor의 `AIT` 메뉴로 빌드한다.
-    (2) 사용자 승인을 받아 프로젝트에 Editor 스크립트(`public static` 메서드가 `DoExport`를 부르고 결과가
-    성공이 아니면 `EditorApplication.Exit`을 0이 아닌 값으로 호출)를 추가하고 `-executeMethod`로 부른다.
-    `DoExport`의 인자와 반환 열거값은 설치된 SDK 버전의 소스에서 읽고 위 시그니처를 가정하지 않는다.
-  - 성공 판정: 종료 코드 0, 그리고 로그에 `앱인토스 빌드가 완료되었습니다.`와
+- 명령줄(batchmode) 빌드 (실측은 2026-10-23, SDK 3.8.0, Unity 6000.0.62f1, macOS arm64, 샘플 프로젝트
+  1회. 진입점 절은 2026-11-26 SDK 소스로 갱신):
+  - 진입점(SDK 소스 재확인 2026-11-26): 설치된 SDK 패키지에 `Editor/AITBatchBuild.cs`가 있으면 공개
+    진입점 `AppsInToss.Editor.AITBatchBuild.Build`를 쓴다. 패키지에 `Documentation~/BatchBuild.md`가 있으면
+    그 문서가 이 절보다 우선이다. 어느 릴리스부터 들어갔는지는 확인하지 못했으니 버전으로 추측하지 말고
+    파일이 있는지로 판단한다.
+
+    ```bash
+    Unity -batchmode -nographics -projectPath <프로젝트> -buildTarget WebGL \
+      -executeMethod AppsInToss.Editor.AITBatchBuild.Build -logFile <로그 파일>
+    ```
+
+    `-buildTarget WebGL`이 빠지면 `BUILD_TARGET_NOT_WEBGL`로 바로 실패한다. 진입점이 직접 종료하므로
+    `-quit`는 없어도 된다. `-aitCleanBuild`는 클린 빌드, `-aitResultPath <경로>`는 결과 파일 위치를 바꾼다.
+    자격증명과 배포는 다루지 않는다.
+  - 진입점이 없는 SDK: 그때는 `[MenuItem]`(`AIT/...` 메뉴)뿐이고 명령줄 인자를 읽는 코드가 없다(2026-10-23
+    SDK main 소스 확인 당시). 빌드 본체인 `AITConvertCore.DoExport(...)`는 `public static`이고 `AITExportError`를
+    돌려준다. SDK 저장소의 E2E 테스트 러너(`E2EBuildRunner.CommandLineBuild`)는 씬 생성과 appName을
+    하드코딩하므로 사용자 프로젝트에 쓰지 않는다. 선택지는 둘이다. (1) 사용자가 Editor의 `AIT` 메뉴로
+    빌드한다. (2) 사용자 승인을 받아 프로젝트에 Editor 스크립트(`public static` 메서드가 `DoExport`를 부르고
+    결과가 성공이 아니면 `EditorApplication.Exit`을 0이 아닌 값으로 호출)를 추가하고 `-executeMethod`로
+    부른다. `DoExport`의 인자와 반환 열거값은 설치된 SDK 버전의 소스에서 읽고 위 시그니처를 가정하지 않는다.
+  - 성공 판정(`AITBatchBuild`): `<프로젝트>/ait-build/ait-build-result.json`(`schemaVersion` 1)의
+    `success`와 `aitPath`(프로젝트 루트 기준 상대 경로)를 기준으로 한다. 실패하면 `errorCode`와 `error`가
+    채워진다. 종료 코드는 성공 0, 실패 1이다. 시작할 때 이전 결과 파일을 지우므로, 종료 뒤 파일이 없으면
+    Unity가 진입점 도중에 죽은 것이다.
+  - 성공 판정(직접 만든 진입점이나 메뉴 빌드): 종료 코드 0, 그리고 로그에 `앱인토스 빌드가 완료되었습니다.`와
     `Exiting batchmode successfully now!`가 있고, 산출 `.ait`가 있다. 실측 로그에는 WebGL 단계의
     `Build Finished, Result: Success.`도 있었다. 종료 코드만 믿지 말고 `.ait`의 존재와 수정 시각을 확인한다.
   - `.ait` 위치: SDK 소스(`DoExport`가 쓰는 `ValidateDistOutput`)는 `<프로젝트>/ait-build/` 바로 아래를
     먼저 보고, 없으면 `ait-build/dist/` 아래를 본다. `ait build` CLI 버전에 따라 둘 중 하나에 생기며,
     E2E 러너 전용 동작이 아니라 `DoExport` 일반 동작이다. 실측에서는 `ait-build/<appName>.ait`였다.
-    그래서 `ait-build` 아래를 `*.ait`로 찾아 최신 파일을 쓴다. 파일 이름이 `<appName>.ait`인지는
-    실측 1건뿐이라 이름을 가정하지 않는다.
+    결과 JSON이 있으면 `aitPath`를 쓰고, 없으면 `ait-build` 아래를 `*.ait`로 찾아 최신 파일을 쓴다. 파일
+    이름이 `<appName>.ait`인지는 실측 1건뿐이라 이름을 가정하지 않는다.
   - 치명 오류로 오판하면 안 되는 출력(실측 빌드는 이 출력들이 모두 찍히고 성공했다): 라이선스 관련
     `[Licensing]` 오류 줄(`Access token is unavailable`, `entitlement`, `LicensingClient has failed
     validation; ignoring` 등), `pnpm install --frozen-lockfile` 실패 뒤 SDK가 자동으로 하는
